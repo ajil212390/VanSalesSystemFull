@@ -1,0 +1,432 @@
+openapi: 3.0.3
+info:
+  title: RouteFlow API
+  version: 1.0.0
+  description: Phase 0 & Phase 1 Backend API - Authentication, Multitenancy, Company
+    and Core Entities
+paths:
+  /api/v1/auth/login/:
+    post:
+      operationId: auth_login_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Login'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Login'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Login'
+          description: ''
+  /api/v1/auth/me/:
+    get:
+      operationId: auth_me_retrieve
+      tags:
+      - auth
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserMe'
+          description: ''
+  /api/v1/auth/refresh/:
+    post:
+      operationId: auth_refresh_create
+      description: |-
+        Takes a refresh type JSON web token and returns an access type JSON web
+        token if the refresh token is valid.
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenRefresh'
+          description: ''
+  /api/v1/auth/register/:
+    post:
+      operationId: auth_register_create
+      tags:
+      - auth
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Register'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Register'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Register'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Login'
+          description: ''
+  /api/v1/company/:
+    get:
+      operationId: company_retrieve
+      tags:
+      - company
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+          description: ''
+    patch:
+      operationId: company_partial_update
+      tags:
+      - company
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCompany'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCompany'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCompany'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Company'
+          description: ''
+  /api/v1/roles/:
+    get:
+      operationId: roles_list
+      tags:
+      - roles
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserRole'
+          description: ''
+  /api/v1/states/:
+    get:
+      operationId: states_list
+      tags:
+      - states
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/State'
+          description: ''
+components:
+  schemas:
+    Company:
+      type: object
+      properties:
+        CompanyId:
+          type: integer
+          readOnly: true
+        Name:
+          type: string
+          maxLength: 200
+        AddressLine1:
+          type: string
+          maxLength: 100
+        AddressLine2:
+          type: string
+          maxLength: 100
+        AddressLine3:
+          type: string
+          maxLength: 100
+        Phone:
+          type: string
+          nullable: true
+          maxLength: 20
+        Narration:
+          type: string
+          nullable: true
+          maxLength: 500
+        Pincode:
+          type: string
+          nullable: true
+          maxLength: 10
+        GstNo:
+          type: string
+          nullable: true
+          maxLength: 20
+        state_id:
+          type: integer
+          nullable: true
+        state_name:
+          type: string
+          readOnly: true
+        Email:
+          type: string
+          nullable: true
+          maxLength: 200
+        CreatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        UpdatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - CompanyId
+      - CreatedAt
+      - Name
+      - UpdatedAt
+      - state_name
+    Login:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          writeOnly: true
+      required:
+      - password
+      - username
+    PatchedCompany:
+      type: object
+      properties:
+        CompanyId:
+          type: integer
+          readOnly: true
+        Name:
+          type: string
+          maxLength: 200
+        AddressLine1:
+          type: string
+          maxLength: 100
+        AddressLine2:
+          type: string
+          maxLength: 100
+        AddressLine3:
+          type: string
+          maxLength: 100
+        Phone:
+          type: string
+          nullable: true
+          maxLength: 20
+        Narration:
+          type: string
+          nullable: true
+          maxLength: 500
+        Pincode:
+          type: string
+          nullable: true
+          maxLength: 10
+        GstNo:
+          type: string
+          nullable: true
+          maxLength: 20
+        state_id:
+          type: integer
+          nullable: true
+        state_name:
+          type: string
+          readOnly: true
+        Email:
+          type: string
+          nullable: true
+          maxLength: 200
+        CreatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+        UpdatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+    Register:
+      type: object
+      properties:
+        company_name:
+          type: string
+          maxLength: 200
+        address_line1:
+          type: string
+          maxLength: 100
+        address_line2:
+          type: string
+          default: ''
+          maxLength: 100
+        address_line3:
+          type: string
+          default: ''
+          maxLength: 100
+        state_id:
+          type: integer
+        pincode:
+          type: string
+          nullable: true
+          maxLength: 6
+        phone:
+          type: string
+          nullable: true
+          maxLength: 20
+        email:
+          nullable: true
+          oneOf:
+          - type: string
+            format: email
+          - type: string
+            maxLength: 0
+        gst_no:
+          type: string
+          nullable: true
+          maxLength: 15
+        narration:
+          type: string
+          nullable: true
+          maxLength: 500
+        username:
+          type: string
+          maxLength: 100
+          minLength: 3
+        password:
+          type: string
+          writeOnly: true
+          maxLength: 128
+          minLength: 8
+        confirm_password:
+          type: string
+          writeOnly: true
+          maxLength: 128
+          minLength: 8
+      required:
+      - address_line1
+      - company_name
+      - confirm_password
+      - password
+      - state_id
+      - username
+    State:
+      type: object
+      properties:
+        StateId:
+          type: integer
+          readOnly: true
+        StateName:
+          type: string
+          maxLength: 100
+        GSTStateCode:
+          type: string
+          nullable: true
+          maxLength: 2
+      required:
+      - StateId
+      - StateName
+    TokenRefresh:
+      type: object
+      properties:
+        access:
+          type: string
+          readOnly: true
+        refresh:
+          type: string
+          writeOnly: true
+      required:
+      - access
+      - refresh
+    UserMe:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        username:
+          type: string
+          readOnly: true
+        role:
+          type: string
+          readOnly: true
+        company_id:
+          type: integer
+          readOnly: true
+        company_name:
+          type: string
+          readOnly: true
+      required:
+      - company_id
+      - company_name
+      - id
+      - role
+      - username
+    UserRole:
+      type: object
+      properties:
+        UserRoleId:
+          type: integer
+          readOnly: true
+        RoleName:
+          type: string
+          maxLength: 50
+        Description:
+          type: string
+          nullable: true
+          maxLength: 200
+      required:
+      - RoleName
+      - UserRoleId
+  securitySchemes:
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
