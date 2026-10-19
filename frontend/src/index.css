@@ -4,6 +4,11 @@
   box-sizing: border-box;
 }
 
+html {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+
 html,
 body,
 #root {
@@ -36,3 +41,78 @@ body,
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* World-Class Login Animations */
+@keyframes loginFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.login-form-animate {
+  animation: loginFadeUp 650ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.login-btn-premium {
+  transition: all 220ms cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.login-btn-premium:hover {
+  opacity: 0.94;
+}
+
+.login-btn-premium:active {
+  transform: scale(0.99);
+}
+
+/* ==========================================================================
+   Table Header & Table Theme (Burgundy Tint UI)
+   ========================================================================== */
+.mantine-Table-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.mantine-Table-thead,
+table thead {
+  background-color: #fbf0f2;
+}
+
+.mantine-Table-thead tr,
+table thead tr {
+  background-color: #fbf0f2 !important;
+}
+
+.mantine-Table-th,
+table thead th {
+  background-color: #fbf0f2 !important;
+  color: #800020 !important;
+  font-weight: 700 !important;
+  font-size: 0.8125rem !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 13px 18px !important;
+  border-bottom: 2px solid #800020 !important;
+  white-space: nowrap;
+}
+
+.mantine-Table-td,
+table tbody td {
+  padding: 13px 18px !important;
+  font-size: 0.875rem;
+  color: #1e293b;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+/* Row Hover effect with subtle burgundy tint */
+.mantine-Table-table[data-hover] tbody tr:hover,
+table tbody tr:hover {
+  background-color: #fdf5f6 !important;
+}
+

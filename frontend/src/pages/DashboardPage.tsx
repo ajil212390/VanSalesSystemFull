@@ -5,12 +5,10 @@ import {
   Paper,
   SimpleGrid,
   Group,
-  Button,
   Stack,
   Card,
   Badge,
 } from '@mantine/core';
-import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 
 export const DashboardPage: React.FC = () => {
@@ -39,19 +37,9 @@ export const DashboardPage: React.FC = () => {
               </Badge>
             </Group>
             <Text c="dimmed" size="xs">
-              Managing <strong>{user?.company_name}</strong> (Tenant ID #{user?.company_id})
+              Managing <strong>{user?.company_name}</strong>
             </Text>
           </Stack>
-
-          <Button
-            component={Link}
-            to="/company"
-            color="burgundy"
-            size="xs"
-            style={{ backgroundColor: '#800020' }}
-          >
-            Edit Company Profile
-          </Button>
         </Group>
       </Paper>
 

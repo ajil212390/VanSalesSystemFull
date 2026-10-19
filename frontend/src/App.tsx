@@ -10,7 +10,6 @@ import '@mantine/notifications/styles.css';
 import { useAuthStore } from './store/authStore';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { CompanyProfilePage } from './pages/CompanyProfilePage';
 import { DriversPage } from './pages/DriversPage';
 import { RoutesPage } from './pages/RoutesPage';
 import { VehiclesPage } from './pages/VehiclesPage';
@@ -105,7 +104,7 @@ export const App: React.FC = () => {
               <Route path="/routes" element={<RoutesPage/>} />
               <Route path="/allocations" element={<AllocationsPage/>} />
               <Route path="/users" element={<UsersPage />} />
-              <Route path="/company" element={<CompanyProfilePage />} />
+              
             </Route>
 
             {/* Fallback */}

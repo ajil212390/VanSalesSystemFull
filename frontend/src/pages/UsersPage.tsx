@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Title,
   Paper,
@@ -18,12 +18,16 @@ import {
   CloseButton,
   Switch,
   ActionIcon,
+  Box,
+  Transition,
+  Tooltip,
 } from '@mantine/core';
-import { IconPencil, IconTrash } from '@tabler/icons-react';
+import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
 import { useForm, Controller } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 
 interface UserItem {
   UserId: number;
@@ -34,6 +38,7 @@ interface UserItem {
   driver_name?: string;
   IsActive: boolean;
   CreatedAt: string;
+  delete_block_reason?: string | null;
 }
 
 interface UserFormValues {
@@ -48,6 +53,8 @@ export const UsersPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [formOpened, setFormOpened] = useState(false);
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; username: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // 1. Fetch Users
   const { data: users = [], isLoading } = useQuery<UserItem[]>({
@@ -57,6 +64,17 @@ export const UsersPage: React.FC = () => {
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     },
   });
+
+  // Client-side search filter
+  const filteredUsers = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return users;
+    return users.filter((u) =>
+      (u.Username && u.Username.toLowerCase().includes(q)) ||
+      (u.role_name && u.role_name.toLowerCase().includes(q)) ||
+      (u.driver_name && u.driver_name.toLowerCase().includes(q))
+    );
+  }, [users, searchQuery]);
 
   // 2. Fetch Roles
   const { data: roles = [] } = useQuery<any[]>({
@@ -164,9 +182,11 @@ export const UsersPage: React.FC = () => {
     },
   });
 
-  const handleDelete = (id: number, username: string) => {
-    if (window.confirm(`Are you sure you want to delete user "${username}"?`)) {
-      deleteMutation.mutate(id);
+  const confirmDelete = () => {
+    if (deleteTarget) {
+      deleteMutation.mutate(deleteTarget.id, {
+        onSettled: () => setDeleteTarget(null),
+      });
     }
   };
 
@@ -203,7 +223,7 @@ export const UsersPage: React.FC = () => {
   return (
     <Stack gap="lg">
       {/* Page Header */}
-      <Group justify="space-between" align="center">
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Staff Users
@@ -213,13 +233,46 @@ export const UsersPage: React.FC = () => {
           </Text>
         </div>
 
-        <Button color="burgundy" onClick={handleAddNew}>
-          + Add Staff User
-        </Button>
+        {/* Right Actions: Search Bar (left of button) + Add Button */}
+        <Group gap="sm" align="center" wrap="nowrap">
+          <Transition mounted={!formOpened} transition="fade" duration={200}>
+            {(searchStyles) => (
+              <Box style={{ ...searchStyles, width: 280 }}>
+                <TextInput
+                  placeholder="Search users..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.currentTarget.value)}
+                  leftSection={<IconSearch size={16} stroke={1.5} color="#800020" />}
+                  rightSection={
+                    searchQuery ? (
+                      <CloseButton
+                        size="sm"
+                        aria-label="Clear search"
+                        onClick={() => setSearchQuery('')}
+                      />
+                    ) : null
+                  }
+                  radius="md"
+                  size="sm"
+                />
+              </Box>
+            )}
+          </Transition>
+
+          <Transition mounted={!formOpened} transition="fade" duration={200}>
+            {(btnStyles) => (
+              <Button color="burgundy" onClick={handleAddNew} style={btnStyles}>
+                + Add Staff User
+              </Button>
+            )}
+          </Transition>
+        </Group>
       </Group>
 
-      {/* Smooth Slide-Down Form Panel */}
-      <Collapse expanded={formOpened} transitionDuration={300} transitionTimingFunction="ease">
+      {/* Seamless Form & Table Container - wraps both to eliminate flex gap jumping */}
+      <Box>
+        {/* Smooth Slide-Down Form Panel */}
+        <Collapse expanded={formOpened} transitionDuration={250} transitionTimingFunction="ease">
         <Paper
           p="lg"
           radius="sm"
@@ -288,6 +341,8 @@ export const UsersPage: React.FC = () => {
                       onChange={field.onChange}
                       error={errors.UserRole?.message}
                       required
+                      searchable
+                      nothingFoundMessage="No route found"
                     />
                   )}
                 />
@@ -306,6 +361,8 @@ export const UsersPage: React.FC = () => {
                       }))}
                       value={field.value}
                       onChange={field.onChange}
+                      searchable
+                      nothingFoundMessage="No route found"
                     />
                   )}
                 />                <Controller
@@ -350,82 +407,124 @@ export const UsersPage: React.FC = () => {
         </Paper>
       </Collapse>
 
-      {/* Users Table */}
-      <Paper p="md" radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-        {isLoading ? (
-          <Center p="xl">
-            <Loader color="burgundy" />
-          </Center>
-        ) : users.length === 0 ? (
-          <Center p="xl">
-            <Text c="dimmed" size="sm">
-              No staff users found. Click "+ Add Staff User" above to create one.
-            </Text>
-          </Center>
-        ) : (
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Username</Table.Th>
-                <Table.Th>Role</Table.Th>
-                <Table.Th>Linked Driver</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {users.map((u) => (
-                <Table.Tr key={u.UserId}>
-                  <Table.Td style={{ fontWeight: 600 }}>{u.Username}</Table.Td>
-                  <Table.Td>
-                    <Badge variant="outline" color="burgundy" size="sm" style={{ borderColor: '#f5c2cb', color: '#800020' }}>
-                      {u.role_name || `Role #${u.UserRole}`}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>{u.driver_name || '-'}</Table.Td>
-                  <Table.Td>
-                    <Badge
-                      size="sm"
-                      variant="outline"
-                      style={{
-                        borderColor: u.IsActive ? '#cbd5e1' : '#fca5a5',
-                        color: u.IsActive ? '#334155' : '#dc2626',
-                        backgroundColor: u.IsActive ? '#f8fafc' : '#fff5f5',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {u.IsActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right' }}>
-                    <Group gap={4} justify="flex-end" wrap="nowrap">
-                      <ActionIcon
-                        variant="subtle"
-                        color="burgundy"
-                        size="sm"
-                        title="Edit"
-                        onClick={() => handleEdit(u)}
-                      >
-                        <IconPencil size={16} />
-                      </ActionIcon>
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        size="sm"
-                        title="Delete"
-                        loading={deleteMutation.isPending && deleteMutation.variables === u.UserId}
-                        onClick={() => handleDelete(u.UserId, u.Username)}
-                      >
-                        <IconTrash size={16} />
-                      </ActionIcon>
-                    </Group>
-                  </Table.Td>
+      {/* Animated Users Table */}
+      <Transition mounted={!formOpened} transition="fade" duration={250} timingFunction="ease">
+        {(styles) => (
+          <Paper radius="sm" withBorder style={{ ...styles, backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
+          {isLoading ? (
+            <Center p="xl">
+              <Loader color="burgundy" />
+            </Center>
+          ) : users.length === 0 ? (
+            <Center p="xl">
+              <Text c="dimmed" size="sm">
+                No staff users found. Click "+ Add Staff User" above to create one.
+              </Text>
+            </Center>
+          ) : filteredUsers.length === 0 ? (
+            <Center p="xl">
+              <Stack align="center" gap="xs">
+                <Text c="dimmed" size="sm">
+                  No staff users match "{searchQuery}".
+                </Text>
+                <Button variant="subtle" size="xs" color="burgundy" onClick={() => setSearchQuery('')}>
+                  Clear Search
+                </Button>
+              </Stack>
+            </Center>
+          ) : (
+            <Table striped highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Username</Table.Th>
+                  <Table.Th>Role</Table.Th>
+                  <Table.Th>Linked Driver</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {filteredUsers.map((u) => (
+                  <Table.Tr key={u.UserId}>
+                    <Table.Td style={{ fontWeight: 600 }}>{u.Username}</Table.Td>
+                    <Table.Td>
+                      <Badge variant="outline" color="burgundy" size="sm" style={{ borderColor: '#f5c2cb', color: '#800020' }}>
+                        {u.role_name || `Role #${u.UserRole}`}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>{u.driver_name || '-'}</Table.Td>
+                    <Table.Td>
+                      <Badge
+                        size="sm"
+                        variant="outline"
+                        style={{
+                          borderColor: u.IsActive ? '#cbd5e1' : '#fca5a5',
+                          color: u.IsActive ? '#334155' : '#dc2626',
+                          backgroundColor: u.IsActive ? '#f8fafc' : '#fff5f5',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {u.IsActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Group gap={4} justify="flex-end" wrap="nowrap">
+                        <ActionIcon
+                          variant="subtle"
+                          color="burgundy"
+                          size="sm"
+                          title="Edit"
+                          onClick={() => handleEdit(u)}
+                        >
+                          <IconPencil size={16} />
+                        </ActionIcon>
+                        <Tooltip
+                          label={u.delete_block_reason || 'Delete Staff User'}
+                          withArrow
+                          position="top"
+                        >
+                          <span>
+                            <ActionIcon
+                              variant="subtle"
+                              color="red"
+                              size="sm"
+                              disabled={!!u.delete_block_reason}
+                              style={{
+                                cursor: u.delete_block_reason ? 'not-allowed' : 'pointer',
+                                opacity: u.delete_block_reason ? 0.35 : 1,
+                              }}
+                              onClick={() => {
+                                if (!u.delete_block_reason) {
+                                  setDeleteTarget({ id: u.UserId, username: u.Username });
+                                }
+                              }}
+                            >
+                              <IconTrash size={16} />
+                            </ActionIcon>
+                          </span>
+                        </Tooltip>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+          </Paper>
         )}
-      </Paper>
+      </Transition>
+      </Box>
+
+      {/* Custom Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        opened={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Staff User"
+        itemType="user"
+        itemName={deleteTarget?.username}
+        loading={deleteMutation.isPending}
+        onConfirm={confirmDelete}
+      />
     </Stack>
   );
 };

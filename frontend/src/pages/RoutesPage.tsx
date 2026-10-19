@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Title,
   Paper,
@@ -15,12 +15,16 @@ import {
   SimpleGrid,
   CloseButton,
   ActionIcon,
+  Box,
+  Transition,
+  Tooltip,
 } from '@mantine/core';
-import { IconPencil, IconTrash } from '@tabler/icons-react';
+import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 
 interface RouteItem {
   RouteId: number;
@@ -29,6 +33,7 @@ interface RouteItem {
   StartLocation?: string;
   EndLocation?: string;
   IsActive: boolean;
+  delete_block_reason?: string | null;
 }
 
 interface RouteFormValues {
@@ -42,6 +47,8 @@ export const RoutesPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [formOpened, setFormOpened] = useState(false);
   const [editingRoute, setEditingRoute] = useState<RouteItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   // 1. Fetch routes list
   const { data: routes = [], isLoading } = useQuery<RouteItem[]>({
@@ -51,6 +58,18 @@ export const RoutesPage: React.FC = () => {
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     },
   });
+
+  // Client-side search filter
+  const filteredRoutes = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return routes;
+    return routes.filter((r) =>
+      (r.RouteName && r.RouteName.toLowerCase().includes(q)) ||
+      (r.StartLocation && r.StartLocation.toLowerCase().includes(q)) ||
+      (r.EndLocation && r.EndLocation.toLowerCase().includes(q)) ||
+      (r.Description && r.Description.toLowerCase().includes(q))
+    );
+  }, [routes, searchQuery]);
 
   // 2. Form state
   const {
@@ -131,9 +150,11 @@ export const RoutesPage: React.FC = () => {
     },
   });
 
-  const handleDelete = (id: number, name: string) => {
-    if (window.confirm(`Are you sure you want to delete route "${name}"?`)) {
-      deleteMutation.mutate(id);
+  const confirmDelete = () => {
+    if (deleteTarget) {
+      deleteMutation.mutate(deleteTarget.id, {
+        onSettled: () => setDeleteTarget(null),
+      });
     }
   };
 
@@ -168,7 +189,7 @@ export const RoutesPage: React.FC = () => {
   return (
     <Stack gap="lg">
       {/* Page Header */}
-      <Group justify="space-between" align="center">
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Routes
@@ -178,13 +199,46 @@ export const RoutesPage: React.FC = () => {
           </Text>
         </div>
 
-        <Button color="burgundy" onClick={handleAddNew}>
-          + Add Route
-        </Button>
+        {/* Right Actions: Search Bar (left of button) + Add Button */}
+        <Group gap="sm" align="center" wrap="nowrap">
+          <Transition mounted={!formOpened} transition="fade" duration={200}>
+            {(searchStyles) => (
+              <Box style={{ ...searchStyles, width: 280 }}>
+                <TextInput
+                  placeholder="Search routes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.currentTarget.value)}
+                  leftSection={<IconSearch size={16} stroke={1.5} color="#800020" />}
+                  rightSection={
+                    searchQuery ? (
+                      <CloseButton
+                        size="sm"
+                        aria-label="Clear search"
+                        onClick={() => setSearchQuery('')}
+                      />
+                    ) : null
+                  }
+                  radius="md"
+                  size="sm"
+                />
+              </Box>
+            )}
+          </Transition>
+
+          <Transition mounted={!formOpened} transition="fade" duration={200}>
+            {(btnStyles) => (
+              <Button color="burgundy" onClick={handleAddNew} style={btnStyles}>
+                + Add Route
+              </Button>
+            )}
+          </Transition>
+        </Group>
       </Group>
 
-      {/* Smooth Slide-Down Form Panel */}
-      <Collapse expanded={formOpened} transitionDuration={300} transitionTimingFunction="ease">
+      {/* Seamless Form & Table Container - wraps both to eliminate flex gap jumping */}
+      <Box>
+        {/* Smooth Slide-Down Form Panel */}
+        <Collapse expanded={formOpened} transitionDuration={250} transitionTimingFunction="ease">
         <Paper
           p="lg"
           radius="sm"
@@ -268,80 +322,122 @@ export const RoutesPage: React.FC = () => {
         </Paper>
       </Collapse>
 
-      {/* Routes Table */}
-      <Paper p="md" radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-        {isLoading ? (
-          <Center p="xl">
-            <Loader color="burgundy" />
-          </Center>
-        ) : routes.length === 0 ? (
-          <Center p="xl">
-            <Text c="dimmed" size="sm">
-              No routes added yet. Click "+ Add Route" above to create one.
-            </Text>
-          </Center>
-        ) : (
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Route Name</Table.Th>
-                <Table.Th>Start Location</Table.Th>
-                <Table.Th>End Location</Table.Th>
-                <Table.Th>Description</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {routes.map((r) => (
-                <Table.Tr key={r.RouteId}>
-                  <Table.Td style={{ fontWeight: 600 }}>{r.RouteName}</Table.Td>
-                  <Table.Td>{r.StartLocation || '-'}</Table.Td>
-                  <Table.Td>{r.EndLocation || '-'}</Table.Td>
-                  <Table.Td>{r.Description || '-'}</Table.Td>
-                  <Table.Td>
-                    <Badge
-                      size="sm"
-                      variant="outline"
-                      style={{
-                        borderColor: r.IsActive ? '#cbd5e1' : '#fca5a5',
-                        color: r.IsActive ? '#334155' : '#dc2626',
-                        backgroundColor: r.IsActive ? '#f8fafc' : '#fff5f5',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {r.IsActive ? 'Active' : 'Inactive'}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right' }}>
-                    <Group gap={4} justify="flex-end" wrap="nowrap">
-                      <ActionIcon
-                        variant="subtle"
-                        color="burgundy"
-                        size="sm"
-                        title="Edit"
-                        onClick={() => handleEdit(r)}
-                      >
-                        <IconPencil size={16} />
-                      </ActionIcon>
-                      <ActionIcon
-                        variant="subtle"
-                        color="red"
-                        size="sm"
-                        title="Delete"
-                        loading={deleteMutation.isPending && deleteMutation.variables === r.RouteId}
-                        onClick={() => handleDelete(r.RouteId, r.RouteName)}
-                      >
-                        <IconTrash size={16} />
-                      </ActionIcon>
-                    </Group>
-                  </Table.Td>
+      {/* Animated Routes Table */}
+      <Transition mounted={!formOpened} transition="fade" duration={250} timingFunction="ease">
+        {(styles) => (
+          <Paper radius="sm" withBorder style={{ ...styles, backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
+          {isLoading ? (
+            <Center p="xl">
+              <Loader color="burgundy" />
+            </Center>
+          ) : routes.length === 0 ? (
+            <Center p="xl">
+              <Text c="dimmed" size="sm">
+                No routes added yet. Click "+ Add Route" above to create one.
+              </Text>
+            </Center>
+          ) : filteredRoutes.length === 0 ? (
+            <Center p="xl">
+              <Stack align="center" gap="xs">
+                <Text c="dimmed" size="sm">
+                  No routes match "{searchQuery}".
+                </Text>
+                <Button variant="subtle" size="xs" color="burgundy" onClick={() => setSearchQuery('')}>
+                  Clear Search
+                </Button>
+              </Stack>
+            </Center>
+          ) : (
+            <Table striped highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Route Name</Table.Th>
+                  <Table.Th>Start Location</Table.Th>
+                  <Table.Th>End Location</Table.Th>
+                  <Table.Th>Description</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
                 </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+              </Table.Thead>
+              <Table.Tbody>
+                {filteredRoutes.map((r) => (
+                  <Table.Tr key={r.RouteId}>
+                    <Table.Td style={{ fontWeight: 600 }}>{r.RouteName}</Table.Td>
+                    <Table.Td>{r.StartLocation || '-'}</Table.Td>
+                    <Table.Td>{r.EndLocation || '-'}</Table.Td>
+                    <Table.Td>{r.Description || '-'}</Table.Td>
+                    <Table.Td>
+                      <Badge
+                        size="sm"
+                        variant="outline"
+                        style={{
+                          borderColor: r.IsActive ? '#cbd5e1' : '#fca5a5',
+                          color: r.IsActive ? '#334155' : '#dc2626',
+                          backgroundColor: r.IsActive ? '#f8fafc' : '#fff5f5',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {r.IsActive ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      <Group gap={4} justify="flex-end" wrap="nowrap">
+                        <ActionIcon
+                          variant="subtle"
+                          color="burgundy"
+                          size="sm"
+                          title="Edit"
+                          onClick={() => handleEdit(r)}
+                        >
+                          <IconPencil size={16} />
+                        </ActionIcon>
+                        <Tooltip
+                          label={r.delete_block_reason || 'Delete Route'}
+                          withArrow
+                          position="top"
+                        >
+                          <span>
+                            <ActionIcon
+                              variant="subtle"
+                              color="red"
+                              size="sm"
+                              disabled={!!r.delete_block_reason}
+                              style={{
+                                cursor: r.delete_block_reason ? 'not-allowed' : 'pointer',
+                                opacity: r.delete_block_reason ? 0.35 : 1,
+                              }}
+                              onClick={() => {
+                                if (!r.delete_block_reason) {
+                                  setDeleteTarget({ id: r.RouteId, name: r.RouteName });
+                                }
+                              }}
+                            >
+                              <IconTrash size={16} />
+                            </ActionIcon>
+                          </span>
+                        </Tooltip>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+          </Paper>
         )}
-      </Paper>
+      </Transition>
+      </Box>
+
+      {/* Custom Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        opened={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Delete Route"
+        itemType="route"
+        itemName={deleteTarget?.name}
+        loading={deleteMutation.isPending}
+        onConfirm={confirmDelete}
+      />
     </Stack>
   );
 };

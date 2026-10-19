@@ -180,35 +180,64 @@ class CompanySerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 class DriverSerializer(serializers.ModelSerializer):
+    delete_block_reason = serializers.SerializerMethodField()
+
     class Meta:
         model = Driver
         fields = [
             'DriverId', 'DriverName', 'PhoneNumber', 'LicenseNumber',
             'LicenseExpiryDate', 'AddressLine1', 'AddressLine2', 'AddressLine3',
-            'IsActive', 'CreatedAt', 'UpdatedAt', 'CompanyId'
+            'IsActive', 'CreatedAt', 'UpdatedAt', 'CompanyId',
+            'delete_block_reason'
         ]
-        read_only_fields = ['DriverId', 'CreatedAt', 'UpdatedAt', 'CompanyId']
+        read_only_fields = ['DriverId', 'CreatedAt', 'UpdatedAt', 'CompanyId', 'delete_block_reason']
+
+    def get_delete_block_reason(self, obj):
+        # 1. Check if assigned to any route allocations
+        if RouteVehicleDriver.objects.filter(Driver=obj).exists():
+            return "Cannot delete: Driver is assigned to an active route allocation."
+        # 2. Check if linked to a staff user login
+        if User.objects.filter(DriverId=obj.DriverId).exists():
+            return "Cannot delete: Driver is linked to a staff user account."
+        return None
+
 
 
 class VehicleSerializer(serializers.ModelSerializer):
+    delete_block_reason = serializers.SerializerMethodField()
+
     class Meta:
         model = Vehicle
         fields = [
             'VehicleId', 'VehicleNumber', 'VehicleName',
             'RcExpiryDate', 'InsuranceExpiryDate', 'FitnessExpiryDate', 'PollutionExpiryDate',
-            'IsActive', 'CreatedAt', 'UpdatedAt', 'CompanyId'
+            'IsActive', 'CreatedAt', 'UpdatedAt', 'CompanyId',
+            'delete_block_reason'
         ]
-        read_only_fields = ['VehicleId', 'CreatedAt', 'UpdatedAt', 'CompanyId']
+        read_only_fields = ['VehicleId', 'CreatedAt', 'UpdatedAt', 'CompanyId', 'delete_block_reason']
+
+    def get_delete_block_reason(self, obj):
+        if RouteVehicleDriver.objects.filter(Vehicle=obj).exists():
+            return "Cannot delete: Vehicle is assigned to an active route allocation."
+        return None
 
 
 class RouteSerializer(serializers.ModelSerializer):
+    delete_block_reason = serializers.SerializerMethodField()
+
     class Meta:
         model = Route
         fields = [
             'RouteId', 'RouteName', 'Description', 'StartLocation', 'EndLocation',
-            'IsActive', 'CreatedAt', 'UpdatedAt', 'CompanyId'
+            'IsActive', 'CreatedAt', 'UpdatedAt', 'CompanyId',
+            'delete_block_reason'
         ]
-        read_only_fields = ['RouteId', 'CreatedAt', 'UpdatedAt', 'CompanyId']
+        read_only_fields = ['RouteId', 'CreatedAt', 'UpdatedAt', 'CompanyId', 'delete_block_reason']
+
+    def get_delete_block_reason(self, obj):
+        if RouteVehicleDriver.objects.filter(Route=obj).exists():
+            return "Cannot delete: Route is assigned to an active vehicle/driver allocation."
+        return None
 
 
 class RouteVehicleDriverSerializer(serializers.ModelSerializer):
@@ -225,6 +254,16 @@ class RouteVehicleDriverSerializer(serializers.ModelSerializer):
             'CreatedAt', 'UpdatedAt', 'CompanyId'
         ]
         read_only_fields = ['RouteVehicleDriverId', 'CreatedAt', 'UpdatedAt', 'CompanyId']
+
+    def validate(self, attrs):
+        driver = attrs.get('Driver')
+        if driver and not User.objects.filter(DriverId=driver.DriverId).exists():
+            raise serializers.ValidationError({
+                "Driver": ["Selected driver does not have a linked user account. Please create a staff user login first."]
+            })
+        return attrs
+
+
 class UserManagementSerializer(serializers.ModelSerializer):
     """
     Serializer for managing company staff users.
@@ -233,19 +272,27 @@ class UserManagementSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True, min_length=6)
     role_name = serializers.CharField(source='UserRole.RoleName', read_only=True)
     driver_name = serializers.SerializerMethodField()
+    delete_block_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'UserId', 'Username', 'password', 'UserRole', 'role_name',
-            'DriverId', 'driver_name', 'IsActive', 'CreatedAt'
+            'DriverId', 'driver_name', 'IsActive', 'CreatedAt',
+            'delete_block_reason'
         ]
-        read_only_fields = ['UserId', 'CreatedAt', 'role_name', 'driver_name']
+        read_only_fields = ['UserId', 'CreatedAt', 'role_name', 'driver_name', 'delete_block_reason']
 
     def get_driver_name(self, obj):
         if obj.DriverId:
             driver = Driver.objects.filter(DriverId=obj.DriverId).first()
             return driver.DriverName if driver else None
+        return None
+
+    def get_delete_block_reason(self, obj):
+        request = self.context.get('request')
+        if request and request.user and request.user.UserId == obj.UserId:
+            return "Cannot delete: You cannot delete your own logged-in account."
         return None
 
     def validate_Username(self, value):
