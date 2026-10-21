@@ -266,3 +266,65 @@ class Ledger(models.Model):
 
     def __str__(self):
         return self.LedgerName
+class Category(models.Model):
+    CategoryId = models.BigAutoField(primary_key=True, db_column='CategoryId')
+    CategoryName = models.CharField(max_length=150, db_column='CategoryName')
+    ParentCategory = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='ParentCategoryId',
+        related_name='subcategories'
+    )
+    IsActive = models.BooleanField(default=True, db_column='IsActive')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"Category"'
+
+    def __str__(self):
+        return self.CategoryName
+
+
+class Unit(models.Model):
+    UnitId = models.BigAutoField(primary_key=True, db_column='UnitId')
+    UnitName = models.CharField(max_length=50, db_column='UnitName')
+    IsActive = models.BooleanField(default=True, db_column='IsActive')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+
+    class Meta:
+        managed = False
+        db_table = '"Unit"'
+
+    def __str__(self):
+        return self.UnitName
+
+
+class Product(models.Model):
+    ProductId = models.BigAutoField(primary_key=True, db_column='ProductId')
+    ProductCode = models.CharField(max_length=30, null=True, blank=True, db_column='ProductCode')
+    ProductName = models.CharField(max_length=150, db_column='ProductName')
+    Category = models.ForeignKey('Category', on_delete=models.PROTECT, db_column='CategoryId', related_name='products')
+    Unit = models.ForeignKey('Unit', on_delete=models.PROTECT, db_column='UnitId', related_name='base_products')
+    AltUnit = models.ForeignKey('Unit', on_delete=models.SET_NULL, null=True, blank=True, db_column='AltUnitId', related_name='alt_products')
+    UnitConversion = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, db_column='UnitConversion')
+    HSNCode = models.CharField(max_length=20, null=True, blank=True, db_column='HSNCode')
+    GSTPercentage = models.DecimalField(max_digits=5, decimal_places=2, default=0, db_column='GSTPercentage')
+    SalesPrice = models.DecimalField(max_digits=12, decimal_places=2, default=0, db_column='SalesPrice')
+    PurchasePrice = models.DecimalField(max_digits=12, decimal_places=2, default=0, db_column='PurchasePrice')
+    MRP = models.DecimalField(max_digits=12, decimal_places=2, default=0, db_column='MRP')
+    IsActive = models.BooleanField(default=True, db_column='IsActive')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+
+    class Meta:
+        managed = False
+        db_table = '"Product"'
+
+    def __str__(self):
+        return self.ProductName

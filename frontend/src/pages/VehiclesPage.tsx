@@ -237,7 +237,7 @@ export const VehiclesPage: React.FC = () => {
 
                     <Transition mounted={!formOpened} transition="fade" duration={200}>
                         {(btnStyles) => (
-                            <Button color="burgundy" onClick={handleAddNew} style={btnStyles}>
+                            <Button color="burgundy" radius={10} onClick={handleAddNew} style={btnStyles}>
                                 + Add Vehicle
                             </Button>
                         )}

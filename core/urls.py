@@ -4,7 +4,9 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from core.views import (
     LoginView, MeView,
     CompanyProfileView, StateListView, RoleListView,
-    DriverViewSet, VehicleViewSet, RouteViewSet, RouteVehicleDriverViewSet,UserViewSet
+    DriverViewSet, VehicleViewSet, RouteViewSet, RouteVehicleDriverViewSet, UserViewSet,
+    CategoryViewSet, UnitViewSet, ProductViewSet,
+    GroupViewSet, LedgerViewSet
 )
 
 
@@ -14,6 +16,11 @@ router.register(r'vehicles', VehicleViewSet, basename='vehicle')
 router.register(r'routes', RouteViewSet, basename='route')
 router.register(r'allocations', RouteVehicleDriverViewSet, basename='allocation')
 router.register(r'users', UserViewSet, basename='user')
+router.register(r'categories', CategoryViewSet, basename='category')
+router.register(r'units', UnitViewSet, basename='unit')
+router.register(r'products', ProductViewSet, basename='product')
+router.register(r'groups', GroupViewSet, basename='group')
+router.register(r'ledgers', LedgerViewSet, basename='ledger')
 
 
 

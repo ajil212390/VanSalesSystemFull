@@ -15,7 +15,9 @@ import { RoutesPage } from './pages/RoutesPage';
 import { VehiclesPage } from './pages/VehiclesPage';
 import { AllocationsPage }   from './pages/AllocationsPage';
 import { UsersPage } from './pages/UsersPage';
-
+import { CategoriesPage } from './pages/CategoriesPage';
+import { ProductsPage } from './pages/ProductsPage';
+import { AccountsPage } from './pages/AccountsPage';
 
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/AppLayout';
@@ -54,22 +56,34 @@ const theme = createTheme({
   components: {
     Button: {
       defaultProps: {
-        radius: 'sm',
+        radius: '10',
       },
     },
     TextInput: {
       defaultProps: {
-        radius: 'sm',
+        radius: '10',
       },
     },
     PasswordInput: {
       defaultProps: {
-        radius: 'sm',
+        radius: '10',
       },
     },
     Select: {
       defaultProps: {
-        radius: 'sm',
+        radius: '10',
+      },
+    },
+    NumberInput: {
+      defaultProps: {
+        radius: '10',
+      },
+    },
+    Collapse: {
+      defaultProps: {
+        transitionDuration: 250,
+        transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        animateOpacity: true,
       },
     },
   },
@@ -104,7 +118,9 @@ export const App: React.FC = () => {
               <Route path="/routes" element={<RoutesPage/>} />
               <Route path="/allocations" element={<AllocationsPage/>} />
               <Route path="/users" element={<UsersPage />} />
-              
+              <Route path="/categories" element={<CategoriesPage />} />
+              <Route path="/products" element={<ProductsPage />} />
+              <Route path="/accounts" element={<AccountsPage />} />
             </Route>
 
             {/* Fallback */}

@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AppShell,
   Burger,
   Group,
   Title,
   Text,
-  Badge,
   Button,
   NavLink,
   Menu,
@@ -14,6 +13,9 @@ import {
   ActionIcon,
   Popover,
   Stack,
+  Avatar,
+  Divider,
+  UnstyledButton,
 } from '@mantine/core';
 import {
   IconLayoutDashboard,
@@ -27,6 +29,12 @@ import {
   IconSettings,
   IconLogout,
   IconTruckDelivery,
+  IconFolders,
+  IconCategory,
+  IconPackage,
+  IconBuildingBank,
+  IconChevronDown,
+  IconExternalLink,
 } from '@tabler/icons-react';
 
 
@@ -39,7 +47,8 @@ export const AppLayout: React.FC = () => {
   const [opened, { toggle }] = useDisclosure();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [settingsOpened, setSettingsOpened] = useState(false);
-  const [vanOpsOpened, setVanOpsOpened] = useState(true);
+  const [vanOpsOpened, setVanOpsOpened] = useState(false);
+  const [masterOpened, setMasterOpened] = useState(false);
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
@@ -58,6 +67,49 @@ export const AppLayout: React.FC = () => {
   ];
 
   const isVanOpsActive = vanOpsItems.some((item) => location.pathname === item.path);
+
+  const masterItems = [
+    { label: 'Category', path: '/categories', icon: IconCategory },
+    { label: 'Products', path: '/products', icon: IconPackage },
+    { label: 'Staff Users', path: '/users', icon: IconUsers },
+    { label: 'Accounts', path: '/accounts', icon: IconBuildingBank },
+  ];
+
+  const isMasterActive = masterItems.some((item) => location.pathname === item.path);
+
+  useEffect(() => {
+    if (isVanOpsActive) setVanOpsOpened(true);
+  }, [isVanOpsActive]);
+
+  useEffect(() => {
+    if (isMasterActive) setMasterOpened(true);
+  }, [isMasterActive]);
+
+  const getBreadcrumb = () => {
+    switch (location.pathname) {
+      case '/':
+        return { section: 'Overview', title: 'Dashboard' };
+      case '/drivers':
+        return { section: 'Van Operations', title: 'Drivers' };
+      case '/vehicles':
+        return { section: 'Van Operations', title: 'Vehicles' };
+      case '/routes':
+        return { section: 'Van Operations', title: 'Routes' };
+      case '/allocations':
+        return { section: 'Van Operations', title: 'Allocations' };
+      case '/categories':
+        return { section: 'Master', title: 'Categories' };
+      case '/products':
+        return { section: 'Master', title: 'Products' };
+      case '/users':
+        return { section: 'Master', title: 'Staff Users' };
+      case '/accounts':
+        return { section: 'Master', title: 'Accounts' };
+      default:
+        return { section: 'Van Sales', title: 'Operations' };
+    }
+  };
+  const breadcrumb = getBreadcrumb();
 
 
   return (
@@ -92,36 +144,107 @@ export const AppLayout: React.FC = () => {
       }}
     >
 
-      <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Group gap="sm">
+      <AppShell.Header style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+          {/* Left: Brand Identity & Breadcrumb */}
+          <Group gap="md" wrap="nowrap">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" color="#334155" />
-            <Title order={3} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.5px' }}>
-              {user?.company_name || 'Van Sales System'}
-            </Title>
+
+            {/* Brand Title */}
+            <div>
+              <Title
+                order={3}
+                style={{
+                  color: '#800020',
+                  fontWeight: 800,
+                  letterSpacing: '-0.4px',
+                  lineHeight: 1.15,
+                  fontSize: '1.2rem',
+                }}
+              >
+                {user?.company_name || 'FUTURE GAS'}
+              </Title>
+              <Text size="10px" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.08em' }}>
+                Distribution ERP
+              </Text>
+            </div>
+
+            {/* Subtle Divider */}
+            <Divider orientation="vertical" h={24} color="#e2e8f0" visibleFrom="xs" />
+
+            {/* Breadcrumb Path Tracker */}
+            <Group gap={6} wrap="nowrap" visibleFrom="xs">
+              <Text size="xs" c="dimmed" fw={500}>
+                {breadcrumb.section}
+              </Text>
+              <Text size="xs" c="#cbd5e1">
+                /
+              </Text>
+              <Text size="xs" fw={600} c="#1e293b">
+                {breadcrumb.title}
+              </Text>
+            </Group>
           </Group>
 
-          {/* User Menu */}
-          <Group gap="sm">
-            <Menu shadow="sm" width={180} position="bottom-end">
+          {/* Right: Executive User Profile */}
+          <Group gap="sm" wrap="nowrap">
+            <Menu shadow="md" width={220} position="bottom-end" radius="md">
               <Menu.Target>
-                <Button variant="subtle" color="gray" size="sm">
-                  <Text size="sm" fw={600} c="#0f172a">
-                    {user?.username}
+                <UnstyledButton
+                  p={4}
+                  style={{
+                    borderRadius: 8,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    transition: 'background-color 150ms ease',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Avatar
+                    color="burgundy"
+                    radius="xl"
+                    size={34}
+                    style={{
+                      backgroundColor: '#fdf2f4',
+                      color: '#800020',
+                      fontWeight: 700,
+                      fontSize: 13,
+                      border: '1.5px solid #f5c2cb',
+                    }}
+                  >
+                    {user?.username ? user.username.substring(0, 2).toUpperCase() : 'AD'}
+                  </Avatar>
+                  <Text size="sm" fw={600} c="#1e293b" visibleFrom="xs">
+                    {user?.username || 'admin'}
                   </Text>
-                  <Badge size="xs" ml="xs" color="burgundy" variant="light" style={{ backgroundColor: '#fdf2f4', color: '#800020' }}>
-                    {user?.role}
-                  </Badge>
-                </Button>
+                  <IconChevronDown size={14} color="#94a3b8" />
+                </UnstyledButton>
               </Menu.Target>
 
-              <Menu.Dropdown style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-                <Menu.Label c="dimmed">Account</Menu.Label>
-                <Menu.Item component="a" href="http://localhost:8000/api/v1/docs/" target="_blank">
+              <Menu.Dropdown style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }} p="xs">
+                <Box px="xs" py="xs" mb={4} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <Text size="xs" fw={700} c="#0f172a">
+                    {user?.username}
+                  </Text>
+                  <Text size="11px" c="dimmed">
+                    {user?.company_name || 'Future Gas Operations'}
+                  </Text>
+                </Box>
+                <Menu.Item
+                  component="a"
+                  href="http://localhost:8000/api/v1/docs/"
+                  target="_blank"
+                  leftSection={<IconExternalLink size={16} stroke={1.5} />}
+                >
                   API Swagger
                 </Menu.Item>
-                <Menu.Divider style={{ borderColor: '#e2e8f0' }} />
-                <Menu.Item color="red" onClick={handleLogout}>
+                <Menu.Divider style={{ borderColor: '#f1f5f9' }} />
+                <Menu.Item
+                  color="red"
+                  onClick={handleLogout}
+                  leftSection={<IconLogout size={16} stroke={1.5} />}
+                >
                   Log Out
                 </Menu.Item>
               </Menu.Dropdown>
@@ -130,14 +253,14 @@ export const AppLayout: React.FC = () => {
         </Group>
       </AppShell.Header>
 
-       <AppShell.Navbar p="xs">
+       <AppShell.Navbar px="xs" pt={6} pb="xs">
         {/* Top Header with Seamless Collapse/Expand Sidebar Icon */}
         <Box
-          mb="xs"
-          pb="xs"
+          mb={6}
+          pb={4}
           style={{
             borderBottom: '1px solid #f1f5f9',
-            height: 44,
+            height: 32,
             display: 'flex',
             alignItems: 'center',
             justifyContent: isCollapsed ? 'center' : 'space-between',
@@ -155,7 +278,7 @@ export const AppLayout: React.FC = () => {
               transition: 'opacity 200ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
-            <Text size="xs" fw={700} c="dimmed" tt="uppercase" px="xs" style={{ letterSpacing: '0.8px' }}>
+            <Text size="11px" fw={700} c="dimmed" tt="uppercase" px={4} style={{ letterSpacing: '0.8px' }}>
               Menu
             </Text>
           </Box>
@@ -164,7 +287,7 @@ export const AppLayout: React.FC = () => {
             <ActionIcon
               variant="subtle"
               color="gray"
-              size={38}
+              size={28}
               onClick={() => setIsCollapsed(!isCollapsed)}
               style={{
                 borderRadius: '6px',
@@ -173,9 +296,9 @@ export const AppLayout: React.FC = () => {
               }}
             >
               {isCollapsed ? (
-                <IconLayoutSidebarLeftExpand size={20} stroke={1.75} />
+                <IconLayoutSidebarLeftExpand size={17} stroke={1.75} />
               ) : (
-                <IconLayoutSidebarLeftCollapse size={20} stroke={1.75} />
+                <IconLayoutSidebarLeftCollapse size={17} stroke={1.75} />
               )}
             </ActionIcon>
           </Tooltip>
@@ -204,7 +327,7 @@ export const AppLayout: React.FC = () => {
                 padding: isCollapsed ? '0' : '0 12px',
                 backgroundColor: location.pathname === '/' ? '#fdf2f4' : 'transparent',
                 color: location.pathname === '/' ? '#800020' : '#475569',
-                fontWeight: location.pathname === '/' ? 600 : 500,
+                fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
                 transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
@@ -239,25 +362,24 @@ export const AppLayout: React.FC = () => {
             trigger="hover"
             openDelay={80}
             closeDelay={200}
+            transitionProps={{ transition: 'pop-top-left', duration: 160 }}
           >
             <Menu.Target>
               <Box style={{ width: '100%', display: 'flex', justifyContent: 'center' }} mb={4}>
-                <Tooltip label="Van Operations" position="right" withArrow>
-                  <ActionIcon
-                    size={40}
-                    variant="light"
-                    color="burgundy"
-                    style={{
-                      borderRadius: '6px',
-                      backgroundColor: isVanOpsActive ? '#fdf2f4' : 'transparent',
-                      color: isVanOpsActive ? '#800020' : '#475569',
-                      width: '100%',
-                      height: 40,
-                    }}
-                  >
-                    <IconTruckDelivery size={20} stroke={1.75} />
-                  </ActionIcon>
-                </Tooltip>
+                <ActionIcon
+                  size={40}
+                  variant="light"
+                  color="burgundy"
+                  style={{
+                    borderRadius: '6px',
+                    backgroundColor: isVanOpsActive ? '#fdf2f4' : 'transparent',
+                    color: isVanOpsActive ? '#800020' : '#475569',
+                    width: '100%',
+                    height: 40,
+                  }}
+                >
+                  <IconTruckDelivery size={20} stroke={1.75} />
+                </ActionIcon>
               </Box>
             </Menu.Target>
             <Menu.Dropdown p="xs" style={{ minWidth: 190, borderColor: '#e2e8f0', backgroundColor: '#ffffff' }}>
@@ -305,8 +427,12 @@ export const AppLayout: React.FC = () => {
                 fontWeight: 600,
                 backgroundColor: isVanOpsActive && !vanOpsOpened ? '#fdf2f4' : 'transparent',
                 color: isVanOpsActive ? '#800020' : '#334155',
+                transition: 'background-color 150ms ease, color 150ms ease',
               },
               section: { marginRight: 12 },
+              chevron: {
+                transition: 'transform 250ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
             }}
           >
             {vanOpsItems.map((sub) => {
@@ -340,52 +466,120 @@ export const AppLayout: React.FC = () => {
           </NavLink>
         )}
 
-        {/* Staff Users Link */}
-        <Tooltip label="Staff Users" position="right" withArrow disabled={!isCollapsed}>
+        {/* Master Group (Accordion in Expanded / Flyout in Collapsed) */}
+        {isCollapsed ? (
+          <Menu
+            position="right-start"
+            offset={14}
+            withArrow
+            shadow="md"
+            radius="md"
+            trigger="hover"
+            openDelay={80}
+            closeDelay={200}
+            transitionProps={{ transition: 'pop-top-left', duration: 160 }}
+          >
+            <Menu.Target>
+              <Box style={{ width: '100%', display: 'flex', justifyContent: 'center' }} mb={4}>
+                <ActionIcon
+                  size={40}
+                  variant="light"
+                  color="burgundy"
+                  style={{
+                    borderRadius: '6px',
+                    backgroundColor: isMasterActive ? '#fdf2f4' : 'transparent',
+                    color: isMasterActive ? '#800020' : '#475569',
+                    width: '100%',
+                    height: 40,
+                  }}
+                >
+                  <IconFolders size={20} stroke={1.75} />
+                </ActionIcon>
+              </Box>
+            </Menu.Target>
+            <Menu.Dropdown p="xs" style={{ minWidth: 190, borderColor: '#e2e8f0', backgroundColor: '#ffffff' }}>
+              <Menu.Label fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.6px', fontSize: '11px' }}>
+                Master
+              </Menu.Label>
+              {masterItems.map((sub) => {
+                const SubIcon = sub.icon;
+                const isSubActive = location.pathname === sub.path;
+                return (
+                  <Menu.Item
+                    key={sub.path}
+                    component={Link}
+                    to={sub.path}
+                    leftSection={<SubIcon size={18} stroke={1.75} />}
+                    style={{
+                      borderRadius: '6px',
+                      fontWeight: isSubActive ? 600 : 500,
+                      backgroundColor: isSubActive ? '#fdf2f4' : 'transparent',
+                      color: isSubActive ? '#800020' : '#334155',
+                      marginBottom: 2,
+                    }}
+                  >
+                    {sub.label}
+                  </Menu.Item>
+                );
+              })}
+            </Menu.Dropdown>
+          </Menu>
+        ) : (
           <NavLink
-            component={Link}
-            to="/users"
-            label="Staff Users"
-            leftSection={<IconUsers size={20} stroke={1.75} />}
-            active={location.pathname === '/users'}
+            label="Master"
+            leftSection={<IconFolders size={20} stroke={1.75} />}
+            opened={masterOpened}
+            onChange={setMasterOpened}
+            active={isMasterActive}
             color="burgundy"
             variant="light"
+            childrenOffset={12}
             mb={4}
-            onClick={() => opened && toggle()}
             styles={{
               root: {
                 borderRadius: '6px',
                 height: 40,
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: isCollapsed ? 'center' : 'flex-start',
-                padding: isCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname === '/users' ? '#fdf2f4' : 'transparent',
-                color: location.pathname === '/users' ? '#800020' : '#475569',
-                fontWeight: location.pathname === '/users' ? 600 : 500,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
+                fontWeight: 600,
+                backgroundColor: isMasterActive && !masterOpened ? '#fdf2f4' : 'transparent',
+                color: isMasterActive ? '#800020' : '#334155',
+                transition: 'background-color 150ms ease, color 150ms ease',
               },
-              section: {
-                marginRight: isCollapsed ? 0 : 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-              body: {
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                opacity: isCollapsed ? 0 : 1,
-                maxWidth: isCollapsed ? 0 : 160,
-                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              section: { marginRight: 12 },
+              chevron: {
+                transition: 'transform 250ms cubic-bezier(0.4, 0, 0.2, 1)',
               },
             }}
-          />
-        </Tooltip>
+          >
+            {masterItems.map((sub) => {
+              const SubIcon = sub.icon;
+              const isSubActive = location.pathname === sub.path;
+              return (
+                <NavLink
+                  key={sub.path}
+                  component={Link}
+                  to={sub.path}
+                  label={sub.label}
+                  leftSection={<SubIcon size={18} stroke={1.75} />}
+                  active={isSubActive}
+                  color="burgundy"
+                  variant="light"
+                  mb={2}
+                  onClick={() => opened && toggle()}
+                  styles={{
+                    root: {
+                      borderRadius: '6px',
+                      height: 36,
+                      fontWeight: isSubActive ? 600 : 500,
+                      backgroundColor: isSubActive ? '#fdf2f4' : 'transparent',
+                      color: isSubActive ? '#800020' : '#475569',
+                    },
+                    section: { marginRight: 10 },
+                  }}
+                />
+              );
+            })}
+          </NavLink>
+        )}
 
         {/* Bottom Settings Icon with Spinning Animation & Logout Popover */}
         <Box mt="auto" pt="xs" style={{ borderTop: '1px solid #f1f5f9' }}>

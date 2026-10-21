@@ -49,6 +49,14 @@ interface AllocationFormValues {
   Narration: string;
 }
 
+const defaultAllocationValues: AllocationFormValues = {
+  Route: '',
+  Vehicle: '',
+  Driver: '',
+  AssignmentDate: new Date().toISOString().split('T')[0],
+  Narration: '',
+};
+
 export const AllocationsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [formOpened, setFormOpened] = useState(false);
@@ -117,13 +125,7 @@ export const AllocationsPage: React.FC = () => {
     reset,
     formState: { errors, isSubmitting },
   } = useForm<AllocationFormValues>({
-    defaultValues: {
-      Route: '',
-      Vehicle: '',
-      Driver: '',
-      AssignmentDate: new Date().toISOString().split('T')[0],
-      Narration: '',
-    },
+    defaultValues: defaultAllocationValues,
   });
     // Instantly re-evaluate whenever the selected Driver changes
   const selectedDriverId = useWatch({ control, name: 'Driver' });
@@ -135,6 +137,70 @@ export const AllocationsPage: React.FC = () => {
 
   // True only if a driver is chosen AND has NO user account
   const driverHasNoUser = Boolean(selectedDriverId && !selectedDriverUser);
+
+  // Active allocations (excluding currently edited allocation if in edit mode)
+  const activeAllocations = useMemo(() => {
+    return allocations.filter(
+      (a) => a.IsActive && (!editingAllocation || a.RouteVehicleDriverId !== editingAllocation.RouteVehicleDriverId)
+    );
+  }, [allocations, editingAllocation]);
+
+  const activeVehicleAllocationMap = useMemo(() => {
+    const map = new Map<number, AllocationItem>();
+    activeAllocations.forEach((a) => map.set(a.Vehicle, a));
+    return map;
+  }, [activeAllocations]);
+
+  const activeDriverAllocationMap = useMemo(() => {
+    const map = new Map<number, AllocationItem>();
+    activeAllocations.forEach((a) => map.set(a.Driver, a));
+    return map;
+  }, [activeAllocations]);
+
+  const activeRouteAllocationMap = useMemo(() => {
+    const map = new Map<number, AllocationItem>();
+    activeAllocations.forEach((a) => map.set(a.Route, a));
+    return map;
+  }, [activeAllocations]);
+
+  // Dropdown options with "(Already Allocated)" tag and disabled: true
+  const routeOptions = useMemo(() => {
+    return routes.map((r) => {
+      const active = activeRouteAllocationMap.get(r.RouteId);
+      const isAllocated = Boolean(active);
+      return {
+        value: String(r.RouteId),
+        label: isAllocated ? `${r.RouteName} (Already Allocated)` : r.RouteName,
+        disabled: isAllocated,
+      };
+    });
+  }, [routes, activeRouteAllocationMap]);
+
+  const vehicleOptions = useMemo(() => {
+    return vehicles.map((v) => {
+      const active = activeVehicleAllocationMap.get(v.VehicleId);
+      const isAllocated = Boolean(active);
+      const baseLabel = `${v.VehicleNumber} ${v.VehicleName ? `(${v.VehicleName})` : ''}`.trim();
+      return {
+        value: String(v.VehicleId),
+        label: isAllocated ? `${baseLabel} (Already Allocated)` : baseLabel,
+        disabled: isAllocated,
+      };
+    });
+  }, [vehicles, activeVehicleAllocationMap]);
+
+  const driverOptions = useMemo(() => {
+    return drivers.map((d) => {
+      const active = activeDriverAllocationMap.get(d.DriverId);
+      const isAllocated = Boolean(active);
+      const baseLabel = `${d.DriverName} (${d.PhoneNumber})`;
+      return {
+        value: String(d.DriverId),
+        label: isAllocated ? `${baseLabel} (Already Allocated)` : baseLabel,
+        disabled: isAllocated,
+      };
+    });
+  }, [drivers, activeDriverAllocationMap]);
 
   // 4. Mutation to create or edit allocation
   const saveMutation = useMutation({
@@ -160,7 +226,7 @@ export const AllocationsPage: React.FC = () => {
         color: 'green',
       });
       queryClient.invalidateQueries({ queryKey: ['allocations'] });
-      reset();
+      reset(defaultAllocationValues);
       setEditingAllocation(null);
       setFormOpened(false);
     },
@@ -217,6 +283,12 @@ export const AllocationsPage: React.FC = () => {
     }
   };
 
+  const handleCloseForm = () => {
+    setFormOpened(false);
+    setEditingAllocation(null);
+    reset(defaultAllocationValues);
+  };
+
   // Helper: start editing an allocation
   const handleEdit = (item: AllocationItem) => {
     setEditingAllocation(item);
@@ -233,17 +305,11 @@ export const AllocationsPage: React.FC = () => {
   // Helper: start adding a new allocation
   const handleAddNew = () => {
     if (formOpened && !editingAllocation) {
-      setFormOpened(false);
+      handleCloseForm();
       return;
     }
     setEditingAllocation(null);
-    reset({
-      Route: '',
-      Vehicle: '',
-      Driver: '',
-      AssignmentDate: new Date().toISOString().split('T')[0],
-      Narration: '',
-    });
+    reset(defaultAllocationValues);
     setFormOpened(true);
   };
 
@@ -288,7 +354,7 @@ export const AllocationsPage: React.FC = () => {
 
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(btnStyles) => (
-              <Button color="burgundy" onClick={handleAddNew} style={btnStyles}>
+              <Button color="burgundy" radius={10} onClick={handleAddNew} style={btnStyles}>
                 + New Allocation
               </Button>
             )}
@@ -323,13 +389,9 @@ export const AllocationsPage: React.FC = () => {
             </div>
             <CloseButton
               size="md"
-              onClick={() => {
-                setFormOpened(false);
-                setEditingAllocation(null);
-              }}
+              onClick={handleCloseForm}
             />
           </Group>
-
 
           <form onSubmit={handleSubmit(onSubmit)}>
             <Stack gap="sm">
@@ -342,15 +404,13 @@ export const AllocationsPage: React.FC = () => {
                     <Select
                       label="Select Route"
                       placeholder="Choose route"
-                      data={routes.map((r) => ({
-                        value: String(r.RouteId),
-                        label: r.RouteName,
-                      }))}
-                      value={field.value}
-                      onChange={field.onChange}
+                      data={routeOptions}
+                      value={field.value ? String(field.value) : null}
+                      onChange={(val) => field.onChange(val || '')}
                       error={errors.Route?.message}
                       required
                       searchable
+                      clearable
                       nothingFoundMessage="No route found"
                     />
                   )}
@@ -364,16 +424,14 @@ export const AllocationsPage: React.FC = () => {
                     <Select
                       label="Select Vehicle"
                       placeholder="Choose vehicle"
-                      data={vehicles.map((v) => ({
-                        value: String(v.VehicleId),
-                        label: `${v.VehicleNumber} ${v.VehicleName ? `(${v.VehicleName})` : ''}`,
-                      }))}
-                      value={field.value}
-                      onChange={field.onChange}
+                      data={vehicleOptions}
+                      value={field.value ? String(field.value) : null}
+                      onChange={(val) => field.onChange(val || '')}
                       error={errors.Vehicle?.message}
                       required
                       searchable
-                      nothingFoundMessage="No route found"
+                      clearable
+                      nothingFoundMessage="No vehicle found"
                     />
                   )}
                 />
@@ -386,21 +444,20 @@ export const AllocationsPage: React.FC = () => {
                     <Select
                       label="Select Driver"
                       placeholder="Choose driver"
-                      data={drivers.map((d) => ({
-                        value: String(d.DriverId),
-                        label: `${d.DriverName} (${d.PhoneNumber})`,
-                      }))}
-                      value={field.value}
-                      onChange={field.onChange}
+                      data={driverOptions}
+                      value={field.value ? String(field.value) : null}
+                      onChange={(val) => field.onChange(val || '')}
                       error={errors.Driver?.message}
                       required
                       searchable
-                      nothingFoundMessage="No route found"
+                      clearable
+                      nothingFoundMessage="No driver found"
                     />
                   )}
                 />
               </SimpleGrid>
-                              {/* Alert if driver is not mapped to a user account */}
+
+              {/* Alert if driver is not mapped to a user account */}
               {driverHasNoUser && (
                 <Alert
                   color="burgundy"
@@ -437,10 +494,7 @@ export const AllocationsPage: React.FC = () => {
               <Group justify="flex-end" mt="md">
                 <Button
                   variant="default"
-                  onClick={() => {
-                    setFormOpened(false);
-                    setEditingAllocation(null);
-                  }}
+                  onClick={handleCloseForm}
                 >
                   Cancel
                 </Button>

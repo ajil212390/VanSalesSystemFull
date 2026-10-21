@@ -8,6 +8,7 @@ interface DeleteConfirmModalProps {
   title?: string;
   itemName?: string;
   itemType?: string;
+  description?: React.ReactNode;
   loading?: boolean;
 }
 
@@ -18,6 +19,7 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   title = 'Confirm Deletion',
   itemName,
   itemType = 'record',
+  description,
   loading = false,
 }) => {
   return (
@@ -40,10 +42,16 @@ export const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
       }}
     >
       <Stack gap="md" pt="xs">
-        <Text size="sm" c="#334155" style={{ lineHeight: 1.5 }}>
-          Are you sure you want to delete {itemType} {itemName ? <strong style={{ color: '#0f172a' }}>"{itemName}"</strong> : 'this record'}?
-          This action cannot be undone.
-        </Text>
+        {description ? (
+          <Text size="sm" c="#334155" style={{ lineHeight: 1.5 }}>
+            {description}
+          </Text>
+        ) : (
+          <Text size="sm" c="#334155" style={{ lineHeight: 1.5 }}>
+            Are you sure you want to delete {itemType} {itemName ? <strong style={{ color: '#0f172a' }}>"{itemName}"</strong> : 'this record'}?
+            This action cannot be undone.
+          </Text>
+        )}
 
         <Group justify="flex-end" gap="xs" mt="sm">
           <Button variant="default" size="sm" onClick={onClose} disabled={loading}>

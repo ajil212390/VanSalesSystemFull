@@ -98,7 +98,7 @@ table thead th {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 13px 18px !important;
-  border-bottom: 2px solid #800020 !important;
+  border-bottom: none !important;
   white-space: nowrap;
 }
 
@@ -110,9 +110,9 @@ table tbody td {
   border-bottom: 1px solid #f1f5f9;
 }
 
-/* Row Hover effect with subtle burgundy tint */
+/* Clean neutral hover without any red tint */
 .mantine-Table-table[data-hover] tbody tr:hover,
 table tbody tr:hover {
-  background-color: #fdf5f6 !important;
+  background-color: #f8fafc !important;
 }
 

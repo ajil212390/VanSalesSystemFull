@@ -59,7 +59,7 @@ export const DriversPage: React.FC = () => {
     const { data: drivers = [], isLoading } = useQuery<DriverItem[]>({
         queryKey: ['drivers'],
         queryFn: async () => {
-            const res = await apiClient.get<DriverItem[]>('/drivers/');
+            const res = await apiClient.get<any>('/drivers/');
             return Array.isArray(res.data) ? res.data : (res.data?.results || []);
         },
     });
@@ -240,7 +240,7 @@ export const DriversPage: React.FC = () => {
 
                     <Transition mounted={!formOpened} transition="fade" duration={200}>
                         {(btnStyles) => (
-                            <Button color="burgundy" onClick={handleAddNew} style={btnStyles}>
+                            <Button color="burgundy" radius={10} onClick={handleAddNew} style={btnStyles}>
                                 + Add Driver
                             </Button>
                         )}

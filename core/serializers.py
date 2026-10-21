@@ -3,7 +3,8 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from drf_spectacular.utils import extend_schema_field
-from core.models import User, Company, State, UserRole,Driver, Route, Vehicle, RouteVehicleDriver
+from core.models import User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver, Category, Unit, Product, Group, Ledger
+
 from core.services import register_company
 
 
@@ -257,10 +258,49 @@ class RouteVehicleDriverSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         driver = attrs.get('Driver')
+        vehicle = attrs.get('Vehicle')
+        route = attrs.get('Route')
+        is_active = attrs.get('IsActive', getattr(self.instance, 'IsActive', True) if self.instance else True)
+
         if driver and not User.objects.filter(DriverId=driver.DriverId).exists():
             raise serializers.ValidationError({
                 "Driver": ["Selected driver does not have a linked user account. Please create a staff user login first."]
             })
+
+        if is_active:
+            # Check if Vehicle is already in an active allocation
+            if vehicle:
+                qs_v = RouteVehicleDriver.objects.filter(Vehicle=vehicle, IsActive=True)
+                if self.instance:
+                    qs_v = qs_v.exclude(RouteVehicleDriverId=self.instance.RouteVehicleDriverId)
+                if qs_v.exists():
+                    existing = qs_v.select_related('Route', 'Driver').first()
+                    raise serializers.ValidationError({
+                        "Vehicle": [f"Vehicle '{vehicle.VehicleNumber}' is already actively allocated to Route '{existing.Route.RouteName}' with Driver '{existing.Driver.DriverName}'."]
+                    })
+
+            # Check if Driver is already in an active allocation
+            if driver:
+                qs_d = RouteVehicleDriver.objects.filter(Driver=driver, IsActive=True)
+                if self.instance:
+                    qs_d = qs_d.exclude(RouteVehicleDriverId=self.instance.RouteVehicleDriverId)
+                if qs_d.exists():
+                    existing = qs_d.select_related('Route', 'Vehicle').first()
+                    raise serializers.ValidationError({
+                        "Driver": [f"Driver '{driver.DriverName}' is already actively allocated to Vehicle '{existing.Vehicle.VehicleNumber}' on Route '{existing.Route.RouteName}'."]
+                    })
+
+            # Check if Route is already in an active allocation
+            if route:
+                qs_r = RouteVehicleDriver.objects.filter(Route=route, IsActive=True)
+                if self.instance:
+                    qs_r = qs_r.exclude(RouteVehicleDriverId=self.instance.RouteVehicleDriverId)
+                if qs_r.exists():
+                    existing = qs_r.select_related('Vehicle', 'Driver').first()
+                    raise serializers.ValidationError({
+                        "Route": [f"Route '{route.RouteName}' is already actively allocated to Vehicle '{existing.Vehicle.VehicleNumber}' with Driver '{existing.Driver.DriverName}'."]
+                    })
+
         return attrs
 
 
@@ -331,3 +371,223 @@ class UserManagementSerializer(serializers.ModelSerializer):
             instance.set_password(password.strip())
         instance.save()
         return instance
+
+
+class CategorySerializer(serializers.ModelSerializer):
+    parent_category_name = serializers.CharField(source='ParentCategory.CategoryName', read_only=True, default=None)
+    delete_block_reason = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Category
+        fields = [
+            'CategoryId', 'CategoryName', 'ParentCategory', 'parent_category_name',
+            'IsActive', 'CreatedAt', 'CompanyId', 'delete_block_reason'
+        ]
+        read_only_fields = ['CategoryId', 'CreatedAt', 'CompanyId', 'delete_block_reason']
+
+    def get_delete_block_reason(self, obj):
+        # 1. Check if child sub-categories exist
+        if Category.objects.filter(ParentCategory=obj).exists():
+            return "Cannot delete: This category has active sub-categories attached to it."
+        # 2. Check if products exist in this category
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT COUNT(*) FROM "Product" WHERE "CategoryId" = %s', [obj.CategoryId])
+            count = cursor.fetchone()[0]
+            if count > 0:
+                return f"Cannot delete: {count} product(s) belong to this category."
+        return None
+
+    def validate_CategoryName(self, value):
+        val = value.strip()
+        if not val:
+            raise serializers.ValidationError("Category name cannot be empty.")
+        return val
+
+    def validate(self, attrs):
+        parent = attrs.get('ParentCategory')
+        # Prevent circular self-assignment (cannot be its own parent)
+        if self.instance and parent and parent.CategoryId == self.instance.CategoryId:
+            raise serializers.ValidationError({"ParentCategory": ["A category cannot be its own parent category."]})
+        return attrs
+
+
+class UnitSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Unit
+        fields = ['UnitId', 'UnitName', 'IsActive', 'CreatedAt', 'CompanyId']
+        read_only_fields = ['UnitId', 'CreatedAt', 'CompanyId']
+
+
+class ProductSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source='Category.CategoryName', read_only=True)
+    unit_name = serializers.CharField(source='Unit.UnitName', read_only=True)
+    alt_unit_name = serializers.CharField(source='AltUnit.UnitName', read_only=True, default=None)
+    delete_block_reason = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Product
+        fields = [
+            'ProductId', 'ProductCode', 'ProductName',
+            'Category', 'category_name',
+            'Unit', 'unit_name',
+            'AltUnit', 'alt_unit_name', 'UnitConversion',
+            'HSNCode', 'GSTPercentage',
+            'SalesPrice', 'PurchasePrice', 'MRP',
+            'IsActive', 'CreatedAt', 'UpdatedAt', 'CompanyId',
+            'delete_block_reason'
+        ]
+        read_only_fields = ['ProductId', 'CreatedAt', 'UpdatedAt', 'CompanyId', 'category_name', 'unit_name', 'alt_unit_name', 'delete_block_reason']
+
+    def get_delete_block_reason(self, obj):
+        from django.db import connection
+        with connection.cursor() as cursor:
+            # 1. Check Sales
+            cursor.execute('SELECT COUNT(*) FROM "SalesLine" WHERE "ProductId" = %s', [obj.ProductId])
+            sales_count = cursor.fetchone()[0]
+            if sales_count > 0:
+                return f"Cannot delete: Product is linked to {sales_count} sales record(s)."
+            
+            # 2. Check Delivery Notes
+            cursor.execute('SELECT COUNT(*) FROM "DeliveryNoteLine" WHERE "ProductId" = %s', [obj.ProductId])
+            dn_count = cursor.fetchone()[0]
+            if dn_count > 0:
+                return f"Cannot delete: Product is linked to {dn_count} delivery note(s)."
+            
+            # 3. Check Purchases
+            cursor.execute('SELECT COUNT(*) FROM "PurchaseLine" WHERE "ProductId" = %s', [obj.ProductId])
+            purch_count = cursor.fetchone()[0]
+            if purch_count > 0:
+                return f"Cannot delete: Product is linked to {purch_count} purchase record(s)."
+
+            # 4. Check Stock Movements
+            cursor.execute('SELECT COUNT(*) FROM "StockMovement" WHERE "ProductId" = %s', [obj.ProductId])
+            sm_count = cursor.fetchone()[0]
+            if sm_count > 0:
+                return f"Cannot delete: Product has {sm_count} stock movement transaction(s)."
+        return None
+
+    def validate_ProductName(self, value):
+        val = value.strip()
+        if not val:
+            raise serializers.ValidationError("Product name cannot be empty.")
+        return val
+class GroupSerializer(serializers.ModelSerializer):
+    """
+    Serializer for standard accounting groups.
+    """
+    parent_group_name = serializers.CharField(source='ParentGroup.GroupName', read_only=True)
+
+    class Meta:
+        model = Group
+        fields = [
+            'GroupId',
+            'GroupName',
+            'ParentGroup',
+            'parent_group_name',
+            'Nature',
+            'IsSystem',
+            'SortOrder',
+            'CompanyId',
+        ]
+
+
+class LedgerSerializer(serializers.ModelSerializer):
+    """
+    Comprehensive Ledger Serializer for Indian Accounting,
+    GST Compliance, Credit Terms, and Van Sales Cylinder limits.
+    """
+    group_name = serializers.CharField(source='Group.GroupName', read_only=True)
+    group_nature = serializers.CharField(source='Group.Nature', read_only=True)
+    delete_block_reason = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Ledger
+        fields = [
+            'LedgerId',
+            'LedgerName',
+            'Group',
+            'group_name',
+            'group_nature',
+            'OpeningBalance',
+            'OpeningBalanceType',
+            'DebitBalance',
+            'CreditBalance',
+            'CurrentBalance',
+            'AddressLine1',
+            'AddressLine2',
+            'AddressLine3',
+            'City',
+            'StateId',
+            'Pincode',
+            'PhoneNumber',
+            'MobileNumber',
+            'Email',
+            'GSTRegistrationType',
+            'GSTIN',
+            'PAN',
+            'IsBillWise',
+            'CreditPeriodDays',
+            'CreditLimit',
+            'BankName',
+            'BankAccountNumber',
+            'IFSCCode',
+            'BankBranch',
+            'EmptyStockLimit',
+            'IsActive',
+            'IsSystem',
+            'CompanyId',
+            'Narration',
+            'CreatedAt',
+            'UpdatedAt',
+            'delete_block_reason',
+        ]
+        read_only_fields = ['LedgerId', 'IsSystem', 'CompanyId', 'CreatedAt', 'UpdatedAt']
+
+    def get_delete_block_reason(self, obj):
+        if obj.IsSystem:
+            return "Cannot delete system-defined ledger."
+
+        from django.db import connection
+        with connection.cursor() as cursor:
+            # Check if ledger is referenced in Sales
+            try:
+                cursor.execute('SELECT COUNT(*) FROM "Sales" WHERE "LedgerId" = %s', [obj.LedgerId])
+                sales_count = cursor.fetchone()[0]
+                if sales_count > 0:
+                    return f"Cannot delete: Ledger is linked to {sales_count} sales invoice(s)."
+            except Exception:
+                pass
+
+            # Check if ledger is referenced in Purchase
+            try:
+                cursor.execute('SELECT COUNT(*) FROM "Purchase" WHERE "LedgerId" = %s', [obj.LedgerId])
+                purch_count = cursor.fetchone()[0]
+                if purch_count > 0:
+                    return f"Cannot delete: Ledger is linked to {purch_count} purchase bill(s)."
+            except Exception:
+                pass
+        return None
+
+    def validate_LedgerName(self, value):
+        val = value.strip()
+        if not val:
+            raise serializers.ValidationError("Ledger name cannot be blank.")
+        return val
+
+    def validate_GSTIN(self, value):
+        if value:
+            val = value.strip().upper()
+            if len(val) != 15:
+                raise serializers.ValidationError("GSTIN must be exactly 15 characters.")
+            return val
+        return None
+
+    def validate_PAN(self, value):
+        if value:
+            val = value.strip().upper()
+            if len(val) != 10:
+                raise serializers.ValidationError("PAN must be exactly 10 characters.")
+            return val
+        return None
+
