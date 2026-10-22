@@ -18,7 +18,7 @@ import {
   IconPlus,
   IconSearch,
   IconReceipt,
-  IconEdit,
+  IconPencil,
   IconTrash,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
@@ -248,7 +248,7 @@ export const PurchaseListPage: React.FC = () => {
                           title="Edit"
                           onClick={() => navigate(`/purchases/${item.PurchaseId}/edit`)}
                         >
-                          <IconEdit size={16} />
+                          <IconPencil size={16} />
                         </ActionIcon>
                         <ActionIcon
                           variant="subtle"

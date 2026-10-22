@@ -321,28 +321,32 @@ export const PurchaseFormPage: React.FC = () => {
 
           if (Array.isArray(p.lines) && p.lines.length > 0) {
             setItems(
-              p.lines.map((l: any) => ({
-                id: makeId(),
-                ProductId: l.ProductId,
-                ProductName: l.ProductName || '',
-                Quantity: l.Quantity || '',
-                AltQuantity: l.AltQuantity || 0,
-                UnitId: l.UnitId,
-                UnitName: l.unit_name || 'Nos',
-                AltUnitId: l.AltUnitId || null,
-                AltUnitName: l.alt_unit_name || '',
-                UnitConversion: Number(l.UnitConversion) || 1,
-                Rate: l.CostPrice || '',
-                GSTPercent: Number(l.TaxPercent) || 18,
-                TaxableAmount: Number(l.TaxableAmount) || 0,
-                CGSTPercent: Number(l.CGSTPercent) || 0,
-                CGSTAmount: Number(l.CGSTAmount) || 0,
-                SGSTPercent: Number(l.SGSTPercent) || 0,
-                SGSTAmount: Number(l.SGSTAmount) || 0,
-                IGSTPercent: Number(l.IGSTPercent) || 0,
-                IGSTAmount: Number(l.IGSTAmount) || 0,
-                Total: Number(l.Total) || 0,
-              }))
+              p.lines.map((l: any) => {
+                const prodId = l.Product || l.ProductId || null;
+                const lineItem: LineItem = {
+                  id: makeId(),
+                  ProductId: prodId ? Number(prodId) : null,
+                  ProductName: l.ProductName || '',
+                  Quantity: l.Quantity !== undefined && l.Quantity !== null ? l.Quantity : '',
+                  AltQuantity: l.AltQuantity || 0,
+                  UnitId: l.Unit || l.UnitId || null,
+                  UnitName: l.unit_name || '',
+                  AltUnitId: l.AltUnitId || null,
+                  AltUnitName: l.alt_unit_name || '',
+                  UnitConversion: Number(l.UnitConversion) || 1,
+                  Rate: l.CostPrice !== undefined && l.CostPrice !== null ? l.CostPrice : '',
+                  GSTPercent: Number(l.TaxPercent) || 0,
+                  TaxableAmount: 0,
+                  CGSTPercent: 0,
+                  CGSTAmount: 0,
+                  SGSTPercent: 0,
+                  SGSTAmount: 0,
+                  IGSTPercent: 0,
+                  IGSTAmount: 0,
+                  Total: 0,
+                };
+                return recalc(lineItem, isIntraState);
+              })
             );
           }
         })
@@ -350,7 +354,29 @@ export const PurchaseFormPage: React.FC = () => {
           notifications.show({ title: 'Error', message: 'Could not load purchase details.', color: 'red' });
         });
     }
-  }, [isEditing, id]);
+  }, [isEditing, id, isIntraState]);
+
+  // Enrich lines with product details when products query resolves
+  useEffect(() => {
+    if (products.length > 0) {
+      setItems((prev) =>
+        prev.map((item) => {
+          if (!item.ProductId) return item;
+          const prod = products.find((p) => p.ProductId === Number(item.ProductId));
+          if (!prod) return item;
+          const updated = {
+            ...item,
+            ProductName: item.ProductName || prod.ProductName,
+            UnitName: item.UnitName || prod.unit_name || '',
+            AltUnitName: item.AltUnitName || prod.alt_unit_name || '',
+            UnitConversion: item.UnitConversion || Number(prod.UnitConversion) || 1,
+            GSTPercent: item.GSTPercent || Number(prod.GSTPercentage) || 0,
+          };
+          return recalc(updated, isIntraState);
+        })
+      );
+    }
+  }, [products, isIntraState]);
 
   const totals = useMemo(() => {
     let subTotal = 0;
@@ -388,7 +414,8 @@ export const PurchaseFormPage: React.FC = () => {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!selectedLedgerId) throw new Error('Please select a Supplier / Party ledger.');
-      if (items.some((i) => !i.ProductId)) throw new Error('Select a product for every row.');
+      const validLines = items.filter((i) => Boolean(i.ProductId));
+      if (validLines.length === 0) throw new Error('Please select at least one product.');
 
       const payload = {
         PurchaseNo: purchaseNo,
@@ -422,7 +449,7 @@ export const PurchaseFormPage: React.FC = () => {
         EWayBillNo: extraDetails.eWayBillNo,
         EWayBillValidDate: extraDetails.eWayBillValidDate || null,
 
-        lines: items.map((line, idx) => ({
+        lines: validLines.map((line, idx) => ({
           LineNo: idx + 1,
           ProductId: line.ProductId,
           ProductName: line.ProductName,
@@ -456,6 +483,30 @@ export const PurchaseFormPage: React.FC = () => {
       notifications.show({ title: 'Error', message: String(msg), color: 'red' });
     },
   });
+
+  const handleSave = React.useCallback(() => {
+    if (!selectedLedgerId) {
+      notifications.show({ title: 'Validation', message: 'Please select a Party / Supplier above.', color: 'red' });
+      return;
+    }
+    const validLines = items.filter((i) => Boolean(i.ProductId));
+    if (validLines.length === 0) {
+      notifications.show({ title: 'Validation', message: 'Please select at least one product.', color: 'red' });
+      return;
+    }
+    saveMutation.mutate();
+  }, [selectedLedgerId, items, saveMutation]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSave();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [handleSave]);
 
   return (
     <Stack gap="sm" style={{ minHeight: 'calc(100vh - 112px)', display: 'flex', flexDirection: 'column' }}>
@@ -643,7 +694,7 @@ export const PurchaseFormPage: React.FC = () => {
                           onKeyDown={(e) => {
                             if (e.key === 'Enter') {
                               e.preventDefault();
-                              if (index === items.length - 1) addRow();
+                              handleSave();
                             }
                           }}
                           style={{ width: 44 }}
@@ -691,11 +742,9 @@ export const PurchaseFormPage: React.FC = () => {
                         onFocus={(e) => e.currentTarget.select()}
                         onChange={(val) => updateField(index, 'Rate', val)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Tab' && !e.shiftKey) {
-                            if (index === items.length - 1) {
-                              e.preventDefault();
-                              addRow();
-                            }
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSave();
                           }
                         }}
                         style={{ width: '100%', minWidth: 95 }}
@@ -847,6 +896,12 @@ export const PurchaseFormPage: React.FC = () => {
                 placeholder="Add invoice notes or instructions..."
                 value={notes}
                 onChange={(e) => setNotes(e.currentTarget.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSave();
+                  }
+                }}
                 radius="md"
                 size="xs"
               />
@@ -895,7 +950,7 @@ export const PurchaseFormPage: React.FC = () => {
                   leftSection={<IconCurrencyRupee size={15} />}
                   loading={saveMutation.isPending}
                   disabled={!selectedLedgerId || items.every((i) => !i.ProductId)}
-                  onClick={() => saveMutation.mutate()}
+                  onClick={handleSave}
                 >
                   Save Purchase Invoice
                 </Button>
