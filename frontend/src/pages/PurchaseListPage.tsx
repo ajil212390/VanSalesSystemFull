@@ -13,7 +13,6 @@ import {
   TextInput,
   CloseButton,
   ActionIcon,
-  Menu,
 } from '@mantine/core';
 import {
   IconPlus,
@@ -21,12 +20,12 @@ import {
   IconReceipt,
   IconEdit,
   IconTrash,
-  IconDotsVertical,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 
 interface PurchaseItem {
   PurchaseId: number;
@@ -50,6 +49,8 @@ export const PurchaseListPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<PurchaseItem | null>(null);
+  const [deleteModalOpened, setDeleteModalOpened] = useState(false);
 
   const { data: purchases = [], isLoading } = useQuery<PurchaseItem[]>({
     queryKey: ['purchases'],
@@ -135,22 +136,22 @@ export const PurchaseListPage: React.FC = () => {
             </Stack>
           </Center>
         ) : (
-          <Table.ScrollContainer minWidth={1100}>
-            <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
+          <Table.ScrollContainer minWidth={1000}>
+            <Table verticalSpacing="sm" horizontalSpacing="sm" highlightOnHover>
               <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 140 }}>Purchase No</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 100 }}>Date</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130 }}>Invoice No</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 220 }}>Party (Supplier)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 80, textAlign: 'right' }}>Qty</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130, textAlign: 'right' }}>Taxable (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>CGST (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>SGST (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>IGST (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>Tax (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 140, textAlign: 'right' }}>Total (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 70, textAlign: 'center' }}>Actions</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140 }}>Purchase No</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, whiteSpace: 'nowrap' }}>Date</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110 }}>Invoice No</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 160 }}>Party (Supplier)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 65, textAlign: 'center' }}>Qty</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, textAlign: 'right' }}>Taxable (₹)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 90, textAlign: 'right' }}>CGST (₹)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 90, textAlign: 'right' }}>SGST (₹)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 90, textAlign: 'right' }}>IGST (₹)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 95, textAlign: 'right' }}>Tax (₹)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 115, textAlign: 'right' }}>Total (₹)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 80, textAlign: 'center' }}>Actions</Table.Th>
                 </Table.Tr>
               </Table.Thead>
 
@@ -166,15 +167,15 @@ export const PurchaseListPage: React.FC = () => {
                       </Group>
                     </Table.Td>
 
-                    <Table.Td>
-                      <Text size="sm" c="#475569">{item.PurchaseDate}</Text>
+                    <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                      <Text size="sm" c="#475569" style={{ whiteSpace: 'nowrap' }}>{item.PurchaseDate}</Text>
                     </Table.Td>
 
                     <Table.Td>
                       <div>
                         <Text fw={500} size="sm" c="#334155">{item.InvoiceNo || '-'}</Text>
                         {item.InvoiceDate && (
-                          <Text size="xs" c="dimmed">{item.InvoiceDate}</Text>
+                          <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{item.InvoiceDate}</Text>
                         )}
                       </div>
                     </Table.Td>
@@ -192,7 +193,7 @@ export const PurchaseListPage: React.FC = () => {
                       </div>
                     </Table.Td>
 
-                    <Table.Td style={{ textAlign: 'right' }}>
+                    <Table.Td style={{ textAlign: 'center' }}>
                       <Text size="sm" fw={600} c="#334155">{item.total_qty ?? '-'}</Text>
                     </Table.Td>
 
@@ -239,32 +240,29 @@ export const PurchaseListPage: React.FC = () => {
                     </Table.Td>
 
                     <Table.Td style={{ textAlign: 'center' }}>
-                      <Menu position="bottom-end" shadow="md" width={130}>
-                        <Menu.Target>
-                          <ActionIcon variant="subtle" color="gray" size="sm">
-                            <IconDotsVertical size={16} />
-                          </ActionIcon>
-                        </Menu.Target>
-                        <Menu.Dropdown>
-                          <Menu.Item
-                            leftSection={<IconEdit size={14} />}
-                            onClick={() => navigate(`/purchases/${item.PurchaseId}/edit`)}
-                          >
-                            Edit
-                          </Menu.Item>
-                          <Menu.Item
-                            leftSection={<IconTrash size={14} />}
-                            color="red"
-                            onClick={() => {
-                              if (confirm(`Delete purchase ${item.PurchaseNo}?`)) {
-                                deleteMutation.mutate(item.PurchaseId);
-                              }
-                            }}
-                          >
-                            Delete
-                          </Menu.Item>
-                        </Menu.Dropdown>
-                      </Menu>
+                      <Group gap={4} justify="center" wrap="nowrap">
+                        <ActionIcon
+                          variant="subtle"
+                          color="burgundy"
+                          size="sm"
+                          title="Edit"
+                          onClick={() => navigate(`/purchases/${item.PurchaseId}/edit`)}
+                        >
+                          <IconEdit size={16} />
+                        </ActionIcon>
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          size="sm"
+                          title="Delete"
+                          onClick={() => {
+                            setDeleteTarget(item);
+                            setDeleteModalOpened(true);
+                          }}
+                        >
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      </Group>
                     </Table.Td>
                   </Table.Tr>
                 ))}
@@ -273,6 +271,25 @@ export const PurchaseListPage: React.FC = () => {
           </Table.ScrollContainer>
         )}
       </Paper>
+
+      {/* Delete Confirmation Modal */}
+      <DeleteConfirmModal
+        opened={deleteModalOpened}
+        onClose={() => {
+          setDeleteModalOpened(false);
+          setDeleteTarget(null);
+        }}
+        onConfirm={() => {
+          if (deleteTarget) {
+            deleteMutation.mutate(deleteTarget.PurchaseId);
+            setDeleteModalOpened(false);
+            setDeleteTarget(null);
+          }
+        }}
+        itemName={deleteTarget?.PurchaseNo}
+        itemType="purchase invoice"
+        loading={deleteMutation.isPending}
+      />
 
       {/* Bottom Footer Count */}
       <Group justify="flex-end" pt="xs" pb="md">

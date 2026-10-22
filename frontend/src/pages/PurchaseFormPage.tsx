@@ -15,14 +15,18 @@ import {
   Text,
   ActionIcon,
   Divider,
-  Textarea,
-  Grid,
+  SimpleGrid,
+  Modal,
+  Box,
 } from '@mantine/core';
 import {
   IconArrowLeft,
   IconPlus,
   IconTrash,
   IconCurrencyRupee,
+  IconInfoCircle,
+  IconTruckDelivery,
+  IconCheck,
 } from '@tabler/icons-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -34,6 +38,11 @@ interface LedgerOption {
   LedgerName: string;
   StateId?: number | null;
   GSTIN?: string | null;
+  AddressLine1?: string | null;
+  City?: string | null;
+  Pincode?: string | null;
+  PhoneNumber?: string | null;
+  MobileNumber?: string | null;
   Group?: { GroupName: string };
 }
 
@@ -59,6 +68,7 @@ interface LineItem {
   UnitId: number | null;
   UnitName: string;
   AltUnitId: number | null;
+  AltUnitName: string;
   UnitConversion: number;
   Rate: number | string;
   GSTPercent: number;
@@ -72,24 +82,43 @@ interface LineItem {
   Total: number;
 }
 
+interface ExtraDetails {
+  partyName: string;
+  partyPhone: string;
+  partyAddress: string;
+  partyState: string;
+  partyPincode: string;
+  salesOrderNo: string;
+  salesOrderDate: string;
+  deliveryNo: string;
+  deliveryDate: string;
+  modeOfTransport: string;
+  truckNo: string;
+  transporterName: string;
+  tankerSealNo: string;
+  eWayBillNo: string;
+  eWayBillValidDate: string;
+}
+
 const makeId = () => Math.random().toString(36).substring(2, 9);
 
 const emptyLine = (): LineItem => ({
   id: makeId(),
   ProductId: null,
   ProductName: '',
-  Quantity: 1,
+  Quantity: '',
   AltQuantity: 0,
   UnitId: null,
   UnitName: '',
   AltUnitId: null,
+  AltUnitName: '',
   UnitConversion: 1,
-  Rate: 0,
-  GSTPercent: 18,
+  Rate: '',
+  GSTPercent: 0,
   TaxableAmount: 0,
-  CGSTPercent: 9,
+  CGSTPercent: 0,
   CGSTAmount: 0,
-  SGSTPercent: 9,
+  SGSTPercent: 0,
   SGSTAmount: 0,
   IGSTPercent: 0,
   IGSTAmount: 0,
@@ -144,7 +173,28 @@ export const PurchaseFormPage: React.FC = () => {
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
+  const [manualRoundOff, setManualRoundOff] = useState<number | null>(null);
   const [items, setItems] = useState<LineItem[]>([emptyLine()]);
+
+  // "More Details" Modal State
+  const [moreDetailsOpened, setMoreDetailsOpened] = useState(false);
+  const [extraDetails, setExtraDetails] = useState<ExtraDetails>({
+    partyName: '',
+    partyPhone: '',
+    partyAddress: '',
+    partyState: '',
+    partyPincode: '',
+    salesOrderNo: '',
+    salesOrderDate: '',
+    deliveryNo: '',
+    deliveryDate: '',
+    modeOfTransport: '',
+    truckNo: '',
+    transporterName: '',
+    tankerSealNo: '',
+    eWayBillNo: '',
+    eWayBillValidDate: '',
+  });
 
   const { data: ledgers = [] } = useQuery<LedgerOption[]>({
     queryKey: ['ledgers'],
@@ -162,19 +212,24 @@ export const PurchaseFormPage: React.FC = () => {
     },
   });
 
-  // Auto-generate purchase number
-  useEffect(() => {
-    if (!isEditing) {
-      const y = new Date().getFullYear();
-      const n = String(Math.floor(1000 + Math.random() * 9000));
-      setPurchaseNo(`PUR-${y}-${n}`);
-    }
-  }, [isEditing]);
-
   const selectedSupplier = useMemo(
     () => ledgers.find((l) => String(l.LedgerId) === selectedLedgerId) || null,
     [selectedLedgerId, ledgers]
   );
+
+  // Auto-populate extra details from selected supplier ledger
+  useEffect(() => {
+    if (selectedSupplier) {
+      setExtraDetails((prev) => ({
+        ...prev,
+        partyName: selectedSupplier.LedgerName || prev.partyName,
+        partyPhone: selectedSupplier.PhoneNumber || selectedSupplier.MobileNumber || prev.partyPhone,
+        partyAddress: [selectedSupplier.AddressLine1, selectedSupplier.City].filter(Boolean).join(', ') || prev.partyAddress,
+        partyPincode: selectedSupplier.Pincode || prev.partyPincode,
+        partyState: selectedSupplier.StateId === 32 ? 'Kerala' : prev.partyState,
+      }));
+    }
+  }, [selectedSupplier]);
 
   // Kerala = StateId 32 (standard GST state code for Kerala)
   const isIntraState = useMemo(() => {
@@ -212,8 +267,9 @@ export const PurchaseFormPage: React.FC = () => {
           item.UnitId = prod.Unit;
           item.UnitName = prod.unit_name || 'Nos';
           item.AltUnitId = prod.AltUnit || null;
+          item.AltUnitName = prod.alt_unit_name || '';
           item.UnitConversion = Number(prod.UnitConversion) || 1;
-          item.Rate = Number(prod.PurchasePrice) || 0;
+          item.Rate = Number(prod.PurchasePrice) || '';
           item.GSTPercent = Number(prod.GSTPercentage) || 18;
         }
       }
@@ -230,27 +286,104 @@ export const PurchaseFormPage: React.FC = () => {
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // If editing an existing purchase, fetch its details
+  useEffect(() => {
+    if (isEditing && id) {
+      apiClient
+        .get(`/purchases/${id}/`)
+        .then((res) => {
+          const p = res.data;
+          setPurchaseNo(p.PurchaseNo || '');
+          if (p.PurchaseDate) setPurchaseDate(p.PurchaseDate.split('T')[0]);
+          setInvoiceNo(p.InvoiceNo || '');
+          if (p.InvoiceDate) setInvoiceDate(p.InvoiceDate.split('T')[0]);
+          if (p.SupplierLedgerId) setSelectedLedgerId(String(p.SupplierLedgerId));
+          if (p.Notes) setNotes(p.Notes);
+          if (p.RoundOff !== undefined && p.RoundOff !== null) setManualRoundOff(Number(p.RoundOff));
+
+          setExtraDetails({
+            partyName: p.PartyName || '',
+            partyPhone: p.PartyPhone || '',
+            partyAddress: p.PartyAddress || '',
+            partyState: p.PartyState || '',
+            partyPincode: p.PartyPincode || '',
+            salesOrderNo: p.SalesOrderNo || '',
+            salesOrderDate: p.SalesOrderDate ? p.SalesOrderDate.split('T')[0] : '',
+            deliveryNo: p.DeliveryNo || '',
+            deliveryDate: p.DeliveryDate ? p.DeliveryDate.split('T')[0] : '',
+            modeOfTransport: p.ModeOfTransport || 'By Truck',
+            truckNo: p.TruckNo || '',
+            transporterName: p.TransporterName || '',
+            tankerSealNo: p.TankerSealNo || '',
+            eWayBillNo: p.EWayBillNo || '',
+            eWayBillValidDate: p.EWayBillValidDate ? p.EWayBillValidDate.split('T')[0] : '',
+          });
+
+          if (Array.isArray(p.lines) && p.lines.length > 0) {
+            setItems(
+              p.lines.map((l: any) => ({
+                id: makeId(),
+                ProductId: l.ProductId,
+                ProductName: l.ProductName || '',
+                Quantity: l.Quantity || '',
+                AltQuantity: l.AltQuantity || 0,
+                UnitId: l.UnitId,
+                UnitName: l.unit_name || 'Nos',
+                AltUnitId: l.AltUnitId || null,
+                AltUnitName: l.alt_unit_name || '',
+                UnitConversion: Number(l.UnitConversion) || 1,
+                Rate: l.CostPrice || '',
+                GSTPercent: Number(l.TaxPercent) || 18,
+                TaxableAmount: Number(l.TaxableAmount) || 0,
+                CGSTPercent: Number(l.CGSTPercent) || 0,
+                CGSTAmount: Number(l.CGSTAmount) || 0,
+                SGSTPercent: Number(l.SGSTPercent) || 0,
+                SGSTAmount: Number(l.SGSTAmount) || 0,
+                IGSTPercent: Number(l.IGSTPercent) || 0,
+                IGSTAmount: Number(l.IGSTAmount) || 0,
+                Total: Number(l.Total) || 0,
+              }))
+            );
+          }
+        })
+        .catch(() => {
+          notifications.show({ title: 'Error', message: 'Could not load purchase details.', color: 'red' });
+        });
+    }
+  }, [isEditing, id]);
+
   const totals = useMemo(() => {
-    const totalQty   = items.reduce((s, i) => s + (Number(i.Quantity) || 0), 0);
-    const totalAlt   = items.reduce((s, i) => s + (Number(i.AltQuantity) || 0), 0);
-    const subTotal   = items.reduce((s, i) => s + i.TaxableAmount, 0);
-    const totalCGST  = items.reduce((s, i) => s + i.CGSTAmount, 0);
-    const totalSGST  = items.reduce((s, i) => s + i.SGSTAmount, 0);
-    const totalIGST  = items.reduce((s, i) => s + i.IGSTAmount, 0);
-    const totalTax   = totalCGST + totalSGST + totalIGST;
-    const raw        = subTotal + totalTax;
-    const roundOff   = Number((Math.round(raw) - raw).toFixed(2));
-    const grandTotal = Math.round(raw);
+    let subTotal = 0;
+    let totalCGST = 0;
+    let totalSGST = 0;
+    let totalIGST = 0;
+    let totalQty = 0;
+
+    items.forEach((line) => {
+      subTotal += line.TaxableAmount;
+      totalCGST += line.CGSTAmount;
+      totalSGST += line.SGSTAmount;
+      totalIGST += line.IGSTAmount;
+      totalQty += Number(line.Quantity) || 0;
+    });
+
+    const totalTax = totalCGST + totalSGST + totalIGST;
+    const rawTotal = subTotal + totalTax;
+    const autoRoundOff = Number((Math.round(rawTotal) - rawTotal).toFixed(2));
+    const roundOff = manualRoundOff !== null ? manualRoundOff : autoRoundOff;
+    const grandTotal = Number((rawTotal + roundOff).toFixed(2));
+
     return {
-      totalQty, totalAlt,
-      subTotal: +subTotal.toFixed(2),
-      totalCGST: +totalCGST.toFixed(2),
-      totalSGST: +totalSGST.toFixed(2),
-      totalIGST: +totalIGST.toFixed(2),
-      totalTax: +totalTax.toFixed(2),
-      roundOff, grandTotal,
+      subTotal: Number(subTotal.toFixed(2)),
+      totalCGST: Number(totalCGST.toFixed(2)),
+      totalSGST: Number(totalSGST.toFixed(2)),
+      totalIGST: Number(totalIGST.toFixed(2)),
+      totalTax: Number(totalTax.toFixed(2)),
+      totalQty,
+      roundOff,
+      grandTotal,
     };
-  }, [items]);
+  }, [items, manualRoundOff]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -271,16 +404,34 @@ export const PurchaseFormPage: React.FC = () => {
         TaxAmount: totals.totalTax,
         RoundOff: totals.roundOff,
         GrandTotal: totals.grandTotal,
+
+        // Extra & Transport Details
+        PartyName: extraDetails.partyName,
+        PartyPhone: extraDetails.partyPhone,
+        PartyAddress: extraDetails.partyAddress,
+        PartyState: extraDetails.partyState,
+        PartyPincode: extraDetails.partyPincode,
+        SalesOrderNo: extraDetails.salesOrderNo,
+        SalesOrderDate: extraDetails.salesOrderDate || null,
+        DeliveryNo: extraDetails.deliveryNo,
+        DeliveryDate: extraDetails.deliveryDate || null,
+        ModeOfTransport: extraDetails.modeOfTransport,
+        TruckNo: extraDetails.truckNo,
+        TransporterName: extraDetails.transporterName,
+        TankerSealNo: extraDetails.tankerSealNo,
+        EWayBillNo: extraDetails.eWayBillNo,
+        EWayBillValidDate: extraDetails.eWayBillValidDate || null,
+
         lines: items.map((line, idx) => ({
           LineNo: idx + 1,
           ProductId: line.ProductId,
           ProductName: line.ProductName,
-          Quantity: Number(line.Quantity),
-          AltQuantity: Number(line.AltQuantity),
+          Quantity: Number(line.Quantity) || 0,
+          AltQuantity: Number(line.AltQuantity) || 0,
           UnitId: line.UnitId,
           AltUnitId: line.AltUnitId,
           UnitConversion: line.UnitConversion,
-          CostPrice: Number(line.Rate),
+          CostPrice: Number(line.Rate) || 0,
           TaxPercent: line.GSTPercent,
           CGSTPercent: line.CGSTPercent,
           CGSTAmount: line.CGSTAmount,
@@ -307,126 +458,150 @@ export const PurchaseFormPage: React.FC = () => {
   });
 
   return (
-    <Stack gap="lg">
-      {/* Top Header */}
-      <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
-        <div>
-          <Group gap="xs" align="center">
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/purchases')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Purchases
-            </Button>
-          </Group>
-          <Title order={2} style={{ color: '#800020', fontWeight: 700, marginTop: 4 }}>
-            {isEditing ? `Edit Purchase` : 'New Purchase Invoice'}
+    <Stack gap="sm" style={{ minHeight: 'calc(100vh - 112px)', display: 'flex', flexDirection: 'column' }}>
+      {/* 1. Ultra-Compact Top Header — minimal height, maximum screen space */}
+      <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+        <Group gap="xs" align="center">
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/purchases')}
+            styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+          >
+            Back to Purchases
+          </Button>
+          <Divider orientation="vertical" h={18} />
+          <Title order={3} style={{ color: '#800020', fontWeight: 700, fontSize: 18 }}>
+            {isEditing ? 'Edit Purchase' : 'New Purchase Invoice'}
           </Title>
-          <Text size="sm" c="dimmed">
-            Record supplier invoice, product quantities, and GST details.
-          </Text>
-        </div>
-
-        <Badge
-          size="md"
-          variant="light"
-          color={isIntraState ? 'teal' : 'blue'}
-          radius="sm"
-        >
-          {isIntraState ? 'Intra-State GST (CGST + SGST)' : 'Inter-State GST (IGST)'}
-        </Badge>
+        </Group>
       </Group>
 
-      {/* Invoice Details Card - Responsive and never cut off */}
-      <Paper p="md" radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-        <Grid gutter="md" align="flex-start">
-          <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+      {/* 2. Invoice Details Card with Party Selection & "More Details" Button */}
+      <Paper p="sm" radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+        <Group wrap="wrap" gap="sm" align="flex-start">
+          {/* Party / Supplier + More Details */}
+          <div style={{ flex: '2 1 240px', minWidth: 220 }}>
+            <Group justify="space-between" align="center" mb={2}>
+              <Text size="xs" fw={600} c="#334155">Party / Supplier *</Text>
+              <Button
+                variant="subtle"
+                color="burgundy"
+                size="compact-xs"
+                leftSection={<IconInfoCircle size={14} />}
+                onClick={() => setMoreDetailsOpened(true)}
+              >
+                More Details
+              </Button>
+            </Group>
             <Select
-              label="Party / Supplier"
               placeholder="Select supplier ledger..."
               data={ledgerOptions}
               value={selectedLedgerId}
               onChange={(val) => setSelectedLedgerId(val ? String(val) : null)}
               searchable
               clearable
-              required
               radius="md"
               size="sm"
-              description={selectedSupplier?.GSTIN ? `GSTIN: ${selectedSupplier.GSTIN}` : undefined}
             />
-          </Grid.Col>
-          <Grid.Col span={{ base: 6, sm: 3, md: 2 }}>
+            {selectedSupplier?.GSTIN && (
+              <Text size="xs" c="dimmed" mt={3}>
+                GSTIN: <span style={{ fontWeight: 600, color: '#334155' }}>{selectedSupplier.GSTIN}</span>
+              </Text>
+            )}
+          </div>
+
+          {/* Purchase No */}
+          <div style={{ flex: '1 1 140px', minWidth: 130 }}>
+            <Text size="xs" fw={600} c="#334155" mb={2}>Purchase No</Text>
             <TextInput
-              label="Purchase No"
+              placeholder="e.g. PUR-001"
               value={purchaseNo}
               onChange={(e) => setPurchaseNo(e.currentTarget.value)}
               radius="md"
               size="sm"
-              required
             />
-          </Grid.Col>
-          <Grid.Col span={{ base: 6, sm: 3, md: 2 }}>
+          </div>
+
+          {/* Purchase Date */}
+          <div style={{ flex: '1 1 140px', minWidth: 130 }}>
+            <Text size="xs" fw={600} c="#334155" mb={2}>Purchase Date *</Text>
             <TextInput
-              label="Purchase Date"
               type="date"
               value={purchaseDate}
               onChange={(e) => setPurchaseDate(e.currentTarget.value)}
               radius="md"
               size="sm"
-              required
             />
-          </Grid.Col>
-          <Grid.Col span={{ base: 6, sm: 3, md: 2 }}>
+          </div>
+
+          {/* Supplier Invoice No */}
+          <div style={{ flex: '1 1 140px', minWidth: 130 }}>
+            <Text size="xs" fw={600} c="#334155" mb={2}>Invoice No</Text>
             <TextInput
-              label="Invoice No"
               placeholder="Supplier Inv No"
               value={invoiceNo}
               onChange={(e) => setInvoiceNo(e.currentTarget.value)}
               radius="md"
               size="sm"
             />
-          </Grid.Col>
-          <Grid.Col span={{ base: 6, sm: 3, md: 2 }}>
+          </div>
+
+          {/* Supplier Invoice Date */}
+          <div style={{ flex: '1 1 140px', minWidth: 130 }}>
+            <Text size="xs" fw={600} c="#334155" mb={2}>Invoice Date</Text>
             <TextInput
-              label="Invoice Date"
               type="date"
               value={invoiceDate}
               onChange={(e) => setInvoiceDate(e.currentTarget.value)}
               radius="md"
               size="sm"
             />
-          </Grid.Col>
-        </Grid>
+          </div>
+        </Group>
       </Paper>
 
-      {/* Main Items Table — mirrors PriceUpdatePage Paper + Table */}
-      <Paper radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
+      {/* 3. Products Table & Bottom Dock — Completely unified in ONE single white section */}
+      <Paper
+        radius="sm"
+        withBorder
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: '#ffffff',
+          borderColor: '#e2e8f0',
+          overflow: 'hidden',
+          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+        }}
+      >
         {isLoadingProducts ? (
-          <Center py={60}><Loader color="burgundy" size="md" /></Center>
+          <Center py={60} style={{ flex: 1 }}><Loader color="burgundy" size="md" /></Center>
         ) : (
-          <Table.ScrollContainer minWidth={980}>
-            <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
-              <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
-                <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 40, textAlign: 'center' }}>#</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 220 }}>Product</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 100 }}>Qty</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 100 }}>Alt Qty</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 70 }}>Unit</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 120 }}>Rate (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 120, textAlign: 'right' }}>Taxable (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>
-                    {isIntraState ? 'CGST (₹)' : 'IGST (₹)'}
-                  </Table.Th>
-                  {isIntraState && (
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>SGST (₹)</Table.Th>
-                  )}
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130, textAlign: 'right' }}>Total (₹)</Table.Th>
-                  <Table.Th style={{ width: 50 }} />
+          <Box style={{ flex: 1, overflowX: 'auto', backgroundColor: '#ffffff' }}>
+            <Table.ScrollContainer minWidth={880}>
+            <Table
+              verticalSpacing={1}
+              horizontalSpacing="xs"
+              highlightOnHover
+              styles={{
+                td: { paddingTop: 2, paddingBottom: 2, paddingLeft: 6, paddingRight: 6 },
+                th: { paddingTop: 4, paddingBottom: 4, paddingLeft: 6, paddingRight: 6 },
+              }}
+            >
+              <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                <Table.Tr style={{ height: 28 }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 36, textAlign: 'center' }}>#</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 160, minWidth: 140, maxWidth: 180 }}>Product</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 65, minWidth: 55 }}>Qty</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 60, minWidth: 55, textAlign: 'center' }}>Unit</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 110, minWidth: 110 }}>Rate (₹)</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, minWidth: 100, textAlign: 'right' }}>Taxable (₹)</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, minWidth: 115, textAlign: 'right' }}>GST (₹)</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, minWidth: 110, textAlign: 'right' }}>Total (₹)</Table.Th>
+                  <Table.Th style={{ width: 36, padding: '4px' }} />
                 </Table.Tr>
               </Table.Thead>
 
@@ -437,201 +612,470 @@ export const PurchaseFormPage: React.FC = () => {
                       <Text size="xs" fw={600} c="dimmed">{index + 1}</Text>
                     </Table.Td>
 
-                    <Table.Td>
+                    {/* Product Select (Compact width) */}
+                    <Table.Td style={{ width: 160, maxWidth: 180 }}>
                       <Select
                         placeholder="Select product..."
                         data={productOptions}
                         value={line.ProductId ? String(line.ProductId) : null}
                         onChange={(val) => updateField(index, 'ProductId', val ? Number(val) : null)}
                         searchable
-                        size="sm"
+                        size="xs"
                         radius="sm"
+                        style={{ width: 160 }}
+                        comboboxProps={{ width: 240 }}
+                        styles={{ input: { height: 26, minHeight: 26 } }}
                       />
                     </Table.Td>
 
-                    <Table.Td>
-                      <NumberInput
-                        size="sm"
-                        radius="sm"
-                        min={0}
-                        hideControls
-                        value={line.Quantity}
-                        onFocus={(e) => e.currentTarget.select()}
-                        onChange={(val) => updateField(index, 'Quantity', val)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (index === items.length - 1) addRow();
-                          }
-                        }}
-                      />
+                    {/* Qty with Calculated Alt Qty in Brackets (compact width, no gap with unit) */}
+                    <Table.Td style={{ width: 65, minWidth: 55 }}>
+                      <Group gap={4} wrap="nowrap" align="center">
+                        <NumberInput
+                          size="xs"
+                          radius="sm"
+                          min={0}
+                          hideControls
+                          placeholder="0"
+                          value={line.Quantity}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onChange={(val) => updateField(index, 'Quantity', val)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              if (index === items.length - 1) addRow();
+                            }
+                          }}
+                          style={{ width: 44 }}
+                          styles={{
+                            input: {
+                              height: 26,
+                              minHeight: 26,
+                              paddingLeft: 2,
+                              paddingRight: 2,
+                              textAlign: 'center',
+                              fontWeight: 600,
+                            },
+                          }}
+                        />
+                        {Number(line.AltQuantity) > 0 && (
+                          <Text size="11px" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                            ({line.AltQuantity} {line.AltUnitName || ''})
+                          </Text>
+                        )}
+                      </Group>
                     </Table.Td>
 
-                    <Table.Td>
-                      <NumberInput
-                        size="sm"
-                        radius="sm"
-                        min={0}
-                        hideControls
-                        value={line.AltQuantity}
-                        onFocus={(e) => e.currentTarget.select()}
-                        onChange={(val) => updateField(index, 'AltQuantity', val)}
-                      />
+                    {/* Unit (Full name visible, compact, no gap) */}
+                    <Table.Td style={{ width: 60, minWidth: 55, textAlign: 'center' }}>
+                      {line.ProductId && line.UnitName ? (
+                        <Badge size="xs" variant="outline" color="gray" style={{ whiteSpace: 'nowrap', textOverflow: 'clip', minWidth: 42 }}>
+                          {line.UnitName}
+                        </Badge>
+                      ) : (
+                        <Text size="xs" c="dimmed">—</Text>
+                      )}
                     </Table.Td>
 
-                    <Table.Td>
-                      <Badge size="xs" variant="outline" color="gray">{line.UnitName || 'Nos'}</Badge>
-                    </Table.Td>
-
-                    <Table.Td>
+                    {/* Rate (clean neutral styling, no clipping) */}
+                    <Table.Td style={{ minWidth: 110 }}>
                       <NumberInput
-                        size="sm"
+                        size="xs"
                         radius="sm"
                         min={0}
                         decimalScale={2}
                         hideControls
                         prefix="₹ "
+                        placeholder="0.00"
                         value={line.Rate}
                         onFocus={(e) => e.currentTarget.select()}
                         onChange={(val) => updateField(index, 'Rate', val)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Tab' && !e.shiftKey) {
+                            if (index === items.length - 1) {
+                              e.preventDefault();
+                              addRow();
+                            }
+                          }
+                        }}
+                        style={{ width: '100%', minWidth: 95 }}
                         styles={{
                           input: {
+                            height: 26,
+                            minHeight: 26,
                             fontWeight: 600,
-                            backgroundColor: Number(line.Rate) > 0 ? '#fdf2f4' : '#ffffff',
-                            borderColor: Number(line.Rate) > 0 ? '#800020' : '#cbd5e1',
+                            backgroundColor: '#ffffff',
+                            borderColor: '#cbd5e1',
                             color: '#0f172a',
+                            paddingLeft: 6,
+                            paddingRight: 6,
                           },
                         }}
                       />
                     </Table.Td>
 
+                    {/* Taxable Amount */}
                     <Table.Td style={{ textAlign: 'right' }}>
-                      <Text fw={600} size="sm" c="#334155">
-                        ₹{line.TaxableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </Text>
+                      {line.ProductId ? (
+                        <Text fw={600} size="sm" c="#334155">
+                          ₹{line.TaxableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </Text>
+                      ) : (
+                        <Text size="xs" c="dimmed">—</Text>
+                      )}
                     </Table.Td>
 
-                    {isIntraState ? (
-                      <>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          <Text size="sm" c="#334155" fw={500}>₹{line.CGSTAmount.toFixed(2)}</Text>
-                          <Text size="10px" c="dimmed">@{line.CGSTPercent}%</Text>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          <Text size="sm" c="#334155" fw={500}>₹{line.SGSTAmount.toFixed(2)}</Text>
-                          <Text size="10px" c="dimmed">@{line.SGSTPercent}%</Text>
-                        </Table.Td>
-                      </>
-                    ) : (
-                      <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="sm" c="#800020" fw={500}>₹{line.IGSTAmount.toFixed(2)}</Text>
-                        <Text size="10px" c="dimmed">@{line.IGSTPercent}%</Text>
-                      </Table.Td>
-                    )}
-
+                    {/* GST: Percentage on left of amount, both aligned to the right side */}
                     <Table.Td style={{ textAlign: 'right' }}>
-                      <Text fw={700} size="sm" c="#800020">
-                        ₹{line.Total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </Text>
+                      {line.ProductId ? (() => {
+                        const lineTax = (line.CGSTAmount || 0) + (line.SGSTAmount || 0) + (line.IGSTAmount || 0);
+                        return (
+                          <Group justify="flex-end" wrap="nowrap" align="center" gap={6}>
+                            <Text size="11px" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                              ({line.GSTPercent}%)
+                            </Text>
+                            <Text fw={600} size="sm" c="#0f766e" style={{ whiteSpace: 'nowrap' }}>
+                              ₹{lineTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                          </Group>
+                        );
+                      })() : (
+                        <Text size="xs" c="dimmed" style={{ textAlign: 'right' }}>—</Text>
+                      )}
                     </Table.Td>
 
+                    {/* Total (₹) — Clean neutral dark text, completely visible */}
+                    <Table.Td style={{ textAlign: 'right' }}>
+                      {line.ProductId ? (
+                        <Text fw={700} size="sm" c="#0f172a">
+                          ₹{line.Total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </Text>
+                      ) : (
+                        <Text size="xs" c="dimmed">—</Text>
+                      )}
+                    </Table.Td>
+
+                    {/* Delete Icon — tabIndex={-1} skips focus during Tab */}
                     <Table.Td style={{ textAlign: 'center' }}>
-                      <ActionIcon variant="subtle" color="red" size="sm" onClick={() => removeRow(index)}>
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        size="sm"
+                        tabIndex={-1}
+                        onClick={() => removeRow(index)}
+                      >
                         <IconTrash size={15} />
                       </ActionIcon>
                     </Table.Td>
                   </Table.Tr>
                 ))}
+                {/* Add Row Action inside Tbody */}
+                <Table.Tr>
+                  <Table.Td colSpan={9} style={{ padding: '3px 8px', backgroundColor: '#ffffff' }}>
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      color="gray"
+                      leftSection={<IconPlus size={14} />}
+                      onClick={addRow}
+                    >
+                      Add Row
+                    </Button>
+                  </Table.Td>
+                </Table.Tr>
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
-        )}
+        </Box>
+      )}
 
-        {/* Add Row bar inside Paper */}
-        <Group p="xs" px="md" style={{ borderTop: '1px solid #f1f5f9' }}>
-          <Button
-            size="xs"
-            variant="subtle"
-            color="burgundy"
-            leftSection={<IconPlus size={14} />}
-            onClick={addRow}
+      {/* Bottom Dock inside the SAME unified section — completely in one section, blending white */}
+      <Box
+        style={{
+          marginTop: 'auto',
+          borderTop: '1px solid #e2e8f0',
+          backgroundColor: '#ffffff',
+        }}
+      >
+        {/* Row 1: Totals Row — Clean single borders, zero unwanted lines */}
+        <Table.ScrollContainer minWidth={880}>
+          <Table
+            verticalSpacing={2}
+            horizontalSpacing="xs"
+            styles={{
+              td: { border: 'none', paddingTop: 6, paddingBottom: 6, paddingLeft: 6, paddingRight: 6 },
+            }}
           >
-            Add Row
-          </Button>
-          <Text size="xs" c="dimmed">Press <kbd style={{ fontFamily: 'monospace', fontSize: 11, backgroundColor: '#f1f5f9', padding: '1px 5px', borderRadius: 4 }}>Enter</kbd> in Qty to add a new row.</Text>
-        </Group>
-      </Paper>
+            <Table.Tbody>
+              <Table.Tr style={{ height: 34, backgroundColor: '#ffffff', border: 'none' }}>
+                <Table.Td style={{ width: 36, textAlign: 'center', border: 'none' }} />
+                <Table.Td style={{ width: 160, minWidth: 140, maxWidth: 180, textAlign: 'right', color: '#475569', fontWeight: 700, fontSize: 13, border: 'none' }}>
+                  Total:
+                </Table.Td>
+                {/* Total Qty directly below Qty column */}
+                <Table.Td style={{ width: 65, minWidth: 55, textAlign: 'left', border: 'none' }}>
+                  <Text size="xs" fw={700} c="#0f172a" pl={4}>
+                    {totals.totalQty}
+                  </Text>
+                </Table.Td>
+                <Table.Td style={{ width: 60, minWidth: 55, border: 'none' }} />
+                <Table.Td style={{ width: 110, minWidth: 110, border: 'none' }} />
+                {/* Taxable total directly below Taxable column */}
+                <Table.Td style={{ minWidth: 100, textAlign: 'right', color: '#0f172a', fontWeight: 700, fontSize: 13, border: 'none' }}>
+                  ₹{totals.subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Table.Td>
+                {/* GST total directly below GST column */}
+                <Table.Td style={{ minWidth: 115, textAlign: 'right', color: '#0f766e', fontWeight: 700, fontSize: 13, border: 'none' }}>
+                  ₹{totals.totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Table.Td>
+                {/* Raw Total directly below Total column */}
+                <Table.Td style={{ minWidth: 110, textAlign: 'right', color: '#0f172a', fontWeight: 800, fontSize: 14, border: 'none' }}>
+                  ₹{(totals.subTotal + totals.totalTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Table.Td>
+                <Table.Td style={{ width: 36, padding: '4px', border: 'none' }} />
+              </Table.Tr>
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
 
-      {/* Bottom Footer — mirrors PriceUpdatePage footer */}
-      <Group justify="space-between" align="flex-end" pt="xs" pb="md">
-        {/* Left: notes + totals summary */}
-        <Stack gap="xs" style={{ flex: 1, maxWidth: 480 }}>
-          <Textarea
-            placeholder="Notes / Vehicle / Transport details..."
-            value={notes}
-            onChange={(e) => setNotes(e.currentTarget.value)}
-            rows={2}
-            radius="md"
-            size="sm"
-          />
-          <Group gap="xl">
-            <div>
-              <Text size="xs" c="dimmed">Total Qty</Text>
-              <Text size="sm" fw={700} c="#1e293b">{totals.totalQty}</Text>
+        {/* Row 2: Action Bar (Notes, Round Off, Grand Total, Buttons) — seamless with Totals row */}
+        <Box pt={4} pb="xs" px="md">
+          <Group justify="space-between" align="center" wrap="wrap" gap="md">
+            {/* Left: Notes Input */}
+            <div style={{ flex: '1 1 300px', maxWidth: 460 }}>
+              <TextInput
+                placeholder="Add invoice notes or instructions..."
+                value={notes}
+                onChange={(e) => setNotes(e.currentTarget.value)}
+                radius="md"
+                size="xs"
+              />
             </div>
-            <div>
-              <Text size="xs" c="dimmed">Taxable</Text>
-              <Text size="sm" fw={700} c="#1e293b">₹{totals.subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-            </div>
-            {isIntraState ? (
-              <>
-                <div>
-                  <Text size="xs" c="dimmed">CGST</Text>
-                  <Text size="sm" fw={700} c="#334155">₹{totals.totalCGST.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                </div>
-                <div>
-                  <Text size="xs" c="dimmed">SGST</Text>
-                  <Text size="sm" fw={700} c="#334155">₹{totals.totalSGST.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                </div>
-              </>
-            ) : (
-              <div>
-                <Text size="xs" c="dimmed">IGST</Text>
-                <Text size="sm" fw={700} c="#800020">₹{totals.totalIGST.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-              </div>
-            )}
+
+            {/* Right: Round Off, Grand Total, and Action Buttons on One Clean Line */}
+            <Group gap="md" align="center" wrap="nowrap">
+              {/* Round Off */}
+              <Group gap={6} align="center" wrap="nowrap">
+                <Text size="xs" fw={500} c="dimmed">Round Off (₹):</Text>
+                <NumberInput
+                  size="xs"
+                  radius="sm"
+                  decimalScale={2}
+                  step={0.01}
+                  hideControls
+                  placeholder="0.00"
+                  value={manualRoundOff !== null ? manualRoundOff : totals.roundOff}
+                  onChange={(val) => setManualRoundOff(val === '' || val === undefined ? null : Number(val))}
+                  style={{ width: 62 }}
+                  styles={{ input: { textAlign: 'right', fontWeight: 600, height: 28, minHeight: 28 } }}
+                />
+              </Group>
+
+              <Divider orientation="vertical" />
+
+              {/* Grand Total */}
+              <Group gap={6} align="baseline" wrap="nowrap">
+                <Text size="xs" fw={600} c="dimmed">Grand Total:</Text>
+                <Text fw={800} size="lg" c="#800020" style={{ whiteSpace: 'nowrap' }}>
+                  ₹{totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Text>
+              </Group>
+
+              <Divider orientation="vertical" />
+
+              {/* Action Buttons */}
+              <Group gap="xs" wrap="nowrap">
+                <Button variant="default" size="xs" radius={8} onClick={() => navigate('/purchases')}>
+                  Cancel
+                </Button>
+                <Button
+                  color="burgundy"
+                  radius={8}
+                  size="xs"
+                  leftSection={<IconCurrencyRupee size={15} />}
+                  loading={saveMutation.isPending}
+                  disabled={!selectedLedgerId || items.every((i) => !i.ProductId)}
+                  onClick={() => saveMutation.mutate()}
+                >
+                  Save Purchase Invoice
+                </Button>
+              </Group>
+            </Group>
           </Group>
-        </Stack>
+        </Box>
+      </Box>
+    </Paper>
 
-        {/* Right: Grand Total + Save */}
-        <Stack gap="xs" align="flex-end">
-          <div style={{ textAlign: 'right' }}>
-            <Text size="xs" c="dimmed">Round Off: ₹{totals.roundOff.toFixed(2)}</Text>
-            <Divider my={4} />
-            <Text size="xs" c="dimmed" fw={500}>Grand Total</Text>
-            <Text fw={800} size="xl" c="#800020">
-              ₹{totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+      {/* 5. "More Details" Modal: Transport & Party Extra Details */}
+      <Modal
+        opened={moreDetailsOpened}
+        onClose={() => setMoreDetailsOpened(false)}
+        title={
+          <Group gap="xs">
+            <IconTruckDelivery size={20} color="#800020" />
+            <Text fw={700} c="#800020" size="md">
+              Transport & Party Extra Details
             </Text>
+          </Group>
+        }
+        size="lg"
+        radius="md"
+      >
+        <Stack gap="md">
+          {/* Party Details Section */}
+          <div>
+            <Text size="xs" fw={700} c="#800020" tt="uppercase" mb="xs">
+              Party / Consignor Details
+            </Text>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+              <TextInput
+                label="Party / Consignor Name"
+                placeholder="Supplier / Company Name"
+                value={extraDetails.partyName}
+                onChange={(e) => setExtraDetails({ ...extraDetails, partyName: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="Phone / Mobile No"
+                placeholder="Contact Number"
+                value={extraDetails.partyPhone}
+                onChange={(e) => setExtraDetails({ ...extraDetails, partyPhone: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="Address"
+                placeholder="Street / Building Address"
+                value={extraDetails.partyAddress}
+                onChange={(e) => setExtraDetails({ ...extraDetails, partyAddress: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+                style={{ gridColumn: 'span 2' }}
+              />
+              <TextInput
+                label="State"
+                placeholder="e.g. Kerala"
+                value={extraDetails.partyState}
+                onChange={(e) => setExtraDetails({ ...extraDetails, partyState: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="PIN Code"
+                placeholder="e.g. 682001"
+                value={extraDetails.partyPincode}
+                onChange={(e) => setExtraDetails({ ...extraDetails, partyPincode: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+            </SimpleGrid>
           </div>
 
-          <Group gap="sm">
-            <Button variant="default" size="sm" radius={10} onClick={() => navigate('/purchases')}>
-              Cancel
-            </Button>
+          <Divider />
+
+          {/* Transport Details Section (from slip) */}
+          <div>
+            <Text size="xs" fw={700} c="#800020" tt="uppercase" mb="xs">
+              Transport & Delivery Order Details
+            </Text>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+              <TextInput
+                label="Sales Order No"
+                placeholder="e.g. 6934315"
+                value={extraDetails.salesOrderNo}
+                onChange={(e) => setExtraDetails({ ...extraDetails, salesOrderNo: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="Sales Order Date"
+                type="date"
+                value={extraDetails.salesOrderDate}
+                onChange={(e) => setExtraDetails({ ...extraDetails, salesOrderDate: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="Delivery No"
+                placeholder="e.g. 23652988"
+                value={extraDetails.deliveryNo}
+                onChange={(e) => setExtraDetails({ ...extraDetails, deliveryNo: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="Delivery Date"
+                type="date"
+                value={extraDetails.deliveryDate}
+                onChange={(e) => setExtraDetails({ ...extraDetails, deliveryDate: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="Mode of Transport"
+                placeholder="e.g. By Truck"
+                value={extraDetails.modeOfTransport}
+                onChange={(e) => setExtraDetails({ ...extraDetails, modeOfTransport: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="Truck No / Vehicle No"
+                placeholder="e.g. KL18V4921"
+                value={extraDetails.truckNo}
+                onChange={(e) => setExtraDetails({ ...extraDetails, truckNo: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="Transporter Name"
+                placeholder="e.g. OWNTRANSPORT"
+                value={extraDetails.transporterName}
+                onChange={(e) => setExtraDetails({ ...extraDetails, transporterName: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="Tanker Seal No"
+                placeholder="Seal No"
+                value={extraDetails.tankerSealNo}
+                onChange={(e) => setExtraDetails({ ...extraDetails, tankerSealNo: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="e-Waybill No"
+                placeholder="e.g. 152386828957"
+                value={extraDetails.eWayBillNo}
+                onChange={(e) => setExtraDetails({ ...extraDetails, eWayBillNo: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+              <TextInput
+                label="e-Waybill Valid Date"
+                type="date"
+                value={extraDetails.eWayBillValidDate}
+                onChange={(e) => setExtraDetails({ ...extraDetails, eWayBillValidDate: e.currentTarget.value })}
+                radius="md"
+                size="xs"
+              />
+            </SimpleGrid>
+          </div>
+
+          <Group justify="flex-end" mt="sm">
             <Button
               color="burgundy"
-              radius={10}
-              size="sm"
-              leftSection={<IconCurrencyRupee size={16} />}
-              loading={saveMutation.isPending}
-              disabled={items.every((i) => !i.ProductId)}
-              onClick={() => saveMutation.mutate()}
+              size="xs"
+              radius="md"
+              leftSection={<IconCheck size={16} />}
+              onClick={() => setMoreDetailsOpened(false)}
             >
-              Save Purchase Invoice
+              Done
             </Button>
           </Group>
         </Stack>
-      </Group>
+      </Modal>
     </Stack>
   );
 };

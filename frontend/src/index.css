@@ -116,3 +116,16 @@ table tbody tr:hover {
   background-color: #f8fafc !important;
 }
 
+/* Table Footer (Total Row) — Pure White, Zero Red Tint */
+table tfoot,
+table tfoot tr,
+table tfoot th,
+table tfoot td,
+.mantine-Table-tfoot,
+.mantine-Table-tfoot tr,
+.mantine-Table-tfoot th,
+.mantine-Table-tfoot td {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+

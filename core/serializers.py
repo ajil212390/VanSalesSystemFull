@@ -3,7 +3,11 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from drf_spectacular.utils import extend_schema_field
-from core.models import User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver, Category, Unit, Product, Group, Ledger, ProductPriceAudit
+from core.models import (
+    User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver,
+    Category, Unit, Product, Group, Ledger, ProductPriceAudit,
+    Purchase, PurchaseLine, StockMovement, Voucher, VoucherLine
+)
 
 from core.services import register_company
 
@@ -606,5 +610,56 @@ class ProductPriceAuditSerializer(serializers.ModelSerializer):
             'CompanyId', 'CreatedTimestamp'
         ]
         read_only_fields = fields
+
+
+class PurchaseLineSerializer(serializers.ModelSerializer):
+    unit_name = serializers.CharField(source='Unit.UnitName', read_only=True)
+    product_code = serializers.CharField(source='Product.ProductCode', read_only=True)
+
+    class Meta:
+        model = PurchaseLine
+        fields = [
+            'PurchaseLineId', 'Purchase', 'LineNo',
+            'Product', 'ProductName', 'product_code',
+            'Unit', 'unit_name', 'AltUnitId', 'UnitConversion',
+            'CostPrice', 'TaxPercent', 'TaxAmount',
+            'Quantity', 'Total', 'DiscPercent', 'DiscAmount', 'CompanyId'
+        ]
+        read_only_fields = ['PurchaseLineId', 'Purchase', 'CompanyId']
+
+
+class PurchaseSerializer(serializers.ModelSerializer):
+    supplier_name = serializers.CharField(source='SupplierLedger.LedgerName', read_only=True)
+    SupplierLedgerId = serializers.PrimaryKeyRelatedField(
+        queryset=Ledger.objects.all(),
+        source='SupplierLedger',
+        required=False
+    )
+    lines = PurchaseLineSerializer(many=True, read_only=True)
+    total_qty = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Purchase
+        fields = [
+            'PurchaseId', 'PurchaseNo', 'PurchaseDate',
+            'SupplierLedger', 'SupplierLedgerId', 'supplier_name',
+            'InvoiceNo', 'InvoiceDate', 'Notes',
+            'SubTotal', 'TaxAmount', 'GrandTotal', 'RoundOff',
+            'CompanyId', 'CreatedAt', 'UpdatedAt',
+            'SalesOrderNo', 'SalesOrderDate',
+            'DeliveryNo', 'DeliveryDate',
+            'ModeOfTransport', 'TruckNo', 'TransporterName',
+            'TankerSealNo', 'EWayBillNo', 'EWayBillValidDate',
+            'PartyName', 'PartyPhone', 'PartyAddress',
+            'PartyState', 'PartyPincode',
+            'lines', 'total_qty'
+        ]
+        read_only_fields = ['PurchaseId', 'CreatedAt', 'UpdatedAt', 'CompanyId']
+
+    def get_total_qty(self, obj):
+        try:
+            return float(sum([l.Quantity for l in obj.lines.all()]))
+        except Exception:
+            return 0
 
 

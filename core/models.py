@@ -348,3 +348,132 @@ class ProductPriceAudit(models.Model):
 
     def __str__(self):
         return f"{self.ProductName}: {self.OldSalesPrice} -> {self.NewSalesPrice}"
+
+
+class Purchase(models.Model):
+    PurchaseId = models.BigAutoField(primary_key=True, db_column='PurchaseId')
+    PurchaseNo = models.CharField(max_length=50, db_column='PurchaseNo')
+    PurchaseDate = models.DateField(db_column='PurchaseDate')
+    SupplierLedger = models.ForeignKey(Ledger, on_delete=models.PROTECT, db_column='SupplierLedgerId', related_name='purchases')
+    InvoiceNo = models.CharField(max_length=50, null=True, blank=True, db_column='InvoiceNo')
+    InvoiceDate = models.DateField(null=True, blank=True, db_column='InvoiceDate')
+    Notes = models.CharField(max_length=500, null=True, blank=True, db_column='Notes')
+    SubTotal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='SubTotal')
+    TaxAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TaxAmount')
+    GrandTotal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='GrandTotal')
+    RoundOff = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_column='RoundOff')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    # Transport & Consignor details
+    SalesOrderNo = models.CharField(max_length=50, null=True, blank=True, db_column='SalesOrderNo')
+    SalesOrderDate = models.DateField(null=True, blank=True, db_column='SalesOrderDate')
+    DeliveryNo = models.CharField(max_length=50, null=True, blank=True, db_column='DeliveryNo')
+    DeliveryDate = models.DateField(null=True, blank=True, db_column='DeliveryDate')
+    ModeOfTransport = models.CharField(max_length=50, null=True, blank=True, db_column='ModeOfTransport')
+    TruckNo = models.CharField(max_length=50, null=True, blank=True, db_column='TruckNo')
+    TransporterName = models.CharField(max_length=150, null=True, blank=True, db_column='TransporterName')
+    TankerSealNo = models.CharField(max_length=50, null=True, blank=True, db_column='TankerSealNo')
+    EWayBillNo = models.CharField(max_length=50, null=True, blank=True, db_column='EWayBillNo')
+    EWayBillValidDate = models.DateField(null=True, blank=True, db_column='EWayBillValidDate')
+    PartyName = models.CharField(max_length=150, null=True, blank=True, db_column='PartyName')
+    PartyPhone = models.CharField(max_length=30, null=True, blank=True, db_column='PartyPhone')
+    PartyAddress = models.TextField(null=True, blank=True, db_column='PartyAddress')
+    PartyState = models.CharField(max_length=100, null=True, blank=True, db_column='PartyState')
+    PartyPincode = models.CharField(max_length=20, null=True, blank=True, db_column='PartyPincode')
+
+    class Meta:
+        managed = False
+        db_table = '"Purchase"'
+        ordering = ['-PurchaseDate', '-PurchaseId']
+
+    def __str__(self):
+        return f"{self.PurchaseNo} ({self.PurchaseDate})"
+
+
+class PurchaseLine(models.Model):
+    PurchaseLineId = models.BigAutoField(primary_key=True, db_column='PurchaseLineId')
+    Purchase = models.ForeignKey(Purchase, on_delete=models.CASCADE, db_column='PurchaseId', related_name='lines')
+    LineNo = models.IntegerField(default=1, db_column='LineNo')
+    Product = models.ForeignKey(Product, on_delete=models.PROTECT, db_column='ProductId', related_name='purchase_lines')
+    ProductName = models.CharField(max_length=150, null=True, blank=True, db_column='ProductName')
+    Unit = models.ForeignKey(Unit, on_delete=models.PROTECT, db_column='UnitId', related_name='purchase_units')
+    AltUnitId = models.BigIntegerField(null=True, blank=True, db_column='AltUnitId')
+    UnitConversion = models.DecimalField(max_digits=12, decimal_places=4, default=1, db_column='UnitConversion')
+    CostPrice = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='CostPrice')
+    TaxPercent = models.DecimalField(max_digits=5, decimal_places=2, default=0, db_column='TaxPercent')
+    TaxAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TaxAmount')
+    Quantity = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Quantity')
+    Total = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Total')
+    DiscPercent = models.DecimalField(max_digits=5, decimal_places=2, default=0, db_column='DiscPercent')
+    DiscAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='DiscAmount')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+
+    class Meta:
+        managed = False
+        db_table = '"PurchaseLine"'
+        ordering = ['LineNo']
+
+    def __str__(self):
+        return f"Line {self.LineNo}: {self.ProductName} x {self.Quantity}"
+
+
+class StockMovement(models.Model):
+    StockMovementId = models.BigAutoField(primary_key=True, db_column='StockMovementId')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    Product = models.ForeignKey(Product, on_delete=models.PROTECT, db_column='ProductId', related_name='stock_movements')
+    Unit = models.ForeignKey(Unit, on_delete=models.PROTECT, db_column='UnitId', related_name='stock_units')
+    AltUnitId = models.BigIntegerField(null=True, blank=True, db_column='AltUnitId')
+    UnitConversion = models.DecimalField(max_digits=12, decimal_places=4, null=True, blank=True, db_column='UnitConversion')
+    RouteVehicleDriverId = models.BigIntegerField(default=1, db_column='RouteVehicleDriverId')
+    TransactionType = models.CharField(max_length=50, db_column='TransactionType')
+    ReferenceId = models.BigIntegerField(db_column='ReferenceId')
+    ReferenceLineId = models.BigIntegerField(null=True, blank=True, db_column='ReferenceLineId')
+    TransactionNo = models.CharField(max_length=50, null=True, blank=True, db_column='TransactionNo')
+    TransactionDate = models.DateField(db_column='TransactionDate')
+    InQty = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='InQty')
+    InCostRate = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='InCostRate')
+    InCostAmount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='InCostAmount')
+    OutQty = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='OutQty')
+    OutCostRate = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='OutCostRate')
+    OutCostAmount = models.DecimalField(max_digits=18, decimal_places=2, null=True, blank=True, db_column='OutCostAmount')
+    Narration = models.CharField(max_length=250, null=True, blank=True, db_column='Narration')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"StockMovement"'
+
+
+class Voucher(models.Model):
+    VoucherId = models.BigAutoField(primary_key=True, db_column='VoucherId')
+    VoucherNo = models.CharField(max_length=50, db_column='VoucherNo')
+    VoucherDate = models.DateField(db_column='VoucherDate')
+    VoucherType = models.CharField(max_length=50, db_column='VoucherType')
+    ReferenceTable = models.CharField(max_length=50, db_column='ReferenceTable')
+    ReferenceId = models.BigIntegerField(db_column='ReferenceId')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    Narration = models.CharField(max_length=250, null=True, blank=True, db_column='Narration')
+    IsCancelled = models.BooleanField(default=False, db_column='IsCancelled')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"Voucher"'
+
+
+class VoucherLine(models.Model):
+    VoucherLineId = models.BigAutoField(primary_key=True, db_column='VoucherLineId')
+    Voucher = models.ForeignKey(Voucher, on_delete=models.CASCADE, db_column='VoucherId', related_name='lines')
+    LineNo = models.IntegerField(default=1, db_column='LineNo')
+    Ledger = models.ForeignKey(Ledger, on_delete=models.PROTECT, db_column='LedgerId', related_name='voucher_lines')
+    DebitAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='DebitAmount')
+    CreditAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='CreditAmount')
+    Narration = models.CharField(max_length=250, null=True, blank=True, db_column='Narration')
+
+    class Meta:
+        managed = False
+        db_table = '"VoucherLine"'
+        ordering = ['LineNo']

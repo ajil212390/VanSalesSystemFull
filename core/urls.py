@@ -6,7 +6,8 @@ from core.views import (
     CompanyProfileView, StateListView, RoleListView,
     DriverViewSet, VehicleViewSet, RouteViewSet, RouteVehicleDriverViewSet, UserViewSet,
     CategoryViewSet, UnitViewSet, ProductViewSet,
-    GroupViewSet, LedgerViewSet, ProductPriceAuditViewSet
+    GroupViewSet, LedgerViewSet, ProductPriceAuditViewSet,
+    PurchaseViewSet
 )
 
 
@@ -22,6 +23,7 @@ router.register(r'products', ProductViewSet, basename='product')
 router.register(r'groups', GroupViewSet, basename='group')
 router.register(r'ledgers', LedgerViewSet, basename='ledger')
 router.register(r'price-audits', ProductPriceAuditViewSet, basename='price-audit')
+router.register(r'purchases', PurchaseViewSet, basename='purchase')
 
 
 
