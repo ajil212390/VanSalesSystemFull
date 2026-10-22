@@ -28,6 +28,7 @@ import {
   IconBook2,
   IconPencil,
   IconTrash,
+  IconChevronDown,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
@@ -190,10 +191,27 @@ export const AccountsPage: React.FC = () => {
     handleSubmit,
     control,
     reset,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<LedgerFormValues>({
     defaultValues: defaultLedgerValues,
   });
+
+  const [showExtraDetails, setShowExtraDetails] = useState(false);
+
+  const selectedGroupId = watch('Group');
+  const selectedGroup = useMemo(() => {
+    if (!selectedGroupId) return null;
+    return groups.find((g) => String(g.GroupId) === String(selectedGroupId));
+  }, [groups, selectedGroupId]);
+
+  const isPartyGroup = useMemo(() => {
+    if (!selectedGroup) return false;
+    const name = selectedGroup.GroupName.toLowerCase();
+    return name.includes('debtor') || name.includes('creditor');
+  }, [selectedGroup]);
+
+  const isDetailsExpanded = isPartyGroup || showExtraDetails;
 
   // Save / Update mutation
   const saveMutation = useMutation({
@@ -307,6 +325,15 @@ export const AccountsPage: React.FC = () => {
 
   const handleEdit = (ledger: LedgerItem) => {
     setEditingLedger(ledger);
+    const hasExtra = Boolean(
+      ledger.GSTIN ||
+      ledger.MobileNumber ||
+      ledger.AddressLine1 ||
+      ledger.BankName ||
+      Number(ledger.CreditLimit || 0) > 0 ||
+      Number(ledger.EmptyStockLimit || 0) > 0
+    );
+    setShowExtraDetails(hasExtra);
     reset({
       LedgerName: ledger.LedgerName,
       Group: String(ledger.Group),
@@ -440,7 +467,7 @@ export const AccountsPage: React.FC = () => {
       {/* Main Container */}
       <Box>
         {/* Slide-Down Form Panel */}
-        <Collapse expanded={formOpened} transitionDuration={250} transitionTimingFunction="ease">
+        <Collapse expanded={formOpened} transitionDuration={350} transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)">
           <Paper
             p="lg"
             radius="sm"
@@ -599,225 +626,257 @@ export const AccountsPage: React.FC = () => {
                   />
                 </SimpleGrid>
 
-                {/* Section 2: Credit, Statutory & Contact Details (Middle rows) */}
-                <Divider
-                  label={
-                    <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                      Credit, Compliance & Address Details
-                    </Text>
-                  }
-                  labelPosition="left"
-                  color="#e2e8f0"
-                  mt="xs"
-                />
-
-                {/* Row 3: Credit Terms & Stock Limit */}
-                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-                  <Controller
-                    name="CreditPeriodDays"
-                    control={control}
-                    render={({ field }) => (
-                      <NumberInput
-                        label="Credit Period"
-                        placeholder="0"
-                        min={0}
-                        hideControls
-                        value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
-                        onChange={(val) => field.onChange(val === '' ? '' : val)}
-                      />
-                    )}
-                  />
-
-                  <Controller
-                    name="CreditLimit"
-                    control={control}
-                    render={({ field }) => (
-                      <NumberInput
-                        label="Credit Limit"
-                        placeholder="0.00"
-                        min={0}
-                        decimalScale={2}
-                        prefix="₹ "
-                        hideControls
-                        value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
-                        onChange={(val) => field.onChange(val === '' ? '' : val)}
-                      />
-                    )}
-                  />
-
-                  <Controller
-                    name="EmptyStockLimit"
-                    control={control}
-                    render={({ field }) => (
-                      <NumberInput
-                        label="Empty Stock Limit"
-                        placeholder="0"
-                        min={0}
-                        hideControls
-                        value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
-                        onChange={(val) => field.onChange(val === '' ? '' : val)}
-                      />
-                    )}
-                  />
-                </SimpleGrid>
-
-                {/* Row 3: Tax Compliance (GST & PAN) */}
-                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-                  <Controller
-                    name="GSTRegistrationType"
-                    control={control}
-                    render={({ field }) => (
-                      <Select
-                        label="GST Registration Type"
-                        placeholder="Select Type"
-                        data={[
-                          { value: 'Unregistered', label: 'Unregistered / Consumer' },
-                          { value: 'Regular', label: 'Regular Taxpayer' },
-                          { value: 'Composition', label: 'Composition Scheme' },
-                        ]}
-                        value={field.value || null}
-                        onChange={(val) => field.onChange(val || '')}
-                        clearable
-                      />
-                    )}
-                  />
-
-                  <TextInput
-                    label="GSTIN (15 Digits)"
-                    placeholder="e.g. 32AAAAA0000A1Z5"
-                    maxLength={15}
-                    {...register('GSTIN')}
-                  />
-
-                  <TextInput
-                    label="PAN Number (10 Digits)"
-                    placeholder="e.g. ABCDE1234F"
-                    maxLength={10}
-                    {...register('PAN')}
-                  />
-                </SimpleGrid>
-
-                {/* Row 4: Contact & Communication */}
-                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-                  <TextInput
-                    label="Mobile Number"
-                    placeholder="10-digit mobile number"
-                    {...register('MobileNumber')}
-                  />
-
-                  <TextInput
-                    label="Phone Number"
-                    placeholder="Landline / Alt phone"
-                    {...register('PhoneNumber')}
-                  />
-
-                  <TextInput
-                    label="Email Address"
-                    placeholder="e.g. accounts@client.com"
-                    {...register('Email')}
-                  />
-                </SimpleGrid>
-
-                {/* Row 6: Street Address */}
-                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-                  <TextInput
-                    label="Address Line 1"
-                    placeholder="Premises, Street, Building"
-                    {...register('AddressLine1')}
-                  />
-
-                  <TextInput
-                    label="Address Line 2"
-                    placeholder="Area, Landmark"
-                    {...register('AddressLine2')}
-                  />
-
-                  <TextInput
-                    label="Address Line 3"
-                    placeholder="Locality, Sector / Floor"
-                    {...register('AddressLine3')}
-                  />
-                </SimpleGrid>
-
-                {/* Row 7: City / Town, State & Pincode */}
-                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-                  <TextInput
-                    label="City / Town"
-                    placeholder="e.g. Cochin"
-                    {...register('City')}
-                  />
-
-                  <Controller
-                    name="StateId"
-                    control={control}
-                    render={({ field }) => (
-                      <Select
-                        label="State (Place of Supply)"
-                        placeholder="Select State"
-                        data={stateOptions}
-                        value={field.value ? String(field.value) : null}
-                        onChange={(val) => field.onChange(val || null)}
-                        searchable
-                        clearable
-                        nothingFoundMessage="No states found"
-                      />
-                    )}
-                  />
-
-                  <TextInput
-                    label="Pincode"
-                    placeholder="e.g. 682001"
-                    maxLength={10}
-                    {...register('Pincode')}
-                  />
-                </SimpleGrid>
-
-                {/* Section 3: Banking & Remarks (Last 2 rows) */}
-                <Divider
-                  label={
-                    <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: 0.6 }}>
-                      Banking Details & Remarks
-                    </Text>
-                  }
-                  labelPosition="left"
-                  color="#e2e8f0"
-                  mt="xs"
-                />
-
-                {/* Row 8: Banking Details (Optional) */}
-                <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="md">
-                  <TextInput
-                    label="Bank Name"
-                    placeholder="e.g. State Bank of India"
-                    {...register('BankName')}
-                  />
-
-                  <TextInput
-                    label="Account Number"
-                    placeholder="A/c number"
-                    {...register('BankAccountNumber')}
-                  />
-
-                  <TextInput
-                    label="IFSC Code"
-                    placeholder="e.g. SBIN0001234"
-                    maxLength={11}
-                    {...register('IFSCCode')}
-                  />
-
-                  <TextInput
-                    label="Branch Name"
-                    placeholder="Branch location"
-                    {...register('BankBranch')}
-                  />
-                </SimpleGrid>
-
-                {/* Row 7: Narration / Remarks */}
+                {/* Narration / Remarks - in initial group */}
                 <TextInput
                   label="Narration / Remarks (Optional)"
                   placeholder="Additional remarks or ledger notes..."
                   {...register('Narration')}
                 />
+
+                {/* Optional Expand Toggle for Non-Party Ledgers */}
+                {!isPartyGroup && (
+                  <Group justify="flex-start" mt={2}>
+                    <Button
+                      variant="subtle"
+                      color="gray"
+                      size="xs"
+                      leftSection={
+                        <IconChevronDown
+                          size={14}
+                          style={{
+                            transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                            transform: isDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          }}
+                        />
+                      }
+                      onClick={() => setShowExtraDetails(!showExtraDetails)}
+                      styles={{ root: { fontWeight: 500, paddingLeft: 6, paddingRight: 10 } }}
+                    >
+                      {isDetailsExpanded ? 'Fewer details' : 'More details'}
+                    </Button>
+                  </Group>
+                )}
+
+                {/* Collapsible Sections: Credit, Compliance, Address & Banking (Auto-expanded for Sundry Debtors / Creditors) */}
+                <Collapse
+                  expanded={isDetailsExpanded}
+                  transitionDuration={350}
+                  transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+                >
+                  <Stack gap="md" mt="xs">
+                    {/* Section 2: Credit, Statutory & Contact Details (Middle rows) */}
+                    <Divider
+                      label={
+                        <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                          Credit, Compliance & Address Details
+                        </Text>
+                      }
+                      labelPosition="left"
+                      color="#e2e8f0"
+                    />
+
+                    {/* Row 3: Credit Terms & Stock Limit */}
+                    <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                      <Controller
+                        name="CreditPeriodDays"
+                        control={control}
+                        render={({ field }) => (
+                          <NumberInput
+                            label="Credit Period"
+                            placeholder="0"
+                            min={0}
+                            hideControls
+                            value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
+                            onChange={(val) => field.onChange(val === '' ? '' : val)}
+                          />
+                        )}
+                      />
+
+                      <Controller
+                        name="CreditLimit"
+                        control={control}
+                        render={({ field }) => (
+                          <NumberInput
+                            label="Credit Limit"
+                            placeholder="0.00"
+                            min={0}
+                            decimalScale={2}
+                            prefix="₹ "
+                            hideControls
+                            value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
+                            onChange={(val) => field.onChange(val === '' ? '' : val)}
+                          />
+                        )}
+                      />
+
+                      <Controller
+                        name="EmptyStockLimit"
+                        control={control}
+                        render={({ field }) => (
+                          <NumberInput
+                            label="Empty Stock Limit"
+                            placeholder="0"
+                            min={0}
+                            hideControls
+                            value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
+                            onChange={(val) => field.onChange(val === '' ? '' : val)}
+                          />
+                        )}
+                      />
+                    </SimpleGrid>
+
+                    {/* Row 4: Tax Compliance (GST & PAN) */}
+                    <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                      <Controller
+                        name="GSTRegistrationType"
+                        control={control}
+                        render={({ field }) => (
+                          <Select
+                            label="GST Registration Type"
+                            placeholder="Select Type"
+                            data={[
+                              { value: 'Unregistered', label: 'Unregistered / Consumer' },
+                              { value: 'Regular', label: 'Regular Taxpayer' },
+                              { value: 'Composition', label: 'Composition Scheme' },
+                            ]}
+                            value={field.value || null}
+                            onChange={(val) => field.onChange(val || '')}
+                            clearable
+                          />
+                        )}
+                      />
+
+                      <TextInput
+                        label="GSTIN (15 Digits)"
+                        placeholder="e.g. 32AAAAA0000A1Z5"
+                        maxLength={15}
+                        {...register('GSTIN')}
+                      />
+
+                      <TextInput
+                        label="PAN Number (10 Digits)"
+                        placeholder="e.g. ABCDE1234F"
+                        maxLength={10}
+                        {...register('PAN')}
+                      />
+                    </SimpleGrid>
+
+                    {/* Row 5: Contact & Communication */}
+                    <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                      <TextInput
+                        label="Mobile Number"
+                        placeholder="10-digit mobile number"
+                        {...register('MobileNumber')}
+                      />
+
+                      <TextInput
+                        label="Phone Number"
+                        placeholder="Landline / Alt phone"
+                        {...register('PhoneNumber')}
+                      />
+
+                      <TextInput
+                        label="Email Address"
+                        placeholder="e.g. accounts@client.com"
+                        {...register('Email')}
+                      />
+                    </SimpleGrid>
+
+                    {/* Row 6: Street Address */}
+                    <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                      <TextInput
+                        label="Address Line 1"
+                        placeholder="Premises, Street, Building"
+                        {...register('AddressLine1')}
+                      />
+
+                      <TextInput
+                        label="Address Line 2"
+                        placeholder="Area, Landmark"
+                        {...register('AddressLine2')}
+                      />
+
+                      <TextInput
+                        label="Address Line 3"
+                        placeholder="Locality, Sector / Floor"
+                        {...register('AddressLine3')}
+                      />
+                    </SimpleGrid>
+
+                    {/* Row 7: City / Town, State & Pincode */}
+                    <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                      <TextInput
+                        label="City / Town"
+                        placeholder="e.g. Cochin"
+                        {...register('City')}
+                      />
+
+                      <Controller
+                        name="StateId"
+                        control={control}
+                        render={({ field }) => (
+                          <Select
+                            label="State (Place of Supply)"
+                            placeholder="Select State"
+                            data={stateOptions}
+                            value={field.value ? String(field.value) : null}
+                            onChange={(val) => field.onChange(val || null)}
+                            searchable
+                            clearable
+                            nothingFoundMessage="No states found"
+                          />
+                        )}
+                      />
+
+                      <TextInput
+                        label="Pincode"
+                        placeholder="e.g. 682001"
+                        maxLength={10}
+                        {...register('Pincode')}
+                      />
+                    </SimpleGrid>
+
+                    {/* Section 3: Banking & Remarks (Last 2 rows) */}
+                    <Divider
+                      label={
+                        <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                          Banking Details & Remarks
+                        </Text>
+                      }
+                      labelPosition="left"
+                      color="#e2e8f0"
+                      mt="xs"
+                    />
+
+                    {/* Row 8: Banking Details (Optional) */}
+                    <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="md">
+                      <TextInput
+                        label="Bank Name"
+                        placeholder="e.g. State Bank of India"
+                        {...register('BankName')}
+                      />
+
+                      <TextInput
+                        label="Account Number"
+                        placeholder="A/c number"
+                        {...register('BankAccountNumber')}
+                      />
+
+                      <TextInput
+                        label="IFSC Code"
+                        placeholder="e.g. SBIN0001234"
+                        maxLength={11}
+                        {...register('IFSCCode')}
+                      />
+
+                      <TextInput
+                        label="Branch Name"
+                        placeholder="Branch location"
+                        {...register('BankBranch')}
+                      />
+                    </SimpleGrid>
+                  </Stack>
+                </Collapse>
 
                 {/* Row 8: Status Switches on Left, Action Buttons on Right */}
                 <Group justify="space-between" align="center" wrap="wrap" gap="md" mt="xs">
@@ -839,22 +898,33 @@ export const AccountsPage: React.FC = () => {
                       )}
                     />
 
-                    <Controller
-                      name="IsBillWise"
-                      control={control}
-                      render={({ field }) => (
-                        <Paper p="xs" px="sm" radius="sm" withBorder style={{ backgroundColor: '#fcfcfc', borderColor: '#e2e8f0' }}>
-                          <Switch
-                            label={field.value ? 'Bill-Wise: Enabled' : 'Bill-Wise: Disabled'}
-                            description={field.value ? 'Track individual invoice aging & balances' : 'Cumulative running balance'}
-                            checked={field.value}
-                            onChange={(e) => field.onChange(e.currentTarget.checked)}
-                            color="burgundy"
-                            size="sm"
+                    <Transition
+                      mounted={isDetailsExpanded}
+                      transition="fade"
+                      duration={300}
+                      timingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+                    >
+                      {(transitionStyles) => (
+                        <div style={transitionStyles}>
+                          <Controller
+                            name="IsBillWise"
+                            control={control}
+                            render={({ field }) => (
+                              <Paper p="xs" px="sm" radius="sm" withBorder style={{ backgroundColor: '#fcfcfc', borderColor: '#e2e8f0' }}>
+                                <Switch
+                                  label={field.value ? 'Bill-Wise: Enabled' : 'Bill-Wise: Disabled'}
+                                  description={field.value ? 'Track individual invoice aging & balances' : 'Cumulative running balance'}
+                                  checked={field.value}
+                                  onChange={(e) => field.onChange(e.currentTarget.checked)}
+                                  color="burgundy"
+                                  size="sm"
+                                />
+                              </Paper>
+                            )}
                           />
-                        </Paper>
+                        </div>
                       )}
-                    />
+                    </Transition>
                   </Group>
 
                   <Group gap="sm">
@@ -872,7 +942,7 @@ export const AccountsPage: React.FC = () => {
         </Collapse>
 
         {/* Ledgers Table & Filter Tabs */}
-        <Transition mounted={!formOpened} transition="fade" duration={250} timingFunction="ease">
+        <Transition mounted={!formOpened} transition="fade" duration={300} timingFunction="cubic-bezier(0.16, 1, 0.3, 1)">
           {(styles) => (
             <Paper
               radius="sm"
@@ -907,20 +977,20 @@ export const AccountsPage: React.FC = () => {
                   </Stack>
                 </Center>
               ) : (
-                <Table.ScrollContainer minWidth={1260}>
+                <Table.ScrollContainer minWidth={1380}>
                   <Table verticalSpacing="md" horizontalSpacing="md" highlightOnHover>
                     <Table.Thead style={{ backgroundColor: '#fcfcfc', borderBottom: '1px solid #e2e8f0' }}>
                       <Table.Tr>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 200 }}>Ledger Name</Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 150 }}>Group</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 100, textAlign: 'center' }}>Nature</Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'center' }}>Nature</Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 120 }}>Contact</Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130 }}>GSTIN</Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130, textAlign: 'right' }}>Opening Balance</Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>Debit</Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>Credit</Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130, textAlign: 'right' }}>Current Balance</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 90, textAlign: 'center' }}>Status</Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'center' }}>Status</Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 80, textAlign: 'right' }}>Actions</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
@@ -970,7 +1040,7 @@ export const AccountsPage: React.FC = () => {
                             </Table.Td>
 
                             {/* Nature - Refined Slate Badge */}
-                            <Table.Td style={{ minWidth: 100, textAlign: 'center' }}>
+                            <Table.Td style={{ minWidth: 110, textAlign: 'center', whiteSpace: 'nowrap' }}>
                               <Badge
                                 size="xs"
                                 variant="outline"
@@ -980,6 +1050,8 @@ export const AccountsPage: React.FC = () => {
                                   backgroundColor: '#f8fafc',
                                   fontWeight: 600,
                                   textTransform: 'uppercase',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'visible',
                                 }}
                               >
                                 {ledger.group_nature || '—'}
@@ -1058,7 +1130,7 @@ export const AccountsPage: React.FC = () => {
                             </Table.Td>
 
                             {/* Status */}
-                            <Table.Td style={{ minWidth: 90, textAlign: 'center' }}>
+                            <Table.Td style={{ minWidth: 110, textAlign: 'center', whiteSpace: 'nowrap' }}>
                               <Badge
                                 size="sm"
                                 variant="outline"
@@ -1067,6 +1139,8 @@ export const AccountsPage: React.FC = () => {
                                   color: ledger.IsActive ? '#334155' : '#dc2626',
                                   backgroundColor: ledger.IsActive ? '#f8fafc' : '#fff5f5',
                                   fontWeight: 500,
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'visible',
                                 }}
                               >
                                 {ledger.IsActive ? 'Active' : 'Inactive'}

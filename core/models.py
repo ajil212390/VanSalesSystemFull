@@ -328,3 +328,23 @@ class Product(models.Model):
 
     def __str__(self):
         return self.ProductName
+
+
+class ProductPriceAudit(models.Model):
+    AuditId = models.BigAutoField(primary_key=True, db_column='AuditId')
+    Product = models.ForeignKey(Product, on_delete=models.CASCADE, db_column='ProductId', related_name='price_audits')
+    ProductName = models.CharField(max_length=150, db_column='ProductName')
+    OldSalesPrice = models.DecimalField(max_digits=12, decimal_places=2, default=0, db_column='OldSalesPrice')
+    NewSalesPrice = models.DecimalField(max_digits=12, decimal_places=2, default=0, db_column='NewSalesPrice')
+    User = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, db_column='UserId')
+    Role = models.ForeignKey(UserRole, on_delete=models.SET_NULL, null=True, blank=True, db_column='RoleId')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    CreatedTimestamp = models.DateTimeField(auto_now_add=True, db_column='CreatedTimestamp')
+
+    class Meta:
+        managed = False
+        db_table = '"ProductPriceAudit"'
+        ordering = ['-CreatedTimestamp']
+
+    def __str__(self):
+        return f"{self.ProductName}: {self.OldSalesPrice} -> {self.NewSalesPrice}"

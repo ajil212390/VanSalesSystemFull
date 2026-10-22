@@ -3,7 +3,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from drf_spectacular.utils import extend_schema_field
-from core.models import User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver, Category, Unit, Product, Group, Ledger
+from core.models import User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver, Category, Unit, Product, Group, Ledger, ProductPriceAudit
 
 from core.services import register_company
 
@@ -590,4 +590,21 @@ class LedgerSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError("PAN must be exactly 10 characters.")
             return val
         return None
+
+
+class ProductPriceAuditSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='User.Username', read_only=True)
+    role_name = serializers.CharField(source='Role.RoleName', read_only=True)
+
+    class Meta:
+        model = ProductPriceAudit
+        fields = [
+            'AuditId', 'Product', 'ProductName',
+            'OldSalesPrice', 'NewSalesPrice',
+            'User', 'username',
+            'Role', 'role_name',
+            'CompanyId', 'CreatedTimestamp'
+        ]
+        read_only_fields = fields
+
 

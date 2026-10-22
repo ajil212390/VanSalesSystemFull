@@ -18,6 +18,9 @@ import { UsersPage } from './pages/UsersPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { ProductsPage } from './pages/ProductsPage';
 import { AccountsPage } from './pages/AccountsPage';
+import { PriceUpdatePage } from './pages/PriceUpdatePage';
+import { PurchaseListPage } from './pages/PurchaseListPage';
+import { PurchaseFormPage } from './pages/PurchaseFormPage';
 
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/AppLayout';
@@ -81,8 +84,8 @@ const theme = createTheme({
     },
     Collapse: {
       defaultProps: {
-        transitionDuration: 250,
-        transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        transitionDuration: 350,
+        transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
         animateOpacity: true,
       },
     },
@@ -120,7 +123,11 @@ export const App: React.FC = () => {
               <Route path="/users" element={<UsersPage />} />
               <Route path="/categories" element={<CategoriesPage />} />
               <Route path="/products" element={<ProductsPage />} />
+              <Route path="/price-update" element={<PriceUpdatePage />} />
               <Route path="/accounts" element={<AccountsPage />} />
+              <Route path="/purchases" element={<PurchaseListPage />} />
+              <Route path="/purchases/new" element={<PurchaseFormPage />} />
+              <Route path="/purchases/:id/edit" element={<PurchaseFormPage />} />
             </Route>
 
             {/* Fallback */}

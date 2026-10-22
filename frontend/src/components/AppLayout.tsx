@@ -35,6 +35,7 @@ import {
   IconBuildingBank,
   IconChevronDown,
   IconExternalLink,
+  IconReceipt,
 } from '@tabler/icons-react';
 
 
@@ -101,11 +102,20 @@ export const AppLayout: React.FC = () => {
         return { section: 'Master', title: 'Categories' };
       case '/products':
         return { section: 'Master', title: 'Products' };
+      case '/price-update':
+        return { section: 'Master', title: 'Price Update' };
       case '/users':
         return { section: 'Master', title: 'Staff Users' };
       case '/accounts':
         return { section: 'Master', title: 'Accounts' };
+      case '/purchases':
+        return { section: 'Purchase', title: 'Purchase Invoices' };
+      case '/purchases/new':
+        return { section: 'Purchase', title: 'New Purchase' };
       default:
+        if (location.pathname.startsWith('/purchases/')) {
+          return { section: 'Purchase', title: 'Edit Purchase' };
+        }
         return { section: 'Van Sales', title: 'Operations' };
     }
   };
@@ -580,6 +590,53 @@ export const AppLayout: React.FC = () => {
             })}
           </NavLink>
         )}
+
+        {/* Purchase Link */}
+        <Tooltip label="Purchase" position="right" withArrow disabled={!isCollapsed}>
+          <NavLink
+            component={Link}
+            to="/purchases"
+            label="Purchase"
+            leftSection={<IconReceipt size={20} stroke={1.75} />}
+            active={location.pathname.startsWith('/purchases')}
+            color="burgundy"
+            variant="light"
+            mb={4}
+            onClick={() => opened && toggle()}
+            styles={{
+              root: {
+                borderRadius: '6px',
+                height: 40,
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: isCollapsed ? 'center' : 'flex-start',
+                padding: isCollapsed ? '0' : '0 12px',
+                backgroundColor: location.pathname.startsWith('/purchases') ? '#fdf2f4' : 'transparent',
+                color: location.pathname.startsWith('/purchases') ? '#800020' : '#475569',
+                fontWeight: 600,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
+              },
+              section: {
+                marginRight: isCollapsed ? 0 : 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+              body: {
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                opacity: isCollapsed ? 0 : 1,
+                maxWidth: isCollapsed ? 0 : 160,
+                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+            }}
+          />
+        </Tooltip>
 
         {/* Bottom Settings Icon with Spinning Animation & Logout Popover */}
         <Box mt="auto" pt="xs" style={{ borderTop: '1px solid #f1f5f9' }}>

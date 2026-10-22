@@ -22,10 +22,11 @@ import {
   Transition,
   Tooltip,
 } from '@mantine/core';
-import { IconPencil, IconTrash, IconSearch, IconCylinder } from '@tabler/icons-react';
+import { IconPencil, IconTrash, IconSearch, IconCylinder, IconCurrencyRupee } from '@tabler/icons-react';
 import { useForm, Controller } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
+import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 
@@ -99,6 +100,7 @@ export const ProductsPage: React.FC = () => {
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [productToDelete, setProductToDelete] = useState<ProductItem | null>(null);
 
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   // 1. Fetch Products
@@ -291,9 +293,9 @@ export const ProductsPage: React.FC = () => {
 
   return (
     <Stack gap="lg">
-      {/* Page Header */}
-      <Group justify="space-between" align="center" wrap="wrap" gap="md">
-        <div>
+      {/* Page Header - strictly single line */}
+      <Group justify="space-between" align="center" wrap="nowrap" gap="md">
+        <div style={{ flexShrink: 0 }}>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Products
           </Title>
@@ -303,15 +305,15 @@ export const ProductsPage: React.FC = () => {
         </div>
 
         {/* Right Actions: Category Filter + Search Bar + Add Button */}
-        <Group gap="sm" align="center" wrap="wrap">
+        <Group gap="xs" align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(catFilterStyles) => (
-              <Box style={{ ...catFilterStyles, width: 170 }}>
+              <Box style={{ ...catFilterStyles, width: 140 }}>
                 <Select
                   placeholder="All Categories"
                   data={categoryOptions}
                   value={selectedCategoryFilter}
-                  onChange={setSelectedCategoryFilter}
+                  onChange={(val) => setSelectedCategoryFilter(val ? String(val) : null)}
                   clearable
                   size="sm"
                   radius="md"
@@ -322,7 +324,7 @@ export const ProductsPage: React.FC = () => {
 
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(searchStyles) => (
-              <Box style={{ ...searchStyles, width: 240 }}>
+              <Box style={{ ...searchStyles, width: 190 }}>
                 <TextInput
                   placeholder="Search products..."
                   value={searchQuery}
@@ -346,9 +348,20 @@ export const ProductsPage: React.FC = () => {
 
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(btnStyles) => (
-              <Button color="burgundy" radius={10} onClick={handleAddNew} style={btnStyles}>
-                + Add Product
-              </Button>
+              <Group gap="xs" style={btnStyles} wrap="nowrap">
+                <Button
+                  variant="outline"
+                  color="burgundy"
+                  radius={10}
+                  leftSection={<IconCurrencyRupee size={16} stroke={1.5} />}
+                  onClick={() => navigate('/price-update')}
+                >
+                  Price Update
+                </Button>
+                <Button color="burgundy" radius={10} onClick={handleAddNew}>
+                  + Add Product
+                </Button>
+              </Group>
             )}
           </Transition>
         </Group>

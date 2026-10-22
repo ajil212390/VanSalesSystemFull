@@ -5,14 +5,14 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import AnonRateThrottle
 from drf_spectacular.utils import extend_schema
 
-from core.models import State, UserRole, Company, Driver, Route, Vehicle, RouteVehicleDriver, User, Category, Unit, Product, Group, Ledger
+from core.models import State, UserRole, Company, Driver, Route, Vehicle, RouteVehicleDriver, User, Category, Unit, Product, Group, Ledger, ProductPriceAudit
 
 from core.serializers import (
     LoginSerializer, RegisterSerializer, UserMeSerializer,
     CompanySerializer, StateSerializer, UserRoleSerializer,
     DriverSerializer, RouteSerializer, VehicleSerializer, RouteVehicleDriverSerializer,
     UserManagementSerializer, CategorySerializer, UnitSerializer, ProductSerializer,
-    GroupSerializer, LedgerSerializer
+    GroupSerializer, LedgerSerializer, ProductPriceAuditSerializer
 )
 
 
@@ -314,6 +314,27 @@ class ProductViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(CompanyId=self.request.user.CompanyId)
 
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        old_sales_price = instance.SalesPrice
+        updated_instance = serializer.save()
+        new_sales_price = updated_instance.SalesPrice
+
+        if old_sales_price != new_sales_price:
+            user = self.request.user if (self.request.user and self.request.user.is_authenticated) else None
+            role_id = getattr(user, 'UserRole_id', None) if user else None
+            company_id = getattr(user, 'CompanyId', 0) if user else 0
+
+            ProductPriceAudit.objects.create(
+                Product=updated_instance,
+                ProductName=updated_instance.ProductName,
+                OldSalesPrice=old_sales_price,
+                NewSalesPrice=new_sales_price,
+                User=user,
+                Role_id=role_id,
+                CompanyId=company_id
+            )
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
@@ -327,6 +348,26 @@ class ProductViewSet(viewsets.ModelViewSet):
                 {"detail": "Cannot delete this product because it is referenced by other transactions."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+
+class ProductPriceAuditViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Audit log endpoint to view product price change history.
+    """
+    serializer_class = ProductPriceAuditSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = (
+            ProductPriceAudit.objects
+            .filter(CompanyId=self.request.user.CompanyId)
+            .select_related('Product', 'User', 'Role')
+            .order_by('-CreatedTimestamp')
+        )
+        product_id = self.request.query_params.get('product_id')
+        if product_id:
+            qs = qs.filter(Product_id=product_id)
+        return qs
 
 class GroupViewSet(viewsets.ReadOnlyModelViewSet):
     """
