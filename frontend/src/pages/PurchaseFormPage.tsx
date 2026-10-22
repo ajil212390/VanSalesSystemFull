@@ -327,14 +327,14 @@ export const PurchaseFormPage: React.FC = () => {
                   id: makeId(),
                   ProductId: prodId ? Number(prodId) : null,
                   ProductName: l.ProductName || '',
-                  Quantity: l.Quantity !== undefined && l.Quantity !== null ? l.Quantity : '',
-                  AltQuantity: l.AltQuantity || 0,
+                  Quantity: l.Quantity !== undefined && l.Quantity !== null && l.Quantity !== '' ? Number(l.Quantity) : '',
+                  AltQuantity: l.AltQuantity !== undefined && l.AltQuantity !== null && l.AltQuantity !== '' ? Number(l.AltQuantity) : 0,
                   UnitId: l.Unit || l.UnitId || null,
                   UnitName: l.unit_name || '',
                   AltUnitId: l.AltUnitId || null,
                   AltUnitName: l.alt_unit_name || '',
                   UnitConversion: Number(l.UnitConversion) || 1,
-                  Rate: l.CostPrice !== undefined && l.CostPrice !== null ? l.CostPrice : '',
+                  Rate: l.CostPrice !== undefined && l.CostPrice !== null && l.CostPrice !== '' ? Number(l.CostPrice) : '',
                   GSTPercent: Number(l.TaxPercent) || 0,
                   TaxableAmount: 0,
                   CGSTPercent: 0,
@@ -688,7 +688,13 @@ export const PurchaseFormPage: React.FC = () => {
                           min={0}
                           hideControls
                           placeholder="0"
-                          value={line.Quantity}
+                          value={
+                            line.Quantity === '' || line.Quantity === null || line.Quantity === undefined
+                              ? ''
+                              : typeof line.Quantity === 'string' && !isNaN(Number(line.Quantity)) && !line.Quantity.endsWith('.')
+                              ? Number(line.Quantity)
+                              : line.Quantity
+                          }
                           onFocus={(e) => e.currentTarget.select()}
                           onChange={(val) => updateField(index, 'Quantity', val)}
                           onKeyDown={(e) => {
@@ -711,7 +717,7 @@ export const PurchaseFormPage: React.FC = () => {
                         />
                         {Number(line.AltQuantity) > 0 && (
                           <Text size="11px" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                            ({line.AltQuantity} {line.AltUnitName || ''})
+                            ({line.AltQuantity}{line.AltUnitName ? ` ${line.AltUnitName}` : ''})
                           </Text>
                         )}
                       </Group>
@@ -766,7 +772,7 @@ export const PurchaseFormPage: React.FC = () => {
                     {/* Taxable Amount */}
                     <Table.Td style={{ textAlign: 'right' }}>
                       {line.ProductId ? (
-                        <Text fw={600} size="sm" c="#334155">
+                        <Text fw={600} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           ₹{line.TaxableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </Text>
                       ) : (
@@ -780,10 +786,10 @@ export const PurchaseFormPage: React.FC = () => {
                         const lineTax = (line.CGSTAmount || 0) + (line.SGSTAmount || 0) + (line.IGSTAmount || 0);
                         return (
                           <Group justify="flex-end" wrap="nowrap" align="center" gap={6}>
-                            <Text size="11px" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                            <Text style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>
                               ({line.GSTPercent}%)
                             </Text>
-                            <Text fw={600} size="sm" c="#0f766e" style={{ whiteSpace: 'nowrap' }}>
+                            <Text fw={600} style={{ fontSize: 13, color: '#0f766e', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                               ₹{lineTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </Text>
                           </Group>
@@ -793,10 +799,10 @@ export const PurchaseFormPage: React.FC = () => {
                       )}
                     </Table.Td>
 
-                    {/* Total (₹) — Clean neutral dark text, completely visible */}
+                    {/* Total (₹) */}
                     <Table.Td style={{ textAlign: 'right' }}>
                       {line.ProductId ? (
-                        <Text fw={700} size="sm" c="#0f172a">
+                        <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           ₹{line.Total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </Text>
                       ) : (
@@ -838,56 +844,64 @@ export const PurchaseFormPage: React.FC = () => {
         </Box>
       )}
 
-      {/* Bottom Dock inside the SAME unified section — completely in one section, blending white */}
+      {/* Footer Section — FIXED AT THE BOTTOM OF THE CARD */}
       <Box
         style={{
           marginTop: 'auto',
           borderTop: '1px solid #e2e8f0',
           backgroundColor: '#ffffff',
+          overflowX: 'hidden',
         }}
       >
-        {/* Row 1: Totals Row — Clean single borders, zero unwanted lines */}
-        <Table.ScrollContainer minWidth={880}>
-          <Table
-            verticalSpacing={2}
-            horizontalSpacing="xs"
-            styles={{
-              td: { border: 'none', paddingTop: 6, paddingBottom: 6, paddingLeft: 6, paddingRight: 6 },
-            }}
-          >
-            <Table.Tbody>
-              <Table.Tr style={{ height: 34, backgroundColor: '#ffffff', border: 'none' }}>
-                <Table.Td style={{ width: 36, textAlign: 'center', border: 'none' }} />
-                <Table.Td style={{ width: 160, minWidth: 140, maxWidth: 180, textAlign: 'right', color: '#475569', fontWeight: 700, fontSize: 13, border: 'none' }}>
-                  Total:
-                </Table.Td>
-                {/* Total Qty directly below Qty column */}
-                <Table.Td style={{ width: 65, minWidth: 55, textAlign: 'left', border: 'none' }}>
-                  <Text size="xs" fw={700} c="#0f172a" pl={4}>
+        {/* Row 1: Totals Row — mathematically aligned with items table columns */}
+        <Table
+          verticalSpacing={1}
+          horizontalSpacing="xs"
+          style={{ tableLayout: 'fixed', width: '100%', minWidth: 880, borderBottom: 'none' }}
+          styles={{
+            td: { border: 'none', paddingTop: 6, paddingBottom: 6, paddingLeft: 6, paddingRight: 6 },
+          }}
+        >
+          <Table.Tbody>
+            <Table.Tr style={{ height: 34, backgroundColor: '#ffffff', border: 'none' }}>
+              <Table.Td style={{ width: 36, textAlign: 'center', border: 'none' }} />
+              <Table.Td style={{ width: 160, minWidth: 140, maxWidth: 180, textAlign: 'right', color: '#475569', fontWeight: 700, fontSize: 13, border: 'none', paddingRight: 8 }}>
+                Total:
+              </Table.Td>
+              {/* Total Qty directly under the 44px Qty box */}
+              <Table.Td style={{ width: 65, minWidth: 55, border: 'none', paddingLeft: 6, paddingRight: 6 }}>
+                <div style={{ width: 44, textAlign: 'center' }}>
+                  <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                     {totals.totalQty}
                   </Text>
-                </Table.Td>
-                <Table.Td style={{ width: 60, minWidth: 55, border: 'none' }} />
-                <Table.Td style={{ width: 110, minWidth: 110, border: 'none' }} />
-                {/* Taxable total directly below Taxable column */}
-                <Table.Td style={{ minWidth: 100, textAlign: 'right', color: '#0f172a', fontWeight: 700, fontSize: 13, border: 'none' }}>
+                </div>
+              </Table.Td>
+              <Table.Td style={{ width: 60, minWidth: 55, border: 'none' }} />
+              <Table.Td style={{ width: 110, minWidth: 110, border: 'none' }} />
+              {/* Taxable total */}
+              <Table.Td style={{ minWidth: 100, textAlign: 'right', border: 'none', paddingRight: 6 }}>
+                <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                   ₹{totals.subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Table.Td>
-                {/* GST total directly below GST column */}
-                <Table.Td style={{ minWidth: 115, textAlign: 'right', color: '#0f766e', fontWeight: 700, fontSize: 13, border: 'none' }}>
+                </Text>
+              </Table.Td>
+              {/* GST total */}
+              <Table.Td style={{ minWidth: 115, textAlign: 'right', border: 'none', paddingRight: 6 }}>
+                <Text fw={700} style={{ fontSize: 13, color: '#0f766e', fontVariantNumeric: 'tabular-nums' }}>
                   ₹{totals.totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Table.Td>
-                {/* Raw Total directly below Total column */}
-                <Table.Td style={{ minWidth: 110, textAlign: 'right', color: '#0f172a', fontWeight: 800, fontSize: 14, border: 'none' }}>
+                </Text>
+              </Table.Td>
+              {/* Raw Total */}
+              <Table.Td style={{ minWidth: 110, textAlign: 'right', border: 'none', paddingRight: 6 }}>
+                <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                   ₹{(totals.subTotal + totals.totalTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Table.Td>
-                <Table.Td style={{ width: 36, padding: '4px', border: 'none' }} />
-              </Table.Tr>
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+                </Text>
+              </Table.Td>
+              <Table.Td style={{ width: 36, padding: '4px', border: 'none' }} />
+            </Table.Tr>
+          </Table.Tbody>
+        </Table>
 
-        {/* Row 2: Action Bar (Notes, Round Off, Grand Total, Buttons) — seamless with Totals row */}
+        {/* Row 2: Action Bar (Notes, Round Off, Grand Total, Buttons) — NO extra top line */}
         <Box pt={4} pb="xs" px="md">
           <Group justify="space-between" align="center" wrap="wrap" gap="md">
             {/* Left: Notes Input */}
