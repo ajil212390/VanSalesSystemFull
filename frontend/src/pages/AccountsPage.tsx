@@ -1045,7 +1045,7 @@ export const AccountsPage: React.FC = () => {
                           <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 110, textAlign: 'right' }}>Credit (Cr)</Table.Th>
                           <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 12, minWidth: 140, textAlign: 'right' }}>Current Balance</Table.Th>
                           <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 130 }}>Contact / Tax</Table.Th>
-                          <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 80, textAlign: 'center' }}>Status</Table.Th>
+                          <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 100, textAlign: 'center' }}>Status</Table.Th>
                           <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 80, textAlign: 'center' }}>Actions</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
@@ -1149,15 +1149,19 @@ export const AccountsPage: React.FC = () => {
                               </Table.Td>
 
                               {/* 7. Status */}
-                              <Table.Td style={{ minWidth: 80, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                              <Table.Td style={{ minWidth: 100, textAlign: 'center', whiteSpace: 'nowrap' }}>
                                 <Badge
                                   size="sm"
                                   variant="outline"
+                                  tt="none"
                                   style={{
                                     borderColor: ledger.IsActive ? '#cbd5e1' : '#fca5a5',
                                     color: ledger.IsActive ? '#334155' : '#dc2626',
                                     backgroundColor: ledger.IsActive ? '#f8fafc' : '#fff5f5',
                                     fontWeight: 500,
+                                    textTransform: 'none',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'visible',
                                   }}
                                 >
                                   {ledger.IsActive ? 'Active' : 'Inactive'}
@@ -1204,35 +1208,35 @@ export const AccountsPage: React.FC = () => {
                       </Table.Tbody>
 
                       {/* Financial Column Totals in Table Footer */}
-                      <Table.Tfoot style={{ backgroundColor: '#fcfcfd', borderTop: '2px solid #e2e8f0' }}>
+                      <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #cbd5e1' }}>
                         <Table.Tr>
-                          <Table.Td style={{ padding: '10px 14px' }}>
-                            <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                          <Table.Td style={{ padding: '12px 14px' }}>
+                            <Text size="sm" fw={700} c="#1e293b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
                               Totals ({filteredLedgers.length} Ledgers):
                             </Text>
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', padding: '10px 14px' }}>
-                            <Text size="xs" fw={700} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                            <Text size="sm" fw={700} c="#1e293b" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               ₹{Math.abs(financialTotals.netOpening).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
-                              <Text component="span" size="10px" c={financialTotals.netOpening >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
+                              <Text component="span" size="xs" c={financialTotals.netOpening >= 0 ? '#0284c7' : '#dc2626'} fw={700}>
                                 {financialTotals.netOpening >= 0 ? 'DR' : 'CR'}
                               </Text>
                             </Text>
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', padding: '10px 14px' }}>
-                            <Text size="xs" fw={700} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                            <Text size="sm" fw={700} c="#1e293b" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               ₹{financialTotals.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </Text>
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', padding: '10px 14px' }}>
-                            <Text size="xs" fw={700} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                            <Text size="sm" fw={700} c="#1e293b" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               ₹{financialTotals.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </Text>
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', padding: '10px 14px' }}>
-                            <Text size="xs" fw={700} c={financialTotals.totalCurrent >= 0 ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', padding: '12px 14px', whiteSpace: 'nowrap' }}>
+                            <Text size="sm" fw={700} c={financialTotals.totalCurrent >= 0 ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
                               ₹{Math.abs(financialTotals.totalCurrent).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
-                              <Text component="span" size="10px" c={financialTotals.totalCurrent >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
+                              <Text component="span" size="xs" c={financialTotals.totalCurrent >= 0 ? '#0284c7' : '#dc2626'} fw={700}>
                                 {financialTotals.totalCurrent >= 0 ? 'Dr' : 'Cr'}
                               </Text>
                             </Text>

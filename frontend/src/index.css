@@ -192,18 +192,5 @@ button.mantine-Button-root[data-variant="light"]:hover {
   .mantine-ActionIcon-root {
     touch-action: manipulation;
   }
-
-  /* Compact table cells for small screens */
-  .mantine-Table-th,
-  table thead th {
-    padding: 10px 12px !important;
-    font-size: 0.75rem !important;
-  }
-
-  .mantine-Table-td,
-  table tbody td {
-    padding: 10px 12px !important;
-    font-size: 0.8125rem !important;
-  }
 }
 

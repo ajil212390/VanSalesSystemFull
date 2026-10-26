@@ -156,22 +156,22 @@ export const DashboardPage: React.FC = () => {
         }}
       >
         <Group justify="space-between" align="center" wrap="wrap" gap="md">
-          <Stack gap={4}>
-            <Group gap="xs" align="center">
+          <Stack gap={4} style={{ flexGrow: 1, minWidth: 260 }}>
+            <Group gap="xs" align="center" wrap="wrap">
               <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 21, letterSpacing: '-0.02em' }}>
                 {user?.company_name || 'Future Gas'}
               </Title>
               <Badge
-                color="burgundy"
-                variant="light"
+                color="gray"
+                variant="outline"
                 size="sm"
                 radius="sm"
-                style={{ backgroundColor: '#fbf0f2', color: '#800020', fontWeight: 600 }}
+                style={{ borderColor: '#cbd5e1', color: '#475569', backgroundColor: '#f8fafc', fontWeight: 600 }}
               >
                 {user?.role || 'Administrator'}
               </Badge>
             </Group>
-            <Group gap="xs" align="center">
+            <Group gap="xs" align="center" wrap="wrap">
               <Group gap={4} align="center">
                 <Badge size="xs" variant="dot" color="teal" radius="sm">
                   System Active
@@ -196,7 +196,7 @@ export const DashboardPage: React.FC = () => {
           </Stack>
 
           {/* Quick Action Buttons */}
-          <Group gap="xs">
+          <Group gap="xs" wrap="wrap">
             <Button
               color="burgundy"
               radius="sm"
@@ -212,16 +212,15 @@ export const DashboardPage: React.FC = () => {
             </Button>
             <Button
               variant="outline"
-              color="burgundy"
               radius="sm"
               size="sm"
               fw={600}
               leftSection={<IconPlus size={16} />}
               onClick={() => navigate('/payments/new')}
               style={{
-                backgroundColor: '#fbf0f2',
-                borderColor: '#e2e8f0',
-                color: '#800020',
+                backgroundColor: '#ffffff',
+                borderColor: '#cbd5e1',
+                color: '#334155',
               }}
             >
               Add Payment
@@ -247,7 +246,7 @@ export const DashboardPage: React.FC = () => {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(128, 0, 32, 0.08)';
+            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
             e.currentTarget.style.borderColor = '#cbd5e1';
           }}
           onMouseLeave={(e) => {
@@ -261,7 +260,7 @@ export const DashboardPage: React.FC = () => {
               Total Purchases
             </Text>
             <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <IconReceipt size={17} color="#475569" stroke={1.75} />
+              <IconReceipt size={17} color="#800020" stroke={1.75} />
             </ThemeIcon>
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
@@ -290,7 +289,7 @@ export const DashboardPage: React.FC = () => {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(128, 0, 32, 0.08)';
+            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
             e.currentTarget.style.borderColor = '#cbd5e1';
           }}
           onMouseLeave={(e) => {
@@ -304,7 +303,7 @@ export const DashboardPage: React.FC = () => {
               Total Payouts
             </Text>
             <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <IconCreditCard size={17} color="#475569" stroke={1.75} />
+              <IconCreditCard size={17} color="#800020" stroke={1.75} />
             </ThemeIcon>
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
@@ -333,7 +332,7 @@ export const DashboardPage: React.FC = () => {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(128, 0, 32, 0.08)';
+            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
             e.currentTarget.style.borderColor = '#cbd5e1';
           }}
           onMouseLeave={(e) => {
@@ -347,7 +346,7 @@ export const DashboardPage: React.FC = () => {
               Cash & Bank Balance
             </Text>
             <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <IconBuildingBank size={17} color="#475569" stroke={1.75} />
+              <IconBuildingBank size={17} color="#800020" stroke={1.75} />
             </ThemeIcon>
           </Group>
           <Text
@@ -387,7 +386,7 @@ export const DashboardPage: React.FC = () => {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(128, 0, 32, 0.08)';
+            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
             e.currentTarget.style.borderColor = '#cbd5e1';
           }}
           onMouseLeave={(e) => {
@@ -401,7 +400,7 @@ export const DashboardPage: React.FC = () => {
               Van Operations
             </Text>
             <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <IconTruck size={17} color="#475569" stroke={1.75} />
+              <IconTruck size={17} color="#800020" stroke={1.75} />
             </ThemeIcon>
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em' }}>
@@ -432,7 +431,7 @@ export const DashboardPage: React.FC = () => {
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
             <Group gap="xs" align="center">
               <ThemeIcon size={32} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <IconReceipt size={17} color="#475569" stroke={1.75} />
+                <IconReceipt size={17} color="#800020" stroke={1.75} />
               </ThemeIcon>
               <div>
                 <Group gap={6} align="center">
@@ -450,9 +449,11 @@ export const DashboardPage: React.FC = () => {
             </Group>
             <Button
               variant="subtle"
-              color="burgundy"
+              color="gray"
+              c="#800020"
               size="xs"
               fw={600}
+              className="erp-subtle-btn"
               rightSection={<IconArrowRight size={14} />}
               onClick={() => navigate('/purchases')}
             >
@@ -536,7 +537,7 @@ export const DashboardPage: React.FC = () => {
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
             <Group gap="xs" align="center">
               <ThemeIcon size={32} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <IconCreditCard size={17} color="#475569" stroke={1.75} />
+                <IconCreditCard size={17} color="#800020" stroke={1.75} />
               </ThemeIcon>
               <div>
                 <Group gap={6} align="center">
@@ -554,9 +555,11 @@ export const DashboardPage: React.FC = () => {
             </Group>
             <Button
               variant="subtle"
-              color="burgundy"
+              color="gray"
+              c="#800020"
               size="xs"
               fw={600}
+              className="erp-subtle-btn"
               rightSection={<IconArrowRight size={14} />}
               onClick={() => navigate('/payments')}
             >
@@ -654,7 +657,7 @@ export const DashboardPage: React.FC = () => {
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
             <Group gap="xs" align="center">
               <ThemeIcon size={32} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <IconBuildingBank size={17} color="#475569" stroke={1.75} />
+                <IconBuildingBank size={17} color="#800020" stroke={1.75} />
               </ThemeIcon>
               <div>
                 <Group gap={6} align="center">
@@ -672,9 +675,11 @@ export const DashboardPage: React.FC = () => {
             </Group>
             <Button
               variant="subtle"
-              color="burgundy"
+              color="gray"
+              c="#800020"
               size="xs"
               fw={600}
+              className="erp-subtle-btn"
               rightSection={<IconArrowRight size={14} />}
               onClick={() => navigate('/accounts')}
             >
@@ -744,17 +749,17 @@ export const DashboardPage: React.FC = () => {
                     );
                   })}
                 </Table.Tbody>
-                <Table.Tfoot style={{ backgroundColor: '#fcfcfd', borderTop: '1px solid #f1f5f9' }}>
+                <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #cbd5e1' }}>
                   <Table.Tr>
-                    <Table.Td colSpan={2} style={{ padding: '10px 16px' }}>
-                      <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                    <Table.Td colSpan={2} style={{ padding: '12px 16px' }}>
+                      <Text size="sm" fw={700} c="#1e293b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
                         Net Liquid Funds:
                       </Text>
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', padding: '10px 16px' }}>
-                      <Text size="xs" fw={700} c={metrics.netLiquid >= 0 ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    <Table.Td style={{ textAlign: 'right', padding: '12px 16px' }}>
+                      <Text size="sm" fw={700} c={metrics.netLiquid >= 0 ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
                         ₹{Math.abs(metrics.netLiquid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
-                        <Text component="span" size="10px" c={metrics.netLiquid >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
+                        <Text component="span" size="xs" c={metrics.netLiquid >= 0 ? '#0284c7' : '#dc2626'} fw={700}>
                           {metrics.netLiquid >= 0 ? 'Dr' : 'Cr'}
                         </Text>
                       </Text>
@@ -780,7 +785,7 @@ export const DashboardPage: React.FC = () => {
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
             <Group gap="xs" align="center">
               <ThemeIcon size={32} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <IconTruck size={17} color="#475569" stroke={1.75} />
+                <IconTruck size={17} color="#800020" stroke={1.75} />
               </ThemeIcon>
               <div>
                 <Text fw={700} size="sm" c="#1e293b">
@@ -793,9 +798,11 @@ export const DashboardPage: React.FC = () => {
             </Group>
             <Button
               variant="subtle"
-              color="burgundy"
+              color="gray"
+              c="#800020"
               size="xs"
               fw={600}
+              className="erp-subtle-btn"
               rightSection={<IconArrowRight size={14} />}
               onClick={() => navigate('/allocations')}
             >
@@ -817,9 +824,9 @@ export const DashboardPage: React.FC = () => {
                   boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#800020';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(128, 0, 32, 0.08)';
-                  e.currentTarget.style.backgroundColor = '#fdf8f9';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.05)';
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
                   e.currentTarget.style.transform = 'translateY(-1px)';
                 }}
                 onMouseLeave={(e) => {
@@ -831,7 +838,7 @@ export const DashboardPage: React.FC = () => {
               >
                 <Group justify="space-between" align="center" mb={8}>
                   <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                    <IconUser size={18} color="#475569" stroke={1.75} />
+                    <IconUser size={18} color="#800020" stroke={1.75} />
                   </ThemeIcon>
                   <Badge size="sm" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020', fontWeight: 700 }}>
                     {drivers.length} Drivers
@@ -857,9 +864,9 @@ export const DashboardPage: React.FC = () => {
                   boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#800020';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(128, 0, 32, 0.08)';
-                  e.currentTarget.style.backgroundColor = '#fdf8f9';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.05)';
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
                   e.currentTarget.style.transform = 'translateY(-1px)';
                 }}
                 onMouseLeave={(e) => {
@@ -871,7 +878,7 @@ export const DashboardPage: React.FC = () => {
               >
                 <Group justify="space-between" align="center" mb={8}>
                   <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                    <IconTruck size={18} color="#475569" stroke={1.75} />
+                    <IconTruck size={18} color="#800020" stroke={1.75} />
                   </ThemeIcon>
                   <Badge size="sm" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020', fontWeight: 700 }}>
                     {vehicles.length} Vans
@@ -897,9 +904,9 @@ export const DashboardPage: React.FC = () => {
                   boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#800020';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(128, 0, 32, 0.08)';
-                  e.currentTarget.style.backgroundColor = '#fdf8f9';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.05)';
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
                   e.currentTarget.style.transform = 'translateY(-1px)';
                 }}
                 onMouseLeave={(e) => {
@@ -911,7 +918,7 @@ export const DashboardPage: React.FC = () => {
               >
                 <Group justify="space-between" align="center" mb={8}>
                   <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                    <IconRoute size={18} color="#475569" stroke={1.75} />
+                    <IconRoute size={18} color="#800020" stroke={1.75} />
                   </ThemeIcon>
                   <Badge size="sm" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020', fontWeight: 700 }}>
                     {routes.length} Routes
@@ -937,9 +944,9 @@ export const DashboardPage: React.FC = () => {
                   boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#800020';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(128, 0, 32, 0.08)';
-                  e.currentTarget.style.backgroundColor = '#fdf8f9';
+                  e.currentTarget.style.borderColor = '#cbd5e1';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.05)';
+                  e.currentTarget.style.backgroundColor = '#f8fafc';
                   e.currentTarget.style.transform = 'translateY(-1px)';
                 }}
                 onMouseLeave={(e) => {
@@ -951,7 +958,7 @@ export const DashboardPage: React.FC = () => {
               >
                 <Group justify="space-between" align="center" mb={8}>
                   <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                    <IconPackage size={18} color="#475569" stroke={1.75} />
+                    <IconPackage size={18} color="#800020" stroke={1.75} />
                   </ThemeIcon>
                   <Badge size="sm" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020', fontWeight: 700 }}>
                     {products.length} Items

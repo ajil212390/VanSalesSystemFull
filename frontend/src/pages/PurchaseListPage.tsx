@@ -86,8 +86,8 @@ export const PurchaseListPage: React.FC = () => {
   return (
     <Stack gap="lg">
       {/* Top Header */}
-      <Group justify="space-between" align="center" wrap="nowrap" gap="md">
-        <div style={{ flexShrink: 0 }}>
+      <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+        <div>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Purchases
           </Title>
@@ -96,7 +96,7 @@ export const PurchaseListPage: React.FC = () => {
           </Text>
         </div>
 
-        <Group gap="xs" align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
+        <Group gap="xs" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <TextInput
             placeholder="Search by Purchase No, Invoice, Supplier..."
             value={searchQuery}
@@ -105,7 +105,7 @@ export const PurchaseListPage: React.FC = () => {
             rightSection={searchQuery ? <CloseButton size="sm" onClick={() => setSearchQuery('')} /> : null}
             radius="md"
             size="sm"
-            style={{ width: 280 }}
+            style={{ width: 280, minWidth: 200, flexGrow: 1, maxWidth: 360 }}
           />
           <Button
             color="burgundy"
