@@ -23,23 +23,38 @@ body,
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Minimalist scrollbar */
+/* Sleek custom scrollbar matching our Burgundy ERP UI */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
-  border-radius: 3px;
+  border-radius: 9999px;
+  transition: background-color 150ms ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #800020;
+}
+
+/* Mantine ScrollArea specific overrides */
+.mantine-ScrollArea-scrollbar {
+  background: transparent !important;
+}
+
+.mantine-ScrollArea-thumb {
+  background: #cbd5e1 !important;
+  border-radius: 9999px !important;
+}
+
+.mantine-ScrollArea-thumb:hover {
+  background: #800020 !important;
 }
 
 /* World-Class Login Animations */
@@ -127,5 +142,68 @@ table tfoot td,
 .mantine-Table-tfoot td {
   background-color: #ffffff !important;
   color: #0f172a !important;
+}
+
+/* ==========================================================================
+   Global Button & ActionIcon Hover Overrides (Zero Pink/Red Hover Tint)
+   ========================================================================== */
+.mantine-Button-root[data-variant="subtle"]:hover,
+button.mantine-Button-root[data-variant="subtle"]:hover,
+.mantine-ActionIcon-root[data-variant="subtle"]:hover,
+button.mantine-ActionIcon-root[data-variant="subtle"]:hover,
+.erp-subtle-btn:hover {
+  background-color: #f1f5f9 !important;
+  color: #800020 !important;
+}
+
+.mantine-Button-root[data-variant="light"]:hover,
+button.mantine-Button-root[data-variant="light"]:hover {
+  filter: brightness(0.96);
+}
+
+/* ==========================================================================
+   Mobile Optimization & Responsive Layout Enhancements
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* Prevent horizontal page breakout on phones */
+  html,
+  body,
+  #root {
+    overflow-x: hidden;
+  }
+
+  /* Smooth momentum touch scrolling for all tables */
+  .mantine-Table-scrollContainer,
+  div[data-scroll-container] {
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: thin;
+    max-width: 100%;
+  }
+
+  /* Compact padding for modals & drawers on small screens */
+  .mantine-Modal-content,
+  .mantine-Drawer-content {
+    max-width: 96vw !important;
+    margin: 8px auto !important;
+  }
+
+  /* Comfortable touch targets on mobile */
+  .mantine-Button-root,
+  .mantine-ActionIcon-root {
+    touch-action: manipulation;
+  }
+
+  /* Compact table cells for small screens */
+  .mantine-Table-th,
+  table thead th {
+    padding: 10px 12px !important;
+    font-size: 0.75rem !important;
+  }
+
+  .mantine-Table-td,
+  table tbody td {
+    padding: 10px 12px !important;
+    font-size: 0.8125rem !important;
+  }
 }
 

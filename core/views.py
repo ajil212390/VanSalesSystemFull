@@ -486,6 +486,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
             DebitBalance=dr_bal,
             CreditBalance=cr_bal,
         )
+        sync_ledger_balances(instance.LedgerId)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -769,8 +770,9 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                         Narration="Round off adjustment",
                     )
 
-            # Sync Supplier Ledger
-            sync_ledger_balances(supplier_id)
+            # Sync Supplier Ledger & Round Off
+            round_id = round_ledger.LedgerId if round_ledger else None
+            sync_ledger_balances(supplier_id, round_id)
 
         serializer = self.get_serializer(purchase)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -998,6 +1000,10 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                         Narration="Round off adjustment",
                     )
 
+            # Sync Supplier Ledger & Round Off
+            round_id = round_ledger.LedgerId if round_ledger else None
+            sync_ledger_balances(supplier_id, round_id)
+
         serializer = self.get_serializer(instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -1011,8 +1017,11 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 v.lines.all().delete()
             vouchers.delete()
             instance.lines.all().delete()
+            company_id = instance.CompanyId
             instance.delete()
-            sync_ledger_balances(supplier_id)
+            round_ledger = self._get_ledger_by_name(company_id, "Round Off", fallback_group_id=15)
+            round_id = round_ledger.LedgerId if round_ledger else None
+            sync_ledger_balances(supplier_id, round_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 class PaymentViewSet(viewsets.ModelViewSet):
@@ -1038,6 +1047,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         Pending Balance = Purchase GrandTotal - SUM(AllocatedAmount in BillwiseAllocation)
         """
         party_id = request.query_params.get('party_id')
+        exclude_payment_id = request.query_params.get('exclude_payment_id')
         if not party_id:
             return Response({'detail': 'party_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1054,11 +1064,14 @@ class PaymentViewSet(viewsets.ModelViewSet):
             bill_ref = p.PurchaseNo or str(p.PurchaseId)
             total_bill = Decimal(str(p.GrandTotal or 0))
 
-            # Sum of all previous allocations against this bill reference
-            allocated = BillwiseAllocation.objects.filter(
+            # Sum of previous allocations against this bill reference
+            alloc_qs = BillwiseAllocation.objects.filter(
                 BillType='PURCHASE',
                 BillReference=bill_ref
-            ).aggregate(total=Sum('AllocatedAmount'))['total'] or Decimal('0.00')
+            )
+            if exclude_payment_id:
+                alloc_qs = alloc_qs.exclude(PaymentLine__Payment_id=exclude_payment_id)
+            allocated = alloc_qs.aggregate(total=Sum('AllocatedAmount'))['total'] or Decimal('0.00')
 
             pending_balance = total_bill - Decimal(str(allocated))
 
@@ -1201,6 +1214,142 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(payment)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        data = request.data
+        party_id = data.get('PartyLedgerId') or instance.PartyLedger_id
+        amount = Decimal(str(data.get('Amount') or instance.Amount or 0))
+        lines_data = data.get('lines', [])
+        allocations_data = data.get('allocations', [])
+        if not allocations_data and lines_data:
+            for l in lines_data:
+                if isinstance(l, dict) and 'allocations' in l:
+                    allocations_data.extend(l['allocations'])
+
+        if not party_id:
+            return Response({'detail': 'Please select a Party / Supplier.'}, status=status.HTTP_400_BAD_REQUEST)
+        if amount <= 0:
+            return Response({'detail': 'Payment amount must be greater than 0.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        company_id = getattr(user, 'CompanyId', 0)
+
+        with transaction.atomic():
+            old_party_id = instance.PartyLedger_id
+            old_payment_ledger_ids = list(instance.lines.values_list('Ledger_id', flat=True))
+
+            # Update Payment Header
+            instance.PartyLedger_id = party_id
+            instance.Amount = amount
+            if 'Narration' in data:
+                instance.Narration = data.get('Narration') or ''
+            instance.save()
+
+            # Clean old dependent vouchers & allocations & lines
+            vouchers = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=instance.PaymentId)
+            for v in vouchers:
+                v.lines.all().delete()
+            vouchers.delete()
+
+            for line in instance.lines.all():
+                line.allocations.all().delete()
+            instance.lines.all().delete()
+
+            # Recreate lines
+            if not lines_data:
+                mode = data.get('PaymentMode', 'Cash')
+                ledger_id = data.get('PaymentLedgerId')
+                if not ledger_id:
+                    target_group = 16 if mode == 'Cash' else 17
+                    fallback_ledger = Ledger.objects.filter(Group_id=target_group, CompanyId=company_id).first()
+                    ledger_id = fallback_ledger.LedgerId if fallback_ledger else party_id
+
+                lines_data = [{
+                    'LineNo': 1,
+                    'PaymentMode': mode,
+                    'LedgerId': ledger_id,
+                    'Amount': amount,
+                    'InstrumentNumber': data.get('InstrumentNumber'),
+                    'InstrumentDate': data.get('InstrumentDate') or None,
+                    'TransactionReference': data.get('TransactionReference'),
+                    'Narration': data.get('Narration'),
+                }]
+
+            created_lines = []
+            for idx, l in enumerate(lines_data):
+                p_line = PaymentLine.objects.create(
+                    Payment=instance,
+                    LineNo=l.get('LineNo', idx + 1),
+                    PaymentMode=l.get('PaymentMode', 'Cash'),
+                    Ledger_id=l.get('LedgerId'),
+                    Amount=Decimal(str(l.get('Amount') or amount)),
+                    InstrumentNumber=l.get('InstrumentNumber') or None,
+                    InstrumentDate=l.get('InstrumentDate') or None,
+                    BankName=l.get('BankName') or None,
+                    BankBranch=l.get('BankBranch') or None,
+                    ChequeStatus=l.get('ChequeStatus') or None,
+                    ClearedDate=l.get('ClearedDate') or None,
+                    TransactionReference=l.get('TransactionReference') or None,
+                    Narration=l.get('Narration') or None,
+                )
+                created_lines.append(p_line)
+
+            # Recreate Billwise Allocations
+            primary_line = created_lines[0]
+            for alloc in allocations_data:
+                alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
+                if alloc_amt > 0:
+                    BillwiseAllocation.objects.create(
+                        PaymentLine=primary_line,
+                        BillType='PURCHASE',
+                        BillReference=alloc.get('BillReference'),
+                        BillDate=alloc.get('BillDate') or None,
+                        DueDate=alloc.get('DueDate') or None,
+                        AllocationType=alloc.get('AllocationType', 'Against Reference'),
+                        AllocatedAmount=alloc_amt,
+                        CompanyId=company_id,
+                    )
+
+            # Recreate Accounting Voucher
+            voucher = Voucher.objects.create(
+                VoucherNo=f"PAY-VCH-{instance.PaymentId}",
+                VoucherDate=instance.CreatedAt.date(),
+                VoucherType='PAYMENT',
+                ReferenceTable='Payment',
+                ReferenceId=instance.PaymentId,
+                CompanyId=company_id,
+                Narration=f"Payment #{instance.PaymentId} to {instance.PartyLedger.LedgerName}",
+                IsCancelled=False,
+            )
+
+            # Debit Supplier
+            VoucherLine.objects.create(
+                Voucher=voucher,
+                LineNo=1,
+                Ledger_id=party_id,
+                DebitAmount=amount,
+                CreditAmount=Decimal('0.00'),
+                Narration=f"Payment to {instance.PartyLedger.LedgerName}",
+            )
+
+            # Credit Cash/Bank
+            for idx, p_line in enumerate(created_lines):
+                VoucherLine.objects.create(
+                    Voucher=voucher,
+                    LineNo=idx + 2,
+                    Ledger_id=p_line.Ledger_id,
+                    DebitAmount=Decimal('0.00'),
+                    CreditAmount=p_line.Amount,
+                    Narration=f"{p_line.PaymentMode} payment",
+                )
+
+            # Sync Ledger Balances (both old and new ledgers)
+            all_ledgers = set([old_party_id, party_id] + old_payment_ledger_ids + [p.Ledger_id for p in created_lines])
+            sync_ledger_balances(*all_ledgers)
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()

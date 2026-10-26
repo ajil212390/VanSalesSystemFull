@@ -101,6 +101,7 @@ export const PaymentFormPage: React.FC = () => {
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
   const [modalAllocations, setModalAllocations] = useState<BillAllocationItem[]>([]);
   const [isLoadingBills, setIsLoadingBills] = useState(false);
+  const [isLoadingExisting, setIsLoadingExisting] = useState(false);
 
   // 1. Fetch All Ledgers
   const { data: ledgers = [] } = useQuery<LedgerOption[]>({
@@ -177,6 +178,60 @@ export const PaymentFormPage: React.FC = () => {
     }
   }, [isEditing, paymentsList, paymentNo]);
 
+  // Fetch existing payment when editing
+  useEffect(() => {
+    if (isEditing && id) {
+      setIsLoadingExisting(true);
+      apiClient
+        .get(`/payments/${id}/`)
+        .then((res) => {
+          const p = res.data;
+          setPaymentNo(String(p.PaymentId).padStart(3, '0'));
+          if (p.payment_date) {
+            setPaymentDate(p.payment_date);
+          } else if (p.CreatedAt) {
+            setPaymentDate(p.CreatedAt.split('T')[0]);
+          }
+          if (p.Narration) setNotes(p.Narration);
+
+          const firstLine = p.lines && p.lines.length > 0 ? p.lines[0] : null;
+          if (firstLine?.Ledger) {
+            setBankOrCashLedgerId(String(firstLine.Ledger));
+          }
+
+          const lineAllocations: BillAllocationItem[] = (firstLine?.allocations || []).map((a: any) => ({
+            PurchaseId: a.PurchaseId || 0,
+            BillReference: a.BillReference,
+            BillDate: a.BillDate || '',
+            GrandTotal: Number(a.GrandTotal || a.AllocatedAmount || 0),
+            AllocatedSoFar: 0,
+            PendingBalance: Number(a.AllocatedAmount || 0),
+            AllocatedAmount: Number(a.AllocatedAmount || 0),
+          }));
+
+          setRows([
+            {
+              id: Math.random().toString(36).substring(2, 9),
+              ledgerId: p.PartyLedgerId ? String(p.PartyLedgerId) : null,
+              amount: Number(p.Amount || 0),
+              allocations: lineAllocations,
+            },
+          ]);
+        })
+        .catch(() => {
+          notifications.show({
+            title: 'Error',
+            message: 'Failed to load payment details.',
+            color: 'red',
+          });
+          navigate('/payments');
+        })
+        .finally(() => {
+          setIsLoadingExisting(false);
+        });
+    }
+  }, [isEditing, id, navigate]);
+
   // Table Row Handlers
   const addRow = () => {
     setRows((prev) => [...prev, emptyRow()]);
@@ -230,7 +285,8 @@ export const PaymentFormPage: React.FC = () => {
     setIsLoadingBills(true);
 
     try {
-      const res = await apiClient.get(`/payments/pending-bills/?party_id=${row.ledgerId}`);
+      const url = `/payments/pending-bills/?party_id=${row.ledgerId}${id ? `&exclude_payment_id=${id}` : ''}`;
+      const res = await apiClient.get(url);
       const pendingBills: PendingBill[] = res.data || [];
 
       // Existing allocations on this row
@@ -254,6 +310,13 @@ export const PaymentFormPage: React.FC = () => {
           PendingBalance: pendingBalance,
           AllocatedAmount: currentAlloc,
         };
+      });
+
+      // Ensure all previously allocated bills are preserved in mapped
+      row.allocations.forEach((a) => {
+        if (!mapped.some((m) => m.BillReference === a.BillReference)) {
+          mapped.push({ ...a });
+        }
       });
 
       setModalAllocations(mapped);
@@ -440,17 +503,24 @@ export const PaymentFormPage: React.FC = () => {
         allocations: allAllocations,
       };
 
-      const res = await apiClient.post('/payments/', payload);
-      return res.data;
+      if (isEditing && id) {
+        const res = await apiClient.put(`/payments/${id}/`, payload);
+        return res.data;
+      } else {
+        const res = await apiClient.post('/payments/', payload);
+        return res.data;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payments'] });
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
       queryClient.invalidateQueries({ queryKey: ['ledgers'] });
       notifications.show({
-        title: 'Payment Saved',
-        message: 'Payment voucher and allocations posted successfully.',
-        color: 'green',
+        title: isEditing ? 'Payment Updated' : 'Payment Saved',
+        message: isEditing
+          ? 'Payment voucher updated successfully.'
+          : 'Payment voucher and allocations posted successfully.',
+        color: 'teal',
       });
       navigate('/payments');
     },
@@ -459,6 +529,14 @@ export const PaymentFormPage: React.FC = () => {
       notifications.show({ title: 'Error', message: String(msg), color: 'red' });
     },
   });
+
+  if (isLoadingExisting) {
+    return (
+      <Center style={{ height: 'calc(100vh - 120px)' }}>
+        <Loader color="burgundy" />
+      </Center>
+    );
+  }
 
   return (
     <div
@@ -819,7 +897,7 @@ export const PaymentFormPage: React.FC = () => {
                     onClick={() => saveMutation.mutate()}
                     style={{ backgroundColor: '#800020' }}
                   >
-                    Save & Post Voucher
+                    {isEditing ? 'Update Payment' : 'Save & Post Voucher'}
                   </Button>
                 </Group>
               </Group>

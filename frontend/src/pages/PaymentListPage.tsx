@@ -12,13 +12,13 @@ import {
   TextInput,
   CloseButton,
   ActionIcon,
-  Badge,
 } from '@mantine/core';
 import {
   IconPlus,
   IconSearch,
-  IconCreditCard,
+  IconReceipt,
   IconTrash,
+  IconPencil,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -87,38 +87,35 @@ export const PaymentListPage: React.FC = () => {
   });
 
   return (
-    <Stack gap="lg" style={{ maxWidth: 1400, margin: '0 auto', width: '100%' }}>
+    <Stack gap="lg">
       {/* Top Header */}
-      <Group justify="space-between" align="center" wrap="wrap">
-        <div>
-          <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 24 }}>
+      <Group justify="space-between" align="center" wrap="nowrap" gap="md">
+        <div style={{ flexShrink: 0 }}>
+          <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Payments
           </Title>
-          <Text size="sm" c="#64748b">
+          <Text size="sm" c="dimmed">
             Manage supplier payments, bank & cash payouts, and bill-wise allocations.
           </Text>
         </div>
 
-        <Group gap="sm">
+        <Group gap="xs" align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
           <TextInput
-            placeholder="Search by ID, supplier, narration..."
-            leftSection={<IconSearch size={16} color="#94a3b8" />}
-            rightSection={
-              searchQuery ? (
-                <CloseButton size="sm" onClick={() => setSearchQuery('')} aria-label="Clear search" />
-              ) : null
-            }
+            placeholder="Search by Payment No, Supplier, Narration..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            style={{ width: 280 }}
+            leftSection={<IconSearch size={16} stroke={1.5} color="#800020" />}
+            rightSection={searchQuery ? <CloseButton size="sm" onClick={() => setSearchQuery('')} /> : null}
             radius="md"
+            size="sm"
+            style={{ width: 280 }}
           />
           <Button
-            leftSection={<IconPlus size={16} />}
             color="burgundy"
-            radius="md"
+            radius={10}
+            size="sm"
+            leftSection={<IconPlus size={16} />}
             onClick={() => navigate('/payments/new')}
-            style={{ backgroundColor: '#800020' }}
           >
             Add Payment
           </Button>
@@ -126,7 +123,7 @@ export const PaymentListPage: React.FC = () => {
       </Group>
 
       {/* Main Table Card */}
-      <Paper radius="md" p="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+      <Paper radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
         {isLoading ? (
           <Center py={60}>
             <Loader color="burgundy" size="md" />
@@ -134,35 +131,47 @@ export const PaymentListPage: React.FC = () => {
         ) : filteredPayments.length === 0 ? (
           <Center py={60}>
             <Stack align="center" gap="xs">
-              <IconCreditCard size={44} color="#cbd5e1" stroke={1.5} />
-              <Text size="md" c="#64748b" fw={500}>
+              <IconReceipt size={36} color="#cbd5e1" stroke={1.5} />
+              <Text c="dimmed" size="sm">
                 {searchQuery ? 'No payments match your search.' : 'No payments recorded yet. Click "Add Payment" to record a payout.'}
               </Text>
             </Stack>
           </Center>
         ) : (
-          <Table.ScrollContainer minWidth={850}>
-            <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
-              <Table.Thead style={{ backgroundColor: '#faf5f6', borderBottom: '1px solid #f1f5f9' }}>
+          <Table.ScrollContainer minWidth={920}>
+            <Table verticalSpacing="sm" horizontalSpacing="sm" highlightOnHover>
+              <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 100 }}>Payment #</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13 }}>Party / Supplier</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13 }}>Account</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13 }}>Date</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13 }}>Narration</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, textAlign: 'right' }}>Total Amount</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 80, textAlign: 'center' }}>Actions</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 120 }}>Payment No</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 125, whiteSpace: 'nowrap' }}>Date</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 200, minWidth: 180 }}>Party (Supplier)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140, minWidth: 120 }}>Account</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 140 }}>Narration</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140, minWidth: 120, textAlign: 'right' }}>Total (₹)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 90, minWidth: 90, textAlign: 'center' }}>Actions</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {filteredPayments.map((item) => {
                   const firstLine = item.lines && item.lines.length > 0 ? item.lines[0] : null;
+                  const dateStr = item.CreatedAt
+                    ? new Date(item.CreatedAt).toISOString().split('T')[0]
+                    : '—';
+
                   return (
                     <Table.Tr key={item.PaymentId}>
-                      <Table.Td>
-                        <Badge variant="light" color="burgundy" radius="sm" size="sm">
-                          PAY-{String(item.PaymentId).padStart(4, '0')}
-                        </Badge>
+                      <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                        <Group gap={6} wrap="nowrap">
+                          <IconReceipt size={16} color="#800020" style={{ flexShrink: 0 }} />
+                          <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
+                            {String(item.PaymentId).padStart(3, '0')}
+                          </Text>
+                        </Group>
+                      </Table.Td>
+                      <Table.Td style={{ whiteSpace: 'nowrap', minWidth: 125, width: 130 }}>
+                        <Text size="sm" c="#475569" style={{ whiteSpace: 'nowrap', wordBreak: 'keep-all', display: 'inline-block' }}>
+                          {dateStr}
+                        </Text>
                       </Table.Td>
                       <Table.Td>
                         <Text fw={600} size="sm" c="#1e293b">
@@ -179,11 +188,6 @@ export const PaymentListPage: React.FC = () => {
                         )}
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm" c="#475569" style={{ whiteSpace: 'nowrap' }}>
-                          {item.CreatedAt ? new Date(item.CreatedAt).toLocaleDateString() : '—'}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
                         <Text size="sm" c="#64748b" lineClamp={1}>
                           {item.Narration && !item.Narration.startsWith('Payment voucher #')
                             ? item.Narration
@@ -191,23 +195,34 @@ export const PaymentListPage: React.FC = () => {
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text fw={700} size="sm" c="#1e293b">
+                        <Text fw={700} size="sm" c="#800020">
                           ₹{Number(item.Amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>
-                        <ActionIcon
-                          variant="subtle"
-                          color="red"
-                          size="sm"
-                          radius="md"
-                          onClick={() => {
-                            setDeleteTarget(item);
-                            setDeleteModalOpened(true);
-                          }}
-                        >
-                          <IconTrash size={16} />
-                        </ActionIcon>
+                        <Group gap={4} justify="center" wrap="nowrap">
+                          <ActionIcon
+                            variant="subtle"
+                            color="burgundy"
+                            size="sm"
+                            title="Edit"
+                            onClick={() => navigate(`/payments/${item.PaymentId}/edit`)}
+                          >
+                            <IconPencil size={16} />
+                          </ActionIcon>
+                          <ActionIcon
+                            variant="subtle"
+                            color="red"
+                            size="sm"
+                            title="Delete"
+                            onClick={() => {
+                              setDeleteTarget(item);
+                              setDeleteModalOpened(true);
+                            }}
+                          >
+                            <IconTrash size={16} />
+                          </ActionIcon>
+                        </Group>
                       </Table.Td>
                     </Table.Tr>
                   );
@@ -218,6 +233,7 @@ export const PaymentListPage: React.FC = () => {
         )}
       </Paper>
 
+      {/* Delete Confirmation Modal */}
       <DeleteConfirmModal
         opened={deleteModalOpened}
         onClose={() => {
@@ -231,9 +247,16 @@ export const PaymentListPage: React.FC = () => {
           setDeleteModalOpened(false);
           setDeleteTarget(null);
         }}
-        itemName={deleteTarget ? `Payment PAY-${String(deleteTarget.PaymentId).padStart(4, '0')}` : ''}
+        itemName={deleteTarget ? `Payment #${String(deleteTarget.PaymentId).padStart(3, '0')}` : ''}
         itemType="payment voucher"
       />
+
+      {/* Bottom Footer Count */}
+      <Group justify="flex-end" pt="xs" pb="md">
+        <Text size="sm" c="dimmed">
+          Showing {filteredPayments.length} payment(s).
+        </Text>
+      </Group>
     </Stack>
   );
 };

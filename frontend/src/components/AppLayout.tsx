@@ -16,6 +16,7 @@ import {
   Avatar,
   Divider,
   UnstyledButton,
+  ScrollArea,
 } from '@mantine/core';
 import {
   IconLayoutDashboard,
@@ -137,7 +138,7 @@ export const AppLayout: React.FC = () => {
       }}
       transitionDuration={300}
       transitionTimingFunction="cubic-bezier(0.4, 0, 0.2, 1)"
-      padding="lg"
+      padding={{ base: 'xs', sm: 'md', lg: 'lg' }}
       styles={{
         main: {
           backgroundColor: '#f8fafc',
@@ -160,9 +161,9 @@ export const AppLayout: React.FC = () => {
     >
 
       <AppShell.Header style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+        <Group h="100%" px={{ base: 'xs', sm: 'md' }} justify="space-between" wrap="nowrap">
           {/* Left: Brand Identity & Breadcrumb */}
-          <Group gap="md" wrap="nowrap">
+          <Group gap="sm" wrap="nowrap">
             <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" color="#334155" />
 
             {/* Brand Title */}
@@ -174,7 +175,7 @@ export const AppLayout: React.FC = () => {
                   fontWeight: 800,
                   letterSpacing: '-0.4px',
                   lineHeight: 1.15,
-                  fontSize: '1.2rem',
+                  fontSize: '1.1rem',
                 }}
               >
                 {user?.company_name || 'FUTURE GAS'}
@@ -270,56 +271,79 @@ export const AppLayout: React.FC = () => {
 
        <AppShell.Navbar px="xs" pt={6} pb="xs">
         {/* Top Header with Seamless Collapse/Expand Sidebar Icon */}
-        <Box
-          mb={6}
-          pb={4}
-          style={{
-            borderBottom: '1px solid #f1f5f9',
-            height: 32,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: isCollapsed ? 'center' : 'space-between',
-            padding: isCollapsed ? 0 : '0 4px',
-            overflow: 'hidden',
-            transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-          }}
-        >
+        <AppShell.Section>
           <Box
+            mb={6}
+            pb={4}
             style={{
+              borderBottom: '1px solid #f1f5f9',
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: isCollapsed ? 'center' : 'space-between',
+              padding: isCollapsed ? 0 : '0 4px',
               overflow: 'hidden',
-              whiteSpace: 'nowrap',
-              opacity: isCollapsed ? 0 : 1,
-              maxWidth: isCollapsed ? 0 : 140,
-              transition: 'opacity 200ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1)',
             }}
           >
-            <Text size="11px" fw={700} c="dimmed" tt="uppercase" px={4} style={{ letterSpacing: '0.8px' }}>
-              Menu
-            </Text>
-          </Box>
-
-          <Tooltip label={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'} position="right" withArrow>
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size={28}
-              onClick={() => setIsCollapsed(!isCollapsed)}
+            <Box
               style={{
-                borderRadius: '6px',
-                flexShrink: 0,
-                transition: 'background-color 150ms ease',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                opacity: isCollapsed ? 0 : 1,
+                maxWidth: isCollapsed ? 0 : 140,
+                transition: 'opacity 200ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
-              {isCollapsed ? (
-                <IconLayoutSidebarLeftExpand size={17} stroke={1.75} />
-              ) : (
-                <IconLayoutSidebarLeftCollapse size={17} stroke={1.75} />
-              )}
-            </ActionIcon>
-          </Tooltip>
-        </Box>
+              <Text size="11px" fw={700} c="dimmed" tt="uppercase" px={4} style={{ letterSpacing: '0.8px' }}>
+                Menu
+              </Text>
+            </Box>
 
-        {/* Dashboard Link */}
+            <Tooltip label={isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'} position="right" withArrow>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                size={28}
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                style={{
+                  borderRadius: '6px',
+                  flexShrink: 0,
+                  transition: 'background-color 150ms ease',
+                }}
+              >
+                {isCollapsed ? (
+                  <IconLayoutSidebarLeftExpand size={17} stroke={1.75} />
+                ) : (
+                  <IconLayoutSidebarLeftCollapse size={17} stroke={1.75} />
+                )}
+              </ActionIcon>
+            </Tooltip>
+          </Box>
+        </AppShell.Section>
+
+        {/* Scrollable Navigation Menu */}
+        <AppShell.Section grow my={4} style={{ overflow: 'hidden' }}>
+          <ScrollArea
+            h="100%"
+            scrollbarSize={4}
+            type="hover"
+            offsetScrollbars={false}
+            styles={{
+              scrollbar: {
+                backgroundColor: 'transparent',
+                '&:hover': { backgroundColor: 'transparent' },
+              },
+              thumb: {
+                backgroundColor: '#cbd5e1',
+                borderRadius: '9999px',
+                '&:hover': {
+                  backgroundColor: '#800020',
+                },
+              },
+            }}
+          >
+            {/* Dashboard Link */}
         <Tooltip label="Dashboard" position="right" withArrow disabled={!isCollapsed}>
           <NavLink
             component={Link}
@@ -688,9 +712,12 @@ export const AppLayout: React.FC = () => {
             }}
           />
         </Tooltip>
+          </ScrollArea>
+        </AppShell.Section>
 
         {/* Bottom Settings Icon with Spinning Animation & Logout Popover */}
-        <Box mt="auto" pt="xs" style={{ borderTop: '1px solid #f1f5f9' }}>
+        <AppShell.Section>
+          <Box pt="xs" style={{ borderTop: '1px solid #f1f5f9' }}>
           <Popover
             opened={settingsOpened}
             onChange={setSettingsOpened}
@@ -805,6 +832,7 @@ export const AppLayout: React.FC = () => {
             </Popover.Dropdown>
           </Popover>
         </Box>
+        </AppShell.Section>
       </AppShell.Navbar>
 
 

@@ -378,6 +378,38 @@ export const AccountsPage: React.FC = () => {
     }));
   }, [states]);
 
+  // Aggregate financial metrics across filtered ledgers
+  const financialTotals = useMemo(() => {
+    let totalOpeningDr = 0;
+    let totalOpeningCr = 0;
+    let totalDebit = 0;
+    let totalCredit = 0;
+    let totalCurrent = 0;
+
+    filteredLedgers.forEach((l) => {
+      const op = Number(l.OpeningBalance || 0);
+      if (l.OpeningBalanceType === 'CR') {
+        totalOpeningCr += op;
+      } else {
+        totalOpeningDr += op;
+      }
+      totalDebit += Number(l.DebitBalance || 0);
+      totalCredit += Number(l.CreditBalance || 0);
+      totalCurrent += Number(l.CurrentBalance || 0);
+    });
+
+    const netOpening = totalOpeningDr - totalOpeningCr;
+
+    return {
+      totalOpeningDr,
+      totalOpeningCr,
+      netOpening,
+      totalDebit,
+      totalCredit,
+      totalCurrent,
+    };
+  }, [filteredLedgers]);
+
   return (
     <Stack gap="lg">
       {/* Page Header matching Products Page */}
@@ -924,255 +956,295 @@ export const AccountsPage: React.FC = () => {
           </Paper>
         </Collapse>
 
-        {/* Ledgers Table & Filter Tabs */}
+        {/* Ledgers Table & Financial Overview */}
         <Transition mounted={!formOpened} transition="fade" duration={300} timingFunction="cubic-bezier(0.16, 1, 0.3, 1)">
           {(styles) => (
-            <Paper
-              radius="sm"
-              withBorder
-              style={{
-                ...styles,
-                backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
-                overflow: 'hidden',
-              }}
-            >
-              {/* Category Filter Tabs */}
-
-              {isLoadingLedgers ? (
-                <Center p="xl" style={{ minHeight: 250 }}>
-                  <Loader color="burgundy" size="md" />
-                </Center>
-              ) : filteredLedgers.length === 0 ? (
-                <Center p="xl" style={{ minHeight: 250 }}>
-                  <Stack align="center" gap="xs">
-                    <IconBook2 size={38} color="#800020" stroke={1.5} />
-                    <Text fw={600} size="sm" c="dimmed">
-                      {searchQuery || selectedGroupFilter
-                        ? 'No accounts matching your search filter.'
-                        : 'No accounts added yet. Click "+ Add Ledger" to create your first ledger.'}
+            <div style={styles}>
+              {/* Financial Balances Quick Overview Strip */}
+              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm" mb="md">
+                <Paper p="xs" px="md" radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+                  <Text size="11px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                    Total Opening Bal
+                  </Text>
+                  <Text size="md" fw={700} c="#1e293b" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ₹{Math.abs(financialTotals.netOpening).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
+                    <Text component="span" size="xs" c={financialTotals.netOpening >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
+                      {financialTotals.netOpening >= 0 ? 'DR' : 'CR'}
                     </Text>
-                    {!searchQuery && !selectedGroupFilter && (
-                      <Button color="burgundy" size="xs" radius={8} onClick={handleAddNew}>
-                        + Add First Ledger
-                      </Button>
-                    )}
-                  </Stack>
-                </Center>
-              ) : (
-                <Table.ScrollContainer minWidth={1380}>
-                  <Table verticalSpacing="md" horizontalSpacing="md" highlightOnHover>
-                    <Table.Thead style={{ backgroundColor: '#fcfcfc', borderBottom: '1px solid #e2e8f0' }}>
-                      <Table.Tr>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 200 }}>Ledger Name</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 150 }}>Group</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'center' }}>Nature</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 120 }}>Contact</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130 }}>GSTIN</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130, textAlign: 'right' }}>Opening Balance</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>Debit</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'right' }}>Credit</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130, textAlign: 'right' }}>Current Balance</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 110, textAlign: 'center' }}>Status</Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 80, textAlign: 'right' }}>Actions</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
+                  </Text>
+                </Paper>
 
-                    <Table.Tbody>
-                      {filteredLedgers.map((ledger) => {
-                        const isBlockDelete = Boolean(ledger.delete_block_reason);
-                        const currVal = Number(ledger.CurrentBalance || 0);
-                        const isZero = currVal === 0;
-                        const isDr = currVal >= 0;
+                <Paper p="xs" px="md" radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+                  <Text size="11px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                    Total Debits (Dr)
+                  </Text>
+                  <Text size="md" fw={700} c="#1e293b" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ₹{financialTotals.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </Paper>
 
-                        return (
-                          <Table.Tr key={ledger.LedgerId}>
-                            {/* Ledger Name */}
-                            <Table.Td style={{ minWidth: 200 }}>
-                              <Group gap="xs" wrap="nowrap">
-                                <IconBook2 size={16} color="#800020" stroke={1.75} style={{ flexShrink: 0 }} />
-                                <div>
-                                  <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
-                                    {ledger.LedgerName}
+                <Paper p="xs" px="md" radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+                  <Text size="11px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                    Total Credits (Cr)
+                  </Text>
+                  <Text size="md" fw={700} c="#1e293b" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ₹{financialTotals.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </Paper>
+
+                <Paper p="xs" px="md" radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+                  <Text size="11px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                    Net Current Balance
+                  </Text>
+                  <Text size="md" fw={700} c={financialTotals.totalCurrent >= 0 ? '#800020' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ₹{Math.abs(financialTotals.totalCurrent).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
+                    <Text component="span" size="xs" c={financialTotals.totalCurrent >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
+                      {financialTotals.totalCurrent >= 0 ? 'Dr' : 'Cr'}
+                    </Text>
+                  </Text>
+                </Paper>
+              </SimpleGrid>
+
+              <Paper
+                radius="sm"
+                withBorder
+                style={{
+                  backgroundColor: '#ffffff',
+                  borderColor: '#e2e8f0',
+                  overflow: 'hidden',
+                }}
+              >
+                {isLoadingLedgers ? (
+                  <Center p="xl" style={{ minHeight: 250 }}>
+                    <Loader color="burgundy" size="md" />
+                  </Center>
+                ) : filteredLedgers.length === 0 ? (
+                  <Center p="xl" style={{ minHeight: 250 }}>
+                    <Stack align="center" gap="xs">
+                      <IconBook2 size={38} color="#800020" stroke={1.5} />
+                      <Text fw={600} size="sm" c="dimmed">
+                        {searchQuery || selectedGroupFilter
+                          ? 'No accounts matching your search filter.'
+                          : 'No accounts added yet. Click "+ Add Ledger" to create your first ledger.'}
+                      </Text>
+                      {!searchQuery && !selectedGroupFilter && (
+                        <Button color="burgundy" size="xs" radius={8} onClick={handleAddNew}>
+                          + Add First Ledger
+                        </Button>
+                      )}
+                    </Stack>
+                  </Center>
+                ) : (
+                  <Table.ScrollContainer minWidth={950}>
+                    <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
+                      <Table.Thead style={{ backgroundColor: '#fbf0f2', borderBottom: '1px solid #e2e8f0' }}>
+                        <Table.Tr>
+                          <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 220 }}>Ledger Account</Table.Th>
+                          <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 130, textAlign: 'right' }}>Opening Balance</Table.Th>
+                          <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 110, textAlign: 'right' }}>Debit (Dr)</Table.Th>
+                          <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 110, textAlign: 'right' }}>Credit (Cr)</Table.Th>
+                          <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 12, minWidth: 140, textAlign: 'right' }}>Current Balance</Table.Th>
+                          <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 130 }}>Contact / Tax</Table.Th>
+                          <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 80, textAlign: 'center' }}>Status</Table.Th>
+                          <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, minWidth: 80, textAlign: 'center' }}>Actions</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+
+                      <Table.Tbody>
+                        {filteredLedgers.map((ledger) => {
+                          const isBlockDelete = Boolean(ledger.delete_block_reason);
+                          const currVal = Number(ledger.CurrentBalance || 0);
+                          const isZero = currVal === 0;
+                          const isDr = currVal >= 0;
+
+                          return (
+                            <Table.Tr key={ledger.LedgerId}>
+                              {/* 1. Ledger Name + Group & Nature Subtitle */}
+                              <Table.Td style={{ minWidth: 220 }}>
+                                <Group gap="xs" wrap="nowrap" align="flex-start">
+                                  <IconBook2 size={16} color="#800020" stroke={1.75} style={{ flexShrink: 0, marginTop: 2 }} />
+                                  <div>
+                                    <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
+                                      {ledger.LedgerName}
+                                    </Text>
+                                    <Text size="xs" c="dimmed" mt={2} style={{ whiteSpace: 'nowrap' }}>
+                                      {ledger.group_name || 'General'}
+                                    </Text>
+                                  </div>
+                                </Group>
+                              </Table.Td>
+
+                              {/* 2. Opening Balance */}
+                              <Table.Td style={{ minWidth: 130, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                <Text size="sm" fw={600} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  ₹{Math.abs(Number(ledger.OpeningBalance || 0)).toLocaleString('en-IN', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}{' '}
+                                  <Text component="span" size="xs" c={ledger.OpeningBalanceType === 'CR' ? '#dc2626' : '#0284c7'} fw={600}>
+                                    {ledger.OpeningBalanceType || 'DR'}
                                   </Text>
-                                  {ledger.IsSystem && (
-                                    <Badge
-                                      size="xs"
-                                      variant="outline"
-                                      style={{
-                                        borderColor: '#e2e8f0',
-                                        color: '#64748b',
-                                        backgroundColor: '#f8fafc',
-                                        fontWeight: 600,
-                                        fontSize: 10,
-                                        marginTop: 2,
-                                      }}
-                                    >
-                                      System
-                                    </Badge>
-                                  )}
-                                </div>
-                              </Group>
-                            </Table.Td>
-
-                            {/* Group */}
-                            <Table.Td style={{ minWidth: 150 }}>
-                              <Text size="sm" fw={500} c="#334155" style={{ whiteSpace: 'nowrap' }}>
-                                {ledger.group_name || '—'}
-                              </Text>
-                            </Table.Td>
-
-                            {/* Nature - Refined Slate Badge */}
-                            <Table.Td style={{ minWidth: 110, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                              <Badge
-                                size="xs"
-                                variant="outline"
-                                style={{
-                                  borderColor: '#cbd5e1',
-                                  color: '#475569',
-                                  backgroundColor: '#f8fafc',
-                                  fontWeight: 600,
-                                  textTransform: 'uppercase',
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'visible',
-                                }}
-                              >
-                                {ledger.group_nature || '—'}
-                              </Badge>
-                            </Table.Td>
-
-                            {/* Contact */}
-                            <Table.Td style={{ minWidth: 120 }}>
-                              <Text size="xs" fw={500} c="#475569">
-                                {ledger.MobileNumber || ledger.PhoneNumber || '—'}
-                              </Text>
-                              {ledger.City && (
-                                <Text size="xs" c="dimmed">
-                                  {ledger.City}
                                 </Text>
-                              )}
-                            </Table.Td>
+                              </Table.Td>
 
-                            {/* GSTIN */}
-                            <Table.Td style={{ minWidth: 130 }}>
-                              <Text size="xs" ff="monospace" fw={600} c={ledger.GSTIN ? '#0f172a' : 'dimmed'}>
-                                {ledger.GSTIN || '—'}
-                              </Text>
-                            </Table.Td>
-
-                            {/* Opening Balance */}
-                            <Table.Td style={{ minWidth: 130, textAlign: 'right' }}>
-                              <Text size="sm" fw={600} c="#334155" style={{ whiteSpace: 'nowrap' }}>
-                                ₹{Math.abs(Number(ledger.OpeningBalance || 0)).toLocaleString('en-IN', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}{' '}
-                                <Text component="span" size="xs" c="dimmed">
-                                  {ledger.OpeningBalanceType || 'DR'}
+                              {/* 3. Debit Balance */}
+                              <Table.Td style={{ minWidth: 110, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                <Text size="sm" fw={500} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  {Number(ledger.DebitBalance || 0) !== 0
+                                    ? `₹${Number(ledger.DebitBalance).toLocaleString('en-IN', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}`
+                                    : '—'}
                                 </Text>
-                              </Text>
-                            </Table.Td>
+                              </Table.Td>
 
-                            {/* Debit Balance */}
-                            <Table.Td style={{ minWidth: 110, textAlign: 'right' }}>
-                              <Text size="sm" fw={500} c="#334155" style={{ whiteSpace: 'nowrap' }}>
-                                {Number(ledger.DebitBalance || 0) !== 0
-                                  ? `₹${Number(ledger.DebitBalance).toLocaleString('en-IN', {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })}`
-                                  : '—'}
-                              </Text>
-                            </Table.Td>
+                              {/* 4. Credit Balance */}
+                              <Table.Td style={{ minWidth: 110, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                <Text size="sm" fw={500} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                                  {Number(ledger.CreditBalance || 0) !== 0
+                                    ? `₹${Number(ledger.CreditBalance).toLocaleString('en-IN', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      })}`
+                                    : '—'}
+                                </Text>
+                              </Table.Td>
 
-                            {/* Credit Balance */}
-                            <Table.Td style={{ minWidth: 110, textAlign: 'right' }}>
-                              <Text size="sm" fw={500} c="#334155" style={{ whiteSpace: 'nowrap' }}>
-                                {Number(ledger.CreditBalance || 0) !== 0
-                                  ? `₹${Number(ledger.CreditBalance).toLocaleString('en-IN', {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    })}`
-                                  : '—'}
-                              </Text>
-                            </Table.Td>
-
-                            {/* Current Balance */}
-                            <Table.Td style={{ minWidth: 130, textAlign: 'right' }}>
-                              <Text size="sm" fw={700} c={isZero ? '#64748b' : isDr ? '#1e293b' : '#b91c1c'} style={{ whiteSpace: 'nowrap' }}>
-                                ₹{Math.abs(currVal).toLocaleString('en-IN', {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 2,
-                                })}{' '}
-                                {!isZero && (
-                                  <Text component="span" size="xs" c={isDr ? '#0284c7' : '#dc2626'} fw={600}>
-                                    {isDr ? 'Dr' : 'Cr'}
-                                  </Text>
-                                )}
-                              </Text>
-                            </Table.Td>
-
-                            {/* Status */}
-                            <Table.Td style={{ minWidth: 110, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                              <Badge
-                                size="sm"
-                                variant="outline"
-                                style={{
-                                  borderColor: ledger.IsActive ? '#cbd5e1' : '#fca5a5',
-                                  color: ledger.IsActive ? '#334155' : '#dc2626',
-                                  backgroundColor: ledger.IsActive ? '#f8fafc' : '#fff5f5',
-                                  fontWeight: 500,
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'visible',
-                                }}
-                              >
-                                {ledger.IsActive ? 'Active' : 'Inactive'}
-                              </Badge>
-                            </Table.Td>
-
-                            {/* Actions */}
-                            <Table.Td style={{ textAlign: 'right' }}>
-                              <Group gap={4} justify="flex-end" wrap="nowrap">
-                                <ActionIcon
-                                  variant="subtle"
-                                  color="gray"
+                              {/* 5. Current Balance (Prominently Highlighted) */}
+                              <Table.Td style={{ minWidth: 140, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                <Text
                                   size="sm"
-                                  onClick={() => handleEdit(ledger)}
-                                  title="Edit ledger"
+                                  fw={700}
+                                  c={isZero ? '#64748b' : isDr ? '#0f172a' : '#b91c1c'}
+                                  style={{ fontVariantNumeric: 'tabular-nums' }}
                                 >
-                                  <IconPencil size={15} />
-                                </ActionIcon>
+                                  ₹{Math.abs(currVal).toLocaleString('en-IN', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}{' '}
+                                  {!isZero && (
+                                    <Text component="span" size="xs" c={isDr ? '#0284c7' : '#dc2626'} fw={700}>
+                                      {isDr ? 'Dr' : 'Cr'}
+                                    </Text>
+                                  )}
+                                </Text>
+                              </Table.Td>
 
-                                <Tooltip
-                                  label={ledger.delete_block_reason || 'Delete ledger'}
-                                  disabled={!isBlockDelete}
-                                  withArrow
-                                  color="dark"
+                              {/* 6. Contact / Tax Details */}
+                              <Table.Td style={{ minWidth: 130 }}>
+                                {ledger.MobileNumber || ledger.PhoneNumber ? (
+                                  <Text size="xs" fw={500} c="#475569" style={{ whiteSpace: 'nowrap' }}>
+                                    {ledger.MobileNumber || ledger.PhoneNumber}
+                                  </Text>
+                                ) : null}
+                                {ledger.GSTIN ? (
+                                  <Text size="10px" ff="monospace" fw={600} c="#0f172a" style={{ whiteSpace: 'nowrap' }}>
+                                    {ledger.GSTIN}
+                                  </Text>
+                                ) : null}
+                                {!ledger.MobileNumber && !ledger.PhoneNumber && !ledger.GSTIN ? (
+                                  <Text size="xs" c="dimmed">—</Text>
+                                ) : null}
+                              </Table.Td>
+
+                              {/* 7. Status */}
+                              <Table.Td style={{ minWidth: 80, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                <Badge
+                                  size="sm"
+                                  variant="outline"
+                                  style={{
+                                    borderColor: ledger.IsActive ? '#cbd5e1' : '#fca5a5',
+                                    color: ledger.IsActive ? '#334155' : '#dc2626',
+                                    backgroundColor: ledger.IsActive ? '#f8fafc' : '#fff5f5',
+                                    fontWeight: 500,
+                                  }}
                                 >
-                                  <Box component="span">
-                                    <ActionIcon
-                                      variant="subtle"
-                                      color="burgundy"
-                                      size="sm"
-                                      disabled={isBlockDelete}
-                                      onClick={() => setLedgerToDelete(ledger)}
-                                      title="Delete ledger"
-                                      style={{ color: isBlockDelete ? undefined : '#800020' }}
-                                    >
-                                      <IconTrash size={15} />
-                                    </ActionIcon>
-                                  </Box>
-                                </Tooltip>
-                              </Group>
-                            </Table.Td>
-                          </Table.Tr>
-                        );
-                      })}
-                    </Table.Tbody>
-                  </Table>
-                </Table.ScrollContainer>
-              )}
-            </Paper>
+                                  {ledger.IsActive ? 'Active' : 'Inactive'}
+                                </Badge>
+                              </Table.Td>
+
+                              {/* 8. Actions */}
+                              <Table.Td style={{ textAlign: 'center', minWidth: 80 }}>
+                                <Group gap={4} justify="center" wrap="nowrap">
+                                  <ActionIcon
+                                    variant="subtle"
+                                    color="burgundy"
+                                    size="sm"
+                                    onClick={() => handleEdit(ledger)}
+                                    title="Edit ledger"
+                                  >
+                                    <IconPencil size={15} />
+                                  </ActionIcon>
+
+                                  <Tooltip
+                                    label={ledger.delete_block_reason || 'Delete ledger'}
+                                    disabled={!isBlockDelete}
+                                    withArrow
+                                    color="dark"
+                                  >
+                                    <Box component="span">
+                                      <ActionIcon
+                                        variant="subtle"
+                                        color="red"
+                                        size="sm"
+                                        disabled={isBlockDelete}
+                                        onClick={() => setLedgerToDelete(ledger)}
+                                        title={isBlockDelete ? ledger.delete_block_reason : 'Delete ledger'}
+                                      >
+                                        <IconTrash size={15} />
+                                      </ActionIcon>
+                                    </Box>
+                                  </Tooltip>
+                                </Group>
+                              </Table.Td>
+                            </Table.Tr>
+                          );
+                        })}
+                      </Table.Tbody>
+
+                      {/* Financial Column Totals in Table Footer */}
+                      <Table.Tfoot style={{ backgroundColor: '#fcfcfd', borderTop: '2px solid #e2e8f0' }}>
+                        <Table.Tr>
+                          <Table.Td style={{ padding: '10px 14px' }}>
+                            <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                              Totals ({filteredLedgers.length} Ledgers):
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', padding: '10px 14px' }}>
+                            <Text size="xs" fw={700} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{Math.abs(financialTotals.netOpening).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
+                              <Text component="span" size="10px" c={financialTotals.netOpening >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
+                                {financialTotals.netOpening >= 0 ? 'DR' : 'CR'}
+                              </Text>
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', padding: '10px 14px' }}>
+                            <Text size="xs" fw={700} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{financialTotals.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', padding: '10px 14px' }}>
+                            <Text size="xs" fw={700} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{financialTotals.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', padding: '10px 14px' }}>
+                            <Text size="xs" fw={700} c={financialTotals.totalCurrent >= 0 ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{Math.abs(financialTotals.totalCurrent).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
+                              <Text component="span" size="10px" c={financialTotals.totalCurrent >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
+                                {financialTotals.totalCurrent >= 0 ? 'Dr' : 'Cr'}
+                              </Text>
+                            </Text>
+                          </Table.Td>
+                          <Table.Td colSpan={3} />
+                        </Table.Tr>
+                      </Table.Tfoot>
+                    </Table>
+                  </Table.ScrollContainer>
+                )}
+              </Paper>
+            </div>
           )}
         </Transition>
       </Box>
