@@ -477,3 +477,64 @@ class VoucherLine(models.Model):
         managed = False
         db_table = '"VoucherLine"'
         ordering = ['LineNo']
+class Payment(models.Model):
+    PaymentId = models.BigAutoField(primary_key=True, db_column='PaymentId')
+    PartyLedger = models.ForeignKey(Ledger, on_delete=models.PROTECT, db_column='PartyLedgerId', related_name='payments')
+    Amount = models.DecimalField(max_digits=18, decimal_places=2, db_column='Amount')
+    Narration = models.CharField(max_length=500, null=True, blank=True, db_column='Narration')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"Payment"'
+        ordering = ['-PaymentId']
+
+    def __str__(self):
+        return f"Payment #{self.PaymentId}: {self.PartyLedger.LedgerName} (₹{self.Amount})"
+
+
+class PaymentLine(models.Model):
+    PaymentLineId = models.BigAutoField(primary_key=True, db_column='PaymentLineId')
+    Payment = models.ForeignKey(Payment, on_delete=models.CASCADE, db_column='PaymentId', related_name='lines')
+    LineNo = models.IntegerField(default=1, db_column='LineNo')
+    PaymentMode = models.CharField(max_length=50, db_column='PaymentMode')  # Cash, Bank, Cheque, UPI, NEFT
+    Ledger = models.ForeignKey(Ledger, on_delete=models.PROTECT, db_column='LedgerId', related_name='payment_lines')  # Bank / Cash Account
+    Amount = models.DecimalField(max_digits=18, decimal_places=2, db_column='Amount')
+    InstrumentNumber = models.CharField(max_length=100, null=True, blank=True, db_column='InstrumentNumber')
+    InstrumentDate = models.DateField(null=True, blank=True, db_column='InstrumentDate')
+    BankName = models.CharField(max_length=150, null=True, blank=True, db_column='BankName')
+    BankBranch = models.CharField(max_length=150, null=True, blank=True, db_column='BankBranch')
+    ChequeStatus = models.CharField(max_length=50, null=True, blank=True, db_column='ChequeStatus')
+    ClearedDate = models.DateField(null=True, blank=True, db_column='ClearedDate')
+    TransactionReference = models.CharField(max_length=150, null=True, blank=True, db_column='TransactionReference')
+    Narration = models.CharField(max_length=250, null=True, blank=True, db_column='Narration')
+
+    class Meta:
+        managed = False
+        db_table = '"PaymentLine"'
+        ordering = ['LineNo']
+
+    def __str__(self):
+        return f"Line {self.LineNo}: {self.PaymentMode} via {self.Ledger.LedgerName} (₹{self.Amount})"
+
+
+class BillwiseAllocation(models.Model):
+    BillwiseAllocationId = models.BigAutoField(primary_key=True, db_column='BillwiseAllocationId')
+    PaymentLine = models.ForeignKey(PaymentLine, on_delete=models.CASCADE, null=True, blank=True, db_column='PaymentLineId', related_name='allocations')
+    ReceiptLineId = models.BigIntegerField(null=True, blank=True, db_column='ReceiptLineId')
+    BillType = models.CharField(max_length=50, db_column='BillType')  # 'PURCHASE'
+    BillReference = models.CharField(max_length=100, null=True, blank=True, db_column='BillReference')  # InvoiceNo or PurchaseNo
+    BillDate = models.DateField(null=True, blank=True, db_column='BillDate')
+    DueDate = models.DateField(null=True, blank=True, db_column='DueDate')
+    AllocationType = models.CharField(max_length=50, default='Against Reference', db_column='AllocationType')  # Against Reference, On Account, Advance
+    AllocatedAmount = models.DecimalField(max_digits=18, decimal_places=2, db_column='AllocatedAmount')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"BillwiseAllocation"'
+
+    def __str__(self):
+        return f"{self.BillReference}: {self.AllocationType} (₹{self.AllocatedAmount})"

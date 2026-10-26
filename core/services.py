@@ -31,7 +31,7 @@ STANDARD_GROUPS = [
     {"name": "Duties & Taxes", "nature": "Liability", "parent": "Current Liabilities", "sort": 18},
 ]
 
-# 6 Standard Ledgers defined for a new company
+# Standard Ledgers defined for a new company
 STANDARD_LEDGERS = [
     {"name": "Cash", "group": "Cash-in-Hand", "balance_type": "DR"},
     {"name": "Bank", "group": "Bank Accounts", "balance_type": "DR"},
@@ -39,6 +39,10 @@ STANDARD_LEDGERS = [
     {"name": "General Purchase", "group": "Purchase Accounts", "balance_type": "DR"},
     {"name": "CGST Output", "group": "Duties & Taxes", "balance_type": "CR"},
     {"name": "SGST Output", "group": "Duties & Taxes", "balance_type": "CR"},
+    {"name": "IGST Output", "group": "Duties & Taxes", "balance_type": "CR"},
+    {"name": "CGST Input", "group": "Current Assets", "balance_type": "DR"},
+    {"name": "SGST Input", "group": "Current Assets", "balance_type": "DR"},
+    {"name": "IGST Input", "group": "Current Assets", "balance_type": "DR"},
 ]
 
 

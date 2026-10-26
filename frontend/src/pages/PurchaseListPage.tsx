@@ -6,7 +6,6 @@ import {
   Group,
   Stack,
   Table,
-  Badge,
   Loader,
   Center,
   Text,
@@ -181,16 +180,9 @@ export const PurchaseListPage: React.FC = () => {
                     </Table.Td>
 
                     <Table.Td>
-                      <div>
-                        <Text fw={600} size="sm" c="#1e293b">
-                          {item.supplier_name || `Ledger #${item.SupplierLedgerId}`}
-                        </Text>
-                        {item.supplier_state && (
-                          <Badge size="xs" variant="outline" color={item.supplier_state === 'Kerala' ? 'blue' : 'orange'}>
-                            {item.supplier_state}
-                          </Badge>
-                        )}
-                      </div>
+                      <Text fw={600} size="sm" c="#1e293b">
+                        {item.supplier_name || `Ledger #${item.SupplierLedgerId}`}
+                      </Text>
                     </Table.Td>
 
                     <Table.Td style={{ textAlign: 'center' }}>
@@ -203,29 +195,41 @@ export const PurchaseListPage: React.FC = () => {
                       </Text>
                     </Table.Td>
 
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="sm" c={Number(item.CGSTAmount) > 0 ? '#334155' : 'dimmed'}>
-                        {Number(item.CGSTAmount) > 0
-                          ? `₹${Number(item.CGSTAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                          : '-'}
-                      </Text>
-                    </Table.Td>
+                    {(() => {
+                      const tax = Number(item.TaxAmount || 0);
+                      const isIntra = !item.supplier_state || item.supplier_state.toLowerCase() === 'kerala';
+                      const cgst = item.CGSTAmount !== undefined && item.CGSTAmount !== null
+                        ? Number(item.CGSTAmount)
+                        : (isIntra && tax > 0 ? Number((tax / 2).toFixed(2)) : 0);
+                      const sgst = item.SGSTAmount !== undefined && item.SGSTAmount !== null
+                        ? Number(item.SGSTAmount)
+                        : (isIntra && tax > 0 ? Number((tax / 2).toFixed(2)) : 0);
+                      const igst = item.IGSTAmount !== undefined && item.IGSTAmount !== null
+                        ? Number(item.IGSTAmount)
+                        : (!isIntra && tax > 0 ? tax : 0);
 
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="sm" c={Number(item.SGSTAmount) > 0 ? '#334155' : 'dimmed'}>
-                        {Number(item.SGSTAmount) > 0
-                          ? `₹${Number(item.SGSTAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                          : '-'}
-                      </Text>
-                    </Table.Td>
+                      return (
+                        <>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text size="sm" fw={600} c={cgst > 0 ? '#334155' : 'dimmed'}>
+                              {cgst > 0 ? `₹${cgst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                            </Text>
+                          </Table.Td>
 
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="sm" c={Number(item.IGSTAmount) > 0 ? '#800020' : 'dimmed'}>
-                        {Number(item.IGSTAmount) > 0
-                          ? `₹${Number(item.IGSTAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                          : '-'}
-                      </Text>
-                    </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text size="sm" fw={600} c={sgst > 0 ? '#334155' : 'dimmed'}>
+                              {sgst > 0 ? `₹${sgst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                            </Text>
+                          </Table.Td>
+
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text size="sm" fw={600} c={igst > 0 ? '#800020' : 'dimmed'}>
+                              {igst > 0 ? `₹${igst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                            </Text>
+                          </Table.Td>
+                        </>
+                      );
+                    })()}
 
                     <Table.Td style={{ textAlign: 'right' }}>
                       <Text size="sm" fw={600} c="#0f766e">

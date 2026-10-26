@@ -1,17 +1,22 @@
 from decimal import Decimal
 from django.db import transaction
+from rest_framework.decorators import action
 from rest_framework import status, viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import AnonRateThrottle
 from drf_spectacular.utils import extend_schema
+from django.db.models import Sum, F
+
 
 from core.models import (
     State, UserRole, Company, Driver, Route, Vehicle, RouteVehicleDriver,
     User, Category, Unit, Product, Group, Ledger, ProductPriceAudit,
-    Purchase, PurchaseLine, StockMovement, Voucher, VoucherLine
+    Purchase, PurchaseLine, StockMovement, Voucher, VoucherLine,
+    Payment, PaymentLine, BillwiseAllocation
 )
+
 
 from core.serializers import (
     LoginSerializer, RegisterSerializer, UserMeSerializer,
@@ -19,10 +24,39 @@ from core.serializers import (
     DriverSerializer, RouteSerializer, VehicleSerializer, RouteVehicleDriverSerializer,
     UserManagementSerializer, CategorySerializer, UnitSerializer, ProductSerializer,
     GroupSerializer, LedgerSerializer, ProductPriceAuditSerializer,
-    PurchaseSerializer, PurchaseLineSerializer
+    PurchaseSerializer, PurchaseLineSerializer,PaymentSerializer, PaymentLineSerializer, BillwiseAllocationSerializer
 )
 
 from core.permissions import HasModulePermission, MODULE_COMPANY
+
+
+def sync_ledger_balances(*ledger_ids):
+    """
+    Recalculates DebitBalance, CreditBalance, and CurrentBalance for the given ledger IDs
+    directly from actual non-cancelled VoucherLines + OpeningBalance.
+    Guarantees balances never drift, go negative unexpectedly, or corrupt on voucher deletion.
+    """
+    ids = [lid for lid in ledger_ids if lid]
+    if not ids:
+        return
+
+    ledgers = Ledger.objects.filter(LedgerId__in=ids)
+    for l in ledgers:
+        v_agg = VoucherLine.objects.filter(Ledger=l, Voucher__IsCancelled=False).aggregate(
+            tot_dr=Sum('DebitAmount'),
+            tot_cr=Sum('CreditAmount')
+        )
+        tot_dr = v_agg['tot_dr'] or Decimal('0.00')
+        tot_cr = v_agg['tot_cr'] or Decimal('0.00')
+        op = l.OpeningBalance or Decimal('0.00')
+        op_net = op if (l.OpeningBalanceType or 'DR').upper() == 'DR' else -op
+        curr = op_net + tot_dr - tot_cr
+
+        Ledger.objects.filter(LedgerId=l.LedgerId).update(
+            DebitBalance=tot_dr,
+            CreditBalance=tot_cr,
+            CurrentBalance=curr
+        )
 
 
 class AuthAnonThrottle(AnonRateThrottle):
@@ -488,6 +522,13 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             ledger = Ledger.objects.filter(Group_id=group_id).first()
         return ledger
 
+    def _get_ledger_by_name(self, company_id, name, fallback_group_id=None):
+        ledger = Ledger.objects.filter(LedgerName__iexact=name, CompanyId=company_id).first()
+        if not ledger and fallback_group_id:
+            ledger = self._get_system_ledger(company_id, fallback_group_id)
+        return ledger
+
+
     def create(self, request, *args, **kwargs):
         data = request.data
         lines_data = data.get('lines', [])
@@ -512,8 +553,26 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             grand_total = Decimal(str(data.get('GrandTotal') or 0))
             round_off = Decimal(str(data.get('RoundOff') or 0))
 
+            purchase_no = data.get('PurchaseNo')
+            if not purchase_no or not str(purchase_no).strip():
+                existing = Purchase.objects.filter(CompanyId=company_id).values_list('PurchaseNo', flat=True)
+                max_num = 0
+                for pno in existing:
+                    digits = ''.join(c for c in str(pno) if c.isdigit())
+                    if digits:
+                        try:
+                            val = int(digits)
+                            if val > max_num:
+                                max_num = val
+                        except ValueError:
+                            pass
+                purchase_no = f"{max_num + 1:03d}"
+            else:
+                digits = ''.join(c for c in str(purchase_no) if c.isdigit())
+                purchase_no = digits if digits else "001"
+
             purchase = Purchase.objects.create(
-                PurchaseNo=data.get('PurchaseNo') or f"PUR-{data.get('PurchaseDate')}",
+                PurchaseNo=purchase_no,
                 PurchaseDate=data.get('PurchaseDate'),
                 SupplierLedger_id=supplier_id,
                 InvoiceNo=data.get('InvoiceNo') or None,
@@ -545,11 +604,20 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 qty = Decimal(str(item.get('Quantity') or 0))
                 rate = Decimal(str(item.get('CostPrice') or item.get('Rate') or 0))
                 tax_pct = Decimal(str(item.get('TaxPercent') or item.get('GSTPercent') or 0))
-                taxable = qty * rate
-                line_tax = (taxable * tax_pct) / Decimal('100')
-                total = Decimal(str(item.get('Total') or (taxable + line_tax)))
-
                 alt_unit_id = item.get('AltUnitId') or item.get('UnitId')
+                unit_conv = Decimal(str(item.get('UnitConversion') or 1))
+                alt_qty = Decimal(str(item.get('AltQuantity') or 0))
+
+                if alt_qty > 0:
+                    calc_qty = alt_qty
+                elif alt_unit_id and unit_conv and unit_conv > 0 and unit_conv != Decimal('1'):
+                    calc_qty = qty * unit_conv
+                else:
+                    calc_qty = qty
+
+                taxable = Decimal(str(item.get('TaxableAmount') if item.get('TaxableAmount') is not None else (calc_qty * rate)))
+                line_tax = Decimal(str(item.get('TaxAmount') if item.get('TaxAmount') is not None else ((taxable * tax_pct) / Decimal('100'))))
+                total = Decimal(str(item.get('Total') if item.get('Total') is not None else (taxable + line_tax)))
 
                 p_line = PurchaseLine.objects.create(
                     Purchase=purchase,
@@ -601,10 +669,25 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 IsCancelled=False,
             )
 
-            # Group 11 = Purchase Accounts, Group 22 = Duties & Taxes
-            # Group 11 = Purchase Accounts, Group 22 = Duties & Taxes
-            purchase_ledger = self._get_system_ledger(company_id, 11)
-            tax_ledger = self._get_system_ledger(company_id, 22)
+            purchase_ledger = self._get_ledger_by_name(company_id, "Purchase", fallback_group_id=11)
+            cgst_input_ledger = self._get_ledger_by_name(company_id, "CGST Input", fallback_group_id=3)
+            sgst_input_ledger = self._get_ledger_by_name(company_id, "SGST Input", fallback_group_id=3)
+            igst_input_ledger = self._get_ledger_by_name(company_id, "IGST Input", fallback_group_id=3)
+            round_ledger = self._get_ledger_by_name(company_id, "Round Off", fallback_group_id=15)
+
+            # Determine tax split
+            cgst_amt = Decimal(str(data.get('CGSTAmount') or 0))
+            sgst_amt = Decimal(str(data.get('SGSTAmount') or 0))
+            igst_amt = Decimal(str(data.get('IGSTAmount') or 0))
+
+            if cgst_amt == 0 and sgst_amt == 0 and igst_amt == 0 and tax_amount > 0:
+                supplier = purchase.SupplierLedger
+                is_intra = (not supplier or not supplier.StateId or supplier.StateId in [12, 32])
+                if is_intra:
+                    cgst_amt = (tax_amount / Decimal('2')).quantize(Decimal('0.01'))
+                    sgst_amt = tax_amount - cgst_amt
+                else:
+                    igst_amt = tax_amount
 
             # Line 1: Credit Supplier
             VoucherLine.objects.create(
@@ -617,7 +700,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             )
 
             line_no = 2
-            # Line 2: Debit Purchase Account (if exists)
+            # Line 2: Debit Purchase Account
             if purchase_ledger:
                 VoucherLine.objects.create(
                     Voucher=voucher,
@@ -629,40 +712,65 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 )
                 line_no += 1
 
-            # Line 3: Debit Input GST (if tax > 0 and ledger exists)
-            if tax_amount > 0 and tax_ledger:
+            # Line 3: Debit CGST Input
+            if cgst_amt > 0 and cgst_input_ledger:
                 VoucherLine.objects.create(
                     Voucher=voucher,
                     LineNo=line_no,
-                    Ledger=tax_ledger,
-                    DebitAmount=tax_amount,
+                    Ledger=cgst_input_ledger,
+                    DebitAmount=cgst_amt,
                     CreditAmount=Decimal('0.00'),
-                    Narration=f"Input GST on {purchase.PurchaseNo}",
+                    Narration=f"CGST Input on {purchase.PurchaseNo}",
                 )
                 line_no += 1
 
-            # Line 4: Round off adjustment
-            if round_off != 0:
-                round_ledger = self._get_system_ledger(company_id, 15)
-                if round_ledger:
-                    if round_off > 0:
-                        VoucherLine.objects.create(
-                            Voucher=voucher,
-                            LineNo=line_no,
-                            Ledger=round_ledger,
-                            DebitAmount=round_off,
-                            CreditAmount=Decimal('0.00'),
-                            Narration="Round off adjustment",
-                        )
-                    else:
-                        VoucherLine.objects.create(
-                            Voucher=voucher,
-                            LineNo=line_no,
-                            Ledger=round_ledger,
-                            DebitAmount=Decimal('0.00'),
-                            CreditAmount=abs(round_off),
-                            Narration="Round off adjustment",
-                        )
+            # Line 4: Debit SGST Input
+            if sgst_amt > 0 and sgst_input_ledger:
+                VoucherLine.objects.create(
+                    Voucher=voucher,
+                    LineNo=line_no,
+                    Ledger=sgst_input_ledger,
+                    DebitAmount=sgst_amt,
+                    CreditAmount=Decimal('0.00'),
+                    Narration=f"SGST Input on {purchase.PurchaseNo}",
+                )
+                line_no += 1
+
+            # Line 5: Debit IGST Input
+            if igst_amt > 0 and igst_input_ledger:
+                VoucherLine.objects.create(
+                    Voucher=voucher,
+                    LineNo=line_no,
+                    Ledger=igst_input_ledger,
+                    DebitAmount=igst_amt,
+                    CreditAmount=Decimal('0.00'),
+                    Narration=f"IGST Input on {purchase.PurchaseNo}",
+                )
+                line_no += 1
+
+            # Line 6: Round off adjustment
+            if round_off != 0 and round_ledger:
+                if round_off > 0:
+                    VoucherLine.objects.create(
+                        Voucher=voucher,
+                        LineNo=line_no,
+                        Ledger=round_ledger,
+                        DebitAmount=round_off,
+                        CreditAmount=Decimal('0.00'),
+                        Narration="Round off adjustment",
+                    )
+                else:
+                    VoucherLine.objects.create(
+                        Voucher=voucher,
+                        LineNo=line_no,
+                        Ledger=round_ledger,
+                        DebitAmount=Decimal('0.00'),
+                        CreditAmount=abs(round_off),
+                        Narration="Round off adjustment",
+                    )
+
+            # Sync Supplier Ledger
+            sync_ledger_balances(supplier_id)
 
         serializer = self.get_serializer(purchase)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -689,7 +797,10 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             grand_total = Decimal(str(data.get('GrandTotal') or 0))
             round_off = Decimal(str(data.get('RoundOff') or 0))
 
-            instance.PurchaseNo = data.get('PurchaseNo', instance.PurchaseNo)
+            if 'PurchaseNo' in data and data.get('PurchaseNo'):
+                digits = ''.join(c for c in str(data.get('PurchaseNo')) if c.isdigit())
+                if digits:
+                    instance.PurchaseNo = digits
             instance.PurchaseDate = data.get('PurchaseDate', instance.PurchaseDate)
             instance.SupplierLedger_id = supplier_id
             instance.InvoiceNo = data.get('InvoiceNo', instance.InvoiceNo)
@@ -729,11 +840,20 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 qty = Decimal(str(item.get('Quantity') or 0))
                 rate = Decimal(str(item.get('CostPrice') or item.get('Rate') or 0))
                 tax_pct = Decimal(str(item.get('TaxPercent') or item.get('GSTPercent') or 0))
-                taxable = qty * rate
-                line_tax = (taxable * tax_pct) / Decimal('100')
-                total = Decimal(str(item.get('Total') or (taxable + line_tax)))
-
                 alt_unit_id = item.get('AltUnitId') or item.get('UnitId')
+                unit_conv = Decimal(str(item.get('UnitConversion') or 1))
+                alt_qty = Decimal(str(item.get('AltQuantity') or 0))
+
+                if alt_qty > 0:
+                    calc_qty = alt_qty
+                elif alt_unit_id and unit_conv and unit_conv > 0 and unit_conv != Decimal('1'):
+                    calc_qty = qty * unit_conv
+                else:
+                    calc_qty = qty
+
+                taxable = Decimal(str(item.get('TaxableAmount') if item.get('TaxableAmount') is not None else (calc_qty * rate)))
+                line_tax = Decimal(str(item.get('TaxAmount') if item.get('TaxAmount') is not None else ((taxable * tax_pct) / Decimal('100'))))
+                total = Decimal(str(item.get('Total') if item.get('Total') is not None else (taxable + line_tax)))
 
                 p_line = PurchaseLine.objects.create(
                     Purchase=instance,
@@ -784,9 +904,25 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 IsCancelled=False,
             )
 
-            # Group 11 = Purchase Accounts, Group 22 = Duties & Taxes
-            purchase_ledger = self._get_system_ledger(company_id, 11)
-            tax_ledger = self._get_system_ledger(company_id, 22)
+            purchase_ledger = self._get_ledger_by_name(company_id, "Purchase", fallback_group_id=11)
+            cgst_input_ledger = self._get_ledger_by_name(company_id, "CGST Input", fallback_group_id=3)
+            sgst_input_ledger = self._get_ledger_by_name(company_id, "SGST Input", fallback_group_id=3)
+            igst_input_ledger = self._get_ledger_by_name(company_id, "IGST Input", fallback_group_id=3)
+            round_ledger = self._get_ledger_by_name(company_id, "Round Off", fallback_group_id=15)
+
+            # Determine tax split
+            cgst_amt = Decimal(str(data.get('CGSTAmount') or 0))
+            sgst_amt = Decimal(str(data.get('SGSTAmount') or 0))
+            igst_amt = Decimal(str(data.get('IGSTAmount') or 0))
+
+            if cgst_amt == 0 and sgst_amt == 0 and igst_amt == 0 and tax_amount > 0:
+                supplier = instance.SupplierLedger
+                is_intra = (not supplier or not supplier.StateId or supplier.StateId in [12, 32])
+                if is_intra:
+                    cgst_amt = (tax_amount / Decimal('2')).quantize(Decimal('0.01'))
+                    sgst_amt = tax_amount - cgst_amt
+                else:
+                    igst_amt = tax_amount
 
             VoucherLine.objects.create(
                 Voucher=voucher,
@@ -809,38 +945,58 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 )
                 line_no += 1
 
-            if tax_amount > 0 and tax_ledger:
+            if cgst_amt > 0 and cgst_input_ledger:
                 VoucherLine.objects.create(
                     Voucher=voucher,
                     LineNo=line_no,
-                    Ledger=tax_ledger,
-                    DebitAmount=tax_amount,
+                    Ledger=cgst_input_ledger,
+                    DebitAmount=cgst_amt,
                     CreditAmount=Decimal('0.00'),
-                    Narration=f"Input GST on {instance.PurchaseNo}",
+                    Narration=f"CGST Input on {instance.PurchaseNo}",
                 )
                 line_no += 1
 
-            if round_off != 0:
-                round_ledger = self._get_system_ledger(company_id, 15)
-                if round_ledger:
-                    if round_off > 0:
-                        VoucherLine.objects.create(
-                            Voucher=voucher,
-                            LineNo=line_no,
-                            Ledger=round_ledger,
-                            DebitAmount=round_off,
-                            CreditAmount=Decimal('0.00'),
-                            Narration="Round off adjustment",
-                        )
-                    else:
-                        VoucherLine.objects.create(
-                            Voucher=voucher,
-                            LineNo=line_no,
-                            Ledger=round_ledger,
-                            DebitAmount=Decimal('0.00'),
-                            CreditAmount=abs(round_off),
-                            Narration="Round off adjustment",
-                        )
+            if sgst_amt > 0 and sgst_input_ledger:
+                VoucherLine.objects.create(
+                    Voucher=voucher,
+                    LineNo=line_no,
+                    Ledger=sgst_input_ledger,
+                    DebitAmount=sgst_amt,
+                    CreditAmount=Decimal('0.00'),
+                    Narration=f"SGST Input on {instance.PurchaseNo}",
+                )
+                line_no += 1
+
+            if igst_amt > 0 and igst_input_ledger:
+                VoucherLine.objects.create(
+                    Voucher=voucher,
+                    LineNo=line_no,
+                    Ledger=igst_input_ledger,
+                    DebitAmount=igst_amt,
+                    CreditAmount=Decimal('0.00'),
+                    Narration=f"IGST Input on {instance.PurchaseNo}",
+                )
+                line_no += 1
+
+            if round_off != 0 and round_ledger:
+                if round_off > 0:
+                    VoucherLine.objects.create(
+                        Voucher=voucher,
+                        LineNo=line_no,
+                        Ledger=round_ledger,
+                        DebitAmount=round_off,
+                        CreditAmount=Decimal('0.00'),
+                        Narration="Round off adjustment",
+                    )
+                else:
+                    VoucherLine.objects.create(
+                        Voucher=voucher,
+                        LineNo=line_no,
+                        Ledger=round_ledger,
+                        DebitAmount=Decimal('0.00'),
+                        CreditAmount=abs(round_off),
+                        Narration="Round off adjustment",
+                    )
 
         serializer = self.get_serializer(instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -848,6 +1004,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         with transaction.atomic():
+            supplier_id = instance.SupplierLedger_id
             StockMovement.objects.filter(TransactionType='PURCHASE', ReferenceId=instance.PurchaseId).delete()
             vouchers = Voucher.objects.filter(ReferenceTable='Purchase', ReferenceId=instance.PurchaseId)
             for v in vouchers:
@@ -855,5 +1012,218 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             vouchers.delete()
             instance.lines.all().delete()
             instance.delete()
+            sync_ledger_balances(supplier_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    """
+    CRUD for Payments with Bill-Wise Allocations & Double-Entry Accounting Vouchers.
+    """
+    serializer_class = PaymentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        company_id = getattr(user, 'CompanyId', 0)
+        qs = Payment.objects.select_related('PartyLedger').prefetch_related('lines__Ledger', 'lines__allocations').all()
+        if company_id:
+            # Filter by ledgers belonging to the active company
+            qs = qs.filter(PartyLedger__CompanyId=company_id)
+        return qs.order_by('-PaymentId')
+
+    @action(detail=False, methods=['get'], url_path='pending-bills')
+    def pending_bills(self, request):
+        """
+        Calculates all pending / unpaid purchase bills for a given Party / Supplier Ledger.
+        Pending Balance = Purchase GrandTotal - SUM(AllocatedAmount in BillwiseAllocation)
+        """
+        party_id = request.query_params.get('party_id')
+        if not party_id:
+            return Response({'detail': 'party_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        company_id = getattr(user, 'CompanyId', 0)
+
+        purchases = Purchase.objects.filter(SupplierLedger_id=party_id)
+        if company_id:
+            purchases = purchases.filter(CompanyId=company_id)
+        purchases = purchases.order_by('PurchaseDate', 'PurchaseId')
+
+        results = []
+        for p in purchases:
+            bill_ref = p.PurchaseNo or str(p.PurchaseId)
+            total_bill = Decimal(str(p.GrandTotal or 0))
+
+            # Sum of all previous allocations against this bill reference
+            allocated = BillwiseAllocation.objects.filter(
+                BillType='PURCHASE',
+                BillReference=bill_ref
+            ).aggregate(total=Sum('AllocatedAmount'))['total'] or Decimal('0.00')
+
+            pending_balance = total_bill - Decimal(str(allocated))
+
+            # Only return bills with an outstanding pending balance
+            if pending_balance > Decimal('0.00'):
+                results.append({
+                    'PurchaseId': p.PurchaseId,
+                    'BillReference': bill_ref,
+                    'InvoiceNo': p.InvoiceNo or '-',
+                    'BillDate': p.InvoiceDate or p.PurchaseDate,
+                    'BillAmount': float(total_bill),
+                    'PaidAmount': float(allocated),
+                    'PendingAmount': float(pending_balance),
+                })
+
+        return Response(results, status=status.HTTP_200_OK)
+
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        party_id = data.get('PartyLedgerId')
+        amount = Decimal(str(data.get('Amount') or 0))
+        lines_data = data.get('lines', [])
+        allocations_data = data.get('allocations', [])
+        if not allocations_data and lines_data:
+            for l in lines_data:
+                if isinstance(l, dict) and 'allocations' in l:
+                    allocations_data.extend(l['allocations'])
+
+        if not party_id:
+            return Response({'detail': 'Please select a Party / Supplier.'}, status=status.HTTP_400_BAD_REQUEST)
+        if amount <= 0:
+            return Response({'detail': 'Payment amount must be greater than 0.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        company_id = getattr(user, 'CompanyId', 0)
+
+        with transaction.atomic():
+            # 1. Create Payment Header
+            payment = Payment.objects.create(
+                PartyLedger_id=party_id,
+                Amount=amount,
+                Narration=data.get('Narration') or '',
+            )
+
+            # 2. Create Payment Line(s) (Defaults to 1 line if not specified)
+            if not lines_data:
+                # Default payment mode
+                mode = data.get('PaymentMode', 'Cash')
+                # Find Cash or Bank ledger
+                ledger_id = data.get('PaymentLedgerId')
+                if not ledger_id:
+                    # Fallback to default Cash or Bank ledger
+                    target_group = 16 if mode == 'Cash' else 17
+                    fallback_ledger = Ledger.objects.filter(Group_id=target_group, CompanyId=company_id).first()
+                    ledger_id = fallback_ledger.LedgerId if fallback_ledger else party_id
+
+                lines_data = [{
+                    'LineNo': 1,
+                    'PaymentMode': mode,
+                    'LedgerId': ledger_id,
+                    'Amount': amount,
+                    'InstrumentNumber': data.get('InstrumentNumber'),
+                    'InstrumentDate': data.get('InstrumentDate') or None,
+                    'TransactionReference': data.get('TransactionReference'),
+                    'Narration': data.get('Narration'),
+                }]
+
+            created_lines = []
+            for idx, l in enumerate(lines_data):
+                p_line = PaymentLine.objects.create(
+                    Payment=payment,
+                    LineNo=l.get('LineNo', idx + 1),
+                    PaymentMode=l.get('PaymentMode', 'Cash'),
+                    Ledger_id=l.get('LedgerId'),
+                    Amount=Decimal(str(l.get('Amount') or amount)),
+                    InstrumentNumber=l.get('InstrumentNumber') or None,
+                    InstrumentDate=l.get('InstrumentDate') or None,
+                    BankName=l.get('BankName') or None,
+                    BankBranch=l.get('BankBranch') or None,
+                    ChequeStatus=l.get('ChequeStatus') or None,
+                    ClearedDate=l.get('ClearedDate') or None,
+                    TransactionReference=l.get('TransactionReference') or None,
+                    Narration=l.get('Narration') or None,
+                )
+                created_lines.append(p_line)
+
+            # 3. Create Billwise Allocations linked to the primary payment line
+            primary_line = created_lines[0]
+            for alloc in allocations_data:
+                alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
+                if alloc_amt > 0:
+                    BillwiseAllocation.objects.create(
+                        PaymentLine=primary_line,
+                        BillType='PURCHASE',
+                        BillReference=alloc.get('BillReference'),
+                        BillDate=alloc.get('BillDate') or None,
+                        DueDate=alloc.get('DueDate') or None,
+                        AllocationType=alloc.get('AllocationType', 'Against Reference'),
+                        AllocatedAmount=alloc_amt,
+                        CompanyId=company_id,
+                    )
+
+            # 4. Generate Accounting Voucher
+            # Debit: Party / Supplier Ledger (reduces accounts payable)
+            # Credit: Cash / Bank Ledger (reduces asset)
+            voucher = Voucher.objects.create(
+                VoucherNo=f"PAY-VCH-{payment.PaymentId}",
+                VoucherDate=payment.CreatedAt.date(),
+                VoucherType='PAYMENT',
+                ReferenceTable='Payment',
+                ReferenceId=payment.PaymentId,
+                CompanyId=company_id,
+                Narration=f"Payment #{payment.PaymentId} to {payment.PartyLedger.LedgerName}",
+                IsCancelled=False,
+            )
+
+            # Debit Supplier
+            VoucherLine.objects.create(
+                Voucher=voucher,
+                LineNo=1,
+                Ledger_id=party_id,
+                DebitAmount=amount,
+                CreditAmount=Decimal('0.00'),
+                Narration=f"Payment to {payment.PartyLedger.LedgerName}",
+            )
+
+            # Credit Cash/Bank
+            for idx, p_line in enumerate(created_lines):
+                VoucherLine.objects.create(
+                    Voucher=voucher,
+                    LineNo=idx + 2,
+                    Ledger_id=p_line.Ledger_id,
+                    DebitAmount=Decimal('0.00'),
+                    CreditAmount=p_line.Amount,
+                    Narration=f"{p_line.PaymentMode} payment",
+                )
+
+            # 5. Sync Ledger Balances (Double-Entry Bookkeeping)
+            sync_ledger_balances(party_id, *[p_line.Ledger_id for p_line in created_lines])
+
+        serializer = self.get_serializer(payment)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        with transaction.atomic():
+            party_id = instance.PartyLedger_id
+            payment_ledger_ids = list(instance.lines.values_list('Ledger_id', flat=True))
+
+            # Delete accounting vouchers & lines
+            vouchers = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=instance.PaymentId)
+            for v in vouchers:
+                v.lines.all().delete()
+            vouchers.delete()
+
+            # Delete billwise allocations
+            for line in instance.lines.all():
+                line.allocations.all().delete()
+
+            # Delete lines & payment
+            instance.lines.all().delete()
+            instance.delete()
+
+            # Sync ledger balances directly from remaining voucher lines
+            sync_ledger_balances(party_id, *payment_ledger_ids)
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 

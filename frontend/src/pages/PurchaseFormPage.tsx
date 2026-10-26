@@ -9,7 +9,6 @@ import {
   Group,
   Stack,
   Table,
-  Badge,
   Loader,
   Center,
   Text,
@@ -43,7 +42,8 @@ interface LedgerOption {
   Pincode?: string | null;
   PhoneNumber?: string | null;
   MobileNumber?: string | null;
-  Group?: { GroupName: string };
+  Group?: number | { GroupId?: number; GroupName?: string };
+  group_name?: string;
 }
 
 interface ProductOption {
@@ -128,7 +128,14 @@ const emptyLine = (): LineItem => ({
 const recalc = (line: LineItem, intra: boolean): LineItem => {
   const qty = Number(line.Quantity) || 0;
   const rate = Number(line.Rate) || 0;
-  const taxable = qty * rate;
+  const hasAlt = Boolean(line.AltUnitId || line.AltUnitName) && Number(line.UnitConversion) > 0;
+  const altQty = hasAlt
+    ? Number((qty * Number(line.UnitConversion)).toFixed(2))
+    : (Number(line.AltQuantity) || 0);
+
+  // When alternate unit conversion exists (e.g. 4 cylinders x 4 = 16 kg), rate applies to converted quantity (16)
+  const calcQty = (hasAlt && altQty > 0) ? altQty : qty;
+  const taxable = calcQty * rate;
   const gst = Number(line.GSTPercent) || 0;
 
   let cgstPct = 0, cgstAmt = 0, sgstPct = 0, sgstAmt = 0, igstPct = 0, igstAmt = 0;
@@ -142,10 +149,6 @@ const recalc = (line: LineItem, intra: boolean): LineItem => {
     igstPct = gst;
     igstAmt = (taxable * igstPct) / 100;
   }
-
-  const altQty = line.UnitConversion > 0
-    ? Number((qty * line.UnitConversion).toFixed(2))
-    : Number(line.AltQuantity) || 0;
 
   return {
     ...line,
@@ -210,6 +213,8 @@ export const PurchaseFormPage: React.FC = () => {
       const res = await apiClient.get('/products/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   const selectedSupplier = useMemo(
@@ -226,15 +231,41 @@ export const PurchaseFormPage: React.FC = () => {
         partyPhone: selectedSupplier.PhoneNumber || selectedSupplier.MobileNumber || prev.partyPhone,
         partyAddress: [selectedSupplier.AddressLine1, selectedSupplier.City].filter(Boolean).join(', ') || prev.partyAddress,
         partyPincode: selectedSupplier.Pincode || prev.partyPincode,
-        partyState: selectedSupplier.StateId === 32 ? 'Kerala' : prev.partyState,
+        partyState: (selectedSupplier.StateId === 12 || selectedSupplier.StateId === 32) ? 'Kerala' : prev.partyState,
       }));
     }
   }, [selectedSupplier]);
 
-  // Kerala = StateId 32 (standard GST state code for Kerala)
+  // Fetch purchases list to auto-calculate next purchase number when creating new
+  const { data: purchasesList = [] } = useQuery<any[]>({
+    queryKey: ['purchases'],
+    queryFn: async () => {
+      const res = await apiClient.get('/purchases/');
+      return Array.isArray(res.data) ? res.data : res.data.results || [];
+    },
+    enabled: !isEditing,
+  });
+
+  // Auto-generate numeric counter (e.g. 001, 002) if creating a new purchase
+  useEffect(() => {
+    if (!isEditing && !purchaseNo && purchasesList.length >= 0) {
+      let maxNum = 0;
+      purchasesList.forEach((p: any) => {
+        const nums = String(p.PurchaseNo || '').replace(/\D/g, '');
+        if (nums) {
+          const val = parseInt(nums, 10);
+          if (!isNaN(val) && val > maxNum) maxNum = val;
+        }
+      });
+      const nextFormatted = String(maxNum + 1).padStart(3, '0');
+      setPurchaseNo(nextFormatted);
+    }
+  }, [isEditing, purchasesList, purchaseNo]);
+
+  // Kerala = StateId 12 (GST State Code 32)
   const isIntraState = useMemo(() => {
     if (!selectedSupplier?.StateId) return true;
-    return selectedSupplier.StateId === 32;
+    return selectedSupplier.StateId === 12 || selectedSupplier.StateId === 32;
   }, [selectedSupplier]);
 
   // Re-calc all rows whenever tax mode changes
@@ -242,10 +273,19 @@ export const PurchaseFormPage: React.FC = () => {
     setItems((prev) => prev.map((line) => recalc(line, isIntraState)));
   }, [isIntraState]);
 
-  const ledgerOptions = useMemo(
-    () => ledgers.map((l) => ({ value: String(l.LedgerId), label: l.LedgerName })),
-    [ledgers]
-  );
+  // Party Selection: ONLY Bank, Cash, Sundry Debtors, and Sundry Creditors allowed
+  const ALLOWED_PARTY_GROUPS = [16, 17, 21, 24, 25];
+
+  const ledgerOptions = useMemo(() => {
+    return ledgers
+      .filter((l) => {
+        const gId = typeof l.Group === 'number' ? l.Group : (l.Group as any)?.GroupId;
+        if (gId && ALLOWED_PARTY_GROUPS.includes(Number(gId))) return true;
+        const gName = (l.group_name || (typeof l.Group === 'object' ? (l.Group as any)?.GroupName : '') || '').toLowerCase();
+        return gName.includes('cash') || gName.includes('bank') || gName.includes('creditor') || gName.includes('debtor');
+      })
+      .map((l) => ({ value: String(l.LedgerId), label: l.LedgerName }));
+  }, [ledgers]);
 
   const productOptions = useMemo(
     () => products.map((p) => ({
@@ -268,9 +308,20 @@ export const PurchaseFormPage: React.FC = () => {
           item.UnitName = prod.unit_name || 'Nos';
           item.AltUnitId = prod.AltUnit || null;
           item.AltUnitName = prod.alt_unit_name || '';
-          item.UnitConversion = Number(prod.UnitConversion) || 1;
+          item.UnitConversion = prod.UnitConversion !== undefined && prod.UnitConversion !== null
+            ? Number(prod.UnitConversion)
+            : 1;
           item.Rate = Number(prod.PurchasePrice) || '';
           item.GSTPercent = Number(prod.GSTPercentage) || 18;
+        } else {
+          item.ProductName = '';
+          item.UnitId = null;
+          item.UnitName = '';
+          item.AltUnitId = null;
+          item.AltUnitName = '';
+          item.UnitConversion = 1;
+          item.Rate = '';
+          item.GSTPercent = 0;
         }
       }
 
@@ -367,9 +418,11 @@ export const PurchaseFormPage: React.FC = () => {
           const updated = {
             ...item,
             ProductName: item.ProductName || prod.ProductName,
-            UnitName: item.UnitName || prod.unit_name || '',
-            AltUnitName: item.AltUnitName || prod.alt_unit_name || '',
-            UnitConversion: item.UnitConversion || Number(prod.UnitConversion) || 1,
+            UnitName: prod.unit_name || item.UnitName || '',
+            AltUnitName: prod.alt_unit_name || item.AltUnitName || '',
+            UnitConversion: prod.UnitConversion !== undefined && prod.UnitConversion !== null
+              ? Number(prod.UnitConversion)
+              : (Number(item.UnitConversion) || 1),
             GSTPercent: item.GSTPercent || Number(prod.GSTPercentage) || 0,
           };
           return recalc(updated, isIntraState);
@@ -460,6 +513,8 @@ export const PurchaseFormPage: React.FC = () => {
           UnitConversion: line.UnitConversion,
           CostPrice: Number(line.Rate) || 0,
           TaxPercent: line.GSTPercent,
+          TaxableAmount: line.TaxableAmount,
+          TaxAmount: Number((line.CGSTAmount + line.SGSTAmount + line.IGSTAmount).toFixed(2)),
           CGSTPercent: line.CGSTPercent,
           CGSTAmount: line.CGSTAmount,
           SGSTPercent: line.SGSTPercent,
@@ -509,21 +564,20 @@ export const PurchaseFormPage: React.FC = () => {
   }, [handleSave]);
 
   return (
-    <Stack gap="sm" style={{ minHeight: 'calc(100vh - 112px)', display: 'flex', flexDirection: 'column' }}>
+    <Stack gap={4} style={{ minHeight: 'calc(100vh - 82px)', display: 'flex', flexDirection: 'column' }}>
       {/* 1. Ultra-Compact Top Header — minimal height, maximum screen space */}
-      <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-        <Group gap="xs" align="center">
-          <Button
+      <Group justify="space-between" align="center" wrap="wrap" gap={4}>
+        <Group gap={6} align="center">
+          <ActionIcon
             variant="subtle"
             color="gray"
-            size="xs"
-            leftSection={<IconArrowLeft size={16} />}
+            size="sm"
             onClick={() => navigate('/purchases')}
-            styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+            title="Back to Purchases"
+            style={{ color: '#1e293b' }}
           >
-            Back to Purchases
-          </Button>
-          <Divider orientation="vertical" h={18} />
+            <IconArrowLeft size={18} />
+          </ActionIcon>
           <Title order={3} style={{ color: '#800020', fontWeight: 700, fontSize: 18 }}>
             {isEditing ? 'Edit Purchase' : 'New Purchase Invoice'}
           </Title>
@@ -531,8 +585,8 @@ export const PurchaseFormPage: React.FC = () => {
       </Group>
 
       {/* 2. Invoice Details Card with Party Selection & "More Details" Button */}
-      <Paper p="sm" radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-        <Group wrap="wrap" gap="sm" align="flex-start">
+      <Paper p={8} radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+        <Group wrap="wrap" gap={8} align="flex-start">
           {/* Party / Supplier + More Details */}
           <div style={{ flex: '2 1 240px', minWidth: 220 }}>
             <Group justify="space-between" align="center" mb={2}>
@@ -568,9 +622,12 @@ export const PurchaseFormPage: React.FC = () => {
           <div style={{ flex: '1 1 140px', minWidth: 130 }}>
             <Text size="xs" fw={600} c="#334155" mb={2}>Purchase No</Text>
             <TextInput
-              placeholder="e.g. PUR-001"
+              placeholder="001"
               value={purchaseNo}
-              onChange={(e) => setPurchaseNo(e.currentTarget.value)}
+              onChange={(e) => {
+                const numericOnly = e.currentTarget.value.replace(/\D/g, '');
+                setPurchaseNo(numericOnly);
+              }}
               radius="md"
               size="sm"
             />
@@ -629,30 +686,40 @@ export const PurchaseFormPage: React.FC = () => {
         }}
       >
         {isLoadingProducts ? (
-          <Center py={60} style={{ flex: 1 }}><Loader color="burgundy" size="md" /></Center>
+          <Center py={30} style={{ flex: 1 }}><Loader color="burgundy" size="md" /></Center>
         ) : (
-          <Box style={{ flex: 1, overflowX: 'auto', backgroundColor: '#ffffff' }}>
+          <Box style={{ flex: 1, overflowX: 'auto', overflowY: 'auto', backgroundColor: '#ffffff', minHeight: 320 }}>
             <Table.ScrollContainer minWidth={880}>
             <Table
-              verticalSpacing={1}
-              horizontalSpacing="xs"
+              verticalSpacing={0}
+              horizontalSpacing={4}
               highlightOnHover
+              style={{ tableLayout: 'fixed', width: '100%', minWidth: 880 }}
               styles={{
-                td: { paddingTop: 2, paddingBottom: 2, paddingLeft: 6, paddingRight: 6 },
-                th: { paddingTop: 4, paddingBottom: 4, paddingLeft: 6, paddingRight: 6 },
+                td: { paddingTop: 1, paddingBottom: 1, paddingLeft: 4, paddingRight: 4 },
+                th: { paddingTop: 3, paddingBottom: 3, paddingLeft: 4, paddingRight: 4 },
               }}
             >
+              <colgroup>
+                <col style={{ width: 38 }} />
+                <col style={{ width: 235 }} /> {/* Product: fits 220px select */}
+                <col style={{ width: '21%' }} /> {/* Qty & Unit */}
+                <col style={{ width: '15%' }} /> {/* Rate */}
+                <col style={{ width: '16%' }} /> {/* Taxable */}
+                <col style={{ width: '19%' }} /> {/* GST */}
+                <col style={{ width: '19%' }} /> {/* Total */}
+                <col style={{ width: 51 }} /> {/* Delete Action */}
+              </colgroup>
               <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <Table.Tr style={{ height: 28 }}>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 36, textAlign: 'center' }}>#</Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 160, minWidth: 140, maxWidth: 180 }}>Product</Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 65, minWidth: 55 }}>Qty</Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 60, minWidth: 55, textAlign: 'center' }}>Unit</Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, width: 110, minWidth: 110 }}>Rate (₹)</Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, minWidth: 100, textAlign: 'right' }}>Taxable (₹)</Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, minWidth: 115, textAlign: 'right' }}>GST (₹)</Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 12, minWidth: 110, textAlign: 'right' }}>Total (₹)</Table.Th>
-                  <Table.Th style={{ width: 36, padding: '4px' }} />
+                <Table.Tr style={{ height: 24 }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textAlign: 'left' }}>#</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textAlign: 'left' }}>Product</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textAlign: 'left' }}>Qty</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textAlign: 'right', paddingRight: 6 }}>Rate (₹)</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textAlign: 'right', paddingRight: 6 }}>Taxable (₹)</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textAlign: 'right', paddingRight: 6 }}>GST (₹)</Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textAlign: 'right', paddingRight: 6 }}>Total (₹)</Table.Th>
+                  <Table.Th style={{ padding: '2px' }} />
                 </Table.Tr>
               </Table.Thead>
 
@@ -663,31 +730,34 @@ export const PurchaseFormPage: React.FC = () => {
                       <Text size="xs" fw={600} c="dimmed">{index + 1}</Text>
                     </Table.Td>
 
-                    {/* Product Select (Compact width) */}
-                    <Table.Td style={{ width: 160, maxWidth: 180 }}>
+                    {/* Product Select (Gated by selected supplier ledger) */}
+                    <Table.Td>
                       <Select
-                        placeholder="Select product..."
-                        data={productOptions}
+                        placeholder={selectedLedgerId ? "Select product..." : "Select supplier first"}
+                        data={selectedLedgerId ? productOptions : []}
                         value={line.ProductId ? String(line.ProductId) : null}
                         onChange={(val) => updateField(index, 'ProductId', val ? Number(val) : null)}
+                        disabled={!selectedLedgerId}
                         searchable
                         size="xs"
                         radius="sm"
-                        style={{ width: 160 }}
-                        comboboxProps={{ width: 240 }}
-                        styles={{ input: { height: 26, minHeight: 26 } }}
+                        style={{ width: 220, maxWidth: '100%' }}
+                        comboboxProps={{ width: 220 }}
+                        nothingFoundMessage={selectedLedgerId ? "No products found" : "Please select supplier first"}
+                        styles={{ input: { height: 24, minHeight: 24, fontSize: 12 } }}
                       />
                     </Table.Td>
 
-                    {/* Qty with Calculated Alt Qty in Brackets (compact width, no gap with unit) */}
-                    <Table.Td style={{ width: 65, minWidth: 55 }}>
-                      <Group gap={4} wrap="nowrap" align="center">
+                    {/* Qty & Unit combined in one clean cell */}
+                    <Table.Td style={{ paddingLeft: 4, paddingRight: 4 }}>
+                      <Group gap={6} wrap="nowrap" align="center">
                         <NumberInput
                           size="xs"
                           radius="sm"
                           min={0}
                           hideControls
                           placeholder="0"
+                          disabled={!line.ProductId}
                           value={
                             line.Quantity === '' || line.Quantity === null || line.Quantity === undefined
                               ? ''
@@ -703,74 +773,85 @@ export const PurchaseFormPage: React.FC = () => {
                               handleSave();
                             }
                           }}
-                          style={{ width: 44 }}
+                          style={{ width: 42, flexShrink: 0 }}
                           styles={{
                             input: {
-                              height: 26,
-                              minHeight: 26,
+                              height: 24,
+                              minHeight: 24,
                               paddingLeft: 2,
                               paddingRight: 2,
                               textAlign: 'center',
                               fontWeight: 600,
+                              fontSize: 13,
+                              fontVariantNumeric: 'tabular-nums',
                             },
                           }}
                         />
-                        {Number(line.AltQuantity) > 0 && (
-                          <Text size="11px" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                            ({line.AltQuantity}{line.AltUnitName ? ` ${line.AltUnitName}` : ''})
-                          </Text>
-                        )}
+                        {line.ProductId && line.UnitName && (() => {
+                          const hasAlt = Number(line.AltQuantity) > 0 && line.AltUnitName;
+                          if (!hasAlt) {
+                            return (
+                              <Text size="xs" fw={700} c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
+                                {line.UnitName}
+                              </Text>
+                            );
+                          }
+                          const isAltNos = line.AltUnitName.toUpperCase() === 'NOS';
+                          const bracketQty = line.AltQuantity;
+                          const bracketUnit = isAltNos ? line.UnitName : line.AltUnitName;
+                          const outerUnit = isAltNos ? line.AltUnitName : line.UnitName;
+                          return (
+                            <Text size="xs" fw={700} c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
+                              ({bracketQty}) {outerUnit}/{bracketUnit}
+                            </Text>
+                          );
+                        })()}
                       </Group>
                     </Table.Td>
 
-                    {/* Unit (Full name visible, compact, no gap) */}
-                    <Table.Td style={{ width: 60, minWidth: 55, textAlign: 'center' }}>
-                      {line.ProductId && line.UnitName ? (
-                        <Badge size="xs" variant="outline" color="gray" style={{ whiteSpace: 'nowrap', textOverflow: 'clip', minWidth: 42 }}>
-                          {line.UnitName}
-                        </Badge>
-                      ) : (
-                        <Text size="xs" c="dimmed">—</Text>
-                      )}
-                    </Table.Td>
-
-                    {/* Rate (clean neutral styling, no clipping) */}
-                    <Table.Td style={{ minWidth: 110 }}>
-                      <NumberInput
-                        size="xs"
-                        radius="sm"
-                        min={0}
-                        decimalScale={2}
-                        hideControls
-                        prefix="₹ "
-                        placeholder="0.00"
-                        value={line.Rate}
-                        onFocus={(e) => e.currentTarget.select()}
-                        onChange={(val) => updateField(index, 'Rate', val)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleSave();
-                          }
-                        }}
-                        style={{ width: '100%', minWidth: 95 }}
-                        styles={{
-                          input: {
-                            height: 26,
-                            minHeight: 26,
-                            fontWeight: 600,
-                            backgroundColor: '#ffffff',
-                            borderColor: '#cbd5e1',
-                            color: '#0f172a',
-                            paddingLeft: 6,
-                            paddingRight: 6,
-                          },
-                        }}
-                      />
+                    {/* Rate */}
+                    <Table.Td style={{ textAlign: 'right', paddingRight: 4 }}>
+                      <Box style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <NumberInput
+                          size="xs"
+                          radius="sm"
+                          min={0}
+                          decimalScale={2}
+                          hideControls
+                          prefix="₹ "
+                          placeholder="0.00"
+                          disabled={!line.ProductId}
+                          value={line.Rate}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onChange={(val) => updateField(index, 'Rate', val)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSave();
+                            }
+                          }}
+                          style={{ width: 115 }}
+                          styles={{
+                            input: {
+                              height: 24,
+                              minHeight: 24,
+                              fontWeight: 600,
+                              fontSize: 13,
+                              backgroundColor: '#ffffff',
+                              borderColor: '#cbd5e1',
+                              color: '#0f172a',
+                              textAlign: 'right',
+                              paddingLeft: 4,
+                              paddingRight: 6,
+                              fontVariantNumeric: 'tabular-nums',
+                            },
+                          }}
+                        />
+                      </Box>
                     </Table.Td>
 
                     {/* Taxable Amount */}
-                    <Table.Td style={{ textAlign: 'right' }}>
+                    <Table.Td style={{ textAlign: 'right', paddingRight: 6 }}>
                       {line.ProductId ? (
                         <Text fw={600} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           ₹{line.TaxableAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -781,7 +862,7 @@ export const PurchaseFormPage: React.FC = () => {
                     </Table.Td>
 
                     {/* GST: Percentage on left of amount, both aligned to the right side */}
-                    <Table.Td style={{ textAlign: 'right' }}>
+                    <Table.Td style={{ textAlign: 'right', paddingRight: 6 }}>
                       {line.ProductId ? (() => {
                         const lineTax = (line.CGSTAmount || 0) + (line.SGSTAmount || 0) + (line.IGSTAmount || 0);
                         return (
@@ -800,7 +881,7 @@ export const PurchaseFormPage: React.FC = () => {
                     </Table.Td>
 
                     {/* Total (₹) */}
-                    <Table.Td style={{ textAlign: 'right' }}>
+                    <Table.Td style={{ textAlign: 'right', paddingRight: 6 }}>
                       {line.ProductId ? (
                         <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           ₹{line.Total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -811,7 +892,7 @@ export const PurchaseFormPage: React.FC = () => {
                     </Table.Td>
 
                     {/* Delete Icon — tabIndex={-1} skips focus during Tab */}
-                    <Table.Td style={{ textAlign: 'center' }}>
+                    <Table.Td style={{ textAlign: 'center', padding: '2px' }}>
                       <ActionIcon
                         variant="subtle"
                         color="red"
@@ -826,7 +907,7 @@ export const PurchaseFormPage: React.FC = () => {
                 ))}
                 {/* Add Row Action inside Tbody */}
                 <Table.Tr>
-                  <Table.Td colSpan={9} style={{ padding: '3px 8px', backgroundColor: '#ffffff' }}>
+                  <Table.Td colSpan={8} style={{ padding: '2px 6px', backgroundColor: '#ffffff' }}>
                     <Button
                       size="xs"
                       variant="subtle"
@@ -859,50 +940,59 @@ export const PurchaseFormPage: React.FC = () => {
           horizontalSpacing="xs"
           style={{ tableLayout: 'fixed', width: '100%', minWidth: 880, borderBottom: 'none' }}
           styles={{
-            td: { border: 'none', paddingTop: 6, paddingBottom: 6, paddingLeft: 6, paddingRight: 6 },
+            td: { border: 'none', paddingTop: 3, paddingBottom: 3, paddingLeft: 4, paddingRight: 4 },
           }}
         >
+          <colgroup>
+            <col style={{ width: 38 }} />
+            <col style={{ width: 235 }} /> {/* Product */}
+            <col style={{ width: '21%' }} /> {/* Qty & Unit */}
+            <col style={{ width: '15%' }} /> {/* Rate */}
+            <col style={{ width: '16%' }} /> {/* Taxable */}
+            <col style={{ width: '19%' }} /> {/* GST */}
+            <col style={{ width: '19%' }} /> {/* Total */}
+            <col style={{ width: 38 }} /> {/* Delete Action */}
+          </colgroup>
           <Table.Tbody>
-            <Table.Tr style={{ height: 34, backgroundColor: '#ffffff', border: 'none' }}>
-              <Table.Td style={{ width: 36, textAlign: 'center', border: 'none' }} />
-              <Table.Td style={{ width: 160, minWidth: 140, maxWidth: 180, textAlign: 'right', color: '#475569', fontWeight: 700, fontSize: 13, border: 'none', paddingRight: 8 }}>
+            <Table.Tr style={{ height: 28, backgroundColor: '#ffffff', border: 'none' }}>
+              <Table.Td style={{ textAlign: 'center', border: 'none' }} />
+              <Table.Td style={{ textAlign: 'right', color: '#475569', fontWeight: 700, fontSize: 13, border: 'none', paddingRight: 8 }}>
                 Total:
               </Table.Td>
               {/* Total Qty directly under the 44px Qty box */}
-              <Table.Td style={{ width: 65, minWidth: 55, border: 'none', paddingLeft: 6, paddingRight: 6 }}>
-                <div style={{ width: 44, textAlign: 'center' }}>
+              <Table.Td style={{ border: 'none', paddingLeft: 4, paddingRight: 4 }}>
+                <div style={{ width: 42, textAlign: 'center' }}>
                   <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                     {totals.totalQty}
                   </Text>
                 </div>
               </Table.Td>
-              <Table.Td style={{ width: 60, minWidth: 55, border: 'none' }} />
-              <Table.Td style={{ width: 110, minWidth: 110, border: 'none' }} />
+              <Table.Td style={{ border: 'none' }} />
               {/* Taxable total */}
-              <Table.Td style={{ minWidth: 100, textAlign: 'right', border: 'none', paddingRight: 6 }}>
+              <Table.Td style={{ textAlign: 'right', border: 'none', paddingRight: 6 }}>
                 <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                   ₹{totals.subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Table.Td>
               {/* GST total */}
-              <Table.Td style={{ minWidth: 115, textAlign: 'right', border: 'none', paddingRight: 6 }}>
+              <Table.Td style={{ textAlign: 'right', border: 'none', paddingRight: 6 }}>
                 <Text fw={700} style={{ fontSize: 13, color: '#0f766e', fontVariantNumeric: 'tabular-nums' }}>
                   ₹{totals.totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Table.Td>
               {/* Raw Total */}
-              <Table.Td style={{ minWidth: 110, textAlign: 'right', border: 'none', paddingRight: 6 }}>
+              <Table.Td style={{ textAlign: 'right', border: 'none', paddingRight: 6 }}>
                 <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                   ₹{(totals.subTotal + totals.totalTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Table.Td>
-              <Table.Td style={{ width: 36, padding: '4px', border: 'none' }} />
+              <Table.Td style={{ padding: '4px', border: 'none' }} />
             </Table.Tr>
           </Table.Tbody>
         </Table>
 
         {/* Row 2: Action Bar (Notes, Round Off, Grand Total, Buttons) — NO extra top line */}
-        <Box pt={4} pb="xs" px="md">
+        <Box pt={3} pb={6} px="sm">
           <Group justify="space-between" align="center" wrap="wrap" gap="md">
             {/* Left: Notes Input */}
             <div style={{ flex: '1 1 300px', maxWidth: 460 }}>

@@ -7,7 +7,7 @@ from core.views import (
     DriverViewSet, VehicleViewSet, RouteViewSet, RouteVehicleDriverViewSet, UserViewSet,
     CategoryViewSet, UnitViewSet, ProductViewSet,
     GroupViewSet, LedgerViewSet, ProductPriceAuditViewSet,
-    PurchaseViewSet
+    PurchaseViewSet, PaymentViewSet
 )
 
 
@@ -24,6 +24,8 @@ router.register(r'groups', GroupViewSet, basename='group')
 router.register(r'ledgers', LedgerViewSet, basename='ledger')
 router.register(r'price-audits', ProductPriceAuditViewSet, basename='price-audit')
 router.register(r'purchases', PurchaseViewSet, basename='purchase')
+router.register(r'payments', PaymentViewSet, basename='payment')
+
 
 
 

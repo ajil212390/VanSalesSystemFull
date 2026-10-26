@@ -36,6 +36,7 @@ import {
   IconChevronDown,
   IconExternalLink,
   IconReceipt,
+  IconCreditCard,
 } from '@tabler/icons-react';
 
 
@@ -112,6 +113,10 @@ export const AppLayout: React.FC = () => {
         return { section: 'Purchase', title: 'Purchase Invoices' };
       case '/purchases/new':
         return { section: 'Purchase', title: 'New Purchase' };
+      case '/payments':
+        return { section: 'Payment', title: 'Payments' };
+      case '/payments/new':
+        return { section: 'Payment', title: 'New Payment' };
       default:
         if (location.pathname.startsWith('/purchases/')) {
           return { section: 'Purchase', title: 'Edit Purchase' };
@@ -614,6 +619,52 @@ export const AppLayout: React.FC = () => {
                 padding: isCollapsed ? '0' : '0 12px',
                 backgroundColor: location.pathname.startsWith('/purchases') ? '#fdf2f4' : 'transparent',
                 color: location.pathname.startsWith('/purchases') ? '#800020' : '#475569',
+                fontWeight: 600,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
+              },
+              section: {
+                marginRight: isCollapsed ? 0 : 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+              body: {
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                opacity: isCollapsed ? 0 : 1,
+                maxWidth: isCollapsed ? 0 : 160,
+                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+            }}
+          />
+        </Tooltip>
+                    {/* Payment NavLink */}
+        <Tooltip label="Payment" position="right" withArrow disabled={!isCollapsed}>
+          <NavLink
+            component={Link}
+            to="/payments"
+            label="Payment"
+            leftSection={<IconCreditCard size={20} stroke={1.75} />}
+            active={location.pathname.startsWith('/payments')}
+            color="burgundy"
+            variant="light"
+            mb={4}
+            onClick={() => opened && toggle()}
+            styles={{
+              root: {
+                borderRadius: '6px',
+                height: 40,
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: isCollapsed ? 'center' : 'flex-start',
+                padding: isCollapsed ? '0' : '0 12px',
+                backgroundColor: location.pathname.startsWith('/payments') ? '#fdf2f4' : 'transparent',
+                color: location.pathname.startsWith('/payments') ? '#800020' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',

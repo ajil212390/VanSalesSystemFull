@@ -1,0 +1,15 @@
+LedgerName,GroupId
+Sales,10
+Purchase,11
+CGST Output,22
+SGST Output,22
+Cash,16
+SaleReturn,10
+Purchase Return,11
+CGST Input,3
+SGST Input,3
+Service Bill,10
+Round Off,15
+Travelling Expense,15
+Office Expenses,15
+Salary Expenses,15

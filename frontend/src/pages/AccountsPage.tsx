@@ -191,7 +191,7 @@ export const AccountsPage: React.FC = () => {
     handleSubmit,
     control,
     reset,
-    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<LedgerFormValues>({
     defaultValues: defaultLedgerValues,
@@ -199,19 +199,7 @@ export const AccountsPage: React.FC = () => {
 
   const [showExtraDetails, setShowExtraDetails] = useState(false);
 
-  const selectedGroupId = watch('Group');
-  const selectedGroup = useMemo(() => {
-    if (!selectedGroupId) return null;
-    return groups.find((g) => String(g.GroupId) === String(selectedGroupId));
-  }, [groups, selectedGroupId]);
-
-  const isPartyGroup = useMemo(() => {
-    if (!selectedGroup) return false;
-    const name = selectedGroup.GroupName.toLowerCase();
-    return name.includes('debtor') || name.includes('creditor');
-  }, [selectedGroup]);
-
-  const isDetailsExpanded = isPartyGroup || showExtraDetails;
+  const isDetailsExpanded = showExtraDetails;
 
   // Save / Update mutation
   const saveMutation = useMutation({
@@ -223,7 +211,7 @@ export const AccountsPage: React.FC = () => {
         OpeningBalanceType: data.OpeningBalanceType || 'DR',
         DebitBalance: data.DebitBalance !== '' && data.DebitBalance !== null ? Number(data.DebitBalance) : 0,
         CreditBalance: data.CreditBalance !== '' && data.CreditBalance !== null ? Number(data.CreditBalance) : 0,
-        CurrentBalance: data.CurrentBalance !== '' && data.CurrentBalance !== null ? Number(data.CurrentBalance) : 0,
+        CurrentBalance: data.CurrentBalance !== '' && data.CurrentBalance !== null ? Number(data.CurrentBalance) : (data.OpeningBalance !== '' ? Number(data.OpeningBalance) : 0),
         AddressLine1: data.AddressLine1.trim() || null,
         AddressLine2: data.AddressLine2.trim() || null,
         AddressLine3: data.AddressLine3.trim() || null,
@@ -314,26 +302,15 @@ export const AccountsPage: React.FC = () => {
   };
 
   const handleAddNew = () => {
-    if (formOpened && !editingLedger) {
-      handleCloseForm();
-      return;
-    }
     setEditingLedger(null);
     reset(defaultLedgerValues);
+    setShowExtraDetails(false); // Initially collapsed for new ledger as requested
     setFormOpened(true);
   };
 
   const handleEdit = (ledger: LedgerItem) => {
     setEditingLedger(ledger);
-    const hasExtra = Boolean(
-      ledger.GSTIN ||
-      ledger.MobileNumber ||
-      ledger.AddressLine1 ||
-      ledger.BankName ||
-      Number(ledger.CreditLimit || 0) > 0 ||
-      Number(ledger.EmptyStockLimit || 0) > 0
-    );
-    setShowExtraDetails(hasExtra);
+    setShowExtraDetails(true); // Fully expanded in edit so all details are visible and editable
     reset({
       LedgerName: ledger.LedgerName,
       Group: String(ledger.Group),
@@ -570,7 +547,12 @@ export const AccountsPage: React.FC = () => {
                         prefix="₹ "
                         hideControls
                         value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
-                        onChange={(val) => field.onChange(val === '' ? '' : val)}
+                        onChange={(val) => {
+                          field.onChange(val === '' ? '' : val);
+                          if (!editingLedger) {
+                            setValue('CurrentBalance', val === '' ? '' : val);
+                          }
+                        }}
                       />
                     )}
                   />
@@ -586,8 +568,9 @@ export const AccountsPage: React.FC = () => {
                         decimalScale={2}
                         prefix="₹ "
                         hideControls
+                        readOnly
+                        styles={{ input: { backgroundColor: '#f8fafc', color: '#64748b', cursor: 'not-allowed' } }}
                         value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
-                        onChange={(val) => field.onChange(val === '' ? '' : val)}
                       />
                     )}
                   />
@@ -603,8 +586,9 @@ export const AccountsPage: React.FC = () => {
                         decimalScale={2}
                         prefix="₹ "
                         hideControls
+                        readOnly
+                        styles={{ input: { backgroundColor: '#f8fafc', color: '#64748b', cursor: 'not-allowed' } }}
                         value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
-                        onChange={(val) => field.onChange(val === '' ? '' : val)}
                       />
                     )}
                   />
@@ -619,8 +603,9 @@ export const AccountsPage: React.FC = () => {
                         decimalScale={2}
                         prefix="₹ "
                         hideControls
+                        readOnly
+                        styles={{ input: { backgroundColor: '#f8fafc', color: '#64748b', cursor: 'not-allowed' } }}
                         value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
-                        onChange={(val) => field.onChange(val === '' ? '' : val)}
                       />
                     )}
                   />
@@ -633,35 +618,33 @@ export const AccountsPage: React.FC = () => {
                   {...register('Narration')}
                 />
 
-                {/* Optional Expand Toggle for Non-Party Ledgers */}
-                {!isPartyGroup && (
-                  <Group justify="flex-start" mt={2}>
-                    <Button
-                      variant="subtle"
-                      color="gray"
-                      size="xs"
-                      leftSection={
-                        <IconChevronDown
-                          size={14}
-                          style={{
-                            transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)',
-                            transform: isDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                          }}
-                        />
-                      }
-                      onClick={() => setShowExtraDetails(!showExtraDetails)}
-                      styles={{ root: { fontWeight: 500, paddingLeft: 6, paddingRight: 10 } }}
-                    >
-                      {isDetailsExpanded ? 'Fewer details' : 'More details'}
-                    </Button>
-                  </Group>
-                )}
+                {/* Expand Toggle for More Details */}
+                <Group justify="flex-start" mt="xs">
+                  <Button
+                    variant="subtle"
+                    color="burgundy"
+                    size="xs"
+                    leftSection={
+                      <IconChevronDown
+                        size={14}
+                        style={{
+                          transition: 'transform 250ms ease',
+                          transform: isDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                        }}
+                      />
+                    }
+                    onClick={() => setShowExtraDetails(!showExtraDetails)}
+                    styles={{ root: { fontWeight: 600, paddingLeft: 6, paddingRight: 10 } }}
+                  >
+                    {isDetailsExpanded ? 'Fewer details' : 'More details'}
+                  </Button>
+                </Group>
 
-                {/* Collapsible Sections: Credit, Compliance, Address & Banking (Auto-expanded for Sundry Debtors / Creditors) */}
+                {/* Collapsible Sections: Credit, Compliance, Address & Banking */}
                 <Collapse
                   expanded={isDetailsExpanded}
-                  transitionDuration={350}
-                  transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+                  transitionDuration={250}
+                  transitionTimingFunction="ease"
                 >
                   <Stack gap="md" mt="xs">
                     {/* Section 2: Credit, Statutory & Contact Details (Middle rows) */}

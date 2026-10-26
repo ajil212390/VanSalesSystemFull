@@ -6,7 +6,8 @@ from drf_spectacular.utils import extend_schema_field
 from core.models import (
     User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver,
     Category, Unit, Product, Group, Ledger, ProductPriceAudit,
-    Purchase, PurchaseLine, StockMovement, Voucher, VoucherLine
+    Purchase, PurchaseLine, StockMovement, Voucher, VoucherLine,
+    Payment, PaymentLine, BillwiseAllocation
 )
 
 from core.services import register_company
@@ -615,17 +616,24 @@ class ProductPriceAuditSerializer(serializers.ModelSerializer):
 class PurchaseLineSerializer(serializers.ModelSerializer):
     unit_name = serializers.CharField(source='Unit.UnitName', read_only=True)
     product_code = serializers.CharField(source='Product.ProductCode', read_only=True)
+    alt_unit_name = serializers.SerializerMethodField()
 
     class Meta:
         model = PurchaseLine
         fields = [
             'PurchaseLineId', 'Purchase', 'LineNo',
             'Product', 'ProductName', 'product_code',
-            'Unit', 'unit_name', 'AltUnitId', 'UnitConversion',
+            'Unit', 'unit_name', 'AltUnitId', 'alt_unit_name', 'UnitConversion',
             'CostPrice', 'TaxPercent', 'TaxAmount',
             'Quantity', 'Total', 'DiscPercent', 'DiscAmount', 'CompanyId'
         ]
         read_only_fields = ['PurchaseLineId', 'Purchase', 'CompanyId']
+
+    def get_alt_unit_name(self, obj):
+        if obj.AltUnitId:
+            u = Unit.objects.filter(UnitId=obj.AltUnitId).first()
+            return u.UnitName if u else ''
+        return ''
 
 
 class PurchaseSerializer(serializers.ModelSerializer):
@@ -637,14 +645,19 @@ class PurchaseSerializer(serializers.ModelSerializer):
     )
     lines = PurchaseLineSerializer(many=True, read_only=True)
     total_qty = serializers.SerializerMethodField()
+    supplier_state = serializers.SerializerMethodField()
+    CGSTAmount = serializers.SerializerMethodField()
+    SGSTAmount = serializers.SerializerMethodField()
+    IGSTAmount = serializers.SerializerMethodField()
 
     class Meta:
         model = Purchase
         fields = [
             'PurchaseId', 'PurchaseNo', 'PurchaseDate',
-            'SupplierLedger', 'SupplierLedgerId', 'supplier_name',
+            'SupplierLedger', 'SupplierLedgerId', 'supplier_name', 'supplier_state',
             'InvoiceNo', 'InvoiceDate', 'Notes',
-            'SubTotal', 'TaxAmount', 'GrandTotal', 'RoundOff',
+            'SubTotal', 'TaxAmount', 'CGSTAmount', 'SGSTAmount', 'IGSTAmount',
+            'GrandTotal', 'RoundOff',
             'CompanyId', 'CreatedAt', 'UpdatedAt',
             'SalesOrderNo', 'SalesOrderDate',
             'DeliveryNo', 'DeliveryDate',
@@ -662,4 +675,99 @@ class PurchaseSerializer(serializers.ModelSerializer):
         except Exception:
             return 0
 
+    def _is_intra_state(self, obj):
+        if obj.SupplierLedger and obj.SupplierLedger.StateId:
+            state = State.objects.filter(StateId=obj.SupplierLedger.StateId).first()
+            if state:
+                return state.StateName.lower() == 'kerala' or str(state.GSTStateCode) == '32' or obj.SupplierLedger.StateId in [12, 32]
+        if obj.PartyState:
+            return 'kerala' in obj.PartyState.lower()
+        return True
 
+    def get_supplier_state(self, obj):
+        if obj.SupplierLedger and obj.SupplierLedger.StateId:
+            state = State.objects.filter(StateId=obj.SupplierLedger.StateId).first()
+            if state:
+                return state.StateName
+        if obj.PartyState:
+            return obj.PartyState
+        return 'Kerala'
+
+    def get_CGSTAmount(self, obj):
+        tax = float(obj.TaxAmount or 0)
+        if tax <= 0:
+            return 0
+        if self._is_intra_state(obj):
+            return round(tax / 2, 2)
+        return 0
+
+    def get_SGSTAmount(self, obj):
+        tax = float(obj.TaxAmount or 0)
+        if tax <= 0:
+            return 0
+        if self._is_intra_state(obj):
+            return round(tax / 2, 2)
+        return 0
+
+    def get_IGSTAmount(self, obj):
+        tax = float(obj.TaxAmount or 0)
+        if tax <= 0:
+            return 0
+        if not self._is_intra_state(obj):
+            return round(tax, 2)
+        return 0
+
+
+class BillwiseAllocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BillwiseAllocation
+        fields = [
+            'BillwiseAllocationId', 'PaymentLine', 'ReceiptLineId',
+            'BillType', 'BillReference', 'BillDate', 'DueDate',
+            'AllocationType', 'AllocatedAmount', 'CompanyId', 'CreatedAt'
+        ]
+        read_only_fields = ['BillwiseAllocationId', 'CreatedAt']
+
+
+class PaymentLineSerializer(serializers.ModelSerializer):
+    ledger_name = serializers.CharField(source='Ledger.LedgerName', read_only=True)
+    allocations = BillwiseAllocationSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = PaymentLine
+        fields = [
+            'PaymentLineId', 'Payment', 'LineNo',
+            'PaymentMode', 'Ledger', 'ledger_name', 'Amount',
+            'InstrumentNumber', 'InstrumentDate', 'BankName', 'BankBranch',
+            'ChequeStatus', 'ClearedDate', 'TransactionReference', 'Narration',
+            'allocations'
+        ]
+        read_only_fields = ['PaymentLineId', 'Payment']
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    party_name = serializers.CharField(source='PartyLedger.LedgerName', read_only=True)
+    PartyLedgerId = serializers.PrimaryKeyRelatedField(
+        queryset=Ledger.objects.all(),
+        source='PartyLedger',
+        required=False
+    )
+    lines = PaymentLineSerializer(many=True, read_only=True)
+    payment_date = serializers.SerializerMethodField()
+    primary_mode = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Payment
+        fields = [
+            'PaymentId', 'PartyLedgerId', 'party_name',
+            'Amount', 'Narration', 'CreatedAt', 'UpdatedAt',
+            'payment_date', 'primary_mode', 'lines'
+        ]
+        read_only_fields = ['PaymentId', 'CreatedAt', 'UpdatedAt']
+
+    def get_payment_date(self, obj):
+        return obj.CreatedAt.strftime('%Y-%m-%d') if obj.CreatedAt else None
+
+    def get_primary_mode(self, obj):
+        first_line = obj.lines.first()
+        return first_line.PaymentMode if first_line else 'Cash'

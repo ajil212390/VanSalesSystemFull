@@ -21,6 +21,9 @@ import { AccountsPage } from './pages/AccountsPage';
 import { PriceUpdatePage } from './pages/PriceUpdatePage';
 import { PurchaseListPage } from './pages/PurchaseListPage';
 import { PurchaseFormPage } from './pages/PurchaseFormPage';
+import { PaymentListPage } from './pages/PaymentListPage';
+import { PaymentFormPage } from './pages/PaymentFormPage';
+
 
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/AppLayout';
@@ -128,6 +131,10 @@ export const App: React.FC = () => {
               <Route path="/purchases" element={<PurchaseListPage />} />
               <Route path="/purchases/new" element={<PurchaseFormPage />} />
               <Route path="/purchases/:id/edit" element={<PurchaseFormPage />} />
+              <Route path="/payments" element={<PaymentListPage />} />
+              <Route path="/payments/new" element={<PaymentFormPage />} />
+              <Route path="/payments/:id/edit" element={<PaymentFormPage />} />
+
             </Route>
 
             {/* Fallback */}
