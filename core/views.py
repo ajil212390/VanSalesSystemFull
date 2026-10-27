@@ -1073,6 +1073,22 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 alloc_qs = alloc_qs.exclude(PaymentLine__Payment_id=exclude_payment_id)
             allocated = alloc_qs.aggregate(total=Sum('AllocatedAmount'))['total'] or Decimal('0.00')
 
+            payment_history = []
+            for a in alloc_qs.select_related('PaymentLine__Payment', 'PaymentLine__Ledger').order_by('CreatedAt', 'BillwiseAllocationId'):
+                pmt = a.PaymentLine.Payment if a.PaymentLine else None
+                acct = a.PaymentLine.Ledger.LedgerName if a.PaymentLine and a.PaymentLine.Ledger else 'Cash'
+                mode = a.PaymentLine.PaymentMode if a.PaymentLine else 'Cash'
+                pmt_id = str(pmt.PaymentId).zfill(3) if pmt else '-'
+                date_str = pmt.CreatedAt.strftime('%Y-%m-%d') if pmt and pmt.CreatedAt else (a.CreatedAt.strftime('%Y-%m-%d') if a.CreatedAt else '-')
+                payment_history.append({
+                    'PaymentId': pmt.PaymentId if pmt else None,
+                    'PaymentNo': pmt_id,
+                    'Date': date_str,
+                    'Account': acct,
+                    'Mode': mode,
+                    'Amount': float(a.AllocatedAmount),
+                })
+
             pending_balance = total_bill - Decimal(str(allocated))
 
             # Only return bills with an outstanding pending balance
@@ -1085,6 +1101,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     'BillAmount': float(total_bill),
                     'PaidAmount': float(allocated),
                     'PendingAmount': float(pending_balance),
+                    'PaymentHistory': payment_history,
                 })
 
         return Response(results, status=status.HTTP_200_OK)
@@ -1109,6 +1126,19 @@ class PaymentViewSet(viewsets.ModelViewSet):
         company_id = getattr(user, 'CompanyId', 0)
 
         with transaction.atomic():
+            # If no payments exist in database, restart sequence from 1 so next ID starts at 001
+            try:
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT COALESCE(MAX("PaymentId"), 0) FROM "Payment"')
+                    max_id = cursor.fetchone()[0]
+                    if max_id == 0:
+                        cursor.execute('ALTER SEQUENCE "Payment_PaymentId_seq" RESTART WITH 1;')
+                        cursor.execute('ALTER SEQUENCE "PaymentLine_PaymentLineId_seq" RESTART WITH 1;')
+                        cursor.execute('ALTER SEQUENCE "BillwiseAllocation_BillwiseAllocationId_seq" RESTART WITH 1;')
+            except Exception:
+                pass
+
             # 1. Create Payment Header
             payment = Payment.objects.create(
                 PartyLedger_id=party_id,
@@ -1373,6 +1403,21 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
             # Sync ledger balances directly from remaining voucher lines
             sync_ledger_balances(party_id, *payment_ledger_ids)
+
+            # Reset sequences if no payments remain or align to max remaining PaymentId
+            try:
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT COALESCE(MAX("PaymentId"), 0) FROM "Payment"')
+                    max_id = cursor.fetchone()[0]
+                    if max_id == 0:
+                        cursor.execute('ALTER SEQUENCE "Payment_PaymentId_seq" RESTART WITH 1;')
+                        cursor.execute('ALTER SEQUENCE "PaymentLine_PaymentLineId_seq" RESTART WITH 1;')
+                        cursor.execute('ALTER SEQUENCE "BillwiseAllocation_BillwiseAllocationId_seq" RESTART WITH 1;')
+                    else:
+                        cursor.execute('SELECT setval(\'"Payment_PaymentId_seq"\', %s, true)', [max_id])
+            except Exception:
+                pass
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 

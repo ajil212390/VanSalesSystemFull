@@ -15,7 +15,6 @@ import {
   ActionIcon,
   Divider,
   Box,
-  Badge,
   Modal,
 } from '@mantine/core';
 import {
@@ -25,6 +24,8 @@ import {
   IconReceipt,
   IconCheck,
   IconBuildingBank,
+  IconChevronDown,
+  IconChevronUp,
 } from '@tabler/icons-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -45,6 +46,15 @@ interface LedgerOption {
   BalanceType?: 'Dr' | 'Cr';
 }
 
+interface BillPaymentRecord {
+  PaymentId: number | null;
+  PaymentNo: string;
+  Date: string;
+  Account: string;
+  Mode: string;
+  Amount: number;
+}
+
 interface PendingBill {
   PurchaseId: number;
   BillReference: string;
@@ -55,6 +65,7 @@ interface PendingBill {
   GrandTotal?: number;
   AllocatedSoFar?: number;
   PendingBalance?: number;
+  PaymentHistory?: BillPaymentRecord[];
 }
 
 interface BillAllocationItem {
@@ -65,6 +76,7 @@ interface BillAllocationItem {
   AllocatedSoFar: number;
   PendingBalance: number;
   AllocatedAmount: number;
+  PaymentHistory?: BillPaymentRecord[];
 }
 
 interface PaymentParticularRow {
@@ -102,6 +114,7 @@ export const PaymentFormPage: React.FC = () => {
   const [modalAllocations, setModalAllocations] = useState<BillAllocationItem[]>([]);
   const [isLoadingBills, setIsLoadingBills] = useState(false);
   const [isLoadingExisting, setIsLoadingExisting] = useState(false);
+  const [expandedBillRef, setExpandedBillRef] = useState<string | null>(null);
 
   // 1. Fetch All Ledgers
   const { data: ledgers = [] } = useQuery<LedgerOption[]>({
@@ -280,7 +293,17 @@ export const PaymentFormPage: React.FC = () => {
       return;
     }
 
+    if (!row.amount || Number(row.amount) <= 0) {
+      notifications.show({
+        title: 'Enter Amount',
+        message: 'Please enter the voucher amount before allocating bills.',
+        color: 'orange',
+      });
+      return;
+    }
+
     setActiveRowIndex(index);
+    setExpandedBillRef(null);
     setAllocationModalOpened(true);
     setIsLoadingBills(true);
 
@@ -297,8 +320,8 @@ export const PaymentFormPage: React.FC = () => {
 
       const mapped: BillAllocationItem[] = pendingBills.map((b) => {
         const grandTotal = Number(b.BillAmount ?? b.GrandTotal ?? 0);
-        const allocatedSoFar = Number(b.PaidAmount ?? b.AllocatedSoFar ?? 0);
         const pendingBalance = Number(b.PendingAmount ?? b.PendingBalance ?? 0);
+        const allocatedSoFar = Number(b.PaidAmount ?? b.AllocatedSoFar ?? Math.max(0, grandTotal - pendingBalance));
         const currentAlloc = existingAllocMap.get(b.BillReference) || 0;
 
         return {
@@ -309,6 +332,7 @@ export const PaymentFormPage: React.FC = () => {
           AllocatedSoFar: allocatedSoFar,
           PendingBalance: pendingBalance,
           AllocatedAmount: currentAlloc,
+          PaymentHistory: b.PaymentHistory || [],
         };
       });
 
@@ -332,52 +356,15 @@ export const PaymentFormPage: React.FC = () => {
     }
   };
 
-  // Modal Allocation Field Changes — Strictly capped at row amount if entered
+  // Modal Allocation Field Changes — Allows typing and validates against balance
   const handleModalAllocChange = (idx: number, val: number | string | undefined) => {
-    const rowAmount = activeRowIndex !== null ? Number(rows[activeRowIndex].amount) || 0 : 0;
     const num = Math.max(0, Number(val) || 0);
 
     setModalAllocations((prev) => {
-      const otherAllocSum = prev.reduce((sum, r, i) => (i !== idx ? sum + r.AllocatedAmount : sum), 0);
-      const maxPending = prev[idx].PendingBalance;
-
-      // If user entered a specific row amount, cannot allocate more than remaining of that amount
-      const maxAllowed = rowAmount > 0 ? Math.min(maxPending, Math.max(0, rowAmount - otherAllocSum)) : maxPending;
-
       const updated = [...prev];
       updated[idx] = {
         ...updated[idx],
-        AllocatedAmount: Math.min(num, maxAllowed),
-      };
-      return updated;
-    });
-  };
-
-  // Pay Full — Capped by available row amount if specified
-  const handleModalPayFull = (idx: number) => {
-    const rowAmount = activeRowIndex !== null ? Number(rows[activeRowIndex].amount) || 0 : 0;
-
-    setModalAllocations((prev) => {
-      const otherAllocSum = prev.reduce((sum, r, i) => (i !== idx ? sum + r.AllocatedAmount : sum), 0);
-      const maxPending = prev[idx].PendingBalance;
-
-      // Cannot allocate more than available rowAmount
-      const available = rowAmount > 0 ? Math.max(0, rowAmount - otherAllocSum) : maxPending;
-      const allocToSet = Math.min(maxPending, available);
-
-      if (rowAmount > 0 && available <= 0) {
-        notifications.show({
-          title: 'Amount Limit Reached',
-          message: `Cannot allocate more than the entered voucher amount of ₹${rowAmount.toLocaleString('en-IN')}.`,
-          color: 'orange',
-        });
-        return prev;
-      }
-
-      const updated = [...prev];
-      updated[idx] = {
-        ...updated[idx],
-        AllocatedAmount: allocToSet,
+        AllocatedAmount: num,
       };
       return updated;
     });
@@ -394,6 +381,44 @@ export const PaymentFormPage: React.FC = () => {
     });
   };
 
+  // Auto Fill (F12) — Allocates voucher line amount to bills in First-Come, First-Served (FIFO) order
+  const handleAutoFill = () => {
+    const rowAmount = activeRowIndex !== null ? Number(rows[activeRowIndex].amount) || 0 : 0;
+    if (rowAmount <= 0) {
+      notifications.show({
+        title: 'Enter Line Amount',
+        message: 'Please enter a voucher amount for this line before auto-allocating.',
+        color: 'orange',
+      });
+      return;
+    }
+
+    setModalAllocations((prev) => {
+      let remaining = rowAmount;
+      const updated = prev.map((bill) => {
+        if (remaining <= 0) {
+          return { ...bill, AllocatedAmount: 0 };
+        }
+        const alloc = Math.min(bill.PendingBalance, remaining);
+        remaining = Math.max(0, remaining - alloc);
+        return { ...bill, AllocatedAmount: alloc };
+      });
+      return updated;
+    });
+  };
+
+  // Listen for F12 keyboard shortcut to trigger Auto Fill when allocation modal is open
+  useEffect(() => {
+    if (!allocationModalOpened) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F12') {
+        e.preventDefault();
+        handleAutoFill();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [allocationModalOpened, activeRowIndex, rows]);
 
   // Save Modal Allocations back into active row
   const handleApplyModalAllocations = () => {
@@ -401,6 +426,15 @@ export const PaymentFormPage: React.FC = () => {
     const rowAmount = Number(rows[activeRowIndex].amount) || 0;
     const validAllocations = modalAllocations.filter((a) => a.AllocatedAmount > 0);
     const sumAllocated = validAllocations.reduce((acc, a) => acc + a.AllocatedAmount, 0);
+
+    if (modalAllocations.some((b) => b.AllocatedAmount > b.PendingBalance)) {
+      notifications.show({
+        title: 'Amount Exceeded',
+        message: 'One or more allocated amounts exceed the bill pending balance.',
+        color: 'red',
+      });
+      return;
+    }
 
     if (rowAmount > 0 && sumAllocated > rowAmount) {
       notifications.show({
@@ -433,14 +467,17 @@ export const PaymentFormPage: React.FC = () => {
     return ledgers.find((l) => String(l.LedgerId) === lid) || null;
   }, [activeRowIndex, rows, ledgers]);
 
-  // Modal totals
+  // Modal totals and validation flags
   const modalTotals = useMemo(() => {
     const totalPending = modalAllocations.reduce((sum, r) => sum + r.PendingBalance, 0);
     const totalAllocated = modalAllocations.reduce((sum, r) => sum + r.AllocatedAmount, 0);
     const rowAmt = activeRowIndex !== null ? Number(rows[activeRowIndex].amount) || 0 : 0;
-    const remaining = Math.max(0, rowAmt - totalAllocated);
+    const remaining = rowAmt - totalAllocated;
+    const hasOverBalance = modalAllocations.some((b) => b.AllocatedAmount > b.PendingBalance);
+    const hasOverRowAmt = rowAmt > 0 && totalAllocated > rowAmt;
+    const hasError = hasOverBalance || hasOverRowAmt;
 
-    return { totalPending, totalAllocated, rowAmt, remaining };
+    return { totalPending, totalAllocated, rowAmt, remaining, hasOverBalance, hasOverRowAmt, hasError };
   }, [modalAllocations, activeRowIndex, rows]);
 
   // Grand Totals across all table rows
@@ -456,6 +493,17 @@ export const PaymentFormPage: React.FC = () => {
       totalAllocated,
       onAccount: Math.max(0, totalAmount - totalAllocated),
     };
+  }, [rows]);
+
+  // Check if any row has allocations exceeding balance or row amount
+  const hasAnyExceededAllocation = useMemo(() => {
+    return rows.some((r) => {
+      const rAmt = Number(r.amount) || 0;
+      const sumAlloc = r.allocations.reduce((s, a) => s + a.AllocatedAmount, 0);
+      const overPending = r.allocations.some((a) => a.AllocatedAmount > a.PendingBalance);
+      const overRowAmt = rAmt > 0 && sumAlloc > rAmt;
+      return overPending || overRowAmt;
+    });
   }, [rows]);
 
   // Save / Post Mutation
@@ -543,9 +591,10 @@ export const PaymentFormPage: React.FC = () => {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: 'calc(100vh - 84px)',
+        minHeight: 'calc(100vh - 84px)',
         gap: 6,
         padding: '0 8px',
+        paddingBottom: 24,
         backgroundColor: '#f8fafc',
       }}
     >
@@ -747,8 +796,20 @@ export const PaymentFormPage: React.FC = () => {
                               variant={hasAllocations ? 'filled' : 'light'}
                               color={hasAllocations ? 'teal' : 'burgundy'}
                               leftSection={<IconReceipt size={13} />}
+                              disabled={!row.amount || Number(row.amount) <= 0}
                               onClick={() => handleOpenAllocationModal(index)}
-                              style={hasAllocations ? {} : { backgroundColor: '#fdf2f4', color: '#800020' }}
+                              title={
+                                !row.amount || Number(row.amount) <= 0
+                                  ? 'Enter line amount first to allocate bills'
+                                  : undefined
+                              }
+                              style={
+                                !row.amount || Number(row.amount) <= 0
+                                  ? { backgroundColor: '#f1f5f9', color: '#94a3b8', cursor: 'not-allowed' }
+                                  : hasAllocations
+                                  ? {}
+                                  : { backgroundColor: '#fdf2f4', color: '#800020' }
+                              }
                             >
                               {hasAllocations
                                 ? `Allocated ₹${allocatedSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
@@ -805,7 +866,7 @@ export const PaymentFormPage: React.FC = () => {
             marginTop: 'auto',
             borderTop: '1px solid #e2e8f0',
             backgroundColor: '#ffffff',
-            overflowX: 'hidden',
+            overflowX: 'auto',
           }}
         >
           {/* Row 1: Totals Row */}
@@ -853,7 +914,7 @@ export const PaymentFormPage: React.FC = () => {
           <Box pt={4} pb={8} px="sm">
             <Group justify="space-between" align="center" wrap="wrap" gap="md">
               {/* Left: Notes / Narration Input */}
-              <div style={{ flex: '1 1 300px', maxWidth: 460 }}>
+              <div style={{ flex: '1 1 260px', maxWidth: 460 }}>
                 <TextInput
                   placeholder="Add payment notes, transaction reference, or narration..."
                   value={notes}
@@ -870,7 +931,7 @@ export const PaymentFormPage: React.FC = () => {
               </div>
 
               {/* Right: Breakdown & Action Buttons */}
-              <Group gap="md" align="center" wrap="nowrap">
+              <Group gap="md" align="center" wrap="wrap">
                 {/* Grand Total */}
                 <Group gap={6} align="baseline" wrap="nowrap">
                   <Text size="xs" fw={600} c="dimmed">
@@ -881,10 +942,10 @@ export const PaymentFormPage: React.FC = () => {
                   </Text>
                 </Group>
 
-                <Divider orientation="vertical" />
+                <Divider orientation="vertical" visibleFrom="xs" />
 
                 {/* Action Buttons */}
-                <Group gap="xs" wrap="nowrap">
+                <Group gap="xs" wrap="wrap">
                   <Button variant="default" size="xs" radius={8} onClick={() => navigate('/payments')}>
                     Cancel
                   </Button>
@@ -894,8 +955,13 @@ export const PaymentFormPage: React.FC = () => {
                     radius={8}
                     leftSection={<IconCheck size={14} />}
                     loading={saveMutation.isPending}
+                    disabled={hasAnyExceededAllocation}
                     onClick={() => saveMutation.mutate()}
-                    style={{ backgroundColor: '#800020' }}
+                    style={{
+                      backgroundColor: hasAnyExceededAllocation ? '#cbd5e1' : '#800020',
+                      cursor: hasAnyExceededAllocation ? 'not-allowed' : 'pointer',
+                    }}
+                    title={hasAnyExceededAllocation ? 'Cannot save: allocated amount exceeds balance' : undefined}
                   >
                     {isEditing ? 'Update Payment' : 'Save & Post Voucher'}
                   </Button>
@@ -917,22 +983,59 @@ export const PaymentFormPage: React.FC = () => {
           <Group gap="xs">
             <IconBuildingBank size={18} color="#800020" />
             <Text fw={700} size="md" c="#800020">
-              Bill-Wise Allocation — {activeModalLedger?.LedgerName || 'Ledger'}
+              Bill Wise {activeModalLedger?.LedgerName || 'Ledger'}
             </Text>
           </Group>
         }
-        size="xl"
+        size={1050}
         radius="md"
       >
         <Stack gap="md">
-          {/* Clean Sub-header */}
-          <Group justify="space-between" align="center" px={4} py={2}>
-            <Text size="sm" fw={600} c="#334155">
-              Voucher Line Amount: <span style={{ color: '#800020', fontWeight: 700 }}>₹{modalTotals.rowAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-            </Text>
-            <Text size="sm" fw={600} c="#16a34a">
-              Allocated: <span style={{ fontWeight: 700 }}>₹{modalTotals.totalAllocated.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-            </Text>
+          {/* Clean Sub-header with Auto Fill (F12) */}
+          <Group justify="space-between" align="center" px={4} py={2} wrap="wrap" gap="sm">
+            <Group gap="md" align="center" wrap="wrap">
+              <Text size="sm" fw={600} c="#334155">
+                Voucher Line Amount:{' '}
+                <span style={{ color: '#800020', fontWeight: 700 }}>
+                  ₹{modalTotals.rowAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </Text>
+              <Text size="sm" fw={600} c={modalTotals.hasOverRowAmt ? '#dc2626' : '#16a34a'}>
+                Allocated:{' '}
+                <span style={{ fontWeight: 700 }}>
+                  ₹{modalTotals.totalAllocated.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+              </Text>
+              {modalTotals.hasOverRowAmt ? (
+                <Text size="xs" fw={700} c="#dc2626">
+                  Exceeded Line Amount by ₹{(modalTotals.totalAllocated - modalTotals.rowAmt).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Text>
+              ) : modalTotals.remaining > 0 ? (
+                <Text size="xs" fw={600} c="#b45309">
+                  Remaining: ₹{modalTotals.remaining.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </Text>
+              ) : null}
+              {modalTotals.hasOverBalance && (
+                <Text size="xs" fw={700} c="#dc2626">
+                  • Typed amount exceeds bill balance
+                </Text>
+              )}
+            </Group>
+
+            <Button
+              size="xs"
+              color="burgundy"
+              variant="light"
+              onClick={handleAutoFill}
+              style={{
+                backgroundColor: '#fbf0f2',
+                color: '#800020',
+                borderColor: '#e2e8f0',
+                fontWeight: 700,
+              }}
+            >
+              Auto Fill (F12)
+            </Button>
           </Group>
 
           {/* Pending Bills Table */}
@@ -953,100 +1056,205 @@ export const PaymentFormPage: React.FC = () => {
               </Stack>
             </Center>
           ) : (
-            <Table.ScrollContainer minWidth={640}>
+            <Box style={{ width: '100%' }}>
               <Table verticalSpacing={2} horizontalSpacing="xs" highlightOnHover>
                 <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
-                  <Table.Tr style={{ height: 26 }}>
-                    <Table.Th style={{ color: '#475569', fontSize: 11 }}>#</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11 }}>BILL REF #</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11 }}>BILL DATE</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right' }}>TOTAL BILL (₹)</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right' }}>PENDING (₹)</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 140 }}>
+                  <Table.Tr style={{ height: 28 }}>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, width: 45 }}>SL NO</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, width: 105 }}>BILL REF NO</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, width: 105 }}>BILL DATE</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 125 }}>TOTAL BILL (₹)</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 125 }}>PAID (₹)</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 125 }}>PENDING (₹)</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 135 }}>
                       ALLOCATE (₹)
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'center', width: 100 }}>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'center', width: 95 }}>
                       ACTION
                     </Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {modalAllocations.map((bill, bIdx) => (
-                    <Table.Tr key={bill.PurchaseId} style={{ height: 32 }}>
-                      <Table.Td>
-                        <Text size="xs" c="dimmed">
-                          {bIdx + 1}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge variant="light" color="burgundy" size="sm" radius="xs">
-                          {bill.BillReference}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="xs" c="#475569">
-                          {bill.BillDate}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="xs" fw={600} c="#0f172a">
-                          ₹{bill.GrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="xs" fw={700} c="#b91c1c">
-                          ₹{bill.PendingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'right', paddingRight: 4 }}>
-                        <Box style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                          <NumberInput
-                            size="xs"
-                            radius="sm"
-                            min={0}
-                            max={bill.PendingBalance}
-                            decimalScale={2}
-                            hideControls
-                            prefix="₹ "
-                            placeholder="0.00"
-                            value={bill.AllocatedAmount || ''}
-                            onFocus={(e) => e.currentTarget.select()}
-                            onChange={(val) => handleModalAllocChange(bIdx, val)}
-                            style={{ width: 115 }}
-                            styles={{
-                              input: {
-                                height: 24,
-                                minHeight: 24,
-                                fontWeight: 600,
-                                fontSize: 13,
-                                textAlign: 'right',
-                                paddingLeft: 4,
-                                paddingRight: 6,
-                                fontVariantNumeric: 'tabular-nums',
-                                color: bill.AllocatedAmount > 0 ? '#16a34a' : '#0f172a',
-                                backgroundColor: bill.AllocatedAmount > 0 ? '#f0fdf4' : '#ffffff',
-                                borderColor: bill.AllocatedAmount > 0 ? '#86efac' : '#cbd5e1',
-                              },
-                            }}
-                          />
-                        </Box>
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'center' }}>
-                        {bill.AllocatedAmount > 0 ? (
-                          <Button size="compact-xs" variant="subtle" color="gray" onClick={() => handleModalClear(bIdx)}>
-                            Clear
-                          </Button>
-                        ) : (
-                          <Button size="compact-xs" variant="light" color="burgundy" onClick={() => handleModalPayFull(bIdx)}>
-                            Full Amount
-                          </Button>
+                  {modalAllocations.map((bill, bIdx) => {
+                    const hasHistory = bill.PaymentHistory && bill.PaymentHistory.length > 0;
+                    const isExpanded = expandedBillRef === bill.BillReference;
+
+                    return (
+                      <React.Fragment key={bill.PurchaseId || bill.BillReference}>
+                        <Table.Tr style={{ height: 32 }}>
+                          <Table.Td>
+                            <Text size="xs" c="dimmed">
+                              {bIdx + 1}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="xs" fw={600} c="#1e293b">
+                              {bill.BillReference}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="xs" c="#475569">
+                              {bill.BillDate}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text size="xs" fw={600} c="#0f172a">
+                              ₹{bill.GrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Group gap={4} justify="flex-end" align="center" wrap="nowrap">
+                              <Text size="xs" fw={600} c={bill.AllocatedSoFar > 0 ? '#15803d' : '#64748b'}>
+                                ₹{bill.AllocatedSoFar.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                              {bill.AllocatedSoFar > 0 && (
+                                <Box
+                                  component="button"
+                                  type="button"
+                                  onClick={() => setExpandedBillRef(isExpanded ? null : bill.BillReference)}
+                                  title={isExpanded ? 'Hide Payment History' : 'View Payment History'}
+                                  aria-label={isExpanded ? 'Hide Payment History' : 'View Payment History'}
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    padding: 0,
+                                    margin: 0,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: '#475569',
+                                    lineHeight: 1,
+                                  }}
+                                >
+                                  {isExpanded ? <IconChevronUp size={15} /> : <IconChevronDown size={15} />}
+                                </Box>
+                              )}
+                            </Group>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text size="xs" fw={700} c="#b91c1c">
+                              ₹{bill.PendingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', paddingRight: 4 }}>
+                            {(() => {
+                              const isOverBillBalance = bill.AllocatedAmount > bill.PendingBalance;
+                              return (
+                                <Box style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                                  <NumberInput
+                                    size="xs"
+                                    radius="sm"
+                                    min={0}
+                                    decimalScale={2}
+                                    hideControls
+                                    prefix="₹ "
+                                    placeholder="0.00"
+                                    value={bill.AllocatedAmount || ''}
+                                    onFocus={(e) => e.currentTarget.select()}
+                                    onChange={(val) => handleModalAllocChange(bIdx, val)}
+                                    style={{ width: 115 }}
+                                    styles={{
+                                      input: {
+                                        height: 24,
+                                        minHeight: 24,
+                                        fontWeight: 600,
+                                        fontSize: 13,
+                                        textAlign: 'right',
+                                        paddingLeft: 4,
+                                        paddingRight: 6,
+                                        fontVariantNumeric: 'tabular-nums',
+                                        color: isOverBillBalance ? '#dc2626' : (bill.AllocatedAmount > 0 ? '#16a34a' : '#0f172a'),
+                                        backgroundColor: isOverBillBalance ? '#fef2f2' : (bill.AllocatedAmount > 0 ? '#f0fdf4' : '#ffffff'),
+                                        borderColor: isOverBillBalance ? '#ef4444' : (bill.AllocatedAmount > 0 ? '#86efac' : '#cbd5e1'),
+                                      },
+                                    }}
+                                  />
+                                </Box>
+                              );
+                            })()}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'center' }}>
+                            <Button
+                              size="compact-xs"
+                              variant="subtle"
+                              color="gray"
+                              disabled={!bill.AllocatedAmount || bill.AllocatedAmount <= 0}
+                              onClick={() => handleModalClear(bIdx)}
+                            >
+                              Clear
+                            </Button>
+                          </Table.Td>
+                        </Table.Tr>
+
+                        {/* Clean Well-Proportioned Payment History Sub-table */}
+                        {isExpanded && (
+                          <Table.Tr style={{ backgroundColor: '#f8fafc' }}>
+                            <Table.Td colSpan={8} style={{ padding: '8px 16px', borderBottom: '1px solid #e2e8f0' }}>
+                              <Box
+                                style={{
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: 6,
+                                  backgroundColor: '#ffffff',
+                                  overflow: 'hidden',
+                                }}
+                              >
+                                <Table verticalSpacing={4} horizontalSpacing="sm">
+                                  <Table.Thead style={{ backgroundColor: '#f1f5f9' }}>
+                                    <Table.Tr style={{ height: 28 }}>
+                                      <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#475569', width: 120 }}>PAYMENT NO</Table.Th>
+                                      <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#475569', width: 130 }}>DATE</Table.Th>
+                                      <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#475569' }}>ACCOUNT</Table.Th>
+                                      <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#475569', textAlign: 'right', width: 150 }}>AMOUNT PAID (₹)</Table.Th>
+                                    </Table.Tr>
+                                  </Table.Thead>
+                                  <Table.Tbody>
+                                    {hasHistory ? (
+                                      bill.PaymentHistory!.map((rec, rIdx) => (
+                                        <Table.Tr key={rIdx} style={{ height: 32 }}>
+                                          <Table.Td>
+                                            <Text size="xs" fw={600} c="#1e293b">
+                                              {rec.PaymentNo.replace(/^#/, '')}
+                                            </Text>
+                                          </Table.Td>
+                                          <Table.Td>
+                                            <Text size="xs" c="#334155" fw={500}>
+                                              {rec.Date}
+                                            </Text>
+                                          </Table.Td>
+                                          <Table.Td>
+                                            <Text size="xs" fw={500} c="#0f172a">
+                                              {rec.Account}
+                                            </Text>
+                                          </Table.Td>
+                                          <Table.Td style={{ textAlign: 'right' }}>
+                                            <Text size="xs" fw={700} c="#15803d">
+                                              ₹{Number(rec.Amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            </Text>
+                                          </Table.Td>
+                                        </Table.Tr>
+                                      ))
+                                    ) : (
+                                      <Table.Tr>
+                                        <Table.Td colSpan={4} style={{ textAlign: 'center', padding: '10px' }}>
+                                          <Text size="xs" c="dimmed" fs="italic">
+                                            No prior payment transactions recorded for this bill.
+                                          </Text>
+                                        </Table.Td>
+                                      </Table.Tr>
+                                    )}
+                                  </Table.Tbody>
+                                </Table>
+                              </Box>
+                            </Table.Td>
+                          </Table.Tr>
                         )}
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </Table.Tbody>
               </Table>
-            </Table.ScrollContainer>
+            </Box>
           )}
 
           {/* Modal Actions */}
@@ -1064,10 +1272,15 @@ export const PaymentFormPage: React.FC = () => {
             <Button
               color="burgundy"
               size="xs"
-              style={{ backgroundColor: '#800020' }}
+              disabled={modalTotals.hasError}
+              style={{
+                backgroundColor: modalTotals.hasError ? '#e2e8f0' : '#800020',
+                color: modalTotals.hasError ? '#94a3b8' : '#ffffff',
+                cursor: modalTotals.hasError ? 'not-allowed' : 'pointer',
+              }}
               onClick={handleApplyModalAllocations}
             >
-              Apply Allocation
+              Save Allocation
             </Button>
           </Group>
         </Stack>

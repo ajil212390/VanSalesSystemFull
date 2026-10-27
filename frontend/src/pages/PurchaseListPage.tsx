@@ -140,8 +140,7 @@ export const PurchaseListPage: React.FC = () => {
               <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
                 <Table.Tr>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140 }}>Purchase No</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, whiteSpace: 'nowrap' }}>Date</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110 }}>Invoice No</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 120 }}>Invoice No</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 160 }}>Party (Supplier)</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 65, textAlign: 'center' }}>Qty</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, textAlign: 'right' }}>Taxable (₹)</Table.Th>
@@ -158,16 +157,19 @@ export const PurchaseListPage: React.FC = () => {
                 {filteredPurchases.map((item) => (
                   <Table.Tr key={item.PurchaseId}>
                     <Table.Td>
-                      <Group gap={6} wrap="nowrap">
-                        <IconReceipt size={16} color="#800020" style={{ flexShrink: 0 }} />
-                        <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
-                          {item.PurchaseNo}
-                        </Text>
+                      <Group gap={8} wrap="nowrap" align="flex-start">
+                        <IconReceipt size={16} color="#800020" style={{ flexShrink: 0, marginTop: 2 }} />
+                        <div>
+                          <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
+                            {item.PurchaseNo}
+                          </Text>
+                          {item.PurchaseDate && (
+                            <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                              {item.PurchaseDate}
+                            </Text>
+                          )}
+                        </div>
                       </Group>
-                    </Table.Td>
-
-                    <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                      <Text size="sm" c="#475569" style={{ whiteSpace: 'nowrap' }}>{item.PurchaseDate}</Text>
                     </Table.Td>
 
                     <Table.Td>

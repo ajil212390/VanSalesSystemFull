@@ -125,9 +125,20 @@ table tbody td {
   border-bottom: 1px solid #f1f5f9;
 }
 
+/* Table Rows — Pure White, Zero Alternating Grey Shade */
+.mantine-Table-table tbody tr,
+table tbody tr,
+.mantine-Table-table[data-striped] tbody tr:nth-of-type(odd),
+.mantine-Table-table[data-striped] tbody tr:nth-of-type(even),
+table[data-striped] tbody tr:nth-of-type(odd),
+table[data-striped] tbody tr:nth-of-type(even) {
+  background-color: #ffffff !important;
+}
+
 /* Clean neutral hover without any red tint */
 .mantine-Table-table[data-hover] tbody tr:hover,
-table tbody tr:hover {
+table tbody tr:hover,
+.mantine-Table-table[data-striped] tbody tr:hover {
   background-color: #f8fafc !important;
 }
 
@@ -185,6 +196,19 @@ button.mantine-Button-root[data-variant="light"]:hover {
   .mantine-Drawer-content {
     max-width: 96vw !important;
     margin: 8px auto !important;
+  }
+
+  /* Compact table cell padding on small mobile/tablet screens */
+  .mantine-Table-th,
+  table thead th {
+    padding: 10px 12px !important;
+    font-size: 0.75rem !important;
+  }
+
+  .mantine-Table-td,
+  table tbody td {
+    padding: 10px 12px !important;
+    font-size: 0.8125rem !important;
   }
 
   /* Comfortable touch targets on mobile */

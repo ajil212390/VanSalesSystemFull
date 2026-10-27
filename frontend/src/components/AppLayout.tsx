@@ -17,6 +17,7 @@ import {
   Divider,
   UnstyledButton,
   ScrollArea,
+  ThemeIcon,
 } from '@mantine/core';
 import {
   IconLayoutDashboard,
@@ -38,17 +39,18 @@ import {
   IconExternalLink,
   IconReceipt,
   IconCreditCard,
+  IconX,
 } from '@tabler/icons-react';
 
-
-
-import { useDisclosure } from '@mantine/hooks';
+import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 
 export const AppLayout: React.FC = () => {
   const [opened, { toggle }] = useDisclosure();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const isDesktop = useMediaQuery('(min-width: 768px)');
+  const effectiveCollapsed = isDesktop ? isCollapsed : false;
   const [settingsOpened, setSettingsOpened] = useState(false);
   const [vanOpsOpened, setVanOpsOpened] = useState(false);
   const [masterOpened, setMasterOpened] = useState(false);
@@ -132,7 +134,7 @@ export const AppLayout: React.FC = () => {
      <AppShell
       header={{ height: 60 }}
       navbar={{
-        width: isCollapsed ? 68 : 240,
+        width: { base: 280, sm: effectiveCollapsed ? 68 : 240 },
         breakpoint: 'sm',
         collapsed: { mobile: !opened },
       }}
@@ -270,8 +272,30 @@ export const AppLayout: React.FC = () => {
       </AppShell.Header>
 
        <AppShell.Navbar px="xs" pt={6} pb="xs">
-        {/* Top Header with Seamless Collapse/Expand Sidebar Icon */}
-        <AppShell.Section>
+        {/* Mobile Drawer Header with Close Button */}
+        <AppShell.Section hiddenFrom="sm">
+          <Group justify="space-between" align="center" pb="xs" mb="xs" style={{ borderBottom: '1px solid #f1f5f9' }}>
+            <Group gap="xs" wrap="nowrap">
+              <ThemeIcon size={30} radius="md" color="burgundy" variant="light" style={{ backgroundColor: '#fdf2f4', color: '#800020' }}>
+                <IconFolders size={17} />
+              </ThemeIcon>
+              <div>
+                <Text size="xs" fw={700} c="#800020">
+                  {user?.company_name || 'FUTURE GAS'}
+                </Text>
+                <Text size="10px" c="dimmed" fw={600} tt="uppercase" style={{ letterSpacing: '0.6px' }}>
+                  Navigation Menu
+                </Text>
+              </div>
+            </Group>
+            <ActionIcon variant="subtle" color="gray" size="sm" onClick={toggle} title="Close navigation">
+              <IconX size={18} />
+            </ActionIcon>
+          </Group>
+        </AppShell.Section>
+
+        {/* Top Header with Seamless Collapse/Expand Sidebar Icon for Desktop */}
+        <AppShell.Section visibleFrom="sm">
           <Box
             mb={6}
             pb={4}
@@ -344,7 +368,7 @@ export const AppLayout: React.FC = () => {
             }}
           >
             {/* Dashboard Link */}
-        <Tooltip label="Dashboard" position="right" withArrow disabled={!isCollapsed}>
+        <Tooltip label="Dashboard" position="right" withArrow disabled={!effectiveCollapsed}>
           <NavLink
             component={Link}
             to="/"
@@ -362,8 +386,8 @@ export const AppLayout: React.FC = () => {
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: isCollapsed ? 'center' : 'flex-start',
-                padding: isCollapsed ? '0' : '0 12px',
+                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                padding: effectiveCollapsed ? '0' : '0 12px',
                 backgroundColor: location.pathname === '/' ? '#fdf2f4' : 'transparent',
                 color: location.pathname === '/' ? '#800020' : '#475569',
                 fontWeight: 600,
@@ -372,7 +396,7 @@ export const AppLayout: React.FC = () => {
                 transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
               },
               section: {
-                marginRight: isCollapsed ? 0 : 12,
+                marginRight: effectiveCollapsed ? 0 : 12,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -382,8 +406,8 @@ export const AppLayout: React.FC = () => {
               body: {
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
-                opacity: isCollapsed ? 0 : 1,
-                maxWidth: isCollapsed ? 0 : 160,
+                opacity: effectiveCollapsed ? 0 : 1,
+                maxWidth: effectiveCollapsed ? 0 : 160,
                 transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
               },
             }}
@@ -391,7 +415,7 @@ export const AppLayout: React.FC = () => {
         </Tooltip>
 
         {/* Van Operations Group (Accordion in Expanded / Flyout in Collapsed) */}
-        {isCollapsed ? (
+        {effectiveCollapsed ? (
           <Menu
             position="right-start"
             offset={14}
@@ -506,7 +530,7 @@ export const AppLayout: React.FC = () => {
         )}
 
         {/* Master Group (Accordion in Expanded / Flyout in Collapsed) */}
-        {isCollapsed ? (
+        {effectiveCollapsed ? (
           <Menu
             position="right-start"
             offset={14}
@@ -621,7 +645,7 @@ export const AppLayout: React.FC = () => {
         )}
 
         {/* Purchase Link */}
-        <Tooltip label="Purchase" position="right" withArrow disabled={!isCollapsed}>
+        <Tooltip label="Purchase" position="right" withArrow disabled={!effectiveCollapsed}>
           <NavLink
             component={Link}
             to="/purchases"
@@ -639,8 +663,8 @@ export const AppLayout: React.FC = () => {
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: isCollapsed ? 'center' : 'flex-start',
-                padding: isCollapsed ? '0' : '0 12px',
+                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                padding: effectiveCollapsed ? '0' : '0 12px',
                 backgroundColor: location.pathname.startsWith('/purchases') ? '#fdf2f4' : 'transparent',
                 color: location.pathname.startsWith('/purchases') ? '#800020' : '#475569',
                 fontWeight: 600,
@@ -649,7 +673,7 @@ export const AppLayout: React.FC = () => {
                 transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
               },
               section: {
-                marginRight: isCollapsed ? 0 : 12,
+                marginRight: effectiveCollapsed ? 0 : 12,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -659,15 +683,15 @@ export const AppLayout: React.FC = () => {
               body: {
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
-                opacity: isCollapsed ? 0 : 1,
-                maxWidth: isCollapsed ? 0 : 160,
+                opacity: effectiveCollapsed ? 0 : 1,
+                maxWidth: effectiveCollapsed ? 0 : 160,
                 transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
               },
             }}
           />
         </Tooltip>
                     {/* Payment NavLink */}
-        <Tooltip label="Payment" position="right" withArrow disabled={!isCollapsed}>
+        <Tooltip label="Payment" position="right" withArrow disabled={!effectiveCollapsed}>
           <NavLink
             component={Link}
             to="/payments"
@@ -685,8 +709,8 @@ export const AppLayout: React.FC = () => {
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: isCollapsed ? 'center' : 'flex-start',
-                padding: isCollapsed ? '0' : '0 12px',
+                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                padding: effectiveCollapsed ? '0' : '0 12px',
                 backgroundColor: location.pathname.startsWith('/payments') ? '#fdf2f4' : 'transparent',
                 color: location.pathname.startsWith('/payments') ? '#800020' : '#475569',
                 fontWeight: 600,
@@ -695,7 +719,7 @@ export const AppLayout: React.FC = () => {
                 transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
               },
               section: {
-                marginRight: isCollapsed ? 0 : 12,
+                marginRight: effectiveCollapsed ? 0 : 12,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -705,8 +729,8 @@ export const AppLayout: React.FC = () => {
               body: {
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
-                opacity: isCollapsed ? 0 : 1,
-                maxWidth: isCollapsed ? 0 : 160,
+                opacity: effectiveCollapsed ? 0 : 1,
+                maxWidth: effectiveCollapsed ? 0 : 160,
                 transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
               },
             }}
@@ -721,14 +745,14 @@ export const AppLayout: React.FC = () => {
           <Popover
             opened={settingsOpened}
             onChange={setSettingsOpened}
-            position={isCollapsed ? 'right-end' : 'top-start'}
+            position={effectiveCollapsed ? 'right-end' : 'top-start'}
             withArrow
             shadow="md"
             radius="md"
             offset={12}
           >
             <Popover.Target>
-              <Tooltip label="Settings" position="right" withArrow disabled={!isCollapsed || settingsOpened}>
+              <Tooltip label="Settings" position="right" withArrow disabled={!effectiveCollapsed || settingsOpened}>
                 <NavLink
                   component="button"
                   type="button"
@@ -754,8 +778,8 @@ export const AppLayout: React.FC = () => {
                       width: '100%',
                       display: 'flex',
                       alignItems: 'center',
-                      justifyContent: isCollapsed ? 'center' : 'flex-start',
-                      padding: isCollapsed ? '0' : '0 12px',
+                      justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                      padding: effectiveCollapsed ? '0' : '0 12px',
                       backgroundColor: settingsOpened ? '#fdf2f4' : 'transparent',
                       color: settingsOpened ? '#800020' : '#475569',
                       fontWeight: settingsOpened ? 600 : 500,
@@ -766,7 +790,7 @@ export const AppLayout: React.FC = () => {
                       transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
                     },
                     section: {
-                      marginRight: isCollapsed ? 0 : 12,
+                      marginRight: effectiveCollapsed ? 0 : 12,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -776,8 +800,8 @@ export const AppLayout: React.FC = () => {
                     body: {
                       overflow: 'hidden',
                       whiteSpace: 'nowrap',
-                      opacity: isCollapsed ? 0 : 1,
-                      maxWidth: isCollapsed ? 0 : 160,
+                      opacity: effectiveCollapsed ? 0 : 1,
+                      maxWidth: effectiveCollapsed ? 0 : 160,
                       textAlign: 'left',
                       transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
                     },

@@ -177,8 +177,8 @@ export const PriceUpdatePage: React.FC = () => {
   return (
     <Stack gap="lg">
       {/* Top Header with Category Filter, Search Bar, and Action Buttons */}
-      <Group justify="space-between" align="center" wrap="nowrap" gap="md">
-        <div style={{ flexShrink: 0 }}>
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <div>
           <Group gap="xs" align="center">
             <Button
               variant="subtle"
@@ -200,7 +200,7 @@ export const PriceUpdatePage: React.FC = () => {
         </div>
 
         {/* Right Controls: Category Filter + Search Bar + Reset + Save Buttons */}
-        <Group gap="xs" align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
+        <Group gap="xs" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <Select
             placeholder="All Categories"
             data={categoryOptions}
@@ -209,7 +209,7 @@ export const PriceUpdatePage: React.FC = () => {
             clearable
             radius="md"
             size="sm"
-            style={{ width: 160 }}
+            style={{ width: 160, flexGrow: 1, minWidth: 140 }}
           />
 
           <TextInput
@@ -229,7 +229,7 @@ export const PriceUpdatePage: React.FC = () => {
             rightSection={searchQuery ? <CloseButton size="sm" onClick={() => setSearchQuery('')} /> : null}
             radius="md"
             size="sm"
-            style={{ width: 220 }}
+            style={{ width: 220, flexGrow: 1, minWidth: 160 }}
           />
         </Group>
       </Group>
@@ -386,14 +386,14 @@ export const PriceUpdatePage: React.FC = () => {
       </Paper>
 
       {/* Bottom Action Footer */}
-      <Group justify="space-between" align="center" pt="xs" pb="md">
+      <Group justify="space-between" align="center" pt="xs" pb="md" wrap="wrap" gap="md">
         <Text size="sm" c="dimmed">
           {modifiedProducts.length > 0
             ? `${modifiedProducts.length} product(s) modified. Press Enter on the last item or click Save.`
             : `Showing ${filteredProducts.length} product(s).`}
         </Text>
 
-        <Group gap="sm">
+        <Group gap="sm" wrap="wrap">
           {modifiedProducts.length > 0 && (
             <Button variant="default" size="sm" radius={10} onClick={handleReset}>
               Reset

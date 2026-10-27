@@ -200,10 +200,10 @@ export const RoutesPage: React.FC = () => {
         </div>
 
         {/* Right Actions: Search Bar (left of button) + Add Button */}
-        <Group gap="sm" align="center" wrap="nowrap">
+        <Group gap="sm" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(searchStyles) => (
-              <Box style={{ ...searchStyles, width: 280 }}>
+              <Box style={{ ...searchStyles, width: 280, minWidth: 180, flexGrow: 1, maxWidth: 360 }}>
                 <TextInput
                   placeholder="Search routes..."
                   value={searchQuery}
@@ -348,80 +348,82 @@ export const RoutesPage: React.FC = () => {
               </Stack>
             </Center>
           ) : (
-            <Table striped highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Route Name</Table.Th>
-                  <Table.Th>Start Location</Table.Th>
-                  <Table.Th>End Location</Table.Th>
-                  <Table.Th>Description</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {filteredRoutes.map((r) => (
-                  <Table.Tr key={r.RouteId}>
-                    <Table.Td style={{ fontWeight: 600 }}>{r.RouteName}</Table.Td>
-                    <Table.Td>{r.StartLocation || '-'}</Table.Td>
-                    <Table.Td>{r.EndLocation || '-'}</Table.Td>
-                    <Table.Td>{r.Description || '-'}</Table.Td>
-                    <Table.Td>
-                      <Badge
-                        size="sm"
-                        variant="outline"
-                        style={{
-                          borderColor: r.IsActive ? '#cbd5e1' : '#fca5a5',
-                          color: r.IsActive ? '#334155' : '#dc2626',
-                          backgroundColor: r.IsActive ? '#f8fafc' : '#fff5f5',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {r.IsActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <ActionIcon
-                          variant="subtle"
-                          color="burgundy"
-                          size="sm"
-                          title="Edit"
-                          onClick={() => handleEdit(r)}
-                        >
-                          <IconPencil size={16} />
-                        </ActionIcon>
-                        <Tooltip
-                          label={r.delete_block_reason || 'Delete Route'}
-                          withArrow
-                          position="top"
-                        >
-                          <span>
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              size="sm"
-                              disabled={!!r.delete_block_reason}
-                              style={{
-                                cursor: r.delete_block_reason ? 'not-allowed' : 'pointer',
-                                opacity: r.delete_block_reason ? 0.35 : 1,
-                              }}
-                              onClick={() => {
-                                if (!r.delete_block_reason) {
-                                  setDeleteTarget({ id: r.RouteId, name: r.RouteName });
-                                }
-                              }}
-                            >
-                              <IconTrash size={16} />
-                            </ActionIcon>
-                          </span>
-                        </Tooltip>
-                      </Group>
-                    </Table.Td>
+            <Table.ScrollContainer minWidth={650}>
+              <Table highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Route Name</Table.Th>
+                    <Table.Th>Start Location</Table.Th>
+                    <Table.Th>End Location</Table.Th>
+                    <Table.Th>Description</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
                   </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+                </Table.Thead>
+                <Table.Tbody>
+                  {filteredRoutes.map((r) => (
+                    <Table.Tr key={r.RouteId}>
+                      <Table.Td style={{ fontWeight: 600 }}>{r.RouteName}</Table.Td>
+                      <Table.Td>{r.StartLocation || '-'}</Table.Td>
+                      <Table.Td>{r.EndLocation || '-'}</Table.Td>
+                      <Table.Td>{r.Description || '-'}</Table.Td>
+                      <Table.Td>
+                        <Badge
+                          size="sm"
+                          variant="outline"
+                          style={{
+                            borderColor: r.IsActive ? '#cbd5e1' : '#fca5a5',
+                            color: r.IsActive ? '#334155' : '#dc2626',
+                            backgroundColor: r.IsActive ? '#f8fafc' : '#fff5f5',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {r.IsActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Group gap={4} justify="flex-end" wrap="nowrap">
+                          <ActionIcon
+                            variant="subtle"
+                            color="burgundy"
+                            size="sm"
+                            title="Edit"
+                            onClick={() => handleEdit(r)}
+                          >
+                            <IconPencil size={16} />
+                          </ActionIcon>
+                          <Tooltip
+                            label={r.delete_block_reason || 'Delete Route'}
+                            withArrow
+                            position="top"
+                          >
+                            <span>
+                              <ActionIcon
+                                variant="subtle"
+                                color="red"
+                                size="sm"
+                                disabled={!!r.delete_block_reason}
+                                style={{
+                                  cursor: r.delete_block_reason ? 'not-allowed' : 'pointer',
+                                  opacity: r.delete_block_reason ? 0.35 : 1,
+                                }}
+                                onClick={() => {
+                                  if (!r.delete_block_reason) {
+                                    setDeleteTarget({ id: r.RouteId, name: r.RouteName });
+                                  }
+                                }}
+                              >
+                                <IconTrash size={16} />
+                              </ActionIcon>
+                            </span>
+                          </Tooltip>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
           )}
           </Paper>
         )}

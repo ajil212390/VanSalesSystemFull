@@ -234,10 +234,10 @@ export const UsersPage: React.FC = () => {
         </div>
 
         {/* Right Actions: Search Bar (left of button) + Add Button */}
-        <Group gap="sm" align="center" wrap="nowrap">
+        <Group gap="sm" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(searchStyles) => (
-              <Box style={{ ...searchStyles, width: 280 }}>
+              <Box style={{ ...searchStyles, width: 280, minWidth: 180, flexGrow: 1, maxWidth: 360 }}>
                 <TextInput
                   placeholder="Search users..."
                   value={searchQuery}
@@ -433,82 +433,84 @@ export const UsersPage: React.FC = () => {
               </Stack>
             </Center>
           ) : (
-            <Table striped highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Username</Table.Th>
-                  <Table.Th>Role</Table.Th>
-                  <Table.Th>Linked Driver</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {filteredUsers.map((u) => (
-                  <Table.Tr key={u.UserId}>
-                    <Table.Td style={{ fontWeight: 600 }}>{u.Username}</Table.Td>
-                    <Table.Td>
-                      <Badge variant="outline" color="burgundy" size="sm" style={{ borderColor: '#f5c2cb', color: '#800020' }}>
-                        {u.role_name || `Role #${u.UserRole}`}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td>{u.driver_name || '-'}</Table.Td>
-                    <Table.Td>
-                      <Badge
-                        size="sm"
-                        variant="outline"
-                        style={{
-                          borderColor: u.IsActive ? '#cbd5e1' : '#fca5a5',
-                          color: u.IsActive ? '#334155' : '#dc2626',
-                          backgroundColor: u.IsActive ? '#f8fafc' : '#fff5f5',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {u.IsActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <ActionIcon
-                          variant="subtle"
-                          color="burgundy"
-                          size="sm"
-                          title="Edit"
-                          onClick={() => handleEdit(u)}
-                        >
-                          <IconPencil size={16} />
-                        </ActionIcon>
-                        <Tooltip
-                          label={u.delete_block_reason || 'Delete Staff User'}
-                          withArrow
-                          position="top"
-                        >
-                          <span>
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              size="sm"
-                              disabled={!!u.delete_block_reason}
-                              style={{
-                                cursor: u.delete_block_reason ? 'not-allowed' : 'pointer',
-                                opacity: u.delete_block_reason ? 0.35 : 1,
-                              }}
-                              onClick={() => {
-                                if (!u.delete_block_reason) {
-                                  setDeleteTarget({ id: u.UserId, username: u.Username });
-                                }
-                              }}
-                            >
-                              <IconTrash size={16} />
-                            </ActionIcon>
-                          </span>
-                        </Tooltip>
-                      </Group>
-                    </Table.Td>
+            <Table.ScrollContainer minWidth={650}>
+              <Table highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Username</Table.Th>
+                    <Table.Th>Role</Table.Th>
+                    <Table.Th>Linked Driver</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
                   </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+                </Table.Thead>
+                <Table.Tbody>
+                  {filteredUsers.map((u) => (
+                    <Table.Tr key={u.UserId}>
+                      <Table.Td style={{ fontWeight: 600 }}>{u.Username}</Table.Td>
+                      <Table.Td>
+                        <Badge variant="outline" color="burgundy" size="sm" style={{ borderColor: '#f5c2cb', color: '#800020' }}>
+                          {u.role_name || `Role #${u.UserRole}`}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td>{u.driver_name || '-'}</Table.Td>
+                      <Table.Td>
+                        <Badge
+                          size="sm"
+                          variant="outline"
+                          style={{
+                            borderColor: u.IsActive ? '#cbd5e1' : '#fca5a5',
+                            color: u.IsActive ? '#334155' : '#dc2626',
+                            backgroundColor: u.IsActive ? '#f8fafc' : '#fff5f5',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {u.IsActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Group gap={4} justify="flex-end" wrap="nowrap">
+                          <ActionIcon
+                            variant="subtle"
+                            color="burgundy"
+                            size="sm"
+                            title="Edit"
+                            onClick={() => handleEdit(u)}
+                          >
+                            <IconPencil size={16} />
+                          </ActionIcon>
+                          <Tooltip
+                            label={u.delete_block_reason || 'Delete Staff User'}
+                            withArrow
+                            position="top"
+                          >
+                            <span>
+                              <ActionIcon
+                                variant="subtle"
+                                color="red"
+                                size="sm"
+                                disabled={!!u.delete_block_reason}
+                                style={{
+                                  cursor: u.delete_block_reason ? 'not-allowed' : 'pointer',
+                                  opacity: u.delete_block_reason ? 0.35 : 1,
+                                }}
+                                onClick={() => {
+                                  if (!u.delete_block_reason) {
+                                    setDeleteTarget({ id: u.UserId, username: u.Username });
+                                  }
+                                }}
+                              >
+                                <IconTrash size={16} />
+                              </ActionIcon>
+                            </span>
+                          </Tooltip>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
           )}
           </Paper>
         )}

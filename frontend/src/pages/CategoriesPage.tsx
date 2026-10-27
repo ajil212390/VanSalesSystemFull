@@ -212,10 +212,10 @@ export const CategoriesPage: React.FC = () => {
         </div>
 
         {/* Right Actions: Search Bar + Add Category Button */}
-        <Group gap="sm" align="center" wrap="nowrap">
+        <Group gap="sm" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(searchStyles) => (
-              <Box style={{ ...searchStyles, width: 280 }}>
+              <Box style={{ ...searchStyles, width: 280, minWidth: 180, flexGrow: 1, maxWidth: 360 }}>
                 <TextInput
                   placeholder="Search categories..."
                   value={searchQuery}
@@ -387,98 +387,100 @@ export const CategoriesPage: React.FC = () => {
                   </Stack>
                 </Center>
               ) : (
-                <Table striped highlightOnHover>
-                  <Table.Thead>
-                    <Table.Tr>
-                      <Table.Th>Category Name</Table.Th>
-                      <Table.Th>Level / Classification</Table.Th>
-                      <Table.Th>Parent Category</Table.Th>
-                      <Table.Th>Status</Table.Th>
-                      <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
-                    </Table.Tr>
-                  </Table.Thead>
-                  <Table.Tbody>
-                    {filteredCategories.map((c) => (
-                      <Table.Tr key={c.CategoryId}>
-                        <Table.Td style={{ fontWeight: 600 }}>{c.CategoryName}</Table.Td>
-                        <Table.Td>
-                          {c.ParentCategory ? (
-                            <Badge size="sm" variant="dot" color="gray">
-                              Sub-Category
-                            </Badge>
-                          ) : (
-                            <Badge size="sm" variant="light" color="burgundy" style={{ backgroundColor: '#fdf2f4', color: '#800020' }}>
-                              Main Category
-                            </Badge>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          {c.parent_category_name ? (
-                            <Text size="sm" fw={500} c="#334155">
-                              {c.parent_category_name}
-                            </Text>
-                          ) : (
-                            <Text size="sm" c="dimmed">
-                              — (Root)
-                            </Text>
-                          )}
-                        </Table.Td>
-                        <Table.Td>
-                          <Badge
-                            size="sm"
-                            variant="outline"
-                            style={{
-                              borderColor: c.IsActive ? '#cbd5e1' : '#fca5a5',
-                              color: c.IsActive ? '#334155' : '#dc2626',
-                              backgroundColor: c.IsActive ? '#f8fafc' : '#fff5f5',
-                              fontWeight: 500,
-                            }}
-                          >
-                            {c.IsActive ? 'Active' : 'Inactive'}
-                          </Badge>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          <Group gap={4} justify="flex-end" wrap="nowrap">
-                            <ActionIcon
-                              variant="subtle"
-                              color="burgundy"
-                              size="sm"
-                              title="Edit Category"
-                              onClick={() => handleEdit(c)}
-                            >
-                              <IconPencil size={16} />
-                            </ActionIcon>
-                            <Tooltip
-                              label={c.delete_block_reason || 'Delete Category'}
-                              withArrow
-                              position="top"
-                            >
-                              <span>
-                                <ActionIcon
-                                  variant="subtle"
-                                  color="red"
-                                  size="sm"
-                                  disabled={!!c.delete_block_reason}
-                                  style={{
-                                    cursor: c.delete_block_reason ? 'not-allowed' : 'pointer',
-                                    opacity: c.delete_block_reason ? 0.35 : 1,
-                                  }}
-                                  onClick={() => {
-                                    if (!c.delete_block_reason) {
-                                      setDeleteTarget({ id: c.CategoryId, name: c.CategoryName });
-                                    }
-                                  }}
-                                >
-                                  <IconTrash size={16} />
-                                </ActionIcon>
-                              </span>
-                            </Tooltip>
-                          </Group>
-                        </Table.Td>
+                <Table.ScrollContainer minWidth={600}>
+                  <Table highlightOnHover>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>Category Name</Table.Th>
+                        <Table.Th>Level / Classification</Table.Th>
+                        <Table.Th>Parent Category</Table.Th>
+                        <Table.Th>Status</Table.Th>
+                        <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
                       </Table.Tr>
-                    ))}
-                  </Table.Tbody>
-                </Table>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {filteredCategories.map((c) => (
+                        <Table.Tr key={c.CategoryId}>
+                          <Table.Td style={{ fontWeight: 600 }}>{c.CategoryName}</Table.Td>
+                          <Table.Td>
+                            {c.ParentCategory ? (
+                              <Badge size="sm" variant="dot" color="gray">
+                                Sub-Category
+                              </Badge>
+                            ) : (
+                              <Badge size="sm" variant="light" color="burgundy" style={{ backgroundColor: '#fdf2f4', color: '#800020' }}>
+                                Main Category
+                              </Badge>
+                            )}
+                          </Table.Td>
+                          <Table.Td>
+                            {c.parent_category_name ? (
+                              <Text size="sm" fw={500} c="#334155">
+                                {c.parent_category_name}
+                              </Text>
+                            ) : (
+                              <Text size="sm" c="dimmed">
+                                — (Root)
+                              </Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td>
+                            <Badge
+                              size="sm"
+                              variant="outline"
+                              style={{
+                                borderColor: c.IsActive ? '#cbd5e1' : '#fca5a5',
+                                color: c.IsActive ? '#334155' : '#dc2626',
+                                backgroundColor: c.IsActive ? '#f8fafc' : '#fff5f5',
+                                fontWeight: 500,
+                              }}
+                            >
+                              {c.IsActive ? 'Active' : 'Inactive'}
+                            </Badge>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Group gap={4} justify="flex-end" wrap="nowrap">
+                              <ActionIcon
+                                variant="subtle"
+                                color="burgundy"
+                                size="sm"
+                                title="Edit Category"
+                                onClick={() => handleEdit(c)}
+                              >
+                                <IconPencil size={16} />
+                              </ActionIcon>
+                              <Tooltip
+                                label={c.delete_block_reason || 'Delete Category'}
+                                withArrow
+                                position="top"
+                              >
+                                <span>
+                                  <ActionIcon
+                                    variant="subtle"
+                                    color="red"
+                                    size="sm"
+                                    disabled={!!c.delete_block_reason}
+                                    style={{
+                                      cursor: c.delete_block_reason ? 'not-allowed' : 'pointer',
+                                      opacity: c.delete_block_reason ? 0.35 : 1,
+                                    }}
+                                    onClick={() => {
+                                      if (!c.delete_block_reason) {
+                                        setDeleteTarget({ id: c.CategoryId, name: c.CategoryName });
+                                      }
+                                    }}
+                                  >
+                                    <IconTrash size={16} />
+                                  </ActionIcon>
+                                </span>
+                              </Tooltip>
+                            </Group>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </Table.ScrollContainer>
               )}
             </Paper>
           )}

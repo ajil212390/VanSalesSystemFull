@@ -213,10 +213,10 @@ export const DriversPage: React.FC = () => {
                 </div>
 
                 {/* Right Actions: Search Bar (left of button) + Add Button */}
-                <Group gap="sm" align="center" wrap="nowrap">
+                <Group gap="sm" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
                     <Transition mounted={!formOpened} transition="fade" duration={200}>
                         {(searchStyles) => (
-                            <Box style={{ ...searchStyles, width: 280 }}>
+                            <Box style={{ ...searchStyles, width: 280, minWidth: 180, flexGrow: 1, maxWidth: 360 }}>
                                 <TextInput
                                     placeholder="Search drivers..."
                                     value={searchQuery}
@@ -376,80 +376,83 @@ export const DriversPage: React.FC = () => {
                                 </Stack>
                             </Center>
                         ) : (
-                            <Table striped highlightOnHover>
-                                <Table.Thead>
-                                    <Table.Tr>
-                                        <Table.Th>Name</Table.Th>
-                                        <Table.Th>Phone</Table.Th>
-                                        <Table.Th>License No</Table.Th>
-                                        <Table.Th>Expiry Date</Table.Th>
-                                        <Table.Th>Status</Table.Th>
-                                        <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
-                                    </Table.Tr>
-                                </Table.Thead>
-                                <Table.Tbody>
-                                    {filteredDrivers.map((d) => (
-                                        <Table.Tr key={d.DriverId}>
-                                            <Table.Td style={{ fontWeight: 600 }}>{d.DriverName}</Table.Td>
-                                            <Table.Td>{d.PhoneNumber}</Table.Td>
-                                            <Table.Td>{d.LicenseNumber || '-'}</Table.Td>
-                                            <Table.Td>{d.LicenseExpiryDate || '-'}</Table.Td>
-                                            <Table.Td>
-                                                <Badge
-                                                    size="sm"
-                                                    variant="outline"
-                                                    style={{
-                                                        borderColor: d.IsActive ? '#cbd5e1' : '#fca5a5',
-                                                        color: d.IsActive ? '#334155' : '#dc2626',
-                                                        backgroundColor: d.IsActive ? '#f8fafc' : '#fff5f5',
-                                                        fontWeight: 500,
-                                                    }}
-                                                >
-                                                    {d.IsActive ? 'Active' : 'Inactive'}
-                                                </Badge>
-                                            </Table.Td>
-                                            <Table.Td style={{ textAlign: 'right' }}>
-                                                <Group gap={4} justify="flex-end" wrap="nowrap">
-                                                    <ActionIcon
-                                                        variant="subtle"
-                                                        color="burgundy"
-                                                        size="sm"
-                                                        title="Edit"
-                                                        onClick={() => handleEdit(d)}
-                                                    >
-                                                        <IconPencil size={16} />
-                                                    </ActionIcon>
-                                                    <Tooltip
-                                                        label={d.delete_block_reason || 'Delete Driver'}
-                                                        withArrow
-                                                        position="top"
-                                                    >
-                                                        <span>
-                                                            <ActionIcon
-                                                                variant="subtle"
-                                                                color="red"
-                                                                size="sm"
-                                                                disabled={!!d.delete_block_reason}
-                                                                style={{
-                                                                    cursor: d.delete_block_reason ? 'not-allowed' : 'pointer',
-                                                                    opacity: d.delete_block_reason ? 0.35 : 1,
-                                                                }}
-                                                                onClick={() => {
-                                                                    if (!d.delete_block_reason) {
-                                                                        setDeleteTarget({ id: d.DriverId, name: d.DriverName });
-                                                                    }
-                                                                }}
-                                                            >
-                                                                <IconTrash size={16} />
-                                                            </ActionIcon>
-                                                        </span>
-                                                    </Tooltip>
-                                                </Group>
-                                            </Table.Td>
+                            <Table.ScrollContainer minWidth={650}>
+                                <Table highlightOnHover>
+                                    <Table.Thead>
+                                        <Table.Tr>
+                                            <Table.Th>Name</Table.Th>
+                                            <Table.Th>Phone</Table.Th>
+                                            <Table.Th>License No</Table.Th>
+                                            <Table.Th>Expiry Date</Table.Th>
+                                            <Table.Th>Status</Table.Th>
+                                            <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
                                         </Table.Tr>
-                                    ))}
-                                </Table.Tbody>
-                            </Table>
+                                    </Table.Thead>
+                                    <Table.Tbody>
+                                        {filteredDrivers.map((d) => (
+                                            <Table.Tr key={d.DriverId}>
+                                                <Table.Td style={{ fontWeight: 600 }}>{d.DriverName}</Table.Td>
+                                                <Table.Td>{d.PhoneNumber}</Table.Td>
+                                                <Table.Td>{d.LicenseNumber || '-'}</Table.Td>
+                                                <Table.Td>{d.LicenseExpiryDate || '-'}</Table.Td>
+                                                <Table.Td>
+                                                    <Badge
+                                                        size="sm"
+                                                        variant="outline"
+                                                        style={{
+                                                            borderColor: d.IsActive ? '#cbd5e1' : '#fca5a5',
+                                                            color: d.IsActive ? '#334155' : '#dc2626',
+                                                            backgroundColor: d.IsActive ? '#f8fafc' : '#fff5f5',
+                                                            fontWeight: 500,
+                                                        }}
+                                                    >
+                                                        {d.IsActive ? 'Active' : 'Inactive'}
+                                                    </Badge>
+                                                </Table.Td>
+                                                <Table.Td style={{ textAlign: 'right' }}>
+                                                    <Group gap={4} justify="flex-end" wrap="nowrap">
+                                                        <ActionIcon
+                                                            variant="subtle"
+                                                            color="burgundy"
+                                                            size="sm"
+                                                            title="Edit"
+                                                            onClick={() => handleEdit(d)}
+                                                        >
+                                                            <IconPencil size={16} />
+                                                        </ActionIcon>
+                                                        <Tooltip
+                                                            label={d.delete_block_reason || 'Delete Driver'}
+                                                            withArrow
+                                                            position="top"
+                                                            color="dark"
+                                                        >
+                                                            <span>
+                                                                <ActionIcon
+                                                                    variant="subtle"
+                                                                    color="red"
+                                                                    size="sm"
+                                                                    disabled={!!d.delete_block_reason}
+                                                                    style={{
+                                                                        cursor: d.delete_block_reason ? 'not-allowed' : 'pointer',
+                                                                        opacity: d.delete_block_reason ? 0.35 : 1,
+                                                                    }}
+                                                                    onClick={() => {
+                                                                        if (!d.delete_block_reason) {
+                                                                            setDeleteTarget({ id: d.DriverId, name: d.DriverName });
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <IconTrash size={16} />
+                                                                </ActionIcon>
+                                                            </span>
+                                                        </Tooltip>
+                                                    </Group>
+                                                </Table.Td>
+                                            </Table.Tr>
+                                        ))}
+                                    </Table.Tbody>
+                                </Table>
+                            </Table.ScrollContainer>
                         )}
                     </Paper>
                 )}

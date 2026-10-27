@@ -931,7 +931,7 @@ export const PurchaseFormPage: React.FC = () => {
           marginTop: 'auto',
           borderTop: '1px solid #e2e8f0',
           backgroundColor: '#ffffff',
-          overflowX: 'hidden',
+          overflowX: 'auto',
         }}
       >
         {/* Row 1: Totals Row — mathematically aligned with items table columns */}
@@ -995,7 +995,7 @@ export const PurchaseFormPage: React.FC = () => {
         <Box pt={3} pb={6} px="sm">
           <Group justify="space-between" align="center" wrap="wrap" gap="md">
             {/* Left: Notes Input */}
-            <div style={{ flex: '1 1 300px', maxWidth: 460 }}>
+            <div style={{ flex: '1 1 240px', maxWidth: 460 }}>
               <TextInput
                 placeholder="Add invoice notes or instructions..."
                 value={notes}
@@ -1011,8 +1011,8 @@ export const PurchaseFormPage: React.FC = () => {
               />
             </div>
 
-            {/* Right: Round Off, Grand Total, and Action Buttons on One Clean Line */}
-            <Group gap="md" align="center" wrap="nowrap">
+            {/* Right: Round Off, Grand Total, and Action Buttons */}
+            <Group gap="sm" align="center" wrap="wrap">
               {/* Round Off */}
               <Group gap={6} align="center" wrap="nowrap">
                 <Text size="xs" fw={500} c="dimmed">Round Off (₹):</Text>
@@ -1030,7 +1030,7 @@ export const PurchaseFormPage: React.FC = () => {
                 />
               </Group>
 
-              <Divider orientation="vertical" />
+              <Divider orientation="vertical" visibleFrom="xs" />
 
               {/* Grand Total */}
               <Group gap={6} align="baseline" wrap="nowrap">
@@ -1040,10 +1040,10 @@ export const PurchaseFormPage: React.FC = () => {
                 </Text>
               </Group>
 
-              <Divider orientation="vertical" />
+              <Divider orientation="vertical" visibleFrom="xs" />
 
               {/* Action Buttons */}
-              <Group gap="xs" wrap="nowrap">
+              <Group gap="xs" wrap="wrap">
                 <Button variant="default" size="xs" radius={8} onClick={() => navigate('/purchases')}>
                   Cancel
                 </Button>

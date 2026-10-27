@@ -210,10 +210,10 @@ export const VehiclesPage: React.FC = () => {
                 </div>
 
                 {/* Right Actions: Search Bar (left of button) + Add Button */}
-                <Group gap="sm" align="center" wrap="nowrap">
+                <Group gap="sm" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
                     <Transition mounted={!formOpened} transition="fade" duration={200}>
                         {(searchStyles) => (
-                            <Box style={{ ...searchStyles, width: 280 }}>
+                            <Box style={{ ...searchStyles, width: 280, minWidth: 180, flexGrow: 1, maxWidth: 360 }}>
                                 <TextInput
                                     placeholder="Search vehicles..."
                                     value={searchQuery}
@@ -374,82 +374,84 @@ export const VehiclesPage: React.FC = () => {
                             </Stack>
                         </Center>
                     ) : (
-                        <Table striped highlightOnHover>
-                            <Table.Thead>
-                                <Table.Tr>
-                                    <Table.Th>Vehicle Number</Table.Th>
-                                    <Table.Th>Name / Type</Table.Th>
-                                    <Table.Th>RC Expiry</Table.Th>
-                                    <Table.Th>Insurance Expiry</Table.Th>
-                                    <Table.Th>Fitness Expiry</Table.Th>
-                                    <Table.Th>Status</Table.Th>
-                                    <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
-                                </Table.Tr>
-                            </Table.Thead>
-                            <Table.Tbody>
-                                {filteredVehicles.map((v) => (
-                                    <Table.Tr key={v.VehicleId}>
-                                        <Table.Td style={{ fontWeight: 600 }}>{v.VehicleNumber}</Table.Td>
-                                        <Table.Td>{v.VehicleName || '-'}</Table.Td>
-                                        <Table.Td>{v.RcExpiryDate || '-'}</Table.Td>
-                                        <Table.Td>{v.InsuranceExpiryDate || '-'}</Table.Td>
-                                        <Table.Td>{v.FitnessExpiryDate || '-'}</Table.Td>
-                                        <Table.Td>
-                                            <Badge
-                                                size="sm"
-                                                variant="outline"
-                                                style={{
-                                                    borderColor: v.IsActive ? '#cbd5e1' : '#fca5a5',
-                                                    color: v.IsActive ? '#334155' : '#dc2626',
-                                                    backgroundColor: v.IsActive ? '#f8fafc' : '#fff5f5',
-                                                    fontWeight: 500,
-                                                }}
-                                            >
-                                                {v.IsActive ? 'Active' : 'Inactive'}
-                                            </Badge>
-                                        </Table.Td>
-                                        <Table.Td style={{ textAlign: 'right' }}>
-                                            <Group gap={4} justify="flex-end" wrap="nowrap">
-                                                <ActionIcon
-                                                    variant="subtle"
-                                                    color="burgundy"
-                                                    size="sm"
-                                                    title="Edit"
-                                                    onClick={() => handleEdit(v)}
-                                                >
-                                                    <IconPencil size={16} />
-                                                </ActionIcon>
-                                                <Tooltip
-                                                    label={v.delete_block_reason || 'Delete Vehicle'}
-                                                    withArrow
-                                                    position="top"
-                                                >
-                                                    <span>
-                                                        <ActionIcon
-                                                            variant="subtle"
-                                                            color="red"
-                                                            size="sm"
-                                                            disabled={!!v.delete_block_reason}
-                                                            style={{
-                                                                cursor: v.delete_block_reason ? 'not-allowed' : 'pointer',
-                                                                opacity: v.delete_block_reason ? 0.35 : 1,
-                                                            }}
-                                                            onClick={() => {
-                                                                if (!v.delete_block_reason) {
-                                                                    setDeleteTarget({ id: v.VehicleId, number: v.VehicleNumber });
-                                                                }
-                                                            }}
-                                                        >
-                                                            <IconTrash size={16} />
-                                                        </ActionIcon>
-                                                    </span>
-                                                </Tooltip>
-                                            </Group>
-                                        </Table.Td>
+                        <Table.ScrollContainer minWidth={700}>
+                            <Table highlightOnHover>
+                                <Table.Thead>
+                                    <Table.Tr>
+                                        <Table.Th>Vehicle Number</Table.Th>
+                                        <Table.Th>Name / Type</Table.Th>
+                                        <Table.Th>RC Expiry</Table.Th>
+                                        <Table.Th>Insurance Expiry</Table.Th>
+                                        <Table.Th>Fitness Expiry</Table.Th>
+                                        <Table.Th>Status</Table.Th>
+                                        <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
                                     </Table.Tr>
-                                ))}
-                            </Table.Tbody>
-                        </Table>
+                                </Table.Thead>
+                                <Table.Tbody>
+                                    {filteredVehicles.map((v) => (
+                                        <Table.Tr key={v.VehicleId}>
+                                            <Table.Td style={{ fontWeight: 600 }}>{v.VehicleNumber}</Table.Td>
+                                            <Table.Td>{v.VehicleName || '-'}</Table.Td>
+                                            <Table.Td>{v.RcExpiryDate || '-'}</Table.Td>
+                                            <Table.Td>{v.InsuranceExpiryDate || '-'}</Table.Td>
+                                            <Table.Td>{v.FitnessExpiryDate || '-'}</Table.Td>
+                                            <Table.Td>
+                                                <Badge
+                                                    size="sm"
+                                                    variant="outline"
+                                                    style={{
+                                                        borderColor: v.IsActive ? '#cbd5e1' : '#fca5a5',
+                                                        color: v.IsActive ? '#334155' : '#dc2626',
+                                                        backgroundColor: v.IsActive ? '#f8fafc' : '#fff5f5',
+                                                        fontWeight: 500,
+                                                    }}
+                                                >
+                                                    {v.IsActive ? 'Active' : 'Inactive'}
+                                                </Badge>
+                                            </Table.Td>
+                                            <Table.Td style={{ textAlign: 'right' }}>
+                                                <Group gap={4} justify="flex-end" wrap="nowrap">
+                                                    <ActionIcon
+                                                        variant="subtle"
+                                                        color="burgundy"
+                                                        size="sm"
+                                                        title="Edit"
+                                                        onClick={() => handleEdit(v)}
+                                                    >
+                                                        <IconPencil size={16} />
+                                                    </ActionIcon>
+                                                    <Tooltip
+                                                        label={v.delete_block_reason || 'Delete Vehicle'}
+                                                        withArrow
+                                                        position="top"
+                                                    >
+                                                        <span>
+                                                            <ActionIcon
+                                                                variant="subtle"
+                                                                color="red"
+                                                                size="sm"
+                                                                disabled={!!v.delete_block_reason}
+                                                                style={{
+                                                                    cursor: v.delete_block_reason ? 'not-allowed' : 'pointer',
+                                                                    opacity: v.delete_block_reason ? 0.35 : 1,
+                                                                }}
+                                                                onClick={() => {
+                                                                    if (!v.delete_block_reason) {
+                                                                        setDeleteTarget({ id: v.VehicleId, number: v.VehicleNumber });
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <IconTrash size={16} />
+                                                            </ActionIcon>
+                                                        </span>
+                                                    </Tooltip>
+                                                </Group>
+                                            </Table.Td>
+                                        </Table.Tr>
+                                    ))}
+                                </Table.Tbody>
+                            </Table>
+                        </Table.ScrollContainer>
                     )}
                     </Paper>
                 )}

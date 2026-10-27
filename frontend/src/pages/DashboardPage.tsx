@@ -259,9 +259,7 @@ export const DashboardPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Total Purchases
             </Text>
-            <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <IconReceipt size={17} color="#800020" stroke={1.75} />
-            </ThemeIcon>
+            <IconReceipt size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             ₹{metrics.totalPurchases.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -302,9 +300,7 @@ export const DashboardPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Total Payouts
             </Text>
-            <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <IconCreditCard size={17} color="#800020" stroke={1.75} />
-            </ThemeIcon>
+            <IconCreditCard size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             ₹{metrics.totalPayments.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -345,9 +341,7 @@ export const DashboardPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Cash & Bank Balance
             </Text>
-            <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <IconBuildingBank size={17} color="#800020" stroke={1.75} />
-            </ThemeIcon>
+            <IconBuildingBank size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text
             fw={700}
@@ -399,9 +393,7 @@ export const DashboardPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Van Operations
             </Text>
-            <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <IconTruck size={17} color="#800020" stroke={1.75} />
-            </ThemeIcon>
+            <IconTruck size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em' }}>
             {vehicles.length} Van{vehicles.length !== 1 ? 's' : ''} &bull; {drivers.length} Driver{drivers.length !== 1 ? 's' : ''}
@@ -430,9 +422,7 @@ export const DashboardPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
             <Group gap="xs" align="center">
-              <ThemeIcon size={32} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <IconReceipt size={17} color="#800020" stroke={1.75} />
-              </ThemeIcon>
+              <IconReceipt size={20} color="#800020" stroke={1.75} />
               <div>
                 <Group gap={6} align="center">
                   <Text fw={700} size="sm" c="#1e293b">
@@ -536,9 +526,7 @@ export const DashboardPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
             <Group gap="xs" align="center">
-              <ThemeIcon size={32} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <IconCreditCard size={17} color="#800020" stroke={1.75} />
-              </ThemeIcon>
+              <IconCreditCard size={20} color="#800020" stroke={1.75} />
               <div>
                 <Group gap={6} align="center">
                   <Text fw={700} size="sm" c="#1e293b">
@@ -656,20 +644,18 @@ export const DashboardPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
             <Group gap="xs" align="center">
-              <ThemeIcon size={32} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <IconBuildingBank size={17} color="#800020" stroke={1.75} />
-              </ThemeIcon>
+              <IconBuildingBank size={20} color="#800020" stroke={1.75} />
               <div>
                 <Group gap={6} align="center">
                   <Text fw={700} size="sm" c="#1e293b">
-                    Accounts & Liquidity
+                    Cash & Bank Accounts
                   </Text>
                   <Badge size="xs" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020' }}>
                     {metrics.cashAndBankLedgers.length} Ledgers
                   </Badge>
                 </Group>
                 <Text size="xs" c="dimmed">
-                  Real-time balances for Cash & Bank ledgers
+                  Real-time balances for Cash and Bank ledgers
                 </Text>
               </div>
             </Group>
@@ -753,7 +739,7 @@ export const DashboardPage: React.FC = () => {
                   <Table.Tr>
                     <Table.Td colSpan={2} style={{ padding: '12px 16px' }}>
                       <Text size="sm" fw={700} c="#1e293b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
-                        Net Liquid Funds:
+                        Total Cash & Bank Balance:
                       </Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right', padding: '12px 16px' }}>
@@ -784,9 +770,7 @@ export const DashboardPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
             <Group gap="xs" align="center">
-              <ThemeIcon size={32} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <IconTruck size={17} color="#800020" stroke={1.75} />
-              </ThemeIcon>
+              <IconTruck size={20} color="#800020" stroke={1.75} />
               <div>
                 <Text fw={700} size="sm" c="#1e293b">
                   Van Operations Hub
@@ -820,6 +804,11 @@ export const DashboardPage: React.FC = () => {
                   borderRadius: '8px',
                   backgroundColor: '#ffffff',
                   border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  height: '100%',
+                  minHeight: 118,
                   transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
                   boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                 }}
@@ -836,20 +825,36 @@ export const DashboardPage: React.FC = () => {
                   e.currentTarget.style.transform = 'none';
                 }}
               >
-                <Group justify="space-between" align="center" mb={8}>
-                  <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                    <IconUser size={18} color="#800020" stroke={1.75} />
-                  </ThemeIcon>
-                  <Badge size="sm" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020', fontWeight: 700 }}>
+                <Group justify="space-between" align="center" mb={10}>
+                  <Box style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                    <IconUser size={22} color="#800020" stroke={1.75} />
+                  </Box>
+                  <Badge
+                    size="sm"
+                    variant="light"
+                    color="burgundy"
+                    radius="sm"
+                    style={{
+                      backgroundColor: '#fbf0f2',
+                      color: '#800020',
+                      fontWeight: 700,
+                      fontSize: 11,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      height: 24,
+                    }}
+                  >
                     {drivers.length} Drivers
                   </Badge>
                 </Group>
-                <Text size="sm" fw={600} c="#0f172a">
-                  Van Drivers
-                </Text>
-                <Text size="xs" c="#64748b" mt={2}>
-                  Active driver roster & duty status
-                </Text>
+                <div>
+                  <Text size="sm" fw={600} c="#0f172a">
+                    Van Drivers
+                  </Text>
+                  <Text size="xs" c="#64748b" mt={3} style={{ minHeight: 34, lineHeight: 1.35 }}>
+                    Active driver roster & duty status
+                  </Text>
+                </div>
               </UnstyledButton>
 
               {/* Vehicles Card */}
@@ -860,6 +865,11 @@ export const DashboardPage: React.FC = () => {
                   borderRadius: '8px',
                   backgroundColor: '#ffffff',
                   border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  height: '100%',
+                  minHeight: 118,
                   transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
                   boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                 }}
@@ -876,20 +886,36 @@ export const DashboardPage: React.FC = () => {
                   e.currentTarget.style.transform = 'none';
                 }}
               >
-                <Group justify="space-between" align="center" mb={8}>
-                  <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                    <IconTruck size={18} color="#800020" stroke={1.75} />
-                  </ThemeIcon>
-                  <Badge size="sm" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020', fontWeight: 700 }}>
+                <Group justify="space-between" align="center" mb={10}>
+                  <Box style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                    <IconTruck size={22} color="#800020" stroke={1.75} />
+                  </Box>
+                  <Badge
+                    size="sm"
+                    variant="light"
+                    color="burgundy"
+                    radius="sm"
+                    style={{
+                      backgroundColor: '#fbf0f2',
+                      color: '#800020',
+                      fontWeight: 700,
+                      fontSize: 11,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      height: 24,
+                    }}
+                  >
                     {vehicles.length} Vans
                   </Badge>
                 </Group>
-                <Text size="sm" fw={600} c="#0f172a">
-                  Distribution Fleet
-                </Text>
-                <Text size="xs" c="#64748b" mt={2}>
-                  Delivery vans & godown inventory trucks
-                </Text>
+                <div>
+                  <Text size="sm" fw={600} c="#0f172a">
+                    Distribution Fleet
+                  </Text>
+                  <Text size="xs" c="#64748b" mt={3} style={{ minHeight: 34, lineHeight: 1.35 }}>
+                    Delivery vans & warehouse fleet
+                  </Text>
+                </div>
               </UnstyledButton>
 
               {/* Routes Card */}
@@ -900,6 +926,11 @@ export const DashboardPage: React.FC = () => {
                   borderRadius: '8px',
                   backgroundColor: '#ffffff',
                   border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  height: '100%',
+                  minHeight: 118,
                   transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
                   boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                 }}
@@ -916,20 +947,36 @@ export const DashboardPage: React.FC = () => {
                   e.currentTarget.style.transform = 'none';
                 }}
               >
-                <Group justify="space-between" align="center" mb={8}>
-                  <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                    <IconRoute size={18} color="#800020" stroke={1.75} />
-                  </ThemeIcon>
-                  <Badge size="sm" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020', fontWeight: 700 }}>
+                <Group justify="space-between" align="center" mb={10}>
+                  <Box style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                    <IconRoute size={22} color="#800020" stroke={1.75} />
+                  </Box>
+                  <Badge
+                    size="sm"
+                    variant="light"
+                    color="burgundy"
+                    radius="sm"
+                    style={{
+                      backgroundColor: '#fbf0f2',
+                      color: '#800020',
+                      fontWeight: 700,
+                      fontSize: 11,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      height: 24,
+                    }}
+                  >
                     {routes.length} Routes
                   </Badge>
                 </Group>
-                <Text size="sm" fw={600} c="#0f172a">
-                  Delivery Routes
-                </Text>
-                <Text size="xs" c="#64748b" mt={2}>
-                  Active regional service territories
-                </Text>
+                <div>
+                  <Text size="sm" fw={600} c="#0f172a">
+                    Delivery Routes
+                  </Text>
+                  <Text size="xs" c="#64748b" mt={3} style={{ minHeight: 34, lineHeight: 1.35 }}>
+                    Regional delivery sales territories
+                  </Text>
+                </div>
               </UnstyledButton>
 
               {/* Products Card */}
@@ -940,6 +987,11 @@ export const DashboardPage: React.FC = () => {
                   borderRadius: '8px',
                   backgroundColor: '#ffffff',
                   border: '1px solid #e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  height: '100%',
+                  minHeight: 118,
                   transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
                   boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                 }}
@@ -956,20 +1008,36 @@ export const DashboardPage: React.FC = () => {
                   e.currentTarget.style.transform = 'none';
                 }}
               >
-                <Group justify="space-between" align="center" mb={8}>
-                  <ThemeIcon size={34} radius="md" variant="default" style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                    <IconPackage size={18} color="#800020" stroke={1.75} />
-                  </ThemeIcon>
-                  <Badge size="sm" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020', fontWeight: 700 }}>
+                <Group justify="space-between" align="center" mb={10}>
+                  <Box style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+                    <IconPackage size={22} color="#800020" stroke={1.75} />
+                  </Box>
+                  <Badge
+                    size="sm"
+                    variant="light"
+                    color="burgundy"
+                    radius="sm"
+                    style={{
+                      backgroundColor: '#fbf0f2',
+                      color: '#800020',
+                      fontWeight: 700,
+                      fontSize: 11,
+                      letterSpacing: '0.04em',
+                      textTransform: 'uppercase',
+                      height: 24,
+                    }}
+                  >
                     {products.length} Items
                   </Badge>
                 </Group>
-                <Text size="sm" fw={600} c="#0f172a">
-                  Products Catalog
-                </Text>
-                <Text size="xs" c="#64748b" mt={2}>
-                  LPG gas cylinders, regulators & inventory
-                </Text>
+                <div>
+                  <Text size="sm" fw={600} c="#0f172a">
+                    Products Catalog
+                  </Text>
+                  <Text size="xs" c="#64748b" mt={3} style={{ minHeight: 34, lineHeight: 1.35 }}>
+                    LPG cylinders & gas accessories
+                  </Text>
+                </div>
               </UnstyledButton>
             </SimpleGrid>
           </Box>

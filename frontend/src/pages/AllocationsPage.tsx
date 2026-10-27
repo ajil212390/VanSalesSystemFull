@@ -327,10 +327,10 @@ export const AllocationsPage: React.FC = () => {
         </div>
 
         {/* Right Actions: Search Bar (left of button) + New Allocation Button */}
-        <Group gap="sm" align="center" wrap="nowrap">
+        <Group gap="sm" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(searchStyles) => (
-              <Box style={{ ...searchStyles, width: 280 }}>
+              <Box style={{ ...searchStyles, width: 280, minWidth: 180, flexGrow: 1, maxWidth: 360 }}>
                 <TextInput
                   placeholder="Search allocations..."
                   value={searchQuery}
@@ -551,74 +551,76 @@ export const AllocationsPage: React.FC = () => {
               </Stack>
             </Center>
           ) : (
-            <Table striped highlightOnHover>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Route</Table.Th>
-                  <Table.Th>Vehicle</Table.Th>
-                  <Table.Th>Driver</Table.Th>
-                  <Table.Th>Assignment Date</Table.Th>
-                  <Table.Th>Notes</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {filteredAllocations.map((a) => (
-                  <Table.Tr key={a.RouteVehicleDriverId}>
-                    <Table.Td style={{ fontWeight: 600 }}>{a.RouteName || `Route #${a.Route}`}</Table.Td>
-                    <Table.Td>{a.VehicleNumber || `Vehicle #${a.Vehicle}`}</Table.Td>
-                    <Table.Td>{a.DriverName || `Driver #${a.Driver}`}</Table.Td>
-                    <Table.Td>{a.AssignmentDate || '-'}</Table.Td>
-                    <Table.Td>{a.Narration || '-'}</Table.Td>
-                    <Table.Td>
-                      <Badge
-                        size="sm"
-                        variant="outline"
-                        style={{
-                          borderColor: a.IsActive ? '#cbd5e1' : '#fca5a5',
-                          color: a.IsActive ? '#334155' : '#dc2626',
-                          backgroundColor: a.IsActive ? '#f8fafc' : '#fff5f5',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {a.IsActive ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <ActionIcon
-                          variant="subtle"
-                          color="burgundy"
-                          size="sm"
-                          title="Edit"
-                          onClick={() => handleEdit(a)}
-                        >
-                          <IconPencil size={16} />
-                        </ActionIcon>
-                        <Tooltip label="Delete Allocation" withArrow position="top">
-                          <span>
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              size="sm"
-                              onClick={() => {
-                                setDeleteTarget({
-                                  id: a.RouteVehicleDriverId,
-                                  name: `${a.RouteName} - ${a.DriverName} (${a.VehicleNumber})`,
-                                });
-                              }}
-                            >
-                              <IconTrash size={16} />
-                            </ActionIcon>
-                          </span>
-                        </Tooltip>
-                      </Group>
-                    </Table.Td>
+            <Table.ScrollContainer minWidth={750}>
+              <Table highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Route</Table.Th>
+                    <Table.Th>Vehicle</Table.Th>
+                    <Table.Th>Driver</Table.Th>
+                    <Table.Th>Assignment Date</Table.Th>
+                    <Table.Th>Notes</Table.Th>
+                    <Table.Th>Status</Table.Th>
+                    <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
                   </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+                </Table.Thead>
+                <Table.Tbody>
+                  {filteredAllocations.map((a) => (
+                    <Table.Tr key={a.RouteVehicleDriverId}>
+                      <Table.Td style={{ fontWeight: 600 }}>{a.RouteName || `Route #${a.Route}`}</Table.Td>
+                      <Table.Td>{a.VehicleNumber || `Vehicle #${a.Vehicle}`}</Table.Td>
+                      <Table.Td>{a.DriverName || `Driver #${a.Driver}`}</Table.Td>
+                      <Table.Td>{a.AssignmentDate || '-'}</Table.Td>
+                      <Table.Td>{a.Narration || '-'}</Table.Td>
+                      <Table.Td>
+                        <Badge
+                          size="sm"
+                          variant="outline"
+                          style={{
+                            borderColor: a.IsActive ? '#cbd5e1' : '#fca5a5',
+                            color: a.IsActive ? '#334155' : '#dc2626',
+                            backgroundColor: a.IsActive ? '#f8fafc' : '#fff5f5',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {a.IsActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Group gap={4} justify="flex-end" wrap="nowrap">
+                          <ActionIcon
+                            variant="subtle"
+                            color="burgundy"
+                            size="sm"
+                            title="Edit"
+                            onClick={() => handleEdit(a)}
+                          >
+                            <IconPencil size={16} />
+                          </ActionIcon>
+                          <Tooltip label="Delete Allocation" withArrow position="top">
+                            <span>
+                              <ActionIcon
+                                variant="subtle"
+                                color="red"
+                                size="sm"
+                                onClick={() => {
+                                  setDeleteTarget({
+                                    id: a.RouteVehicleDriverId,
+                                    name: `${a.RouteName} - ${a.DriverName} (${a.VehicleNumber})`,
+                                  });
+                                }}
+                              >
+                                <IconTrash size={16} />
+                              </ActionIcon>
+                            </span>
+                          </Tooltip>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
           )}
           </Paper>
         )}

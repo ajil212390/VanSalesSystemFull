@@ -424,10 +424,10 @@ export const AccountsPage: React.FC = () => {
         </div>
 
         {/* Right Actions: Group Filter + Search Bar + Add Button */}
-        <Group gap="sm" align="center" wrap="wrap">
+        <Group gap="sm" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(groupFilterStyles) => (
-              <Box style={{ ...groupFilterStyles, width: 220 }}>
+              <Box style={{ ...groupFilterStyles, width: 220, flexGrow: 1, minWidth: 160, maxWidth: 300 }}>
                 <Select
                   placeholder="All Account Groups"
                   data={groupOptions}
@@ -444,7 +444,7 @@ export const AccountsPage: React.FC = () => {
 
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(searchStyles) => (
-              <Box style={{ ...searchStyles, width: 240 }}>
+              <Box style={{ ...searchStyles, width: 240, flexGrow: 1, minWidth: 180, maxWidth: 340 }}>
                 <TextInput
                   placeholder="Search accounts..."
                   value={searchQuery}

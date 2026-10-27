@@ -293,9 +293,9 @@ export const ProductsPage: React.FC = () => {
 
   return (
     <Stack gap="lg">
-      {/* Page Header - strictly single line */}
-      <Group justify="space-between" align="center" wrap="nowrap" gap="md">
-        <div style={{ flexShrink: 0 }}>
+      {/* Page Header */}
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <div>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Products
           </Title>
@@ -305,10 +305,10 @@ export const ProductsPage: React.FC = () => {
         </div>
 
         {/* Right Actions: Category Filter + Search Bar + Add Button */}
-        <Group gap="xs" align="center" wrap="nowrap" style={{ flexShrink: 0 }}>
+        <Group gap="xs" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(catFilterStyles) => (
-              <Box style={{ ...catFilterStyles, width: 140 }}>
+              <Box style={{ ...catFilterStyles, width: 140, flexGrow: 1, minWidth: 130 }}>
                 <Select
                   placeholder="All Categories"
                   data={categoryOptions}
@@ -324,7 +324,7 @@ export const ProductsPage: React.FC = () => {
 
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(searchStyles) => (
-              <Box style={{ ...searchStyles, width: 190 }}>
+              <Box style={{ ...searchStyles, width: 190, flexGrow: 1, minWidth: 160 }}>
                 <TextInput
                   placeholder="Search products..."
                   value={searchQuery}
@@ -348,7 +348,7 @@ export const ProductsPage: React.FC = () => {
 
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(btnStyles) => (
-              <Group gap="xs" style={btnStyles} wrap="nowrap">
+              <Group gap="xs" style={btnStyles} wrap="wrap">
                 <Button
                   variant="outline"
                   color="burgundy"
