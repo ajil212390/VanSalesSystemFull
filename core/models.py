@@ -538,3 +538,25 @@ class BillwiseAllocation(models.Model):
 
     def __str__(self):
         return f"{self.BillReference}: {self.AllocationType} (₹{self.AllocatedAmount})"
+
+
+class LedgerLine(models.Model):
+    LedgerLineId = models.BigAutoField(primary_key=True, db_column='LedgerLineId')
+    Ledger = models.ForeignKey(Ledger, on_delete=models.CASCADE, db_column='LedgerId', related_name='ledger_lines')
+    BillNo = models.CharField(max_length=100, db_column='BillNo')
+    BillDate = models.DateField(db_column='BillDate')
+    DueDate = models.DateField(null=True, blank=True, db_column='DueDate')
+    Amount = models.DecimalField(max_digits=18, decimal_places=2, db_column='Amount')
+    Narration = models.CharField(max_length=250, null=True, blank=True, db_column='Narration')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"LedgerLine"'
+        ordering = ['BillDate', 'LedgerLineId']
+
+    def __str__(self):
+        return f"{self.Ledger.LedgerName} - {self.BillNo} (₹{self.Amount})"
+

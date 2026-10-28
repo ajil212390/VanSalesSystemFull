@@ -7,7 +7,7 @@ from core.models import (
     User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver,
     Category, Unit, Product, Group, Ledger, ProductPriceAudit,
     Purchase, PurchaseLine, StockMovement, Voucher, VoucherLine,
-    Payment, PaymentLine, BillwiseAllocation
+    Payment, PaymentLine, BillwiseAllocation, LedgerLine
 )
 
 from core.services import register_company
@@ -505,6 +505,7 @@ class LedgerSerializer(serializers.ModelSerializer):
     group_name = serializers.CharField(source='Group.GroupName', read_only=True)
     group_nature = serializers.CharField(source='Group.Nature', read_only=True)
     delete_block_reason = serializers.SerializerMethodField()
+    bills_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Ledger
@@ -546,33 +547,54 @@ class LedgerSerializer(serializers.ModelSerializer):
             'CreatedAt',
             'UpdatedAt',
             'delete_block_reason',
+            'bills_count',
         ]
-        read_only_fields = ['LedgerId', 'IsSystem', 'CompanyId', 'CreatedAt', 'UpdatedAt']
+        read_only_fields = ['LedgerId', 'IsSystem', 'CompanyId', 'CreatedAt', 'UpdatedAt', 'bills_count']
+
+    def get_bills_count(self, obj):
+        return obj.ledger_lines.count()
 
     def get_delete_block_reason(self, obj):
         if obj.IsSystem:
             return "Cannot delete system-defined ledger."
 
-        from django.db import connection
-        with connection.cursor() as cursor:
-            # Check if ledger is referenced in Sales
-            try:
-                cursor.execute('SELECT COUNT(*) FROM "Sales" WHERE "LedgerId" = %s', [obj.LedgerId])
-                sales_count = cursor.fetchone()[0]
-                if sales_count > 0:
-                    return f"Cannot delete: Ledger is linked to {sales_count} sales invoice(s)."
-            except Exception:
-                pass
+        # Check if ledger is referenced in Purchase
+        try:
+            purch_count = Purchase.objects.filter(SupplierLedger_id=obj.LedgerId).count()
+            if purch_count > 0:
+                return f"Cannot delete: Ledger is linked to {purch_count} purchase bill(s)."
+        except Exception:
+            pass
 
-            # Check if ledger is referenced in Purchase
-            try:
-                cursor.execute('SELECT COUNT(*) FROM "Purchase" WHERE "LedgerId" = %s', [obj.LedgerId])
-                purch_count = cursor.fetchone()[0]
-                if purch_count > 0:
-                    return f"Cannot delete: Ledger is linked to {purch_count} purchase bill(s)."
-            except Exception:
-                pass
+        # Check if ledger is referenced in Sales
+        try:
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT COUNT(*) FROM "Sales" WHERE "CustomerLedgerId" = %s', [obj.LedgerId])
+                row = cursor.fetchone()
+                if row and row[0] > 0:
+                    return f"Cannot delete: Ledger is linked to {row[0]} sales invoice(s)."
+        except Exception:
+            pass
+
         return None
+
+    def to_internal_value(self, data):
+        data = data.copy() if hasattr(data, 'copy') else dict(data)
+        numeric_fields = [
+            'OpeningBalance', 'DebitBalance', 'CreditBalance', 'CurrentBalance',
+            'CreditPeriodDays', 'CreditLimit', 'EmptyStockLimit'
+        ]
+        for nf in numeric_fields:
+            if nf in data and (data[nf] is None or data[nf] == ''):
+                data[nf] = 0
+        if 'OpeningBalanceType' in data and not data['OpeningBalanceType']:
+            data['OpeningBalanceType'] = 'DR'
+        if 'IsBillWise' in data and data['IsBillWise'] is None:
+            data['IsBillWise'] = False
+        if 'IsActive' in data and data['IsActive'] is None:
+            data['IsActive'] = True
+        return super().to_internal_value(data)
 
     def validate_LedgerName(self, value):
         val = value.strip()
@@ -583,6 +605,8 @@ class LedgerSerializer(serializers.ModelSerializer):
     def validate_GSTIN(self, value):
         if value:
             val = value.strip().upper()
+            if not val:
+                return None
             if len(val) != 15:
                 raise serializers.ValidationError("GSTIN must be exactly 15 characters.")
             return val
@@ -591,6 +615,8 @@ class LedgerSerializer(serializers.ModelSerializer):
     def validate_PAN(self, value):
         if value:
             val = value.strip().upper()
+            if not val:
+                return None
             if len(val) != 10:
                 raise serializers.ValidationError("PAN must be exactly 10 characters.")
             return val
@@ -771,3 +797,25 @@ class PaymentSerializer(serializers.ModelSerializer):
     def get_primary_mode(self, obj):
         first_line = obj.lines.first()
         return first_line.PaymentMode if first_line else 'Cash'
+
+
+class LedgerLineSerializer(serializers.ModelSerializer):
+    ledger_name = serializers.CharField(source='Ledger.LedgerName', read_only=True)
+
+    class Meta:
+        model = LedgerLine
+        fields = [
+            'LedgerLineId',
+            'Ledger',
+            'ledger_name',
+            'BillNo',
+            'BillDate',
+            'DueDate',
+            'Amount',
+            'Narration',
+            'CompanyId',
+            'CreatedAt',
+            'UpdatedAt',
+        ]
+        read_only_fields = ['LedgerLineId', 'CreatedAt', 'UpdatedAt']
+

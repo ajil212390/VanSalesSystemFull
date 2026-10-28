@@ -59,6 +59,8 @@ interface PendingBill {
   PurchaseId: number;
   BillReference: string;
   BillDate: string;
+  BillType?: string;
+  InvoiceNo?: string;
   BillAmount?: number;
   PaidAmount?: number;
   PendingAmount?: number;
@@ -72,6 +74,8 @@ interface BillAllocationItem {
   PurchaseId: number;
   BillReference: string;
   BillDate: string;
+  BillType?: string;
+  InvoiceNo?: string;
   GrandTotal: number;
   AllocatedSoFar: number;
   PendingBalance: number;
@@ -328,6 +332,8 @@ export const PaymentFormPage: React.FC = () => {
           PurchaseId: b.PurchaseId,
           BillReference: b.BillReference,
           BillDate: b.BillDate,
+          BillType: b.BillType || (b.BillReference === 'OPENING' || b.PurchaseId === 0 ? 'OPENING' : 'PURCHASE'),
+          InvoiceNo: b.InvoiceNo,
           GrandTotal: grandTotal,
           AllocatedSoFar: allocatedSoFar,
           PendingBalance: pendingBalance,
@@ -521,7 +527,7 @@ export const PaymentFormPage: React.FC = () => {
       // Collect all allocations across all rows
       const allAllocations = validRows.flatMap((r) =>
         r.allocations.map((a) => ({
-          BillType: 'PURCHASE',
+          BillType: a.BillType || (a.BillReference === 'OPENING' || a.PurchaseId === 0 ? 'OPENING' : 'PURCHASE'),
           BillReference: a.BillReference,
           BillDate: a.BillDate,
           AllocationType: 'Against Reference',
@@ -1080,7 +1086,7 @@ export const PaymentFormPage: React.FC = () => {
                     const isExpanded = expandedBillRef === bill.BillReference;
 
                     return (
-                      <React.Fragment key={bill.PurchaseId || bill.BillReference}>
+                      <React.Fragment key={`${bill.BillReference}_${bIdx}`}>
                         <Table.Tr style={{ height: 32 }}>
                           <Table.Td>
                             <Text size="xs" c="dimmed">

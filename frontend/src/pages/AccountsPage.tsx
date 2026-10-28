@@ -29,12 +29,15 @@ import {
   IconPencil,
   IconTrash,
   IconChevronDown,
+  IconFileSpreadsheet,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import { OpeningBillsModal, type ImportedBillItem } from '../components/OpeningBillsModal';
+import { BulkImportLedgersModal } from '../components/BulkImportLedgersModal';
 
 interface GroupItem {
   GroupId: number;
@@ -157,6 +160,9 @@ export const AccountsPage: React.FC = () => {
   const [formOpened, setFormOpened] = useState(false);
   const [editingLedger, setEditingLedger] = useState<LedgerItem | null>(null);
   const [ledgerToDelete, setLedgerToDelete] = useState<LedgerItem | null>(null);
+  const [billsModalOpened, setBillsModalOpened] = useState(false);
+  const [pendingBills, setPendingBills] = useState<ImportedBillItem[]>([]);
+  const [bulkImportModalOpened, setBulkImportModalOpened] = useState(false);
 
   // 1. Fetch Ledgers
   const { data: ledgers = [], isLoading: isLoadingLedgers } = useQuery<LedgerItem[]>({
@@ -192,6 +198,7 @@ export const AccountsPage: React.FC = () => {
     control,
     reset,
     setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<LedgerFormValues>({
     defaultValues: defaultLedgerValues,
@@ -204,36 +211,57 @@ export const AccountsPage: React.FC = () => {
   // Save / Update mutation
   const saveMutation = useMutation({
     mutationFn: async (data: LedgerFormValues) => {
+      const safeNum = (val: any, fallback = 0): number => {
+        if (val === null || val === undefined || val === '') return fallback;
+        const num = Number(val);
+        return isNaN(num) ? fallback : num;
+      };
+
+      const safeStr = (val: any): string | null => {
+        if (val === null || val === undefined) return null;
+        const s = String(val).trim();
+        return s === '' ? null : s;
+      };
+
+      const opBal = safeNum(data.OpeningBalance, 0);
+
       const payload: any = {
-        LedgerName: data.LedgerName.trim(),
-        Group: parseInt(data.Group, 10),
-        OpeningBalance: data.OpeningBalance !== '' ? Number(data.OpeningBalance) : 0,
+        LedgerName: (data.LedgerName || '').trim(),
+        Group: parseInt(String(data.Group), 10),
+        OpeningBalance: opBal,
         OpeningBalanceType: data.OpeningBalanceType || 'DR',
-        DebitBalance: data.DebitBalance !== '' && data.DebitBalance !== null ? Number(data.DebitBalance) : 0,
-        CreditBalance: data.CreditBalance !== '' && data.CreditBalance !== null ? Number(data.CreditBalance) : 0,
-        CurrentBalance: data.CurrentBalance !== '' && data.CurrentBalance !== null ? Number(data.CurrentBalance) : (data.OpeningBalance !== '' ? Number(data.OpeningBalance) : 0),
-        AddressLine1: data.AddressLine1.trim() || null,
-        AddressLine2: data.AddressLine2.trim() || null,
-        AddressLine3: data.AddressLine3.trim() || null,
-        City: data.City.trim() || null,
-        StateId: data.StateId ? parseInt(data.StateId, 10) : null,
-        Pincode: data.Pincode.trim() || null,
-        PhoneNumber: data.PhoneNumber.trim() || null,
-        MobileNumber: data.MobileNumber.trim() || null,
-        Email: data.Email.trim() || null,
-        GSTRegistrationType: data.GSTRegistrationType || 'Unregistered',
-        GSTIN: data.GSTIN.trim().toUpperCase() || null,
-        PAN: data.PAN.trim().toUpperCase() || null,
+        DebitBalance: safeNum(data.DebitBalance, 0),
+        CreditBalance: safeNum(data.CreditBalance, 0),
+        CurrentBalance: safeNum(data.CurrentBalance, opBal),
+        AddressLine1: safeStr(data.AddressLine1),
+        AddressLine2: safeStr(data.AddressLine2),
+        AddressLine3: safeStr(data.AddressLine3),
+        City: safeStr(data.City),
+        StateId: data.StateId ? parseInt(String(data.StateId), 10) : null,
+        Pincode: safeStr(data.Pincode),
+        PhoneNumber: safeStr(data.PhoneNumber),
+        MobileNumber: safeStr(data.MobileNumber),
+        Email: safeStr(data.Email),
+        GSTRegistrationType: safeStr(data.GSTRegistrationType) || 'Unregistered',
+        GSTIN: safeStr(data.GSTIN)?.toUpperCase() || null,
+        PAN: safeStr(data.PAN)?.toUpperCase() || null,
         IsBillWise: Boolean(data.IsBillWise),
-        CreditPeriodDays: data.CreditPeriodDays !== '' ? Number(data.CreditPeriodDays) : 0,
-        CreditLimit: data.CreditLimit !== '' ? Number(data.CreditLimit) : 0,
-        BankName: data.BankName.trim() || null,
-        BankAccountNumber: data.BankAccountNumber.trim() || null,
-        IFSCCode: data.IFSCCode.trim().toUpperCase() || null,
-        BankBranch: data.BankBranch.trim() || null,
-        EmptyStockLimit: data.EmptyStockLimit !== '' ? Number(data.EmptyStockLimit) : 0,
-        IsActive: data.IsActive,
-        Narration: data.Narration.trim() || null,
+        CreditPeriodDays: Math.round(safeNum(data.CreditPeriodDays, 0)),
+        CreditLimit: safeNum(data.CreditLimit, 0),
+        BankName: safeStr(data.BankName),
+        BankAccountNumber: safeStr(data.BankAccountNumber),
+        IFSCCode: safeStr(data.IFSCCode)?.toUpperCase() || null,
+        BankBranch: safeStr(data.BankBranch),
+        EmptyStockLimit: safeNum(data.EmptyStockLimit, 0),
+        IsActive: data.IsActive ?? true,
+        Narration: safeStr(data.Narration),
+        bills: pendingBills.map((b) => ({
+          BillNo: String(b.BillNo || '').trim(),
+          BillDate: b.BillDate,
+          DueDate: b.DueDate || null,
+          Amount: safeNum(b.Amount, 0),
+          Narration: String(b.Narration || '').trim(),
+        })),
       };
 
       if (editingLedger) {
@@ -252,16 +280,29 @@ export const AccountsPage: React.FC = () => {
       handleCloseForm();
     },
     onError: (err: any) => {
-      const detail =
-        err.response?.data?.detail ||
-        Object.values(err.response?.data || {})
-          .flat()
-          .join(', ') ||
-        'Failed to save ledger.';
+      let message = 'Failed to save ledger.';
+      if (err.response?.data) {
+        if (typeof err.response.data === 'string') {
+          message = err.response.data;
+        } else if (err.response.data.detail) {
+          message = String(err.response.data.detail);
+        } else {
+          const fieldErrors = Object.entries(err.response.data)
+            .map(([field, errs]) => {
+              const text = Array.isArray(errs) ? errs.join(', ') : String(errs);
+              return `${field}: ${text}`;
+            })
+            .join(' | ');
+          if (fieldErrors) message = fieldErrors;
+        }
+      } else if (err.message) {
+        message = err.message;
+      }
       notifications.show({
-        title: 'Error',
-        message: String(detail),
+        title: 'Validation Error',
+        message: message,
         color: 'red',
+        autoClose: 8000,
       });
     },
   });
@@ -298,19 +339,60 @@ export const AccountsPage: React.FC = () => {
   const handleCloseForm = () => {
     setFormOpened(false);
     setEditingLedger(null);
+    setPendingBills([]);
     reset(defaultLedgerValues);
   };
 
   const handleAddNew = () => {
     setEditingLedger(null);
+    setPendingBills([]);
     reset(defaultLedgerValues);
     setShowExtraDetails(false); // Initially collapsed for new ledger as requested
     setFormOpened(true);
   };
 
-  const handleEdit = (ledger: LedgerItem) => {
+  const handleApplyBills = (
+    importedBills: ImportedBillItem[],
+    syncTotalToOpeningBalance: boolean
+  ) => {
+    setPendingBills(importedBills);
+    if (syncTotalToOpeningBalance) {
+      const sum = importedBills.reduce((acc, b) => acc + (Number(b.Amount) || 0), 0);
+      setValue('OpeningBalance', sum);
+      if (!editingLedger) {
+        setValue('CurrentBalance', sum);
+      }
+    }
+    notifications.show({
+      title: 'Bills Attached',
+      message: `${importedBills.length} opening bill(s) attached to this ledger.`,
+      color: 'teal',
+    });
+  };
+
+  const handleEdit = async (ledger: LedgerItem) => {
     setEditingLedger(ledger);
     setShowExtraDetails(true); // Fully expanded in edit so all details are visible and editable
+    setPendingBills([]);
+    // Fetch existing opening bills if any
+    try {
+      const res = await apiClient.get(`/ledger-lines/?ledger_id=${ledger.LedgerId}`);
+      if (Array.isArray(res.data)) {
+        setPendingBills(
+          res.data.map((b: any) => ({
+            id: String(b.LedgerLineId),
+            LedgerLineId: b.LedgerLineId,
+            BillNo: b.BillNo,
+            BillDate: b.BillDate,
+            DueDate: b.DueDate || null,
+            Amount: Number(b.Amount),
+            Narration: b.Narration || '',
+          }))
+        );
+      }
+    } catch {
+      setPendingBills([]);
+    }
     reset({
       LedgerName: ledger.LedgerName,
       Group: String(ledger.Group),
@@ -423,11 +505,11 @@ export const AccountsPage: React.FC = () => {
           </Text>
         </div>
 
-        {/* Right Actions: Group Filter + Search Bar + Add Button */}
-        <Group gap="sm" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
+        {/* Right Actions: Group Filter + Search Bar + Bulk Import Pill + Add Button */}
+        <Group gap="xs" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(groupFilterStyles) => (
-              <Box style={{ ...groupFilterStyles, width: 220, flexGrow: 1, minWidth: 160, maxWidth: 300 }}>
+              <Box style={{ ...groupFilterStyles, width: 190, flexGrow: 1, minWidth: 140, maxWidth: 220 }}>
                 <Select
                   placeholder="All Account Groups"
                   data={groupOptions}
@@ -444,7 +526,7 @@ export const AccountsPage: React.FC = () => {
 
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(searchStyles) => (
-              <Box style={{ ...searchStyles, width: 240, flexGrow: 1, minWidth: 180, maxWidth: 340 }}>
+              <Box style={{ ...searchStyles, width: 210, flexGrow: 1, minWidth: 160, maxWidth: 260 }}>
                 <TextInput
                   placeholder="Search accounts..."
                   value={searchQuery}
@@ -464,9 +546,21 @@ export const AccountsPage: React.FC = () => {
 
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(btnStyles) => (
-              <Button color="burgundy" radius={10} onClick={handleAddNew} style={btnStyles}>
-                + Add Ledger
-              </Button>
+              <Group gap="xs" style={btnStyles} wrap="wrap">
+                <Button
+                  variant="outline"
+                  color="burgundy"
+                  radius={10}
+                  size="sm"
+                  leftSection={<IconFileSpreadsheet size={16} stroke={1.5} />}
+                  onClick={() => setBulkImportModalOpened(true)}
+                >
+                  Bulk Import
+                </Button>
+                <Button color="burgundy" radius={10} size="sm" onClick={handleAddNew}>
+                  + Add Ledger
+                </Button>
+              </Group>
             )}
           </Transition>
         </Group>
@@ -567,27 +661,49 @@ export const AccountsPage: React.FC = () => {
 
                 {/* Row 2: Financial Balances */}
                 <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="md">
-                  <Controller
-                    name="OpeningBalance"
-                    control={control}
-                    render={({ field }) => (
-                      <NumberInput
-                        label="Opening Balance"
-                        placeholder="0.00"
-                        min={0}
-                        decimalScale={2}
-                        prefix="₹ "
-                        hideControls
-                        value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
-                        onChange={(val) => {
-                          field.onChange(val === '' ? '' : val);
-                          if (!editingLedger) {
-                            setValue('CurrentBalance', val === '' ? '' : val);
-                          }
+                  <Box>
+                    <Group justify="space-between" align="center" mb={4}>
+                      <Text component="label" size="sm" fw={500} c="#212529">
+                        Opening Balance
+                      </Text>
+                      <Button
+                        variant="subtle"
+                        size="compact-xs"
+                        color="burgundy"
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          padding: '0 4px',
+                          height: 20,
+                          color: '#800020',
                         }}
-                      />
-                    )}
-                  />
+                        leftSection={<IconFileSpreadsheet size={13} />}
+                        onClick={() => setBillsModalOpened(true)}
+                      >
+                        {pendingBills.length > 0 ? `Bills (${pendingBills.length})` : '+ Add Bills'}
+                      </Button>
+                    </Group>
+                    <Controller
+                      name="OpeningBalance"
+                      control={control}
+                      render={({ field }) => (
+                        <NumberInput
+                          placeholder="0.00"
+                          min={0}
+                          decimalScale={2}
+                          prefix="₹ "
+                          hideControls
+                          value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
+                          onChange={(val) => {
+                            field.onChange(val === '' ? '' : val);
+                            if (!editingLedger) {
+                              setValue('CurrentBalance', val === '' ? '' : val);
+                            }
+                          }}
+                        />
+                      )}
+                    />
+                  </Box>
 
                   <Controller
                     name="DebitBalance"
@@ -1265,6 +1381,22 @@ export const AccountsPage: React.FC = () => {
         title="Delete Ledger Account"
         description={`Are you sure you want to delete "${ledgerToDelete?.LedgerName}"? This action cannot be undone.`}
         loading={deleteMutation.isPending}
+      />
+
+      {/* Opening Bills Import & Allocation Modal */}
+      <OpeningBillsModal
+        opened={billsModalOpened}
+        onClose={() => setBillsModalOpened(false)}
+        bills={pendingBills}
+        onApplyBills={handleApplyBills}
+        ledgerName={watch('LedgerName') || editingLedger?.LedgerName}
+      />
+
+      {/* Complete Ledger & Opening Bills Bulk Import Modal */}
+      <BulkImportLedgersModal
+        opened={bulkImportModalOpened}
+        onClose={() => setBulkImportModalOpened(false)}
+        availableGroups={groupOptions}
       />
     </Stack>
   );

@@ -1,3 +1,5 @@
+import re
+from datetime import date, datetime
 from decimal import Decimal
 from django.db import transaction
 from rest_framework.decorators import action
@@ -10,11 +12,34 @@ from drf_spectacular.utils import extend_schema
 from django.db.models import Sum, F
 
 
+def safe_parse_date(val):
+    if not val:
+        return None
+    if isinstance(val, (date, datetime)):
+        return val if isinstance(val, date) else val.date()
+    val_str = str(val).strip()
+    if not val_str:
+        return None
+    # 1. Try ISO YYYY-MM-DD
+    if re.match(r'^\d{4}-\d{1,2}-\d{1,2}$', val_str):
+        try:
+            return datetime.strptime(val_str, '%Y-%m-%d').date()
+        except ValueError:
+            pass
+    # 2. Try common international and Indian date formats
+    for fmt in ('%d/%m/%Y', '%d-%m-%Y', '%d.%m.%Y', '%m/%d/%Y', '%Y/%m/%d', '%d/%m/%y', '%d-%m-%y'):
+        try:
+            return datetime.strptime(val_str, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
 from core.models import (
     State, UserRole, Company, Driver, Route, Vehicle, RouteVehicleDriver,
     User, Category, Unit, Product, Group, Ledger, ProductPriceAudit,
     Purchase, PurchaseLine, StockMovement, Voucher, VoucherLine,
-    Payment, PaymentLine, BillwiseAllocation
+    Payment, PaymentLine, BillwiseAllocation, LedgerLine
 )
 
 
@@ -24,7 +49,8 @@ from core.serializers import (
     DriverSerializer, RouteSerializer, VehicleSerializer, RouteVehicleDriverSerializer,
     UserManagementSerializer, CategorySerializer, UnitSerializer, ProductSerializer,
     GroupSerializer, LedgerSerializer, ProductPriceAuditSerializer,
-    PurchaseSerializer, PurchaseLineSerializer,PaymentSerializer, PaymentLineSerializer, BillwiseAllocationSerializer
+    PurchaseSerializer, PurchaseLineSerializer, PaymentSerializer, PaymentLineSerializer, BillwiseAllocationSerializer,
+    LedgerLineSerializer
 )
 
 from core.permissions import HasModulePermission, MODULE_COMPANY
@@ -452,6 +478,62 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        if response.status_code == status.HTTP_201_CREATED:
+            bills = request.data.get('bills') or request.data.get('ledger_lines', [])
+            ledger_id = response.data.get('LedgerId')
+            company_id = getattr(request.user, 'CompanyId', 0)
+            for b in bills:
+                b_no = str(b.get('BillNo') or '').strip()
+                try:
+                    amt = Decimal(str(b.get('Amount') or 0))
+                except Exception:
+                    amt = Decimal('0.00')
+                if b_no and amt > 0:
+                    b_date = safe_parse_date(b.get('BillDate')) or date.today()
+                    d_date = safe_parse_date(b.get('DueDate'))
+                    LedgerLine.objects.create(
+                        Ledger_id=ledger_id,
+                        BillNo=b_no,
+                        BillDate=b_date,
+                        DueDate=d_date,
+                        Amount=amt,
+                        Narration=str(b.get('Narration') or '').strip(),
+                        CompanyId=company_id
+                    )
+        return response
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        if response.status_code == status.HTTP_200_OK:
+            bills = request.data.get('bills')
+            if bills is not None:
+                ledger_id = response.data.get('LedgerId')
+                company_id = getattr(request.user, 'CompanyId', 0)
+                LedgerLine.objects.filter(Ledger_id=ledger_id).delete()
+                for b in bills:
+                    b_no = str(b.get('BillNo') or '').strip()
+                    try:
+                        amt = Decimal(str(b.get('Amount') or 0))
+                    except Exception:
+                        amt = Decimal('0.00')
+                    if b_no and amt > 0:
+                        b_date = safe_parse_date(b.get('BillDate')) or date.today()
+                        d_date = safe_parse_date(b.get('DueDate'))
+                        LedgerLine.objects.create(
+                            Ledger_id=ledger_id,
+                            BillNo=b_no,
+                            BillDate=b_date,
+                            DueDate=d_date,
+                            Amount=amt,
+                            Narration=str(b.get('Narration') or '').strip(),
+                            CompanyId=company_id
+                        )
+        return response
+
     def perform_create(self, serializer):
         op_bal = serializer.validated_data.get('OpeningBalance') or 0
         op_type = serializer.validated_data.get('OpeningBalanceType') or 'DR'
@@ -495,6 +577,169 @@ class LedgerViewSet(viewsets.ModelViewSet):
         if block_reason:
             return Response({"detail": block_reason}, status=status.HTTP_400_BAD_REQUEST)
         return super().destroy(request, *args, **kwargs)
+
+    @action(detail=False, methods=['post'], url_path='bulk-import')
+    def bulk_import(self, request):
+        """
+        Bulk import complete ledger records with optional opening bills from a single Excel/CSV payload.
+        Payload: { "ledgers": [ { "LedgerName": "...", "GroupName": "...", "OpeningBalance": 1000, "OpeningBalanceType": "DR", "bills": [...] }, ... ] }
+        """
+        ledgers_data = request.data.get('ledgers', [])
+        if not ledgers_data or not isinstance(ledgers_data, list):
+            return Response({'detail': 'Please provide a non-empty "ledgers" array.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_id = getattr(request.user, 'CompanyId', 0)
+
+        # Pre-fetch existing groups and states for fast lookup
+        from django.db.models import Q
+        groups = {g.GroupName.strip().lower(): g for g in Group.objects.filter(Q(CompanyId=company_id) | Q(CompanyId=0))}
+        states_by_name = {s.StateName.strip().lower(): s.StateId for s in State.objects.all()}
+        states_by_code = {s.GSTStateCode.strip(): s.StateId for s in State.objects.all() if s.GSTStateCode}
+
+        default_group = groups.get('sundry debtors') or groups.get('sundry creditors') or list(groups.values())[0]
+
+        created_count = 0
+        updated_count = 0
+        total_bills_count = 0
+        errors = []
+
+        with transaction.atomic():
+            for idx, item in enumerate(ledgers_data):
+                ledger_name = str(item.get('LedgerName') or '').strip()
+                if not ledger_name:
+                    errors.append({'row': idx + 1, 'error': 'Ledger name is missing or blank.'})
+                    continue
+
+                # 1. Match Group
+                group_val = str(item.get('GroupName') or item.get('Group') or '').strip().lower()
+                matched_group = groups.get(group_val)
+                if not matched_group:
+                    for gname, gobj in groups.items():
+                        if group_val and (group_val in gname or gname in group_val):
+                            matched_group = gobj
+                            break
+                if not matched_group:
+                    matched_group = default_group
+
+                # 2. Match State
+                state_val = str(item.get('State') or item.get('StateName') or '').strip()
+                state_id = item.get('StateId')
+                if not state_id and state_val:
+                    state_id = states_by_name.get(state_val.lower()) or states_by_code.get(state_val)
+
+                # 3. Opening balance & type
+                try:
+                    op_bal = Decimal(str(item.get('OpeningBalance') or 0))
+                except Exception:
+                    op_bal = Decimal('0.00')
+
+                op_type = str(item.get('OpeningBalanceType') or 'DR').strip().upper()
+                if op_type not in ('DR', 'CR'):
+                    op_type = 'DR'
+
+                bills = item.get('bills', [])
+                if isinstance(bills, list) and bills:
+                    # If op_bal is 0 and bills exist, calculate total from bills
+                    if op_bal == 0:
+                        sum_bills = Decimal('0.00')
+                        for b in bills:
+                            try:
+                                sum_bills += Decimal(str(b.get('Amount') or 0))
+                            except Exception:
+                                pass
+                        if sum_bills > 0:
+                            op_bal = sum_bills
+
+                # 4. Find existing ledger by name or create
+                ledger = Ledger.objects.filter(LedgerName__iexact=ledger_name, CompanyId=company_id).first()
+                is_new = False
+                if not ledger:
+                    is_new = True
+                    ledger = Ledger(
+                        LedgerName=ledger_name,
+                        CompanyId=company_id,
+                        IsSystem=False
+                    )
+
+                ledger.Group = matched_group
+                ledger.OpeningBalance = op_bal
+                ledger.OpeningBalanceType = op_type
+                ledger.DebitBalance = op_bal if op_type == 'DR' else Decimal('0.00')
+                ledger.CreditBalance = op_bal if op_type == 'CR' else Decimal('0.00')
+                ledger.CurrentBalance = op_bal if op_type == 'DR' else -op_bal
+
+                # Optional fields
+                ledger.AddressLine1 = str(item.get('AddressLine1') or item.get('Address') or '').strip() or None
+                ledger.AddressLine2 = str(item.get('AddressLine2') or '').strip() or None
+                ledger.AddressLine3 = str(item.get('AddressLine3') or '').strip() or None
+                ledger.City = str(item.get('City') or '').strip() or None
+                ledger.Pincode = str(item.get('Pincode') or item.get('Pin') or '').strip() or None
+                ledger.PhoneNumber = str(item.get('PhoneNumber') or item.get('Phone') or '').strip() or None
+                ledger.MobileNumber = str(item.get('MobileNumber') or item.get('Mobile') or '').strip() or None
+                ledger.Email = str(item.get('Email') or '').strip() or None
+                ledger.GSTRegistrationType = str(item.get('GSTRegistrationType') or ('Regular' if item.get('GSTIN') else 'Unregistered')).strip()
+
+                gstin = str(item.get('GSTIN') or '').strip().upper()
+                ledger.GSTIN = gstin if len(gstin) == 15 else None
+
+                pan = str(item.get('PAN') or '').strip().upper()
+                ledger.PAN = pan if len(pan) == 10 else None
+
+                ledger.IsBillWise = bool(item.get('IsBillWise', True if bills else False))
+                try:
+                    ledger.CreditPeriodDays = int(item.get('CreditPeriodDays') or 0)
+                except Exception:
+                    ledger.CreditPeriodDays = 0
+
+                try:
+                    ledger.CreditLimit = Decimal(str(item.get('CreditLimit') or 0))
+                except Exception:
+                    ledger.CreditLimit = Decimal('0.00')
+
+                ledger.Narration = str(item.get('Narration') or '').strip() or None
+                ledger.IsActive = bool(item.get('IsActive', True))
+                if state_id:
+                    ledger.StateId = state_id
+
+                ledger.save()
+
+                if is_new:
+                    created_count += 1
+                else:
+                    updated_count += 1
+
+                # 5. Save Opening Bills into LedgerLine
+                if isinstance(bills, list) and bills:
+                    LedgerLine.objects.filter(Ledger=ledger).delete()
+                    for b in bills:
+                        b_no = str(b.get('BillNo') or '').strip()
+                        try:
+                            amt = Decimal(str(b.get('Amount') or 0))
+                        except Exception:
+                            amt = Decimal('0.00')
+                        if b_no and amt > 0:
+                            b_date = safe_parse_date(b.get('BillDate')) or date.today()
+                            d_date = safe_parse_date(b.get('DueDate'))
+                            LedgerLine.objects.create(
+                                Ledger=ledger,
+                                BillNo=b_no,
+                                BillDate=b_date,
+                                DueDate=d_date,
+                                Amount=amt,
+                                Narration=str(b.get('Narration') or '').strip(),
+                                CompanyId=company_id
+                            )
+                            total_bills_count += 1
+
+                sync_ledger_balances(ledger.LedgerId)
+
+        return Response({
+            'success': True,
+            'created_count': created_count,
+            'updated_count': updated_count,
+            'total_bills_count': total_bills_count,
+            'errors': errors
+        }, status=status.HTTP_200_OK)
 
 
 class PurchaseViewSet(viewsets.ModelViewSet):
@@ -1043,8 +1288,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='pending-bills')
     def pending_bills(self, request):
         """
-        Calculates all pending / unpaid purchase bills for a given Party / Supplier Ledger.
-        Pending Balance = Purchase GrandTotal - SUM(AllocatedAmount in BillwiseAllocation)
+        Calculates all pending / unpaid bills for a given Party / Supplier Ledger.
+        Combines:
+        1. Historical detailed bills from LedgerLine (imported or migration data).
+        2. Lumpsum opening balance from Ledger.OpeningBalance (if unbilled balance exists).
+        3. Regular live purchases from Purchase table.
+        Pending Balance = Bill Amount - SUM(AllocatedAmount in BillwiseAllocation)
         """
         party_id = request.query_params.get('party_id')
         exclude_payment_id = request.query_params.get('exclude_payment_id')
@@ -1054,33 +1303,26 @@ class PaymentViewSet(viewsets.ModelViewSet):
         user = request.user
         company_id = getattr(user, 'CompanyId', 0)
 
-        purchases = Purchase.objects.filter(SupplierLedger_id=party_id)
-        if company_id:
-            purchases = purchases.filter(CompanyId=company_id)
-        purchases = purchases.order_by('PurchaseDate', 'PurchaseId')
+        party = Ledger.objects.filter(LedgerId=party_id).first()
+        if not party:
+            return Response({'detail': 'Party not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         results = []
-        for p in purchases:
-            bill_ref = p.PurchaseNo or str(p.PurchaseId)
-            total_bill = Decimal(str(p.GrandTotal or 0))
 
-            # Sum of previous allocations against this bill reference
-            alloc_qs = BillwiseAllocation.objects.filter(
-                BillType='PURCHASE',
-                BillReference=bill_ref
-            )
+        def get_payment_history_and_allocated(bill_ref):
+            alloc_qs = BillwiseAllocation.objects.filter(BillReference=bill_ref)
             if exclude_payment_id:
                 alloc_qs = alloc_qs.exclude(PaymentLine__Payment_id=exclude_payment_id)
             allocated = alloc_qs.aggregate(total=Sum('AllocatedAmount'))['total'] or Decimal('0.00')
 
-            payment_history = []
+            history = []
             for a in alloc_qs.select_related('PaymentLine__Payment', 'PaymentLine__Ledger').order_by('CreatedAt', 'BillwiseAllocationId'):
                 pmt = a.PaymentLine.Payment if a.PaymentLine else None
                 acct = a.PaymentLine.Ledger.LedgerName if a.PaymentLine and a.PaymentLine.Ledger else 'Cash'
                 mode = a.PaymentLine.PaymentMode if a.PaymentLine else 'Cash'
                 pmt_id = str(pmt.PaymentId).zfill(3) if pmt else '-'
                 date_str = pmt.CreatedAt.strftime('%Y-%m-%d') if pmt and pmt.CreatedAt else (a.CreatedAt.strftime('%Y-%m-%d') if a.CreatedAt else '-')
-                payment_history.append({
+                history.append({
                     'PaymentId': pmt.PaymentId if pmt else None,
                     'PaymentNo': pmt_id,
                     'Date': date_str,
@@ -1088,21 +1330,86 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     'Mode': mode,
                     'Amount': float(a.AllocatedAmount),
                 })
+            return allocated, history
 
+        # 1. Detailed Opening Bills from LedgerLine
+        ledger_lines = LedgerLine.objects.filter(Ledger_id=party_id)
+        if company_id:
+            ledger_lines = ledger_lines.filter(CompanyId=company_id)
+        ledger_lines = ledger_lines.order_by('BillDate', 'LedgerLineId')
+
+        detailed_sum = Decimal('0.00')
+        for ll in ledger_lines:
+            bill_ref = ll.BillNo
+            total_bill = Decimal(str(ll.Amount or 0))
+            detailed_sum += total_bill
+
+            allocated, history = get_payment_history_and_allocated(bill_ref)
             pending_balance = total_bill - Decimal(str(allocated))
 
-            # Only return bills with an outstanding pending balance
+            if pending_balance > Decimal('0.00'):
+                results.append({
+                    'PurchaseId': 0,
+                    'BillReference': bill_ref,
+                    'InvoiceNo': bill_ref,
+                    'BillDate': str(ll.BillDate),
+                    'BillAmount': float(total_bill),
+                    'PaidAmount': float(allocated),
+                    'PendingAmount': float(pending_balance),
+                    'PaymentHistory': history,
+                    'BillType': 'OPENING',
+                })
+
+        # 2. Lumpsum / Residual Opening Balance from Ledger
+        ob_total = Decimal(str(party.OpeningBalance or 0))
+        unbilled_ob = ob_total - detailed_sum
+        if unbilled_ob > Decimal('0.00'):
+            bill_ref = 'OPENING'
+            allocated, history = get_payment_history_and_allocated(bill_ref)
+            pending_balance = unbilled_ob - Decimal(str(allocated))
+
+            if pending_balance > Decimal('0.00'):
+                bill_date = party.CreatedAt.strftime('%Y-%m-%d') if party.CreatedAt else '2024-01-01'
+                results.append({
+                    'PurchaseId': 0,
+                    'BillReference': bill_ref,
+                    'InvoiceNo': 'Opening Balance',
+                    'BillDate': bill_date,
+                    'BillAmount': float(unbilled_ob),
+                    'PaidAmount': float(allocated),
+                    'PendingAmount': float(pending_balance),
+                    'PaymentHistory': history,
+                    'BillType': 'OPENING',
+                })
+
+        # 3. Regular Purchases
+        purchases = Purchase.objects.filter(SupplierLedger_id=party_id)
+        if company_id:
+            purchases = purchases.filter(CompanyId=company_id)
+        purchases = purchases.order_by('PurchaseDate', 'PurchaseId')
+
+        for p in purchases:
+            bill_ref = p.PurchaseNo or str(p.PurchaseId)
+            total_bill = Decimal(str(p.GrandTotal or 0))
+
+            allocated, history = get_payment_history_and_allocated(bill_ref)
+            pending_balance = total_bill - Decimal(str(allocated))
+
             if pending_balance > Decimal('0.00'):
                 results.append({
                     'PurchaseId': p.PurchaseId,
                     'BillReference': bill_ref,
                     'InvoiceNo': p.InvoiceNo or '-',
-                    'BillDate': p.InvoiceDate or p.PurchaseDate,
+                    'BillDate': str(p.InvoiceDate or p.PurchaseDate),
                     'BillAmount': float(total_bill),
                     'PaidAmount': float(allocated),
                     'PendingAmount': float(pending_balance),
-                    'PaymentHistory': payment_history,
+                    'PaymentHistory': history,
+                    'BillType': 'PURCHASE',
                 })
+
+        # Sort all bills chronologically (Oldest first) to enable seamless FIFO
+        results.sort(key=lambda x: str(x.get('BillDate') or ''))
 
         return Response(results, status=status.HTTP_200_OK)
 
@@ -1193,10 +1500,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
             for alloc in allocations_data:
                 alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
                 if alloc_amt > 0:
+                    b_ref = alloc.get('BillReference')
+                    b_type = alloc.get('BillType')
+                    if not b_type:
+                        if b_ref == 'OPENING' or alloc.get('PurchaseId') == 0 or LedgerLine.objects.filter(Ledger_id=party_id, BillNo=b_ref).exists():
+                            b_type = 'OPENING'
+                        else:
+                            b_type = 'PURCHASE'
+
                     BillwiseAllocation.objects.create(
                         PaymentLine=primary_line,
-                        BillType='PURCHASE',
-                        BillReference=alloc.get('BillReference'),
+                        BillType=b_type,
+                        BillReference=b_ref,
                         BillDate=alloc.get('BillDate') or None,
                         DueDate=alloc.get('DueDate') or None,
                         AllocationType=alloc.get('AllocationType', 'Against Reference'),
@@ -1330,10 +1645,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
             for alloc in allocations_data:
                 alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
                 if alloc_amt > 0:
+                    b_ref = alloc.get('BillReference')
+                    b_type = alloc.get('BillType')
+                    if not b_type:
+                        if b_ref == 'OPENING' or alloc.get('PurchaseId') == 0 or LedgerLine.objects.filter(Ledger_id=party_id, BillNo=b_ref).exists():
+                            b_type = 'OPENING'
+                        else:
+                            b_type = 'PURCHASE'
+
                     BillwiseAllocation.objects.create(
                         PaymentLine=primary_line,
-                        BillType='PURCHASE',
-                        BillReference=alloc.get('BillReference'),
+                        BillType=b_type,
+                        BillReference=b_ref,
                         BillDate=alloc.get('BillDate') or None,
                         DueDate=alloc.get('DueDate') or None,
                         AllocationType=alloc.get('AllocationType', 'Against Reference'),
@@ -1420,4 +1743,66 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 pass
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class LedgerLineViewSet(viewsets.ModelViewSet):
+    """
+    CRUD ViewSet for managing historical opening bills per Ledger (Party / Supplier).
+    Supports bulk creation from Excel or individual bill management.
+    """
+    serializer_class = LedgerLineSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        company_id = getattr(user, 'CompanyId', 0)
+        qs = LedgerLine.objects.all()
+        if company_id:
+            qs = qs.filter(CompanyId=company_id)
+
+        ledger_id = self.request.query_params.get('ledger_id')
+        if ledger_id:
+            qs = qs.filter(Ledger_id=ledger_id)
+
+        return qs.order_by('BillDate', 'LedgerLineId')
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        company_id = getattr(user, 'CompanyId', 0)
+        serializer.save(CompanyId=company_id)
+
+    @action(detail=False, methods=['post'], url_path='bulk-import')
+    def bulk_import(self, request):
+        """
+        Allows bulk importing multiple opening bills for one or more ledgers.
+        Payload: { "bills": [ { "Ledger": 14, "BillNo": "INV-101", "BillDate": "2024-01-15", "Amount": 15000, "Narration": "..." }, ... ] }
+        """
+        bills = request.data.get('bills', [])
+        if not bills or not isinstance(bills, list):
+            return Response({'detail': 'Please provide a "bills" array.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = request.user
+        company_id = getattr(user, 'CompanyId', 0)
+
+        created_records = []
+        errors = []
+
+        with transaction.atomic():
+            for idx, b in enumerate(bills):
+                serializer = self.get_serializer(data=b)
+                if serializer.is_valid():
+                    obj = serializer.save(CompanyId=company_id)
+                    created_records.append(serializer.data)
+                else:
+                    errors.append({'index': idx, 'bill': b, 'errors': serializer.errors})
+
+            if errors:
+                transaction.set_rollback(True)
+                return Response({'detail': 'Validation failed for some bills.', 'errors': errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            'detail': f'Successfully imported {len(created_records)} opening bills.',
+            'imported': created_records
+        }, status=status.HTTP_201_CREATED)
+
 
