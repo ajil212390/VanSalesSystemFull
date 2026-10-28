@@ -734,13 +734,14 @@ export const ProductsPage: React.FC = () => {
                                 size="sm"
                                 variant="outline"
                                 style={{
-                                  borderColor: product.IsActive ? '#cbd5e1' : '#fca5a5',
-                                  color: product.IsActive ? '#334155' : '#dc2626',
-                                  backgroundColor: product.IsActive ? '#f8fafc' : '#fff5f5',
-                                  fontWeight: 500,
+                                  borderColor: product.IsActive ? '#800020' : '#dc2626',
+                                  color: product.IsActive ? '#800020' : '#dc2626',
+                                  backgroundColor: 'transparent',
+                                  fontWeight: 600,
+                                  letterSpacing: '0.4px',
                                 }}
                               >
-                                {product.IsActive ? 'Active' : 'Inactive'}
+                                {product.IsActive ? 'ACTIVE' : 'INACTIVE'}
                               </Badge>
                             </Table.Td>
 

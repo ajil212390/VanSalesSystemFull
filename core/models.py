@@ -560,3 +560,44 @@ class LedgerLine(models.Model):
     def __str__(self):
         return f"{self.Ledger.LedgerName} - {self.BillNo} (₹{self.Amount})"
 
+class DeliveryNote(models.Model):
+    DeliveryNoteId = models.BigAutoField(primary_key=True, db_column='DeliveryNoteId')
+    DeliveryNoteNo = models.CharField(max_length=50, unique=True, db_column='DeliveryNoteNo')
+    DeliveryDate = models.DateField(db_column='DeliveryDate')
+    RouteVehicleDriver = models.ForeignKey(
+        RouteVehicleDriver,
+        on_delete=models.PROTECT,
+        db_column='RouteVehicleDriverId',
+        related_name='delivery_notes'
+    )
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    Remarks = models.TextField(null=True, blank=True, db_column='Remarks')
+    Status = models.CharField(max_length=50, default='LOADED', db_column='Status')  # LOADED, SETTLED, CANCELLED
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"DeliveryNote"'
+        ordering = ['-DeliveryDate', '-DeliveryNoteId']
+
+    def __str__(self):
+        return f"{self.DeliveryNoteNo} ({self.RouteVehicleDriver})"
+
+class DeliveryNoteLine(models.Model):
+    DeliveryNoteLineId = models.BigAutoField(primary_key=True, db_column='DeliveryNoteLineId')
+    DeliveryNote = models.ForeignKey(
+        DeliveryNote,
+        on_delete=models.CASCADE,
+        db_column='DeliveryNoteId',
+        related_name='lines'
+    )
+    Product = models.ForeignKey(Product, on_delete=models.PROTECT, db_column='ProductId')
+    Unit = models.ForeignKey(Unit, on_delete=models.PROTECT, db_column='UnitId')
+    Quantity = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Quantity')
+    Rate = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Rate')
+    Amount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Amount')
+
+    class Meta:
+        managed = False
+        db_table = '"DeliveryNoteLine"'
+        ordering = ['DeliveryNoteLineId']

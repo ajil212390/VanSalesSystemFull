@@ -429,13 +429,14 @@ export const CategoriesPage: React.FC = () => {
                               size="sm"
                               variant="outline"
                               style={{
-                                borderColor: c.IsActive ? '#cbd5e1' : '#fca5a5',
-                                color: c.IsActive ? '#334155' : '#dc2626',
-                                backgroundColor: c.IsActive ? '#f8fafc' : '#fff5f5',
-                                fontWeight: 500,
+                                borderColor: c.IsActive ? '#800020' : '#dc2626',
+                                color: c.IsActive ? '#800020' : '#dc2626',
+                                backgroundColor: 'transparent',
+                                fontWeight: 600,
+                                letterSpacing: '0.4px',
                               }}
                             >
-                              {c.IsActive ? 'Active' : 'Inactive'}
+                              {c.IsActive ? 'ACTIVE' : 'INACTIVE'}
                             </Badge>
                           </Table.Td>
                           <Table.Td style={{ textAlign: 'right' }}>

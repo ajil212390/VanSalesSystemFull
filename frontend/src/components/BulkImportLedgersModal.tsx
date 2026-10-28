@@ -51,6 +51,7 @@ export interface BulkImportLedgerItem {
   OpeningBalance: number;
   OpeningBalanceType: 'DR' | 'CR';
   IsBillWise?: boolean;
+  GSTRegistrationType?: string;
   MobileNumber?: string;
   GSTIN?: string;
   PAN?: string;
@@ -108,6 +109,15 @@ function parseNumeric(val: any): number {
   const cleaned = String(val).replace(/[^0-9.-]+/g, '');
   const num = parseFloat(cleaned);
   return isNaN(num) ? 0 : num;
+}
+
+function normalizeGstRegistrationType(val: any, hasGstin?: boolean): 'Unregistered' | 'Regular' | 'Composition' {
+  if (!val) return hasGstin ? 'Regular' : 'Unregistered';
+  const str = String(val).toLowerCase().trim();
+  if (str.includes('comp')) return 'Composition';
+  if (str.includes('reg')) return 'Regular';
+  if (str.includes('unreg') || str.includes('cons')) return 'Unregistered';
+  return hasGstin ? 'Regular' : 'Unregistered';
 }
 
 export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
@@ -282,14 +292,16 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
         'Due Date': '2023-12-15',
         'Bill Amount': 25000,
         'Bill Remarks': 'Nov cylinder delivery',
-        'Mobile Number': '9847012345',
+        'GST Registration Type': 'Regular Taxpayer',
         'GSTIN': '32AAAAA0000A1Z5',
+        'Mobile Number': '9847012345',
         'City': 'Kochi',
         'State': 'Kerala',
+        'Pincode': '682001',
         'Narration': 'Regular retail debtor',
       },
       {
-        'Ledger Name': 'Kochi Supermarkets',
+        'Ledger Name': 'Kochi Supermarkets',      
         'Account Group': 'Sundry Debtors',
         'Opening Balance': 40000,
         'Balance Type': 'DR',
@@ -298,10 +310,12 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
         'Due Date': '2024-01-01',
         'Bill Amount': 15000,
         'Bill Remarks': 'Dec cylinder delivery',
-        'Mobile Number': '9847012345',
+        'GST Registration Type': 'Regular Taxpayer',
         'GSTIN': '32AAAAA0000A1Z5',
+        'Mobile Number': '9847012345',
         'City': 'Kochi',
         'State': 'Kerala',
+        'Pincode': '682001',
         'Narration': 'Regular retail debtor',
       },
       {
@@ -314,11 +328,31 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
         'Due Date': '2023-12-20',
         'Bill Amount': 75000,
         'Bill Remarks': 'Bulk gas purchase invoice',
-        'Mobile Number': '04842555666',
+        'GST Registration Type': 'Regular Taxpayer',
         'GSTIN': '32BBBBB1111B1Z2',
+        'Mobile Number': '04842555666',
         'City': 'Aluva',
         'State': 'Kerala',
+        'Pincode': '683101',
         'Narration': 'Primary LPG supplier',
+      },
+      {
+        'Ledger Name': 'Green City Traders',
+        'Account Group': 'Sundry Debtors',
+        'Opening Balance': 20000,
+        'Balance Type': 'DR',
+        'Bill No': 'INV-2023-030',
+        'Bill Date': '2023-12-10',
+        'Due Date': '2024-01-10',
+        'Bill Amount': 20000,
+        'Bill Remarks': 'Retail composition delivery',
+        'GST Registration Type': 'Composition Scheme',
+        'GSTIN': '32CCCCC2222C1Z3',
+        'Mobile Number': '9847199999',
+        'City': 'Thrissur',
+        'State': 'Kerala',
+        'Pincode': '680001',
+        'Narration': 'Dealer under composition scheme',
       },
       {
         'Ledger Name': 'State Bank of India - Current A/c',
@@ -330,10 +364,12 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
         'Due Date': '',
         'Bill Amount': '',
         'Bill Remarks': '',
-        'Mobile Number': '',
+        'GST Registration Type': 'Unregistered / Consumer',
         'GSTIN': '',
+        'Mobile Number': '',
         'City': 'Kochi',
         'State': 'Kerala',
+        'Pincode': '682011',
         'Narration': 'Main operating account',
       },
       {
@@ -346,10 +382,12 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
         'Due Date': '',
         'Bill Amount': '',
         'Bill Remarks': '',
-        'Mobile Number': '',
+        'GST Registration Type': 'Unregistered / Consumer',
         'GSTIN': '',
+        'Mobile Number': '',
         'City': '',
         'State': '',
+        'Pincode': '',
         'Narration': 'Godown and office lease expense',
       },
     ];
@@ -366,10 +404,12 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
       { wch: 15 }, // Due Date
       { wch: 16 }, // Bill Amount
       { wch: 28 }, // Bill Remarks
-      { wch: 18 }, // Mobile Number
+      { wch: 24 }, // GST Registration Type
       { wch: 20 }, // GSTIN
+      { wch: 18 }, // Mobile Number
       { wch: 16 }, // City
       { wch: 16 }, // State
+      { wch: 14 }, // Pincode
       { wch: 32 }, // Narration
     ];
     const wb = XLSX.utils.book_new();
@@ -409,6 +449,9 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
     }
     if (['ledgername', 'partyname', 'accountname', 'party', 'customer', 'supplier', 'ledger', 'name'].some((a) => k === a || k.includes(a))) {
       return 'ledgerName';
+    }
+    if (['gstregistrationtype', 'registrationtype', 'gstregtype', 'regtype', 'gsttype', 'taxtype', 'gstregistration'].some((a) => k === a || k.includes(a))) {
+      return 'gstRegistrationType';
     }
     if (['gstin', 'gst', 'gstno', 'taxno'].some((a) => k === a || k.includes(a))) {
       return 'gstin';
@@ -507,6 +550,7 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
           let dueDate = '';
           let billAmt = 0;
           let billNarration = '';
+          let gstRegType = '';
           let mobile = '';
           let gstin = '';
           let pan = '';
@@ -529,6 +573,7 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
             else if (m === 'dueDate') dueDate = parseExcelDate(cell);
             else if (m === 'billAmount') billAmt = parseNumeric(cell);
             else if (m === 'billNarration') billNarration = String(cell).trim();
+            else if (m === 'gstRegistrationType') gstRegType = String(cell).trim();
             else if (m === 'mobile') mobile = String(cell).trim();
             else if (m === 'gstin') gstin = String(cell).trim().toUpperCase();
             else if (m === 'pan') pan = String(cell).trim().toUpperCase();
@@ -551,6 +596,7 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
               GroupName: gName || 'Sundry Debtors',
               OpeningBalance: opBal,
               OpeningBalanceType: opType,
+              GSTRegistrationType: normalizeGstRegistrationType(gstRegType, !!gstin),
               MobileNumber: mobile || undefined,
               GSTIN: gstin || undefined,
               PAN: pan || undefined,
@@ -565,9 +611,15 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
           } else {
             // Update missing fields if available in secondary rows
             if (!existing.GroupName && gName) existing.GroupName = gName;
+            if (!existing.GSTRegistrationType && gstRegType) {
+              existing.GSTRegistrationType = normalizeGstRegistrationType(gstRegType, !!(existing.GSTIN || gstin));
+            }
             if (!existing.MobileNumber && mobile) existing.MobileNumber = mobile;
             if (!existing.GSTIN && gstin) existing.GSTIN = gstin;
             if (!existing.City && city) existing.City = city;
+            if (!existing.State && state) existing.State = state;
+            if (!existing.Pincode && pincode) existing.Pincode = pincode;
+            if (!existing.AddressLine1 && address) existing.AddressLine1 = address;
           }
 
           // If this row has an opening bill
@@ -631,6 +683,7 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
           OpeningBalance: l.OpeningBalance,
           OpeningBalanceType: l.OpeningBalanceType,
           IsBillWise: l.bills.length > 0,
+          GSTRegistrationType: l.GSTRegistrationType || (l.GSTIN ? 'Regular' : 'Unregistered'),
           MobileNumber: l.MobileNumber || null,
           GSTIN: l.GSTIN || null,
           PAN: l.PAN || null,
@@ -888,17 +941,17 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                 borderRadius: 6,
               }}
             >
-              <Table highlightOnHover withColumnBorders style={{ fontSize: 13 }}>
+              <Table highlightOnHover withColumnBorders verticalSpacing={4} horizontalSpacing={8} style={{ fontSize: 12 }}>
                 <Table.Thead style={{ backgroundColor: '#fff5f7', position: 'sticky', top: 0, zIndex: 2 }}>
                   <Table.Tr>
-                    <Table.Th style={{ width: 45, textAlign: 'center', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5 }}>#</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5 }}>LEDGER NAME</Table.Th>
-                    <Table.Th style={{ width: 190, color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5 }}>ACCOUNT GROUP</Table.Th>
-                    <Table.Th style={{ width: 140, textAlign: 'right', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5 }}>OPENING BALANCE</Table.Th>
-                    <Table.Th style={{ width: 75, textAlign: 'center', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5 }}>TYPE</Table.Th>
-                    <Table.Th style={{ width: 110, textAlign: 'center', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5 }}>BILLS</Table.Th>
-                    <Table.Th style={{ width: 170, color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5 }}>CONTACT / GSTIN</Table.Th>
-                    <Table.Th style={{ width: 85, textAlign: 'center', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5 }}>ACTIONS</Table.Th>
+                    <Table.Th style={{ width: 40, textAlign: 'center', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5, padding: '6px 4px' }}>#</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5, padding: '6px 8px' }}>LEDGER NAME</Table.Th>
+                    <Table.Th style={{ width: 175, color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5, padding: '6px 8px' }}>ACCOUNT GROUP</Table.Th>
+                    <Table.Th style={{ width: 130, textAlign: 'right', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5, padding: '6px 8px' }}>OPENING BALANCE</Table.Th>
+                    <Table.Th style={{ width: 65, textAlign: 'center', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5, padding: '6px 4px' }}>TYPE</Table.Th>
+                    <Table.Th style={{ width: 95, textAlign: 'center', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5, padding: '6px 4px' }}>BILLS</Table.Th>
+                    <Table.Th style={{ width: 200, color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5, padding: '6px 8px' }}>GST & CONTACT</Table.Th>
+                    <Table.Th style={{ width: 75, textAlign: 'center', color: '#800020', fontWeight: 700, fontSize: 11, letterSpacing: 0.5, padding: '6px 4px' }}>ACTIONS</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -910,25 +963,45 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                     return (
                       <React.Fragment key={l.id}>
                         <Table.Tr style={{ backgroundColor: isEditing ? '#fdf2f4' : idx % 2 === 1 ? '#fdfdfd' : '#ffffff' }}>
-                          <Table.Td style={{ textAlign: 'center', color: '#64748b' }}>{idx + 1}</Table.Td>
+                          <Table.Td style={{ textAlign: 'center', color: '#64748b', fontSize: 11, padding: '4px' }}>{idx + 1}</Table.Td>
 
                           {/* 1. Ledger Name */}
-                          <Table.Td>
+                          <Table.Td style={{ padding: '4px 8px' }}>
                             {isEditing ? (
-                              <TextInput
-                                size="xs"
-                                value={editRowData.LedgerName}
-                                onChange={(e) => setEditRowData({ ...editRowData, LedgerName: e.currentTarget.value })}
-                                placeholder="Ledger Name"
-                              />
+                              <Stack gap={4}>
+                                <TextInput
+                                  size="xs"
+                                  value={editRowData.LedgerName}
+                                  onChange={(e) => setEditRowData({ ...editRowData, LedgerName: e.currentTarget.value })}
+                                  placeholder="Ledger Name"
+                                  styles={{ input: { fontWeight: 600 } }}
+                                />
+                                <Group gap={4} grow>
+                                  <TextInput
+                                    size="xs"
+                                    value={editRowData.City || ''}
+                                    onChange={(e) => setEditRowData({ ...editRowData, City: e.currentTarget.value })}
+                                    placeholder="City"
+                                    styles={{ input: { fontSize: 11, height: 24, minHeight: 24 } }}
+                                  />
+                                  <TextInput
+                                    size="xs"
+                                    value={editRowData.Pincode || ''}
+                                    onChange={(e) => setEditRowData({ ...editRowData, Pincode: e.currentTarget.value })}
+                                    placeholder="Pincode"
+                                    maxLength={10}
+                                    styles={{ input: { fontSize: 11, height: 24, minHeight: 24 } }}
+                                  />
+                                </Group>
+                              </Stack>
                             ) : (
                               <>
-                                <Text fw={600} size="sm" c="#1e293b">
+                                <Text fw={600} size="xs" c="#1e293b" style={{ lineHeight: 1.25 }}>
                                   {l.LedgerName}
                                 </Text>
-                                {l.City && (
-                                  <Text size="xs" c="dimmed">
-                                    {l.City} {l.State ? `, ${l.State}` : ''}
+                                {(l.City || l.State || l.Pincode) && (
+                                  <Text size="11px" c="dimmed" style={{ lineHeight: 1.1 }}>
+                                    {[l.City, l.State, l.Pincode ? `PIN: ${l.Pincode}` : ''].filter(Boolean).join(', ')}
                                   </Text>
                                 )}
                               </>
@@ -936,7 +1009,7 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                           </Table.Td>
 
                           {/* 2. Account Group */}
-                          <Table.Td>
+                          <Table.Td style={{ padding: '4px 8px' }}>
                             {isEditing ? (
                               <Select
                                 size="xs"
@@ -950,15 +1023,17 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                               <Badge
                                 variant="outline"
                                 color="burgundy"
-                                size="sm"
+                                size="xs"
                                 styles={{
                                   root: {
                                     borderColor: '#800020',
                                     color: '#800020',
                                     fontWeight: 600,
                                     textTransform: 'uppercase',
-                                    letterSpacing: 0.4,
-                                    padding: '0 8px',
+                                    letterSpacing: 0.3,
+                                    padding: '0 6px',
+                                    height: 19,
+                                    fontSize: 10,
                                     backgroundColor: '#fff5f7',
                                   },
                                 }}
@@ -969,7 +1044,7 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                           </Table.Td>
 
                           {/* 3. Opening Balance */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 600 }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12, padding: '4px 8px' }}>
                             {isEditing ? (
                               <NumberInput
                                 size="xs"
@@ -985,8 +1060,8 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                             )}
                           </Table.Td>
 
-                          {/* 4. Balance Type */}
-                          <Table.Td style={{ textAlign: 'center' }}>
+                          {/* 4. Balance Type (Clean DR / CR text, no pill UI) */}
+                          <Table.Td style={{ textAlign: 'center', padding: '4px' }}>
                             {isEditing ? (
                               <Select
                                 size="xs"
@@ -998,23 +1073,14 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                                 onChange={(val) => setEditRowData({ ...editRowData, OpeningBalanceType: (val as 'DR' | 'CR') || 'DR' })}
                               />
                             ) : (
-                              <Badge
-                                color="burgundy"
-                                variant={l.OpeningBalanceType === 'DR' ? 'filled' : 'outline'}
-                                size="xs"
-                                styles={
-                                  l.OpeningBalanceType === 'CR'
-                                    ? { root: { borderColor: '#800020', color: '#800020' } }
-                                    : undefined
-                                }
-                              >
+                              <Text size="xs" fw={700} style={{ color: '#800020', letterSpacing: 0.5 }}>
                                 {l.OpeningBalanceType}
-                              </Badge>
+                              </Text>
                             )}
                           </Table.Td>
 
                           {/* 5. Bills Count */}
-                          <Table.Td style={{ textAlign: 'center' }}>
+                          <Table.Td style={{ textAlign: 'center', padding: '4px' }}>
                             {hasBills ? (
                               <Button
                                 variant="subtle"
@@ -1022,7 +1088,7 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                                 color="burgundy"
                                 rightSection={isExpanded ? <IconChevronUp size={12} /> : <IconChevronDown size={12} />}
                                 onClick={() => toggleExpand(l.id)}
-                                style={{ fontSize: 11, fontWeight: 600, color: '#800020' }}
+                                style={{ fontSize: 11, fontWeight: 600, color: '#800020', height: 22 }}
                               >
                                 {l.bills.length} Bill{l.bills.length > 1 ? 's' : ''}
                               </Button>
@@ -1033,38 +1099,84 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                                 color="burgundy"
                                 leftSection={<IconPlus size={11} />}
                                 onClick={() => handleAddBill(l.id)}
-                                style={{ fontSize: 11, color: '#800020', fontWeight: 600 }}
+                                style={{ fontSize: 11, color: '#800020', fontWeight: 600, height: 22 }}
                                 title="Attach opening bills to this ledger"
                               >
-                                + Bill
+                                Add Bill
                               </Button>
                             )}
                           </Table.Td>
 
-                          {/* 6. Contact / GSTIN */}
-                          <Table.Td>
+                          {/* 6. GST & Contact */}
+                          <Table.Td style={{ padding: '4px 8px' }}>
                             {isEditing ? (
-                              <Stack gap={2}>
-                                <TextInput
+                              <Stack gap={4}>
+                                <Select
                                   size="xs"
-                                  placeholder="Mobile"
-                                  value={editRowData.MobileNumber || ''}
-                                  onChange={(e) => setEditRowData({ ...editRowData, MobileNumber: e.currentTarget.value })}
+                                  placeholder="GST Registration Type"
+                                  data={[
+                                    { value: 'Unregistered', label: 'Unregistered / Consumer' },
+                                    { value: 'Regular', label: 'Regular Taxpayer' },
+                                    { value: 'Composition', label: 'Composition Scheme' },
+                                  ]}
+                                  value={editRowData.GSTRegistrationType || 'Unregistered'}
+                                  onChange={(val) => setEditRowData({ ...editRowData, GSTRegistrationType: val || 'Unregistered' })}
+                                  styles={{
+                                    input: { fontSize: 11, height: 26, minHeight: 26 },
+                                  }}
                                 />
                                 <TextInput
                                   size="xs"
-                                  placeholder="GSTIN"
+                                  placeholder="GSTIN (15 Digits)"
                                   maxLength={15}
                                   value={editRowData.GSTIN || ''}
                                   onChange={(e) => setEditRowData({ ...editRowData, GSTIN: e.currentTarget.value.toUpperCase() })}
+                                  styles={{
+                                    input: { fontSize: 11, height: 26, minHeight: 26 },
+                                  }}
+                                />
+                                <TextInput
+                                  size="xs"
+                                  placeholder="Mobile Number"
+                                  value={editRowData.MobileNumber || ''}
+                                  onChange={(e) => setEditRowData({ ...editRowData, MobileNumber: e.currentTarget.value })}
+                                  styles={{
+                                    input: { fontSize: 11, height: 26, minHeight: 26 },
+                                  }}
                                 />
                               </Stack>
                             ) : (
-                              <Stack gap={1}>
-                                {l.MobileNumber && <Text size="xs" c="#334155">{l.MobileNumber}</Text>}
+                              <Stack gap={2}>
+                                <Badge
+                                  size="xs"
+                                  variant="outline"
+                                  styles={{
+                                    root: {
+                                      fontSize: 9,
+                                      fontWeight: 600,
+                                      height: 18,
+                                      padding: '0 6px',
+                                      width: 'fit-content',
+                                      borderColor: l.GSTRegistrationType === 'Regular' ? '#800020' : l.GSTRegistrationType === 'Composition' ? '#d97706' : '#cbd5e1',
+                                      color: l.GSTRegistrationType === 'Regular' ? '#800020' : l.GSTRegistrationType === 'Composition' ? '#b45309' : '#64748b',
+                                      backgroundColor: l.GSTRegistrationType === 'Regular' ? '#fff5f7' : l.GSTRegistrationType === 'Composition' ? '#fffbeb' : '#f8fafc',
+                                    },
+                                  }}
+                                >
+                                  {l.GSTRegistrationType === 'Regular'
+                                    ? 'Regular Taxpayer'
+                                    : l.GSTRegistrationType === 'Composition'
+                                    ? 'Composition Scheme'
+                                    : 'Unregistered / Consumer'}
+                                </Badge>
                                 {l.GSTIN ? (
-                                  <Text size="xs" fw={600} style={{ color: '#800020' }}>
+                                  <Text size="11px" fw={600} style={{ color: '#800020', fontFamily: 'monospace', lineHeight: 1.2 }}>
                                     {l.GSTIN}
+                                  </Text>
+                                ) : null}
+                                {l.MobileNumber ? (
+                                  <Text size="11px" c="#334155" style={{ lineHeight: 1.2 }}>
+                                    {l.MobileNumber}
                                   </Text>
                                 ) : null}
                               </Stack>
@@ -1072,29 +1184,29 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                           </Table.Td>
 
                           {/* 7. ACTIONS */}
-                          <Table.Td style={{ textAlign: 'center' }}>
+                          <Table.Td style={{ textAlign: 'center', padding: '4px' }}>
                             {isEditing ? (
                               <Group gap={4} justify="center" wrap="nowrap">
                                 <Tooltip label="Save Changes" withArrow>
                                   <ActionIcon
-                                    size="sm"
+                                    size="xs"
                                     color="burgundy"
                                     variant="filled"
                                     title="Save"
                                     onClick={handleSaveEdit}
                                   >
-                                    <IconCheck size={14} />
+                                    <IconCheck size={13} />
                                   </ActionIcon>
                                 </Tooltip>
                                 <Tooltip label="Cancel" withArrow>
                                   <ActionIcon
-                                    size="sm"
+                                    size="xs"
                                     color="gray"
                                     variant="light"
                                     title="Cancel"
                                     onClick={handleCancelEdit}
                                   >
-                                    <IconX size={14} />
+                                    <IconX size={13} />
                                   </ActionIcon>
                                 </Tooltip>
                               </Group>
@@ -1102,24 +1214,24 @@ export const BulkImportLedgersModal: React.FC<BulkImportLedgersModalProps> = ({
                               <Group gap={4} justify="center" wrap="nowrap">
                                 <Tooltip label="Edit Ledger" withArrow>
                                   <ActionIcon
-                                    size="sm"
+                                    size="xs"
                                     color="burgundy"
                                     variant="subtle"
                                     title="Edit Ledger"
                                     onClick={() => handleStartEdit(l)}
                                   >
-                                    <IconPencil size={15} />
+                                    <IconPencil size={14} />
                                   </ActionIcon>
                                 </Tooltip>
                                 <Tooltip label="Remove from import" withArrow>
                                   <ActionIcon
-                                    size="sm"
+                                    size="xs"
                                     color="red"
                                     variant="subtle"
                                     title="Delete"
                                     onClick={() => handleRemoveLedger(idx)}
                                   >
-                                    <IconTrash size={15} />
+                                    <IconTrash size={14} />
                                   </ActionIcon>
                                 </Tooltip>
                               </Group>

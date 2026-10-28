@@ -23,6 +23,7 @@ import { PurchaseListPage } from './pages/PurchaseListPage';
 import { PurchaseFormPage } from './pages/PurchaseFormPage';
 import { PaymentListPage } from './pages/PaymentListPage';
 import { PaymentFormPage } from './pages/PaymentFormPage';
+import { DeliveryNotesPage } from './pages/DeliveryNotesPage';
 
 
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -134,6 +135,8 @@ export const App: React.FC = () => {
               <Route path="/payments" element={<PaymentListPage />} />
               <Route path="/payments/new" element={<PaymentFormPage />} />
               <Route path="/payments/:id/edit" element={<PaymentFormPage />} />
+              <Route path="/delivery-notes" element={<DeliveryNotesPage />} />
+
 
             </Route>
 

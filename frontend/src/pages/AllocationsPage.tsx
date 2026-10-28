@@ -577,13 +577,14 @@ export const AllocationsPage: React.FC = () => {
                           size="sm"
                           variant="outline"
                           style={{
-                            borderColor: a.IsActive ? '#cbd5e1' : '#fca5a5',
-                            color: a.IsActive ? '#334155' : '#dc2626',
-                            backgroundColor: a.IsActive ? '#f8fafc' : '#fff5f5',
-                            fontWeight: 500,
+                            borderColor: a.IsActive ? '#800020' : '#dc2626',
+                            color: a.IsActive ? '#800020' : '#dc2626',
+                            backgroundColor: 'transparent',
+                            fontWeight: 600,
+                            letterSpacing: '0.4px',
                           }}
                         >
-                          {a.IsActive ? 'Active' : 'Inactive'}
+                          {a.IsActive ? 'ACTIVE' : 'INACTIVE'}
                         </Badge>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>

@@ -400,13 +400,14 @@ export const DriversPage: React.FC = () => {
                                                         size="sm"
                                                         variant="outline"
                                                         style={{
-                                                            borderColor: d.IsActive ? '#cbd5e1' : '#fca5a5',
-                                                            color: d.IsActive ? '#334155' : '#dc2626',
-                                                            backgroundColor: d.IsActive ? '#f8fafc' : '#fff5f5',
-                                                            fontWeight: 500,
+                                                            borderColor: d.IsActive ? '#800020' : '#dc2626',
+                                                            color: d.IsActive ? '#800020' : '#dc2626',
+                                                            backgroundColor: 'transparent',
+                                                            fontWeight: 600,
+                                                            letterSpacing: '0.4px',
                                                         }}
                                                     >
-                                                        {d.IsActive ? 'Active' : 'Inactive'}
+                                                        {d.IsActive ? 'ACTIVE' : 'INACTIVE'}
                                                     </Badge>
                                                 </Table.Td>
                                                 <Table.Td style={{ textAlign: 'right' }}>

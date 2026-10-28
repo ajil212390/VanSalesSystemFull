@@ -31,6 +31,7 @@ import {
   IconSettings,
   IconLogout,
   IconTruckDelivery,
+  IconClipboardList,
   IconFolders,
   IconCategory,
   IconPackage,
@@ -68,6 +69,7 @@ export const AppLayout: React.FC = () => {
     { label: 'Drivers', path: '/drivers', icon: IconUser },
     { label: 'Vehicles', path: '/vehicles', icon: IconTruck },
     { label: 'Routes', path: '/routes', icon: IconRoute },
+    { label: 'Add User', path: '/users', icon: IconUsers },
     { label: 'Allocations', path: '/allocations', icon: IconArrowsJoin2 },
   ];
 
@@ -76,7 +78,6 @@ export const AppLayout: React.FC = () => {
   const masterItems = [
     { label: 'Category', path: '/categories', icon: IconCategory },
     { label: 'Products', path: '/products', icon: IconPackage },
-    { label: 'Staff Users', path: '/users', icon: IconUsers },
     { label: 'Accounts', path: '/accounts', icon: IconBuildingBank },
   ];
 
@@ -100,6 +101,8 @@ export const AppLayout: React.FC = () => {
         return { section: 'Van Operations', title: 'Vehicles' };
       case '/routes':
         return { section: 'Van Operations', title: 'Routes' };
+      case '/users':
+        return { section: 'Van Operations', title: 'Add User' };
       case '/allocations':
         return { section: 'Van Operations', title: 'Allocations' };
       case '/categories':
@@ -108,8 +111,6 @@ export const AppLayout: React.FC = () => {
         return { section: 'Master', title: 'Products' };
       case '/price-update':
         return { section: 'Master', title: 'Price Update' };
-      case '/users':
-        return { section: 'Master', title: 'Staff Users' };
       case '/accounts':
         return { section: 'Master', title: 'Accounts' };
       case '/purchases':
@@ -120,6 +121,9 @@ export const AppLayout: React.FC = () => {
         return { section: 'Payment', title: 'Payments' };
       case '/payments/new':
         return { section: 'Payment', title: 'New Payment' };
+      case '/delivery-notes':
+        return { section: 'Operations', title: 'Delivery Notes' };
+
       default:
         if (location.pathname.startsWith('/purchases/')) {
           return { section: 'Purchase', title: 'Edit Purchase' };
@@ -713,6 +717,53 @@ export const AppLayout: React.FC = () => {
                 padding: effectiveCollapsed ? '0' : '0 12px',
                 backgroundColor: location.pathname.startsWith('/payments') ? '#fdf2f4' : 'transparent',
                 color: location.pathname.startsWith('/payments') ? '#800020' : '#475569',
+                fontWeight: 600,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
+              },
+              section: {
+                marginRight: effectiveCollapsed ? 0 : 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+              body: {
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                opacity: effectiveCollapsed ? 0 : 1,
+                maxWidth: effectiveCollapsed ? 0 : 160,
+                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+            }}
+          />
+        </Tooltip>
+
+        {/* Delivery Notes Link (Below Payment) */}
+        <Tooltip label="Delivery Notes" position="right" withArrow disabled={!effectiveCollapsed}>
+          <NavLink
+            component={Link}
+            to="/delivery-notes"
+            label="Delivery Notes"
+            leftSection={<IconClipboardList size={20} stroke={1.75} />}
+            active={location.pathname === '/delivery-notes'}
+            color="burgundy"
+            variant="light"
+            mb={4}
+            onClick={() => opened && toggle()}
+            styles={{
+              root: {
+                borderRadius: '6px',
+                height: 40,
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                padding: effectiveCollapsed ? '0' : '0 12px',
+                backgroundColor: location.pathname === '/delivery-notes' ? '#fdf2f4' : 'transparent',
+                color: location.pathname === '/delivery-notes' ? '#800020' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',

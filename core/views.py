@@ -60,13 +60,15 @@ def sync_ledger_balances(*ledger_ids):
     """
     Recalculates DebitBalance, CreditBalance, and CurrentBalance for the given ledger IDs
     directly from actual non-cancelled VoucherLines + OpeningBalance.
+    If no ledger_ids provided, recalculates for ALL ledgers.
     Guarantees balances never drift, go negative unexpectedly, or corrupt on voucher deletion.
     """
     ids = [lid for lid in ledger_ids if lid]
-    if not ids:
-        return
+    if ids:
+        ledgers = Ledger.objects.filter(LedgerId__in=ids)
+    else:
+        ledgers = Ledger.objects.all()
 
-    ledgers = Ledger.objects.filter(LedgerId__in=ids)
     for l in ledgers:
         v_agg = VoucherLine.objects.filter(Ledger=l, Voucher__IsCancelled=False).aggregate(
             tot_dr=Sum('DebitAmount'),
@@ -247,12 +249,19 @@ class RouteVehicleDriverViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return (
+        qs = (
             RouteVehicleDriver.objects
             .filter(CompanyId=self.request.user.CompanyId)
             .select_related('Route', 'Vehicle', 'Driver')
             .order_by('-RouteVehicleDriverId')
         )
+        driver_id = self.request.query_params.get('DriverId') or self.request.query_params.get('driver_id')
+        if driver_id:
+            qs = qs.filter(Driver_id=driver_id)
+        is_active = self.request.query_params.get('IsActive')
+        if is_active is not None:
+            qs = qs.filter(IsActive=(is_active.lower() == 'true'))
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(CompanyId=self.request.user.CompanyId)
@@ -677,7 +686,18 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 ledger.PhoneNumber = str(item.get('PhoneNumber') or item.get('Phone') or '').strip() or None
                 ledger.MobileNumber = str(item.get('MobileNumber') or item.get('Mobile') or '').strip() or None
                 ledger.Email = str(item.get('Email') or '').strip() or None
-                ledger.GSTRegistrationType = str(item.get('GSTRegistrationType') or ('Regular' if item.get('GSTIN') else 'Unregistered')).strip()
+                raw_gst_type = str(item.get('GSTRegistrationType') or '').strip().lower()
+                if 'comp' in raw_gst_type:
+                    gst_type = 'Composition'
+                elif 'reg' in raw_gst_type:
+                    gst_type = 'Regular'
+                elif 'unreg' in raw_gst_type or 'cons' in raw_gst_type:
+                    gst_type = 'Unregistered'
+                elif item.get('GSTIN'):
+                    gst_type = 'Regular'
+                else:
+                    gst_type = 'Unregistered'
+                ledger.GSTRegistrationType = gst_type
 
                 gstin = str(item.get('GSTIN') or '').strip().upper()
                 ledger.GSTIN = gstin if len(gstin) == 15 else None
@@ -1015,9 +1035,12 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                         Narration="Round off adjustment",
                     )
 
-            # Sync Supplier Ledger & Round Off
-            round_id = round_ledger.LedgerId if round_ledger else None
-            sync_ledger_balances(supplier_id, round_id)
+            # Sync All Involved Ledgers (Double-Entry Balance)
+            affected_ledgers = {supplier_id}
+            for l in [purchase_ledger, cgst_input_ledger, sgst_input_ledger, igst_input_ledger, round_ledger]:
+                if l:
+                    affected_ledgers.add(l.LedgerId)
+            sync_ledger_balances(*affected_ledgers)
 
         serializer = self.get_serializer(purchase)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
@@ -1074,10 +1097,14 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             instance.PartyPincode = data.get('PartyPincode', instance.PartyPincode)
             instance.save()
 
-            # Clean old dependent lines
+            # Clean old dependent lines & collect affected ledgers
             StockMovement.objects.filter(TransactionType='PURCHASE', ReferenceId=instance.PurchaseId).delete()
             vouchers = Voucher.objects.filter(ReferenceTable='Purchase', ReferenceId=instance.PurchaseId)
+            affected_ledger_ids = {supplier_id, instance.SupplierLedger_id}
             for v in vouchers:
+                for vl in v.lines.all():
+                    if vl.Ledger_id:
+                        affected_ledger_ids.add(vl.Ledger_id)
                 v.lines.all().delete()
             vouchers.delete()
             instance.lines.all().delete()
@@ -1245,9 +1272,11 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                         Narration="Round off adjustment",
                     )
 
-            # Sync Supplier Ledger & Round Off
-            round_id = round_ledger.LedgerId if round_ledger else None
-            sync_ledger_balances(supplier_id, round_id)
+            # Sync All Involved Ledgers (both old and new)
+            for l in [purchase_ledger, cgst_input_ledger, sgst_input_ledger, igst_input_ledger, round_ledger]:
+                if l:
+                    affected_ledger_ids.add(l.LedgerId)
+            sync_ledger_balances(*affected_ledger_ids)
 
         serializer = self.get_serializer(instance)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -1258,15 +1287,20 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             supplier_id = instance.SupplierLedger_id
             StockMovement.objects.filter(TransactionType='PURCHASE', ReferenceId=instance.PurchaseId).delete()
             vouchers = Voucher.objects.filter(ReferenceTable='Purchase', ReferenceId=instance.PurchaseId)
+            affected_ledger_ids = {supplier_id} if supplier_id else set()
             for v in vouchers:
+                for vl in v.lines.all():
+                    if vl.Ledger_id:
+                        affected_ledger_ids.add(vl.Ledger_id)
                 v.lines.all().delete()
             vouchers.delete()
             instance.lines.all().delete()
             company_id = instance.CompanyId
             instance.delete()
             round_ledger = self._get_ledger_by_name(company_id, "Round Off", fallback_group_id=15)
-            round_id = round_ledger.LedgerId if round_ledger else None
-            sync_ledger_balances(supplier_id, round_id)
+            if round_ledger:
+                affected_ledger_ids.add(round_ledger.LedgerId)
+            sync_ledger_balances(*affected_ledger_ids)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 class PaymentViewSet(viewsets.ModelViewSet):
@@ -1806,3 +1840,291 @@ class LedgerLineViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_201_CREATED)
 
 
+from core.models import DeliveryNote, DeliveryNoteLine
+from core.serializers import DeliveryNoteSerializer, DeliveryNoteLineSerializer
+from rest_framework.decorators import action
+
+class DeliveryNoteViewSet(viewsets.ModelViewSet):
+    """
+    Handles Morning Van Stock Allocations (Loading Notes).
+    Transfers stock from Godown Stock (RouteVehicleDriverId=1) to the Van Allocation.
+    """
+    serializer_class = DeliveryNoteSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        user = self.request.user
+        company_id = getattr(user, 'CompanyId', 1) or 1
+        return DeliveryNote.objects.filter(CompanyId=company_id).prefetch_related(
+            'lines__Product', 'lines__Unit', 'RouteVehicleDriver__Route',
+            'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Driver'
+        )
+
+    @action(detail=False, methods=['get'], url_path='godown-stock')
+    def godown_stock(self, request):
+        """Returns live stock available in Central Godown (RouteVehicleDriverId=1)"""
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        products = Product.objects.filter(CompanyId=company_id, IsActive=True)
+        stock_list = []
+        for p in products:
+            agg = StockMovement.objects.filter(
+                CompanyId=company_id,
+                Product=p,
+                RouteVehicleDriverId=1
+            ).aggregate(tot_in=Sum('InQty'), tot_out=Sum('OutQty'))
+            in_q = agg['tot_in'] or Decimal('0.00')
+            out_q = agg['tot_out'] or Decimal('0.00')
+            available = in_q - out_q
+            stock_list.append({
+                'ProductId': p.ProductId,
+                'ProductName': p.ProductName,
+                'ProductCode': p.ProductCode,
+                'UnitId': p.Unit_id,
+                'UnitName': p.Unit.UnitName if p.Unit else '',
+                'PurchasePrice': p.PurchasePrice,
+                'AvailableGodownQty': float(available)
+            })
+        return Response(stock_list)
+
+    @action(detail=False, methods=['get'], url_path='van-stock')
+    def van_stock(self, request):
+        """Returns live stock available inside a specific van (RouteVehicleDriverId)"""
+        allocation_id = request.query_params.get('allocation_id')
+        if not allocation_id:
+            return Response({'detail': 'allocation_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        products = Product.objects.filter(CompanyId=company_id, IsActive=True)
+        stock_list = []
+        for p in products:
+            agg = StockMovement.objects.filter(
+                CompanyId=company_id,
+                Product=p,
+                RouteVehicleDriverId=allocation_id
+            ).aggregate(tot_in=Sum('InQty'), tot_out=Sum('OutQty'))
+            in_q = agg['tot_in'] or Decimal('0.00')
+            out_q = agg['tot_out'] or Decimal('0.00')
+            onboard = in_q - out_q
+            stock_list.append({
+                'ProductId': p.ProductId,
+                'ProductName': p.ProductName,
+                'ProductCode': p.ProductCode,
+                'UnitId': p.Unit_id,
+                'UnitName': p.Unit.UnitName if p.Unit else '',
+                'SalesPrice': float(p.SalesPrice or 0),
+                'PurchasePrice': float(p.PurchasePrice or 0),
+                'OnboardQty': float(onboard if onboard > 0 else 0)
+            })
+        return Response(stock_list)
+
+    def create(self, request, *args, **kwargs):
+        data = request.data
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        allocation_id = data.get('RouteVehicleDriver')
+        delivery_date = data.get('DeliveryDate') or date.today()
+        remarks = data.get('Remarks', '')
+        lines_data = data.get('lines', [])
+
+        if not allocation_id:
+            return Response({'detail': 'Please select a Route / Vehicle / Driver allocation.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not lines_data:
+            return Response({'detail': 'Please add at least one cylinder or item to load.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if this van allocation has already been loaded for this date
+        already_loaded = DeliveryNote.objects.filter(
+            CompanyId=company_id,
+            RouteVehicleDriver_id=allocation_id,
+            DeliveryDate=delivery_date
+        ).exists()
+        if already_loaded:
+            return Response(
+                {'detail': 'This vehicle/van has already been loaded for the selected date.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            # 1. Generate DeliveryNoteNo
+            last_dn = DeliveryNote.objects.filter(CompanyId=company_id).order_by('-DeliveryNoteId').first()
+            next_num = (last_dn.DeliveryNoteId + 1) if last_dn else 1
+            dn_no = data.get('DeliveryNoteNo') or f"DN-{next_num:04d}"
+
+            # 2. Create Delivery Note Header
+            delivery_note = DeliveryNote.objects.create(
+                DeliveryNoteNo=dn_no,
+                DeliveryDate=delivery_date,
+                RouteVehicleDriver_id=allocation_id,
+                CompanyId=company_id,
+                Remarks=remarks,
+                Status='LOADED'
+            )
+
+            # 3. Create Lines & Balanced Stock Movements
+            for item in lines_data:
+                product_id = item.get('ProductId')
+                unit_id = item.get('UnitId')
+                qty = Decimal(str(item.get('Quantity') or 0))
+                rate = Decimal(str(item.get('Rate') or 0))
+                amt = qty * rate
+
+                if qty <= 0:
+                    continue
+
+                line = DeliveryNoteLine.objects.create(
+                    DeliveryNote=delivery_note,
+                    Product_id=product_id,
+                    Unit_id=unit_id,
+                    Quantity=qty,
+                    Rate=rate,
+                    Amount=amt
+                )
+
+                # Deduct from Godown Stock (RouteVehicleDriverId = 1)
+                StockMovement.objects.create(
+                    CompanyId=company_id,
+                    Product_id=product_id,
+                    Unit_id=unit_id,
+                    RouteVehicleDriverId=1,
+                    TransactionType='DELIVERY_NOTE',
+                    ReferenceId=delivery_note.DeliveryNoteId,
+                    ReferenceLineId=line.DeliveryNoteLineId,
+                    TransactionNo=delivery_note.DeliveryNoteNo,
+                    TransactionDate=delivery_note.DeliveryDate,
+                    InQty=Decimal('0.00'),
+                    OutQty=qty,
+                    OutCostRate=rate,
+                    OutCostAmount=amt,
+                    Narration=f"Loaded to Van: {delivery_note.DeliveryNoteNo}"
+                )
+
+                # Add into Van Allocation Stock (RouteVehicleDriverId = allocation_id)
+                StockMovement.objects.create(
+                    CompanyId=company_id,
+                    Product_id=product_id,
+                    Unit_id=unit_id,
+                    RouteVehicleDriverId=allocation_id,
+                    TransactionType='DELIVERY_NOTE',
+                    ReferenceId=delivery_note.DeliveryNoteId,
+                    ReferenceLineId=line.DeliveryNoteLineId,
+                    TransactionNo=delivery_note.DeliveryNoteNo,
+                    TransactionDate=delivery_note.DeliveryDate,
+                    InQty=qty,
+                    InCostRate=rate,
+                    InCostAmount=amt,
+                    OutQty=Decimal('0.00'),
+                    Narration=f"Van Load: {delivery_note.DeliveryNoteNo}"
+                )
+
+        serializer = self.get_serializer(delivery_note)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        data = request.data
+        company_id = instance.CompanyId or getattr(request.user, 'CompanyId', 1) or 1
+        allocation_id = data.get('RouteVehicleDriver') or instance.RouteVehicleDriver_id
+        delivery_date = data.get('DeliveryDate') or instance.DeliveryDate
+        remarks = data.get('Remarks', instance.Remarks)
+        lines_data = data.get('lines', [])
+
+        if not allocation_id:
+            return Response({'detail': 'Please select a Route / Vehicle / Driver allocation.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not lines_data:
+            return Response({'detail': 'Please add at least one cylinder or item to load.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if this van allocation has already been loaded for this date (excluding current note)
+        already_loaded = DeliveryNote.objects.filter(
+            CompanyId=company_id,
+            RouteVehicleDriver_id=allocation_id,
+            DeliveryDate=delivery_date
+        ).exclude(DeliveryNoteId=instance.DeliveryNoteId).exists()
+        if already_loaded:
+            return Response(
+                {'detail': 'This vehicle/van has already been loaded for the selected date.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            # 1. Delete old stock movements and lines
+            StockMovement.objects.filter(
+                TransactionType='DELIVERY_NOTE',
+                ReferenceId=instance.DeliveryNoteId
+            ).delete()
+            instance.lines.all().delete()
+
+            # 2. Update Delivery Note Header
+            instance.RouteVehicleDriver_id = allocation_id
+            instance.DeliveryDate = delivery_date
+            instance.Remarks = remarks
+            instance.save()
+
+            # 3. Create fresh Lines & Balanced Stock Movements
+            for item in lines_data:
+                product_id = item.get('ProductId')
+                unit_id = item.get('UnitId')
+                qty = Decimal(str(item.get('Quantity') or 0))
+                rate = Decimal(str(item.get('Rate') or 0))
+                amt = qty * rate
+
+                if qty <= 0:
+                    continue
+
+                line = DeliveryNoteLine.objects.create(
+                    DeliveryNote=instance,
+                    Product_id=product_id,
+                    Unit_id=unit_id,
+                    Quantity=qty,
+                    Rate=rate,
+                    Amount=amt
+                )
+
+                # Deduct from Godown Stock (RouteVehicleDriverId = 1)
+                StockMovement.objects.create(
+                    CompanyId=company_id,
+                    Product_id=product_id,
+                    Unit_id=unit_id,
+                    RouteVehicleDriverId=1,
+                    TransactionType='DELIVERY_NOTE',
+                    ReferenceId=instance.DeliveryNoteId,
+                    ReferenceLineId=line.DeliveryNoteLineId,
+                    TransactionNo=instance.DeliveryNoteNo,
+                    TransactionDate=instance.DeliveryDate,
+                    InQty=Decimal('0.00'),
+                    OutQty=qty,
+                    OutCostRate=rate,
+                    OutCostAmount=amt,
+                    Narration=f"Loaded to Van: {instance.DeliveryNoteNo}"
+                )
+
+                # Add into Van Allocation Stock (RouteVehicleDriverId = allocation_id)
+                StockMovement.objects.create(
+                    CompanyId=company_id,
+                    Product_id=product_id,
+                    Unit_id=unit_id,
+                    RouteVehicleDriverId=allocation_id,
+                    TransactionType='DELIVERY_NOTE',
+                    ReferenceId=instance.DeliveryNoteId,
+                    ReferenceLineId=line.DeliveryNoteLineId,
+                    TransactionNo=instance.DeliveryNoteNo,
+                    TransactionDate=instance.DeliveryDate,
+                    InQty=qty,
+                    InCostRate=rate,
+                    InCostAmount=amt,
+                    OutQty=Decimal('0.00'),
+                    Narration=f"Van Load: {instance.DeliveryNoteNo}"
+                )
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        with transaction.atomic():
+            # Delete associated stock movements
+            StockMovement.objects.filter(
+                TransactionType='DELIVERY_NOTE',
+                ReferenceId=instance.DeliveryNoteId
+            ).delete()
+            instance.lines.all().delete()
+            instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

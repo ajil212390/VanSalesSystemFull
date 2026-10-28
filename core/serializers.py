@@ -31,10 +31,11 @@ class UserMeSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='UserRole.RoleName', read_only=True)
     company_id = serializers.IntegerField(source='CompanyId', read_only=True)
     company_name = serializers.SerializerMethodField()
+    driver_id = serializers.IntegerField(source='DriverId', read_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'role', 'company_id', 'company_name']
+        fields = ['id', 'username', 'role', 'company_id', 'company_name', 'driver_id']
 
     @extend_schema_field(serializers.CharField)
     def get_company_name(self, obj):
@@ -819,3 +820,54 @@ class LedgerLineSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['LedgerLineId', 'CreatedAt', 'UpdatedAt']
 
+from core.models import DeliveryNote, DeliveryNoteLine
+
+class DeliveryNoteLineSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='Product.ProductName', read_only=True)
+    product_code = serializers.CharField(source='Product.ProductCode', read_only=True)
+    unit_name = serializers.CharField(source='Unit.UnitName', read_only=True)
+
+    class Meta:
+        model = DeliveryNoteLine
+        fields = [
+            'DeliveryNoteLineId',
+            'DeliveryNote',
+            'Product',
+            'product_name',
+            'product_code',
+            'Unit',
+            'unit_name',
+            'Quantity',
+            'Rate',
+            'Amount'
+        ]
+        read_only_fields = ['DeliveryNote']
+
+
+class DeliveryNoteSerializer(serializers.ModelSerializer):
+    lines = DeliveryNoteLineSerializer(many=True, required=False)
+    route_name = serializers.CharField(source='RouteVehicleDriver.Route.RouteName', read_only=True)
+    vehicle_number = serializers.CharField(source='RouteVehicleDriver.Vehicle.VehicleNumber', read_only=True)
+    driver_name = serializers.CharField(source='RouteVehicleDriver.Driver.DriverName', read_only=True)
+    total_cylinders = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeliveryNote
+        fields = [
+            'DeliveryNoteId',
+            'DeliveryNoteNo',
+            'DeliveryDate',
+            'RouteVehicleDriver',
+            'route_name',
+            'vehicle_number',
+            'driver_name',
+            'Remarks',
+            'Status',
+            'CompanyId',
+            'CreatedAt',
+            'lines',
+            'total_cylinders'
+        ]
+
+    def get_total_cylinders(self, obj):
+        return sum(line.Quantity for line in obj.lines.all())

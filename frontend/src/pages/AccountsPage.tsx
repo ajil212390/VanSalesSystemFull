@@ -1269,18 +1269,17 @@ export const AccountsPage: React.FC = () => {
                                 <Badge
                                   size="sm"
                                   variant="outline"
-                                  tt="none"
                                   style={{
-                                    borderColor: ledger.IsActive ? '#cbd5e1' : '#fca5a5',
-                                    color: ledger.IsActive ? '#334155' : '#dc2626',
-                                    backgroundColor: ledger.IsActive ? '#f8fafc' : '#fff5f5',
-                                    fontWeight: 500,
-                                    textTransform: 'none',
+                                    borderColor: ledger.IsActive ? '#800020' : '#dc2626',
+                                    color: ledger.IsActive ? '#800020' : '#dc2626',
+                                    backgroundColor: 'transparent',
+                                    fontWeight: 600,
+                                    letterSpacing: '0.4px',
                                     whiteSpace: 'nowrap',
                                     overflow: 'visible',
                                   }}
                                 >
-                                  {ledger.IsActive ? 'Active' : 'Inactive'}
+                                  {ledger.IsActive ? 'ACTIVE' : 'INACTIVE'}
                                 </Badge>
                               </Table.Td>
 

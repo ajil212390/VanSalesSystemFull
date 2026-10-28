@@ -368,12 +368,14 @@ export const PriceUpdatePage: React.FC = () => {
                           size="xs"
                           variant="outline"
                           style={{
-                            borderColor: p.IsActive ? '#cbd5e1' : '#fca5a5',
-                            color: p.IsActive ? '#334155' : '#dc2626',
-                            backgroundColor: p.IsActive ? '#f8fafc' : '#fff5f5',
+                            borderColor: p.IsActive ? '#800020' : '#dc2626',
+                            color: p.IsActive ? '#800020' : '#dc2626',
+                            backgroundColor: 'transparent',
+                            fontWeight: 600,
+                            letterSpacing: '0.4px',
                           }}
                         >
-                          {p.IsActive ? 'Active' : 'Inactive'}
+                          {p.IsActive ? 'ACTIVE' : 'INACTIVE'}
                         </Badge>
                       </Table.Td>
                     </Table.Tr>

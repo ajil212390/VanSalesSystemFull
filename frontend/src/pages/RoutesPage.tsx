@@ -372,13 +372,14 @@ export const RoutesPage: React.FC = () => {
                           size="sm"
                           variant="outline"
                           style={{
-                            borderColor: r.IsActive ? '#cbd5e1' : '#fca5a5',
-                            color: r.IsActive ? '#334155' : '#dc2626',
-                            backgroundColor: r.IsActive ? '#f8fafc' : '#fff5f5',
-                            fontWeight: 500,
+                            borderColor: r.IsActive ? '#800020' : '#dc2626',
+                            color: r.IsActive ? '#800020' : '#dc2626',
+                            backgroundColor: 'transparent',
+                            fontWeight: 600,
+                            letterSpacing: '0.4px',
                           }}
                         >
-                          {r.IsActive ? 'Active' : 'Inactive'}
+                          {r.IsActive ? 'ACTIVE' : 'INACTIVE'}
                         </Badge>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
