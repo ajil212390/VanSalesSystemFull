@@ -813,7 +813,7 @@ export const OpeningBillsModal: React.FC<OpeningBillsModalProps> = ({
                               title="Edit Bill"
                               onClick={() => handleStartEdit(b)}
                             >
-                              <IconPencil size={15} />
+                              <IconPencil size={16} />
                             </ActionIcon>
                             <ActionIcon
                               size="sm"

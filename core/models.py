@@ -308,6 +308,7 @@ class Product(models.Model):
     ProductId = models.BigAutoField(primary_key=True, db_column='ProductId')
     ProductCode = models.CharField(max_length=30, null=True, blank=True, db_column='ProductCode')
     ProductName = models.CharField(max_length=150, db_column='ProductName')
+    AppProductName = models.CharField(max_length=150, null=True, blank=True, db_column='AppProductName')
     Category = models.ForeignKey('Category', on_delete=models.PROTECT, db_column='CategoryId', related_name='products')
     Unit = models.ForeignKey('Unit', on_delete=models.PROTECT, db_column='UnitId', related_name='base_products')
     AltUnit = models.ForeignKey('Unit', on_delete=models.SET_NULL, null=True, blank=True, db_column='AltUnitId', related_name='alt_products')

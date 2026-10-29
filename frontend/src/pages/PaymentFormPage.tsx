@@ -35,8 +35,10 @@ import { apiClient } from '../api/client';
 interface LedgerOption {
   LedgerId: number;
   LedgerName: string;
-  GroupId: number;
+  GroupId?: number;
+  Group?: number;
   group_name?: string;
+  group_nature?: string;
   Nature?: string;
   GSTIN?: string;
   PhoneNumber?: string;
@@ -44,7 +46,21 @@ interface LedgerOption {
   City?: string;
   CurrentBalance?: number | string;
   BalanceType?: 'Dr' | 'Cr';
+  IsBillWise?: boolean;
 }
+
+export const isSundryCreditorOrDebtor = (ledger?: LedgerOption | null): boolean => {
+  if (!ledger) return false;
+  const gName = (ledger.group_name || '').toLowerCase();
+  const gid = Number(ledger.GroupId ?? ledger.Group ?? 0);
+  return (
+    gid === 21 || // Sundry Debtors
+    gid === 24 || // Sundry Creditors
+    gName.includes('creditor') ||
+    gName.includes('debtor') ||
+    Boolean(ledger.IsBillWise)
+  );
+};
 
 interface BillPaymentRecord {
   PaymentId: number | null;
@@ -501,22 +517,64 @@ export const PaymentFormPage: React.FC = () => {
     };
   }, [rows]);
 
-  // Check if any row has allocations exceeding balance or row amount
-  const hasAnyExceededAllocation = useMemo(() => {
-    return rows.some((r) => {
+  // Validation state: determines if Save / Post Voucher is enabled
+  const saveValidation = useMemo(() => {
+    if (!bankOrCashLedgerId) {
+      return {
+        canSave: false,
+        reason: 'Please select an Account (Cash / Bank) in the header.',
+      };
+    }
+
+    const validRows = rows.filter((r) => Boolean(r.ledgerId) && Number(r.amount) > 0);
+    if (validRows.length === 0) {
+      return {
+        canSave: false,
+        reason: 'Please add at least one Particular row with a Ledger and Amount.',
+      };
+    }
+
+    // 1. Check if any row has allocations exceeding balance or row amount
+    for (const r of validRows) {
       const rAmt = Number(r.amount) || 0;
-      const sumAlloc = r.allocations.reduce((s, a) => s + a.AllocatedAmount, 0);
-      const overPending = r.allocations.some((a) => a.AllocatedAmount > a.PendingBalance);
-      const overRowAmt = rAmt > 0 && sumAlloc > rAmt;
-      return overPending || overRowAmt;
-    });
-  }, [rows]);
+      const sumAlloc = r.allocations.reduce((s, a) => s + (Number(a.AllocatedAmount) || 0), 0);
+      const overPending = r.allocations.some((a) => Number(a.AllocatedAmount) > Number(a.PendingBalance));
+      if (overPending) {
+        return {
+          canSave: false,
+          reason: 'One or more allocated amounts exceed the bill pending balance.',
+        };
+      }
+      if (rAmt > 0 && sumAlloc > rAmt) {
+        return {
+          canSave: false,
+          reason: 'Allocated amount cannot exceed the entered line amount.',
+        };
+      }
+    }
+
+    // 2. Check Sundry Creditor / Debtor bill allocation requirement
+    for (const r of validRows) {
+      const ledger = ledgers.find((l) => String(l.LedgerId) === String(r.ledgerId));
+      if (isSundryCreditorOrDebtor(ledger)) {
+        const sumAlloc = r.allocations.reduce((s, a) => s + (Number(a.AllocatedAmount) || 0), 0);
+        if (sumAlloc <= 0 || r.allocations.length === 0) {
+          return {
+            canSave: false,
+            reason: `Please allocate bills for ${ledger?.LedgerName || 'Sundry Creditor / Debtor'} before saving.`,
+          };
+        }
+      }
+    }
+
+    return { canSave: true, reason: '' };
+  }, [bankOrCashLedgerId, rows, ledgers]);
 
   // Save / Post Mutation
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!bankOrCashLedgerId) {
-        throw new Error('Please select an Account (Cash / Bank) in the header.');
+      if (!saveValidation.canSave) {
+        throw new Error(saveValidation.reason || 'Please complete all required fields and bill allocations.');
       }
 
       const validRows = rows.filter((r) => Boolean(r.ledgerId) && Number(r.amount) > 0);
@@ -726,11 +784,7 @@ export const PaymentFormPage: React.FC = () => {
               <Table.Tbody>
                 {rows.map((row, index) => {
                   const selectedLedger = ledgers.find((l) => String(l.LedgerId) === row.ledgerId);
-                  const isCreditorOrSupplier =
-                    selectedLedger &&
-                    ((selectedLedger.group_name || '').toLowerCase().includes('creditor') ||
-                      (selectedLedger.group_name || '').toLowerCase().includes('supplier') ||
-                      selectedLedger.Nature === 'LIABILITY');
+                  const isSundryParty = isSundryCreditorOrDebtor(selectedLedger);
 
                   const allocatedSum = row.allocations.reduce((sum, a) => sum + a.AllocatedAmount, 0);
                   const hasAllocations = allocatedSum > 0;
@@ -800,13 +854,15 @@ export const PaymentFormPage: React.FC = () => {
                             <Button
                               size="compact-xs"
                               variant={hasAllocations ? 'filled' : 'light'}
-                              color={hasAllocations ? 'teal' : 'burgundy'}
+                              color={hasAllocations ? 'teal' : isSundryParty ? 'burgundy' : 'gray'}
                               leftSection={<IconReceipt size={13} />}
                               disabled={!row.amount || Number(row.amount) <= 0}
                               onClick={() => handleOpenAllocationModal(index)}
                               title={
                                 !row.amount || Number(row.amount) <= 0
                                   ? 'Enter line amount first to allocate bills'
+                                  : isSundryParty && !hasAllocations
+                                  ? 'Bills allocation required for Sundry Creditor/Debtor'
                                   : undefined
                               }
                               style={
@@ -814,13 +870,15 @@ export const PaymentFormPage: React.FC = () => {
                                   ? { backgroundColor: '#f1f5f9', color: '#94a3b8', cursor: 'not-allowed' }
                                   : hasAllocations
                                   ? {}
-                                  : { backgroundColor: '#fdf2f4', color: '#800020' }
+                                  : isSundryParty
+                                  ? { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 600 }
+                                  : { backgroundColor: '#f8fafc', color: '#64748b' }
                               }
                             >
                               {hasAllocations
                                 ? `Allocated ₹${allocatedSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                                : isCreditorOrSupplier
-                                ? 'Allocate Bills'
+                                : isSundryParty
+                                ? 'Allocate Bills *'
                                 : 'Bill Allocation'}
                             </Button>
                           </Group>
@@ -950,6 +1008,13 @@ export const PaymentFormPage: React.FC = () => {
 
                 <Divider orientation="vertical" visibleFrom="xs" />
 
+                {/* Validation Info (if saving is disabled) */}
+                {!saveValidation.canSave && saveValidation.reason && (
+                  <Text size="xs" c="#dc2626" fw={600} style={{ maxWidth: 320, textAlign: 'right' }}>
+                    {saveValidation.reason}
+                  </Text>
+                )}
+
                 {/* Action Buttons */}
                 <Group gap="xs" wrap="wrap">
                   <Button variant="default" size="xs" radius={8} onClick={() => navigate('/payments')}>
@@ -961,13 +1026,13 @@ export const PaymentFormPage: React.FC = () => {
                     radius={8}
                     leftSection={<IconCheck size={14} />}
                     loading={saveMutation.isPending}
-                    disabled={hasAnyExceededAllocation}
+                    disabled={!saveValidation.canSave}
                     onClick={() => saveMutation.mutate()}
                     style={{
-                      backgroundColor: hasAnyExceededAllocation ? '#cbd5e1' : '#800020',
-                      cursor: hasAnyExceededAllocation ? 'not-allowed' : 'pointer',
+                      backgroundColor: !saveValidation.canSave ? '#cbd5e1' : '#800020',
+                      cursor: !saveValidation.canSave ? 'not-allowed' : 'pointer',
                     }}
-                    title={hasAnyExceededAllocation ? 'Cannot save: allocated amount exceeds balance' : undefined}
+                    title={!saveValidation.canSave ? saveValidation.reason : undefined}
                   >
                     {isEditing ? 'Update Payment' : 'Save & Post Voucher'}
                   </Button>

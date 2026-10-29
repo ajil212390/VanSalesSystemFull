@@ -1,0 +1,156 @@
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+class ApiService {
+  // Default to computer's Wi-Fi LAN IP so connected phones can reach backend
+  static String baseUrl = 'http://192.168.1.33:8000/api/v1';
+
+  static const String _tokenKey = 'auth_token';
+  static const String _userKey = 'auth_user';
+  static const String _customUrlKey = 'custom_base_url';
+
+  /// Initialize custom base URL if configured by user
+  static Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUrl = prefs.getString(_customUrlKey);
+    if (savedUrl != null && savedUrl.isNotEmpty) {
+      baseUrl = savedUrl;
+    }
+  }
+
+  /// Change backend server URL dynamically (for physical testing over WiFi)
+  static Future<void> setBaseUrl(String newUrl) async {
+    baseUrl = newUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_customUrlKey, baseUrl);
+  }
+
+  /// Retrieve stored JWT access token
+  static Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_tokenKey);
+  }
+
+  /// Retrieve stored User session
+  static Future<Map<String, dynamic>?> getSavedUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_userKey);
+    if (raw == null) return null;
+    try {
+      return jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Standard Headers with Authorization
+  static Future<Map<String, String>> _headers() async {
+    final token = await getToken();
+    return {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  /// 1. Driver / Admin Login: POST /auth/login/
+  static Future<Map<String, dynamic>> login(String username, String password) async {
+    final uri = Uri.parse('$baseUrl/auth/login/');
+    final res = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'username': username.trim(),
+        'password': password.trim(),
+      }),
+    );
+
+    final data = jsonDecode(res.body);
+
+    if (res.statusCode == 200) {
+      final token = data['access'] as String?;
+      final user = data['user'] as Map<String, dynamic>?;
+
+      if (token != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_tokenKey, token);
+        if (user != null) {
+          await prefs.setString(_userKey, jsonEncode(user));
+        }
+      }
+      return {'success': true, 'data': data};
+    } else {
+      String errorMsg = 'Invalid credentials';
+      if (data is Map && data.containsKey('non_field_errors')) {
+        final nfe = data['non_field_errors'];
+        errorMsg = nfe is List ? nfe.join(', ') : nfe.toString();
+      } else if (data is Map && data.containsKey('detail')) {
+        errorMsg = data['detail'].toString();
+      }
+      return {'success': false, 'message': errorMsg};
+    }
+  }
+
+  /// Logout and clear saved preferences
+  static Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_userKey);
+  }
+
+  /// 2. Fetch Driver's Active Allocation: GET /allocations/?DriverId=...
+  static Future<Map<String, dynamic>?> getDriverAllocation(int driverId) async {
+    final uri = Uri.parse('$baseUrl/allocations/?DriverId=$driverId&IsActive=true');
+    final res = await http.get(uri, headers: await _headers());
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      final list = data is List ? data : (data['results'] as List? ?? []);
+      if (list.isNotEmpty) {
+        return list.first as Map<String, dynamic>;
+      }
+    }
+    return null;
+  }
+
+  /// 3. Fetch Real-time Onboard Stock for the Van: GET /delivery-notes/van-stock/?allocation_id=...
+  static Future<List<Map<String, dynamic>>> getVanStock(int allocationId) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/van-stock/?allocation_id=$allocationId');
+    final res = await http.get(uri, headers: await _headers());
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      if (data is List) {
+        return List<Map<String, dynamic>>.from(data);
+      }
+    }
+    return [];
+  }
+
+  /// 4. Fetch Products & Prices: GET /products/
+  static Future<List<Map<String, dynamic>>> getProducts() async {
+    final uri = Uri.parse('$baseUrl/products/');
+    final res = await http.get(uri, headers: await _headers());
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      final list = data is List ? data : (data['results'] as List? ?? []);
+      return List<Map<String, dynamic>>.from(list);
+    }
+    return [];
+  }
+
+  /// 5. Fetch Customers List: GET /ledgers/?AccountType=CUSTOMER
+  static Future<List<Map<String, dynamic>>> getCustomers() async {
+    final uri = Uri.parse('$baseUrl/ledgers/?AccountType=CUSTOMER');
+    final res = await http.get(uri, headers: await _headers());
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      final list = data is List ? data : (data['results'] as List? ?? []);
+      return List<Map<String, dynamic>>.from(list);
+    }
+    return [];
+  }
+}

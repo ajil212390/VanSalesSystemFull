@@ -110,30 +110,12 @@ export const DeliveryNotesPage: React.FC = () => {
     },
   });
 
-  // Set of allocation IDs already loaded for the chosen deliveryDate
-  const loadedAllocationIdsForDate = useMemo(() => {
-    const set = new Set<number>();
-    deliveryNotes.forEach((dn) => {
-      if (dn.DeliveryDate === deliveryDate && dn.RouteVehicleDriver) {
-        if (!editingNote || dn.DeliveryNoteId !== editingNote.DeliveryNoteId) {
-          set.add(dn.RouteVehicleDriver);
-        }
-      }
-    });
-    return set;
-  }, [deliveryNotes, deliveryDate, editingNote]);
-
   const allocationOptions = useMemo(() => {
-    return allocations.map((a: any) => {
-      const isLoaded = loadedAllocationIdsForDate.has(a.RouteVehicleDriverId);
-      const baseLabel = `${a.VehicleNumber} • ${a.DriverName} (${a.RouteName})`;
-      return {
-        value: String(a.RouteVehicleDriverId),
-        label: isLoaded ? `${baseLabel} — (Already Loaded Today)` : baseLabel,
-        disabled: isLoaded,
-      };
-    });
-  }, [allocations, loadedAllocationIdsForDate]);
+    return allocations.map((a: any) => ({
+      value: String(a.RouteVehicleDriverId),
+      label: `${a.VehicleNumber} • ${a.DriverName} (${a.RouteName})`,
+    }));
+  }, [allocations]);
 
   // Open / Close / Edit Form Handlers
   const handleOpenForm = () => {
@@ -177,17 +159,6 @@ export const DeliveryNotesPage: React.FC = () => {
 
   const handleDateChange = (newDate: string) => {
     setDeliveryDate(newDate);
-    if (selectedAllocation) {
-      const alreadyLoaded = deliveryNotes.some(
-        (dn) =>
-          dn.DeliveryDate === newDate &&
-          String(dn.RouteVehicleDriver) === selectedAllocation &&
-          (!editingNote || dn.DeliveryNoteId !== editingNote.DeliveryNoteId)
-      );
-      if (alreadyLoaded) {
-        setSelectedAllocation(null);
-      }
-    }
   };
 
   const handleCloseForm = () => {

@@ -34,6 +34,7 @@ interface ProductItem {
   ProductId: number;
   ProductCode: string | null;
   ProductName: string;
+  AppProductName?: string | null;
   Category: number;
   category_name?: string | null;
   Unit: number;
@@ -65,6 +66,7 @@ interface UnitOption {
 
 interface ProductFormValues {
   ProductName: string;
+  AppProductName: string;
   ProductCode: string;
   Category: string;
   Unit: string;
@@ -80,6 +82,7 @@ interface ProductFormValues {
 
 const defaultProductValues: ProductFormValues = {
   ProductName: '',
+  AppProductName: '',
   ProductCode: '',
   Category: '',
   Unit: '',
@@ -146,6 +149,7 @@ export const ProductsPage: React.FC = () => {
     mutationFn: async (data: ProductFormValues) => {
       const payload = {
         ProductName: data.ProductName.trim(),
+        AppProductName: data.AppProductName?.trim() || null,
         ProductCode: data.ProductCode.trim() || null,
         Category: Number(data.Category),
         Unit: Number(data.Unit),
@@ -244,6 +248,7 @@ export const ProductsPage: React.FC = () => {
     setEditingProduct(product);
     reset({
       ProductName: product.ProductName,
+      AppProductName: product.AppProductName || '',
       ProductCode: product.ProductCode || '',
       Category: String(product.Category),
       Unit: String(product.Unit),
@@ -264,6 +269,7 @@ export const ProductsPage: React.FC = () => {
     return products.filter((p) => {
       const matchesSearch =
         p.ProductName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.AppProductName && p.AppProductName.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (p.ProductCode && p.ProductCode.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (p.category_name && p.category_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
         (p.HSNCode && p.HSNCode.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -400,14 +406,21 @@ export const ProductsPage: React.FC = () => {
 
             <form onSubmit={handleSubmit(onSubmit)}>
               <Stack gap="md">
-                {/* Row 1: Product Name & Product Code */}
-                <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                {/* Row 1: Product Name, Mobile App Name & Product Code */}
+                <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
                   <TextInput
-                    label="Product Name"
+                    label="Product Name (ERP & Invoices)"
                     placeholder="e.g. 19 KG Commercial Gas Cylinder"
                     required
                     {...register('ProductName', { required: 'Product name is required' })}
                     error={errors.ProductName?.message}
+                  />
+
+                  <TextInput
+                    label="Display Name"
+                    placeholder="e.g. 19 Kg Commercial"
+      
+                    {...register('AppProductName')}
                   />
 
                   <TextInput
@@ -750,12 +763,12 @@ export const ProductsPage: React.FC = () => {
                               <Group gap={4} justify="flex-end" wrap="nowrap">
                                 <ActionIcon
                                   variant="subtle"
-                                  color="gray"
+                                  color="burgundy"
                                   size="sm"
                                   onClick={() => handleEdit(product)}
                                   title="Edit product"
                                 >
-                                  <IconPencil size={15} />
+                                  <IconPencil size={16} />
                                 </ActionIcon>
 
                                 <Tooltip

@@ -1458,10 +1458,23 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 if isinstance(l, dict) and 'allocations' in l:
                     allocations_data.extend(l['allocations'])
 
-        if not party_id:
-            return Response({'detail': 'Please select a Party / Supplier.'}, status=status.HTTP_400_BAD_REQUEST)
+        party = Ledger.objects.filter(LedgerId=party_id).select_related('Group').first()
+        if not party:
+            return Response({'detail': 'Selected party ledger not found.'}, status=status.HTTP_400_BAD_REQUEST)
         if amount <= 0:
             return Response({'detail': 'Payment amount must be greater than 0.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Enforce bill allocation for Sundry Creditors & Sundry Debtors
+        if party.Group:
+            g_name = (party.Group.GroupName or '').lower()
+            is_sundry = party.Group_id in (21, 24) or 'creditor' in g_name or 'debtor' in g_name or party.IsBillWise
+            if is_sundry:
+                total_alloc = sum(Decimal(str(a.get('AllocatedAmount') or 0)) for a in allocations_data)
+                if total_alloc <= 0:
+                    return Response(
+                        {'detail': f'Please allocate bills for {party.LedgerName} before saving the payment voucher.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
         user = request.user
         company_id = getattr(user, 'CompanyId', 0)
@@ -1606,10 +1619,23 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 if isinstance(l, dict) and 'allocations' in l:
                     allocations_data.extend(l['allocations'])
 
-        if not party_id:
-            return Response({'detail': 'Please select a Party / Supplier.'}, status=status.HTTP_400_BAD_REQUEST)
+        party = Ledger.objects.filter(LedgerId=party_id).select_related('Group').first()
+        if not party:
+            return Response({'detail': 'Selected party ledger not found.'}, status=status.HTTP_400_BAD_REQUEST)
         if amount <= 0:
             return Response({'detail': 'Payment amount must be greater than 0.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Enforce bill allocation for Sundry Creditors & Sundry Debtors
+        if party.Group:
+            g_name = (party.Group.GroupName or '').lower()
+            is_sundry = party.Group_id in (21, 24) or 'creditor' in g_name or 'debtor' in g_name or party.IsBillWise
+            if is_sundry:
+                total_alloc = sum(Decimal(str(a.get('AllocatedAmount') or 0)) for a in allocations_data)
+                if total_alloc <= 0:
+                    return Response(
+                        {'detail': f'Please allocate bills for {party.LedgerName} before saving the payment voucher.'},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
 
         user = request.user
         company_id = getattr(user, 'CompanyId', 0)
@@ -1879,6 +1905,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             stock_list.append({
                 'ProductId': p.ProductId,
                 'ProductName': p.ProductName,
+                'AppProductName': p.AppProductName or p.ProductName,
                 'ProductCode': p.ProductCode,
                 'UnitId': p.Unit_id,
                 'UnitName': p.Unit.UnitName if p.Unit else '',
@@ -1909,6 +1936,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             stock_list.append({
                 'ProductId': p.ProductId,
                 'ProductName': p.ProductName,
+                'AppProductName': p.AppProductName or p.ProductName,
                 'ProductCode': p.ProductCode,
                 'UnitId': p.Unit_id,
                 'UnitName': p.Unit.UnitName if p.Unit else '',
@@ -1931,23 +1959,14 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         if not lines_data:
             return Response({'detail': 'Please add at least one cylinder or item to load.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if this van allocation has already been loaded for this date
-        already_loaded = DeliveryNote.objects.filter(
-            CompanyId=company_id,
-            RouteVehicleDriver_id=allocation_id,
-            DeliveryDate=delivery_date
-        ).exists()
-        if already_loaded:
-            return Response(
-                {'detail': 'This vehicle/van has already been loaded for the selected date.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
         with transaction.atomic():
             # 1. Generate DeliveryNoteNo
-            last_dn = DeliveryNote.objects.filter(CompanyId=company_id).order_by('-DeliveryNoteId').first()
+            last_dn = DeliveryNote.objects.order_by('-DeliveryNoteId').first()
             next_num = (last_dn.DeliveryNoteId + 1) if last_dn else 1
             dn_no = data.get('DeliveryNoteNo') or f"DN-{next_num:04d}"
+            while DeliveryNote.objects.filter(DeliveryNoteNo=dn_no).exists():
+                next_num += 1
+                dn_no = f"DN-{next_num:04d}"
 
             # 2. Create Delivery Note Header
             delivery_note = DeliveryNote.objects.create(

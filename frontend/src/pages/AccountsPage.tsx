@@ -1293,7 +1293,7 @@ export const AccountsPage: React.FC = () => {
                                     onClick={() => handleEdit(ledger)}
                                     title="Edit ledger"
                                   >
-                                    <IconPencil size={15} />
+                                    <IconPencil size={16} />
                                   </ActionIcon>
 
                                   <Tooltip
