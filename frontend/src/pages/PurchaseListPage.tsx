@@ -141,7 +141,7 @@ export const PurchaseListPage: React.FC = () => {
                 <Table.Tr>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140 }}>Purchase No</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 120 }}>Invoice No</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 160 }}>Party (Supplier)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 160 }}>Party</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 65, textAlign: 'center' }}>Qty</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, textAlign: 'right' }}>Taxable (₹)</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 90, textAlign: 'right' }}>CGST (₹)</Table.Th>

@@ -1937,7 +1937,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'AppProductName': p.AppProductName or p.ProductName,
                 'ProductCode': p.ProductCode,
                 'UnitId': p.Unit_id,
-                'UnitName': p.Unit.UnitName if p.Unit else '',
+                'UnitName': 'Cyls',
                 'PurchasePrice': p.PurchasePrice,
                 'AvailableGodownQty': float(available)
             })
@@ -2039,7 +2039,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'ProductName': p.ProductName,
                 'AppProductName': p.AppProductName or p.ProductName,
                 'ProductCode': p.ProductCode,
-                'UnitName': p.Unit.UnitName if p.Unit else '',
+                'UnitName': 'Cyls',
                 'SalesPrice': float(p.SalesPrice or 0),
                 'PurchasePrice': float(p.PurchasePrice or 0),
                 'GodownQty': float(g_qty),
@@ -2175,7 +2175,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'ProductName': p.ProductName,
                 'AppProductName': p.AppProductName or p.ProductName,
                 'ProductCode': p.ProductCode,
-                'UnitName': p.Unit.UnitName if p.Unit else '',
+                'UnitName': 'Cyls',
                 'SalesPrice': float(p.SalesPrice or 0),
                 'PurchasePrice': float(p.PurchasePrice or 0),
                 'GodownQty': float(g_qty),
