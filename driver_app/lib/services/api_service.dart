@@ -99,17 +99,56 @@ class ApiService {
     await prefs.remove(_userKey);
   }
 
-  /// 2. Fetch Driver's Active Allocation: GET /allocations/?DriverId=...
-  static Future<Map<String, dynamic>?> getDriverAllocation(int driverId) async {
-    final uri = Uri.parse('$baseUrl/allocations/?DriverId=$driverId&IsActive=true');
-    final res = await http.get(uri, headers: await _headers());
+  /// 2. Fetch Driver's Active Allocation: GET /allocations/current/ or /allocations/?DriverId=...
+  static Future<Map<String, dynamic>?> getDriverAllocation([int? driverId]) async {
+    final headers = await _headers();
 
-    if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
-      final list = data is List ? data : (data['results'] as List? ?? []);
-      if (list.isNotEmpty) {
-        return list.first as Map<String, dynamic>;
+    // 1. Try dedicated current allocation endpoint
+    try {
+      final currentUri = Uri.parse(
+        driverId != null && driverId > 0
+            ? '$baseUrl/allocations/current/?DriverId=$driverId'
+            : '$baseUrl/allocations/current/',
+      );
+      final curRes = await http.get(currentUri, headers: headers);
+      if (curRes.statusCode == 200 && curRes.body.isNotEmpty && curRes.body != 'null') {
+        final curData = jsonDecode(curRes.body);
+        if (curData is Map<String, dynamic> && curData.isNotEmpty && curData.containsKey('RouteVehicleDriverId')) {
+          return curData;
+        }
       }
+    } catch (_) {}
+
+    // 2. Query list /allocations/?DriverId=...&IsActive=true
+    try {
+      final query = driverId != null && driverId > 0
+          ? 'DriverId=$driverId&IsActive=true'
+          : 'IsActive=true';
+      final uri = Uri.parse('$baseUrl/allocations/?$query');
+      final res = await http.get(uri, headers: headers);
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        if (list.isNotEmpty) {
+          return list.first as Map<String, dynamic>;
+        }
+      }
+    } catch (_) {}
+
+    // 3. Fallback without IsActive=true
+    if (driverId != null && driverId > 0) {
+      try {
+        final fallbackUri = Uri.parse('$baseUrl/allocations/?DriverId=$driverId');
+        final fallbackRes = await http.get(fallbackUri, headers: headers);
+        if (fallbackRes.statusCode == 200) {
+          final data = jsonDecode(fallbackRes.body);
+          final list = data is List ? data : (data['results'] as List? ?? []);
+          if (list.isNotEmpty) {
+            return list.first as Map<String, dynamic>;
+          }
+        }
+      } catch (_) {}
     }
     return null;
   }

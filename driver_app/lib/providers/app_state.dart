@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
 /// Data models and app state management
@@ -6,6 +7,7 @@ class CylinderType {
   final int? productId;
   final String weight;
   final double price;
+  int initialFilledStock;
   int filledStock;
   int emptyStock;
 
@@ -14,8 +16,14 @@ class CylinderType {
     required this.weight,
     required this.price,
     required this.filledStock,
+    int? initialFilledStock,
     this.emptyStock = 0,
-  });
+  }) : initialFilledStock = initialFilledStock ?? filledStock;
+
+  int get deliveredStock {
+    final diff = initialFilledStock - filledStock;
+    return diff > 0 ? diff : 0;
+  }
 }
 
 class Customer {
@@ -231,13 +239,13 @@ class AppState extends ChangeNotifier {
   }
 
   // Driver info
-  String driverName = 'Driver';
-  String fullName = 'Driver';
+  String driverName = 'Arjun';
+  String fullName = 'Arjun';
   String driverId = 'DRV001';
   int? currentDriverDbId;
   int? currentAllocationId;
   String vehicleNumber = 'KL 77 3803';
-  String routeInfo = 'Route #4B • Bay 3 Loading';
+  String routeInfo = 'Kecheri – Kunnamkulam';
   bool isLoadingFromBackend = false;
 
   // Depot Vehicle Fleet (Freshly initialized with 0 stock ready for allocation)
@@ -325,14 +333,20 @@ class AppState extends ChangeNotifier {
     'KL 55 6677',
   ];
 
-  // Stock for Allocated Vehicle (KL 77 3803) - 48 Filled (40 x 17KG, 8 x 12KG)
+  // Stock for Allocated Vehicle (KL 77 3803) - Matching Mockup
   late List<CylinderType> cylinders = [
-    CylinderType(weight: '33 KG', price: 0, filledStock: 0, emptyStock: 0),
-    CylinderType(weight: '21 KG', price: 0, filledStock: 0, emptyStock: 0),
-    CylinderType(weight: '17 KG', price: 0, filledStock: 40, emptyStock: 0),
-    CylinderType(weight: '12 KG', price: 0, filledStock: 8, emptyStock: 0),
-    CylinderType(weight: '4 KG', price: 0, filledStock: 0, emptyStock: 0),
+    CylinderType(weight: '12KG', price: 950, initialFilledStock: 40, filledStock: 9, emptyStock: 30),
+    CylinderType(weight: '17KG', price: 1450, initialFilledStock: 45, filledStock: 10, emptyStock: 34),
+    CylinderType(weight: '04KG', price: 380, initialFilledStock: 5, filledStock: 1, emptyStock: 4),
   ];
+
+  int get totalStartingFilled => cylinders.fold(0, (sum, c) => sum + c.initialFilledStock);
+  int get totalStartingEmpty => 0;
+  int totalOtherStock = 19;
+  int get totalDeliveredFilled => cylinders.fold(0, (sum, c) => sum + c.deliveredStock);
+  int get totalDeliveredEmpty => cylinders.fold(0, (sum, c) => sum + c.emptyStock);
+  int get totalClosingFilled => cylinders.fold(0, (sum, c) => sum + c.filledStock);
+  int get totalClosingEmpty => cylinders.fold(0, (sum, c) => sum + c.emptyStock);
 
   // Customers
   final List<Customer> customers = [
@@ -391,6 +405,7 @@ class AppState extends ChangeNotifier {
 
   AppState() {
     _initDeliveryItems();
+    loadCachedAllocation();
   }
 
   void _initDeliveryItems() {
@@ -399,42 +414,103 @@ class AppState extends ChangeNotifier {
         .toList();
   }
 
+  Future<void> loadCachedAllocation() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedVehicle = prefs.getString('cached_vehicle_number');
+      final cachedRoute = prefs.getString('cached_route_info');
+      final cachedDriver = prefs.getString('cached_driver_name');
+      final cachedAllocId = prefs.getInt('cached_allocation_id');
+
+      bool changed = false;
+      if (cachedVehicle != null && cachedVehicle.isNotEmpty) {
+        vehicleNumber = cachedVehicle;
+        changed = true;
+      }
+      if (cachedRoute != null && cachedRoute.isNotEmpty) {
+        routeInfo = cachedRoute;
+        changed = true;
+      }
+      if (cachedDriver != null && cachedDriver.isNotEmpty) {
+        driverName = cachedDriver;
+        changed = true;
+      }
+      if (cachedAllocId != null) {
+        currentAllocationId = cachedAllocId;
+      }
+      if (changed) {
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistAllocationCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_vehicle_number', vehicleNumber);
+      await prefs.setString('cached_route_info', routeInfo);
+      await prefs.setString('cached_driver_name', driverName);
+      if (currentAllocationId != null) {
+        await prefs.setInt('cached_allocation_id', currentAllocationId!);
+      }
+    } catch (_) {}
+  }
+
   Future<void> syncFromBackend({int? driverIdParam}) async {
     isLoadingFromBackend = true;
     notifyListeners();
 
     try {
       final user = await ApiService.getSavedUser();
-      final dId = driverIdParam ?? (user != null ? user['driver_id'] as int? : null);
+      final dId = driverIdParam ?? (user != null ? (user['driver_id'] ?? user['DriverId']) as int? : null);
       if (user != null) {
-        driverName = user['username'] ?? driverName;
-        fullName = user['username'] ?? fullName;
+        final uname = user['username']?.toString().trim();
+        if (uname != null && uname.isNotEmpty) {
+          driverName = uname;
+          fullName = uname;
+        }
       }
 
       if (dId != null && dId > 0) {
         currentDriverDbId = dId;
         driverId = 'DRV$dId';
+      }
 
-        final alloc = await ApiService.getDriverAllocation(dId);
-        if (alloc != null) {
-          currentAllocationId = alloc['RouteVehicleDriverId'];
-          vehicleNumber = alloc['vehicle_number'] ?? vehicleNumber;
-          routeInfo = alloc['route_name'] ?? routeInfo;
+      final alloc = await ApiService.getDriverAllocation(dId);
+      if (alloc != null) {
+        currentAllocationId = (alloc['RouteVehicleDriverId'] ?? alloc['id']) as int?;
 
-          if (currentAllocationId != null) {
-            final vanStock = await ApiService.getVanStock(currentAllocationId!);
-            if (vanStock.isNotEmpty) {
-              cylinders = vanStock.map((s) => CylinderType(
-                productId: s['ProductId'],
-                weight: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
-                    ? s['AppProductName'].toString().trim()
-                    : (s['ProductName'] ?? ''),
-                price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
-                filledStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
-                emptyStock: 0,
-              )).toList();
-              _initDeliveryItems();
-            }
+        final vNum = alloc['VehicleNumber'] ?? alloc['vehicle_number'] ?? alloc['Vehicle_number'];
+        if (vNum != null && vNum.toString().trim().isNotEmpty) {
+          vehicleNumber = vNum.toString().trim();
+        }
+
+        final rName = alloc['RouteName'] ?? alloc['route_name'] ?? alloc['Route_name'];
+        if (rName != null && rName.toString().trim().isNotEmpty) {
+          routeInfo = rName.toString().trim();
+        }
+
+        final dName = alloc['DriverName'] ?? alloc['driver_name'];
+        if (dName != null && dName.toString().trim().isNotEmpty) {
+          driverName = dName.toString().trim();
+        }
+
+        _persistAllocationCache();
+
+        if (currentAllocationId != null) {
+          final vanStock = await ApiService.getVanStock(currentAllocationId!);
+          if (vanStock.isNotEmpty) {
+            cylinders = vanStock.map((s) => CylinderType(
+              productId: s['ProductId'],
+              weight: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
+                  ? s['AppProductName'].toString().trim()
+                  : (s['ProductName'] ?? ''),
+              price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
+              initialFilledStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
+              filledStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
+              emptyStock: 0,
+            )).toList();
+            _initDeliveryItems();
           }
         }
       }
@@ -701,7 +777,7 @@ class AppState extends ChangeNotifier {
       .fold(0.0, (sum, o) => sum + o.amount);
 
   double get upiIncome => orders
-      .where((o) => o.paymentMethod.toLowerCase().contains('upi'))
+      .where((o) => o.paymentMethod.toLowerCase().contains('upi') || o.paymentMethod.toLowerCase().contains('bank'))
       .fold(0.0, (sum, o) => sum + o.amount);
 
   double get totalIncome => cashIncome + upiIncome;
@@ -711,7 +787,7 @@ class AppState extends ChangeNotifier {
       .fold(0.0, (sum, e) => sum + e.amount);
 
   double get upiExpense => expenses
-      .where((e) => e.paymentMethod.toLowerCase().contains('upi'))
+      .where((e) => e.paymentMethod.toLowerCase().contains('upi') || e.paymentMethod.toLowerCase().contains('bank'))
       .fold(0.0, (sum, e) => sum + e.amount);
 
   double get totalExpense => cashExpense + upiExpense;
@@ -719,6 +795,11 @@ class AppState extends ChangeNotifier {
   double get cashBalance => cashIncome - cashExpense;
   double get upiBalance => upiIncome - upiExpense;
   double get netBalance => totalIncome - totalExpense;
+
+  // Aliases for Bank
+  double get bankIncome => upiIncome;
+  double get bankExpense => upiExpense;
+  double get bankBalance => upiBalance;
 
   // ================= ADMIN DEPOT STATE & ACTIONS =================
   List<AdminDriver> fleetDrivers = [

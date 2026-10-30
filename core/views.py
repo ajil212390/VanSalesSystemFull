@@ -256,12 +256,41 @@ class RouteVehicleDriverViewSet(viewsets.ModelViewSet):
             .order_by('-RouteVehicleDriverId')
         )
         driver_id = self.request.query_params.get('DriverId') or self.request.query_params.get('driver_id')
+        if driver_id == 'me':
+            driver_id = getattr(self.request.user, 'DriverId', None)
         if driver_id:
             qs = qs.filter(Driver_id=driver_id)
-        is_active = self.request.query_params.get('IsActive')
+        is_active = self.request.query_params.get('IsActive') or self.request.query_params.get('is_active')
         if is_active is not None:
             qs = qs.filter(IsActive=(is_active.lower() == 'true'))
         return qs
+
+    @action(detail=False, methods=['get'])
+    def current(self, request):
+        """
+        Returns the active route-vehicle allocation for the requesting driver/user.
+        """
+        driver_id = request.query_params.get('DriverId') or request.query_params.get('driver_id')
+        if not driver_id or driver_id == 'me':
+            driver_id = getattr(request.user, 'DriverId', None)
+            if not driver_id:
+                matched = Driver.objects.filter(CompanyId=request.user.CompanyId, DriverName__iexact=request.user.Username).first()
+                if matched:
+                    driver_id = matched.DriverId
+
+        qs = (
+            RouteVehicleDriver.objects
+            .filter(CompanyId=request.user.CompanyId)
+            .select_related('Route', 'Vehicle', 'Driver')
+            .order_by('-RouteVehicleDriverId')
+        )
+        if driver_id:
+            qs = qs.filter(Driver_id=driver_id)
+
+        alloc = qs.filter(IsActive=True).first() or qs.first()
+        if alloc:
+            return Response(self.get_serializer(alloc).data)
+        return Response(None, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
         serializer.save(CompanyId=self.request.user.CompanyId)
@@ -1933,18 +1962,271 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             in_q = agg['tot_in'] or Decimal('0.00')
             out_q = agg['tot_out'] or Decimal('0.00')
             onboard = in_q - out_q
-            stock_list.append({
+
+
+        products = Product.objects.filter(CompanyId=company_id, IsActive=True).select_related('Unit')
+        allocations_qs = RouteVehicleDriver.objects.filter(
+            CompanyId=company_id, IsActive=True
+        ).exclude(RouteVehicleDriverId=1).select_related('Route', 'Vehicle', 'Driver')
+
+        all_movements = StockMovement.objects.filter(CompanyId=company_id)
+
+        alloc_van_map = {}
+        for a in allocations_qs:
+            alloc_van_map[a.RouteVehicleDriverId] = {
+                'RouteVehicleDriverId': a.RouteVehicleDriverId,
+                'VehicleNumber': a.Vehicle.VehicleNumber if a.Vehicle else '',
+                'RouteName': a.Route.RouteName if a.Route else '',
+                'DriverName': a.Driver.DriverName if a.Driver else '',
+                'TotalCylinders': 0.0,
+                'EstimatedValue': 0.0,
+                'Products': []
+            }
+
+        product_analysis = []
+        total_godown = Decimal('0.00')
+        total_allocated = Decimal('0.00')
+        total_system_value = Decimal('0.00')
+
+        for p in products:
+            g_agg = all_movements.filter(Product=p, RouteVehicleDriverId=1).aggregate(
+                tot_in=Sum('InQty'), tot_out=Sum('OutQty')
+            )
+            g_in = g_agg['tot_in'] or Decimal('0.00')
+            g_out = g_agg['tot_out'] or Decimal('0.00')
+            g_qty = max(Decimal('0.00'), g_in - g_out)
+            total_godown += g_qty
+
+            p_allocated = Decimal('0.00')
+            p_vans = []
+
+            for a_id, van_obj in alloc_van_map.items():
+                v_agg = all_movements.filter(Product=p, RouteVehicleDriverId=a_id).aggregate(
+                    tot_in=Sum('InQty'), tot_out=Sum('OutQty')
+                )
+                v_in = v_agg['tot_in'] or Decimal('0.00')
+                v_out = v_agg['tot_out'] or Decimal('0.00')
+                v_bal = max(Decimal('0.00'), v_in - v_out)
+
+                if v_bal > 0:
+                    p_allocated += v_bal
+                    p_vans.append({
+                        'RouteVehicleDriverId': a_id,
+                        'VehicleNumber': van_obj['VehicleNumber'],
+                        'RouteName': van_obj['RouteName'],
+                        'DriverName': van_obj['DriverName'],
+                        'Qty': float(v_bal),
+                    })
+                    val = float(v_bal * (p.SalesPrice or 0))
+                    van_obj['TotalCylinders'] += float(v_bal)
+                    van_obj['EstimatedValue'] += val
+                    van_obj['Products'].append({
+                        'ProductId': p.ProductId,
+                        'ProductName': p.ProductName,
+                        'AppProductName': p.AppProductName or p.ProductName,
+                        'Qty': float(v_bal),
+                        'SalesPrice': float(p.SalesPrice or 0),
+                    })
+
+            total_allocated += p_allocated
+            total_p_qty = g_qty + p_allocated
+            s_price = p.SalesPrice or Decimal('0.00')
+            p_val = total_p_qty * s_price
+            total_system_value += p_val
+
+            product_analysis.append({
                 'ProductId': p.ProductId,
                 'ProductName': p.ProductName,
                 'AppProductName': p.AppProductName or p.ProductName,
                 'ProductCode': p.ProductCode,
-                'UnitId': p.Unit_id,
                 'UnitName': p.Unit.UnitName if p.Unit else '',
                 'SalesPrice': float(p.SalesPrice or 0),
                 'PurchasePrice': float(p.PurchasePrice or 0),
-                'OnboardQty': float(onboard if onboard > 0 else 0)
+                'GodownQty': float(g_qty),
+                'AllocatedQty': float(p_allocated),
+                'TotalQty': float(total_p_qty),
+                'TotalValue': float(p_val),
+                'AllocationRate': round(float((p_allocated / total_p_qty) * 100), 1) if total_p_qty > 0 else 0.0,
+                'Vans': p_vans
             })
-        return Response(stock_list)
+
+        active_vans = [v for v in alloc_van_map.values() if v['TotalCylinders'] > 0]
+        empty_vans = [v for v in alloc_van_map.values() if v['TotalCylinders'] == 0]
+
+        total_system = total_godown + total_allocated
+        godown_pct = round(float((total_godown / total_system) * 100), 1) if total_system > 0 else 0.0
+        allocated_pct = round(float((total_allocated / total_system) * 100), 1) if total_system > 0 else 0.0
+
+        recent_notes_qs = DeliveryNote.objects.filter(CompanyId=company_id).select_related(
+            'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Route', 'RouteVehicleDriver__Driver'
+        ).order_by('-DeliveryDate', '-DeliveryNoteId')[:10]
+
+        recent_notes = []
+        for n in recent_notes_qs:
+            total_cyls = sum(line.Quantity for line in n.lines.all())
+            recent_notes.append({
+                'DeliveryNoteId': n.DeliveryNoteId,
+                'DeliveryNoteNo': n.DeliveryNoteNo,
+                'DeliveryDate': str(n.DeliveryDate),
+                'VehicleNumber': n.RouteVehicleDriver.Vehicle.VehicleNumber if n.RouteVehicleDriver and n.RouteVehicleDriver.Vehicle else '',
+                'RouteName': n.RouteVehicleDriver.Route.RouteName if n.RouteVehicleDriver and n.RouteVehicleDriver.Route else '',
+                'DriverName': n.RouteVehicleDriver.Driver.DriverName if n.RouteVehicleDriver and n.RouteVehicleDriver.Driver else '',
+                'TotalCylinders': float(total_cyls),
+                'Status': n.Status
+            })
+
+        return Response({
+            'summary': {
+                'total_system_cylinders': float(total_system),
+                'total_godown_cylinders': float(total_godown),
+                'total_allocated_cylinders': float(total_allocated),
+                'total_system_value': float(total_system_value),
+                'active_vans_count': len(active_vans),
+                'total_registered_vans': len(alloc_van_map),
+                'godown_percentage': godown_pct,
+                'allocated_percentage': allocated_pct,
+            },
+            'products': product_analysis,
+            'active_vans': active_vans,
+            'idle_vans': empty_vans,
+            'recent_notes': recent_notes,
+        })
+
+    @action(detail=False, methods=['get'], url_path='stock-analysis')
+    def stock_analysis(self, request):
+        """
+        Comprehensive stock analysis endpoint:
+        Provides system-wide stock overview, Godown vs Allocated Breakdown,
+        product-level distribution, and vehicle/van onboard inventory.
+        """
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        products = Product.objects.filter(CompanyId=company_id, IsActive=True).select_related('Unit')
+        allocations_qs = RouteVehicleDriver.objects.filter(
+            CompanyId=company_id, IsActive=True
+        ).exclude(RouteVehicleDriverId=1).select_related('Route', 'Vehicle', 'Driver')
+
+        all_movements = StockMovement.objects.filter(CompanyId=company_id)
+
+        alloc_van_map = {}
+        for a in allocations_qs:
+            alloc_van_map[a.RouteVehicleDriverId] = {
+                'RouteVehicleDriverId': a.RouteVehicleDriverId,
+                'VehicleNumber': a.Vehicle.VehicleNumber if a.Vehicle else '',
+                'RouteName': a.Route.RouteName if a.Route else '',
+                'DriverName': a.Driver.DriverName if a.Driver else '',
+                'TotalCylinders': 0.0,
+                'EstimatedValue': 0.0,
+                'Products': []
+            }
+
+        product_analysis = []
+        total_godown = Decimal('0.00')
+        total_allocated = Decimal('0.00')
+        total_system_value = Decimal('0.00')
+
+        for p in products:
+            g_agg = all_movements.filter(Product=p, RouteVehicleDriverId=1).aggregate(
+                tot_in=Sum('InQty'), tot_out=Sum('OutQty')
+            )
+            g_in = g_agg['tot_in'] or Decimal('0.00')
+            g_out = g_agg['tot_out'] or Decimal('0.00')
+            g_qty = max(Decimal('0.00'), g_in - g_out)
+            total_godown += g_qty
+
+            p_allocated = Decimal('0.00')
+            p_vans = []
+
+            for a_id, van_obj in alloc_van_map.items():
+                v_agg = all_movements.filter(Product=p, RouteVehicleDriverId=a_id).aggregate(
+                    tot_in=Sum('InQty'), tot_out=Sum('OutQty')
+                )
+                v_in = v_agg['tot_in'] or Decimal('0.00')
+                v_out = v_agg['tot_out'] or Decimal('0.00')
+                v_bal = max(Decimal('0.00'), v_in - v_out)
+
+                if v_bal > 0:
+                    p_allocated += v_bal
+                    p_vans.append({
+                        'RouteVehicleDriverId': a_id,
+                        'VehicleNumber': van_obj['VehicleNumber'],
+                        'RouteName': van_obj['RouteName'],
+                        'DriverName': van_obj['DriverName'],
+                        'Qty': float(v_bal),
+                    })
+                    val = float(v_bal * (p.SalesPrice or 0))
+                    van_obj['TotalCylinders'] += float(v_bal)
+                    van_obj['EstimatedValue'] += val
+                    van_obj['Products'].append({
+                        'ProductId': p.ProductId,
+                        'ProductName': p.ProductName,
+                        'AppProductName': p.AppProductName or p.ProductName,
+                        'Qty': float(v_bal),
+                        'SalesPrice': float(p.SalesPrice or 0),
+                    })
+
+            total_allocated += p_allocated
+            total_p_qty = g_qty + p_allocated
+            s_price = p.SalesPrice or Decimal('0.00')
+            p_val = total_p_qty * s_price
+            total_system_value += p_val
+
+            product_analysis.append({
+                'ProductId': p.ProductId,
+                'ProductName': p.ProductName,
+                'AppProductName': p.AppProductName or p.ProductName,
+                'ProductCode': p.ProductCode,
+                'UnitName': p.Unit.UnitName if p.Unit else '',
+                'SalesPrice': float(p.SalesPrice or 0),
+                'PurchasePrice': float(p.PurchasePrice or 0),
+                'GodownQty': float(g_qty),
+                'AllocatedQty': float(p_allocated),
+                'TotalQty': float(total_p_qty),
+                'TotalValue': float(p_val),
+                'AllocationRate': round(float((p_allocated / total_p_qty) * 100), 1) if total_p_qty > 0 else 0.0,
+                'Vans': p_vans
+            })
+
+        active_vans = [v for v in alloc_van_map.values() if v['TotalCylinders'] > 0]
+        empty_vans = [v for v in alloc_van_map.values() if v['TotalCylinders'] == 0]
+
+        total_system = total_godown + total_allocated
+        godown_pct = round(float((total_godown / total_system) * 100), 1) if total_system > 0 else 0.0
+        allocated_pct = round(float((total_allocated / total_system) * 100), 1) if total_system > 0 else 0.0
+
+        recent_notes_qs = DeliveryNote.objects.filter(CompanyId=company_id).select_related(
+            'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Route', 'RouteVehicleDriver__Driver'
+        ).order_by('-DeliveryDate', '-DeliveryNoteId')[:10]
+
+        recent_notes = []
+        for n in recent_notes_qs:
+            total_cyls = sum(line.Quantity for line in n.lines.all())
+            recent_notes.append({
+                'DeliveryNoteId': n.DeliveryNoteId,
+                'DeliveryNoteNo': n.DeliveryNoteNo,
+                'DeliveryDate': str(n.DeliveryDate),
+                'VehicleNumber': n.RouteVehicleDriver.Vehicle.VehicleNumber if n.RouteVehicleDriver and n.RouteVehicleDriver.Vehicle else '',
+                'RouteName': n.RouteVehicleDriver.Route.RouteName if n.RouteVehicleDriver and n.RouteVehicleDriver.Route else '',
+                'DriverName': n.RouteVehicleDriver.Driver.DriverName if n.RouteVehicleDriver and n.RouteVehicleDriver.Driver else '',
+                'TotalCylinders': float(total_cyls),
+                'Status': n.Status
+            })
+
+        return Response({
+            'summary': {
+                'total_system_cylinders': float(total_system),
+                'total_godown_cylinders': float(total_godown),
+                'total_allocated_cylinders': float(total_allocated),
+                'total_system_value': float(total_system_value),
+                'active_vans_count': len(active_vans),
+                'total_registered_vans': len(alloc_van_map),
+                'godown_percentage': godown_pct,
+                'allocated_percentage': allocated_pct,
+            },
+            'products': product_analysis,
+            'active_vans': active_vans,
+            'idle_vans': empty_vans,
+            'recent_notes': recent_notes,
+        })
 
     def create(self, request, *args, **kwargs):
         data = request.data

@@ -31,15 +31,31 @@ class UserMeSerializer(serializers.ModelSerializer):
     role = serializers.CharField(source='UserRole.RoleName', read_only=True)
     company_id = serializers.IntegerField(source='CompanyId', read_only=True)
     company_name = serializers.SerializerMethodField()
-    driver_id = serializers.IntegerField(source='DriverId', read_only=True)
+    driver_id = serializers.SerializerMethodField()
+    DriverId = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'role', 'company_id', 'company_name', 'driver_id']
+        fields = ['id', 'username', 'role', 'company_id', 'company_name', 'driver_id', 'DriverId']
 
     @extend_schema_field(serializers.CharField)
     def get_company_name(self, obj):
         return obj.company.Name if obj.company else ''
+
+    @extend_schema_field(serializers.IntegerField(allow_null=True))
+    def get_driver_id(self, obj):
+        if obj.DriverId:
+            return obj.DriverId
+        # Fallback: link by matching username to DriverName (case-insensitive) in the same company
+        from .models import Driver
+        driver = Driver.objects.filter(CompanyId=obj.CompanyId, DriverName__iexact=obj.Username).first()
+        if driver:
+            return driver.DriverId
+        return None
+
+    @extend_schema_field(serializers.IntegerField(allow_null=True))
+    def get_DriverId(self, obj):
+        return self.get_driver_id(obj)
 
 
 class LoginSerializer(serializers.Serializer):
@@ -251,12 +267,16 @@ class RouteVehicleDriverSerializer(serializers.ModelSerializer):
     RouteName = serializers.CharField(source='Route.RouteName', read_only=True)
     VehicleNumber = serializers.CharField(source='Vehicle.VehicleNumber', read_only=True)
     DriverName = serializers.CharField(source='Driver.DriverName', read_only=True)
+    route_name = serializers.CharField(source='Route.RouteName', read_only=True)
+    vehicle_number = serializers.CharField(source='Vehicle.VehicleNumber', read_only=True)
+    driver_name = serializers.CharField(source='Driver.DriverName', read_only=True)
 
     class Meta:
         model = RouteVehicleDriver
         fields = [
             'RouteVehicleDriverId', 'Route', 'Vehicle', 'Driver',
             'RouteName', 'VehicleNumber', 'DriverName',
+            'route_name', 'vehicle_number', 'driver_name',
             'AssignmentDate', 'Narration', 'IsActive',
             'CreatedAt', 'UpdatedAt', 'CompanyId'
         ]

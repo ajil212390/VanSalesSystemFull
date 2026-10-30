@@ -40,6 +40,7 @@ import {
   IconExternalLink,
   IconReceipt,
   IconCreditCard,
+  IconChartBar,
   IconX,
 } from '@tabler/icons-react';
 
@@ -123,6 +124,8 @@ export const AppLayout: React.FC = () => {
         return { section: 'Payment', title: 'New Payment' };
       case '/delivery-notes':
         return { section: 'Operations', title: 'Delivery Notes' };
+      case '/stock-analysis':
+        return { section: 'Inventory', title: 'Stock Analysis' };
 
       default:
         if (location.pathname.startsWith('/purchases/')) {
@@ -764,6 +767,53 @@ export const AppLayout: React.FC = () => {
                 padding: effectiveCollapsed ? '0' : '0 12px',
                 backgroundColor: location.pathname === '/delivery-notes' ? '#fdf2f4' : 'transparent',
                 color: location.pathname === '/delivery-notes' ? '#800020' : '#475569',
+                fontWeight: 600,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
+              },
+              section: {
+                marginRight: effectiveCollapsed ? 0 : 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+              body: {
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                opacity: effectiveCollapsed ? 0 : 1,
+                maxWidth: effectiveCollapsed ? 0 : 160,
+                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+            }}
+          />
+        </Tooltip>
+
+        {/* Stock Analysis Link */}
+        <Tooltip label="Stock Analysis" position="right" withArrow disabled={!effectiveCollapsed}>
+          <NavLink
+            component={Link}
+            to="/stock-analysis"
+            label="Stock Analysis"
+            leftSection={<IconChartBar size={20} stroke={1.75} />}
+            active={location.pathname === '/stock-analysis'}
+            color="burgundy"
+            variant="light"
+            mb={4}
+            onClick={() => opened && toggle()}
+            styles={{
+              root: {
+                borderRadius: '6px',
+                height: 40,
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                padding: effectiveCollapsed ? '0' : '0 12px',
+                backgroundColor: location.pathname === '/stock-analysis' ? '#fdf2f4' : 'transparent',
+                color: location.pathname === '/stock-analysis' ? '#800020' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',

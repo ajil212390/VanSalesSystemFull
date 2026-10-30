@@ -31,9 +31,20 @@ class AppTheme {
       ),
       boxShadow: [
         BoxShadow(
-          color: Color.fromRGBO(0, 0, 0, isDark ? 0.2 : 0.03),
-          blurRadius: 10,
-          offset: const Offset(0, 4),
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.55)
+              : const Color(0xFF0F172A).withValues(alpha: 0.08),
+          blurRadius: 20,
+          offset: const Offset(0, 8),
+          spreadRadius: -2,
+        ),
+        BoxShadow(
+          color: isDark
+              ? Colors.black.withValues(alpha: 0.35)
+              : const Color(0xFF0F172A).withValues(alpha: 0.04),
+          blurRadius: 6,
+          offset: const Offset(0, 2),
+          spreadRadius: 0,
         ),
       ],
     );

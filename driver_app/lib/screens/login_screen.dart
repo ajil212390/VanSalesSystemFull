@@ -109,26 +109,26 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          child: Align(
+            alignment: Alignment.topCenter,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 380),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 48),
 
-                  // Brand Header matching Web App
+                  // Brand Title matching Web App (No icons, pure minimal typography)
                   Center(
                     child: Column(
                       children: [
                         Text(
                           'FUTURE GAS',
                           style: GoogleFonts.inter(
-                            fontSize: 26,
+                            fontSize: 28,
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.4,
                             color: const Color(0xFF800020),
@@ -148,7 +148,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 48),
+                  const SizedBox(height: 40),
 
                   // Section Title
                   Text(
@@ -170,7 +170,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 22),
 
                   // Username Field
                   Text(
@@ -247,13 +247,16 @@ class _LoginScreenState extends State<LoginScreen> {
                         fontWeight: FontWeight.w400,
                         color: const Color(0xFF94A3B8),
                       ),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                          size: 19,
-                          color: const Color(0xFF64748B),
-                        ),
+                      suffixIcon: TextButton(
                         onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                        child: Text(
+                          _obscurePassword ? 'Show' : 'Hide',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -271,7 +274,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 26),
 
                   // Sign In Button
                   SizedBox(
@@ -308,7 +311,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),

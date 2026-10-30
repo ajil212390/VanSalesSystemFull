@@ -170,7 +170,7 @@ class _HomeShellState extends State<HomeShell> {
     VoidCallback? onTapOverride,
   }) {
     final isSelected = _currentIndex == index;
-    const activeColor = Color(0xFFDC2626); // Red color when active
+    const activeColor = Color(0xFF800020); // Burgundy color when active
     const inactiveColor = Color(0xFF64748B); // Slate grey when inactive
 
     return Expanded(

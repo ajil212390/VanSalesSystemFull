@@ -430,18 +430,40 @@ export const DeliveryNotesPage: React.FC = () => {
                     <Select
                       label={idx === 0 ? 'Product / Cylinder' : undefined}
                       placeholder="Choose Product"
-                      data={godownStock.map((p: any) => {
-                        const origLine = editingNote?.lines?.find((l) => l.Product === p.ProductId);
-                        const origQty = origLine ? Number(origLine.Quantity) : 0;
-                        const effectiveStock = Number(p.AvailableGodownQty) + origQty;
-                        return {
-                          value: String(p.ProductId),
-                          label: `${p.ProductName} (In Godown: ${effectiveStock} Cylinders)`,
-                        };
-                      })}
+                      data={godownStock.map((p: any) => ({
+                        value: String(p.ProductId),
+                        label: p.ProductName,
+                      }))}
                       value={line.ProductId > 0 ? String(line.ProductId) : null}
                       onChange={(val) => handleProductChange(idx, val)}
                       searchable
+                      renderOption={({ option }) => {
+                        const p = godownStock.find((item: any) => String(item.ProductId) === option.value);
+                        const origLine = editingNote?.lines?.find((l) => l.Product === p?.ProductId);
+                        const origQty = origLine ? Number(origLine.Quantity) : 0;
+                        const stock = p ? Number(p.AvailableGodownQty) + origQty : 0;
+                        return (
+                          <Group justify="space-between" wrap="nowrap" style={{ width: '100%' }}>
+                            <Text size="sm">{option.label}</Text>
+                            <Group gap={4} wrap="nowrap">
+                              <Text size="xs" c="dimmed">In Stock:</Text>
+                              <Text size="xs" fw={700} c="#800020">{stock} Cylinders</Text>
+                            </Group>
+                          </Group>
+                        );
+                      }}
+                      rightSection={
+                        line.ProductId > 0 && line.AvailableGodownQty !== undefined ? (
+                          <Group gap={4} mr="xs" wrap="nowrap">
+                            <Text size="xs" c="dimmed">In Stock:</Text>
+                            <Text size="xs" fw={700} c="#800020">
+                              {line.AvailableGodownQty} Cylinders
+                            </Text>
+                          </Group>
+                        ) : null
+                      }
+                      rightSectionWidth={line.ProductId > 0 ? 190 : undefined}
+                      rightSectionPointerEvents="none"
                     />
                   </Box>
                   <Box style={{ width: 140 }}>
