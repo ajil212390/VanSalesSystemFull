@@ -546,7 +546,7 @@ export const DeliveryNotesPage: React.FC = () => {
                   <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px', fontSize: 11 }}>
                     Total Delivery Notes
                   </Text>
-                  <Text fw={700} style={{ color: '#800020', fontSize: 24, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+                  <Text fw={700} style={{ color: '#0f172a', fontSize: 24, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
                     {deliveryNotes.length}
                   </Text>
                   <Text size="xs" c="dimmed">
@@ -573,7 +573,7 @@ export const DeliveryNotesPage: React.FC = () => {
                   <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px', fontSize: 11 }}>
                     Total Cylinders Loaded
                   </Text>
-                  <Text fw={700} style={{ color: '#800020', fontSize: 24, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+                  <Text fw={700} style={{ color: '#0f172a', fontSize: 24, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
                     {Number(totalLoadedCylinders)}
                   </Text>
                   <Text size="xs" c="dimmed">
@@ -600,7 +600,7 @@ export const DeliveryNotesPage: React.FC = () => {
                   <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px', fontSize: 11 }}>
                     Active Van Routes
                   </Text>
-                  <Text fw={700} style={{ color: '#800020', fontSize: 24, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+                  <Text fw={700} style={{ color: '#0f172a', fontSize: 24, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
                     {allocations.length}
                   </Text>
                   <Text size="xs" c="dimmed">

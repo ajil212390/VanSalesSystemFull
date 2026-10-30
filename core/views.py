@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.throttling import AnonRateThrottle
 from drf_spectacular.utils import extend_schema
-from django.db.models import Sum, F
+from django.db.models import Sum, F, Q
 
 
 def safe_parse_date(val):
@@ -2000,6 +2000,20 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             p_allocated = Decimal('0.00')
             p_vans = []
 
+            # Latest price from StockMovement table (InCostRate / OutCostRate)
+            latest_mov = all_movements.filter(
+                Product=p
+            ).filter(
+                Q(InCostRate__gt=0) | Q(OutCostRate__gt=0)
+            ).order_by('-TransactionDate', '-StockMovementId').first()
+
+            if latest_mov:
+                purch_rate = latest_mov.InCostRate or latest_mov.OutCostRate
+            else:
+                purch_rate = p.PurchasePrice or Decimal('0.00')
+
+            unit_conv = Decimal(str(p.UnitConversion or 1))
+
             for a_id, van_obj in alloc_van_map.items():
                 v_agg = all_movements.filter(Product=p, RouteVehicleDriverId=a_id).aggregate(
                     tot_in=Sum('InQty'), tot_out=Sum('OutQty')
@@ -2017,7 +2031,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                         'DriverName': van_obj['DriverName'],
                         'Qty': float(v_bal),
                     })
-                    val = float(v_bal * (p.SalesPrice or 0))
+                    val = float(v_bal * unit_conv * purch_rate)
                     van_obj['TotalCylinders'] += float(v_bal)
                     van_obj['EstimatedValue'] += val
                     van_obj['Products'].append({
@@ -2026,12 +2040,14 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                         'AppProductName': p.AppProductName or p.ProductName,
                         'Qty': float(v_bal),
                         'SalesPrice': float(p.SalesPrice or 0),
+                        'EstimatedValue': val,
                     })
 
             total_allocated += p_allocated
             total_p_qty = g_qty + p_allocated
-            s_price = p.SalesPrice or Decimal('0.00')
-            p_val = total_p_qty * s_price
+            alt_qty = total_p_qty * unit_conv
+            # Purchase page calculation: Value = AltQuantity * Latest StockMovement Rate
+            p_val = alt_qty * purch_rate
             total_system_value += p_val
 
             product_analysis.append({
@@ -2040,8 +2056,12 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'AppProductName': p.AppProductName or p.ProductName,
                 'ProductCode': p.ProductCode,
                 'UnitName': 'Cyls',
+                'AltUnitName': p.Unit.UnitName if p.Unit else 'KG',
+                'UnitConversion': float(unit_conv),
+                'AltQty': float(alt_qty),
                 'SalesPrice': float(p.SalesPrice or 0),
-                'PurchasePrice': float(p.PurchasePrice or 0),
+                'PurchasePrice': float(purch_rate),
+                'Rate': float(purch_rate),
                 'GodownQty': float(g_qty),
                 'AllocatedQty': float(p_allocated),
                 'TotalQty': float(total_p_qty),
@@ -2136,6 +2156,20 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             p_allocated = Decimal('0.00')
             p_vans = []
 
+            # Latest price from StockMovement table (InCostRate / OutCostRate)
+            latest_mov = all_movements.filter(
+                Product=p
+            ).filter(
+                Q(InCostRate__gt=0) | Q(OutCostRate__gt=0)
+            ).order_by('-TransactionDate', '-StockMovementId').first()
+
+            if latest_mov:
+                purch_rate = latest_mov.InCostRate or latest_mov.OutCostRate
+            else:
+                purch_rate = p.PurchasePrice or Decimal('0.00')
+
+            unit_conv = Decimal(str(p.UnitConversion or 1))
+
             for a_id, van_obj in alloc_van_map.items():
                 v_agg = all_movements.filter(Product=p, RouteVehicleDriverId=a_id).aggregate(
                     tot_in=Sum('InQty'), tot_out=Sum('OutQty')
@@ -2153,7 +2187,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                         'DriverName': van_obj['DriverName'],
                         'Qty': float(v_bal),
                     })
-                    val = float(v_bal * (p.SalesPrice or 0))
+                    val = float(v_bal * unit_conv * purch_rate)
                     van_obj['TotalCylinders'] += float(v_bal)
                     van_obj['EstimatedValue'] += val
                     van_obj['Products'].append({
@@ -2162,12 +2196,14 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                         'AppProductName': p.AppProductName or p.ProductName,
                         'Qty': float(v_bal),
                         'SalesPrice': float(p.SalesPrice or 0),
+                        'EstimatedValue': val,
                     })
 
             total_allocated += p_allocated
             total_p_qty = g_qty + p_allocated
-            s_price = p.SalesPrice or Decimal('0.00')
-            p_val = total_p_qty * s_price
+            alt_qty = total_p_qty * unit_conv
+            # Purchase page calculation: Value = AltQuantity * Latest StockMovement Rate
+            p_val = alt_qty * purch_rate
             total_system_value += p_val
 
             product_analysis.append({
@@ -2176,8 +2212,12 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'AppProductName': p.AppProductName or p.ProductName,
                 'ProductCode': p.ProductCode,
                 'UnitName': 'Cyls',
+                'AltUnitName': p.Unit.UnitName if p.Unit else 'KG',
+                'UnitConversion': float(unit_conv),
+                'AltQty': float(alt_qty),
                 'SalesPrice': float(p.SalesPrice or 0),
-                'PurchasePrice': float(p.PurchasePrice or 0),
+                'PurchasePrice': float(purch_rate),
+                'Rate': float(purch_rate),
                 'GodownQty': float(g_qty),
                 'AllocatedQty': float(p_allocated),
                 'TotalQty': float(total_p_qty),

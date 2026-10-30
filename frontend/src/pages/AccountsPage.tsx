@@ -501,7 +501,7 @@ export const AccountsPage: React.FC = () => {
             Accounts
           </Title>
           <Text size="sm" c="dimmed">
-            Manage customer, supplier, bank, and expense ledgers.
+            Manage customer, supplier and Bank ledgers.
           </Text>
         </div>
 
