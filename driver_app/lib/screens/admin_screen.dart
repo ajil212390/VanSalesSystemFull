@@ -1116,7 +1116,9 @@ class _AdminScreenState extends State<AdminScreen> {
 
     final driver = state.fleetDrivers.firstWhere(
       (d) => d.id == _selectedDriverId,
-      orElse: () => state.fleetDrivers[0],
+      orElse: () => state.fleetDrivers.isNotEmpty
+          ? state.fleetDrivers[0]
+          : AdminDriver(id: '', name: 'Driver', vehicle: '', phone: '', password: ''),
     );
 
     state.allocateStockToVehicle(

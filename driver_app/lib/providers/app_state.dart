@@ -259,100 +259,21 @@ class AppState extends ChangeNotifier {
   }
 
   // Driver info
-  String driverName = 'Arjun';
-  String fullName = 'Arjun';
-  String driverId = 'DRV001';
+  String driverName = '';
+  String fullName = '';
+  String driverId = '';
   int? currentDriverDbId;
   int? currentAllocationId;
-  String vehicleNumber = 'KL 77 3803';
-  String routeInfo = 'Kecheri - Kunnamkulam';
+  String vehicleNumber = '';
+  String routeInfo = '';
   bool isLoadingFromBackend = false;
   DateTime? lastSyncTime;
 
-  // Depot Vehicle Fleet (Freshly initialized with 0 stock ready for allocation)
-  List<DepotVehicle> vehicles = [
-    DepotVehicle(
-      plateNumber: 'KL 77 3803',
-      model: 'Tata 407 Heavy Express',
-      assignedDriverName: 'John Driver',
-      assignedDriverId: 'DRV001',
-      route: 'Route #4B \u2022 Bay 3 Loading',
-      status: 'Ready in Depot',
-      stock: {
-        '33 KG': 0,
-        '21 KG': 0,
-        '17 KG': 40,
-        '12 KG': 8,
-        '4 KG': 0,
-      },
-      emptyStock: {
-        '33 KG': 0,
-        '21 KG': 0,
-        '17 KG': 0,
-        '12 KG': 0,
-        '4 KG': 0,
-      },
-    ),
-    DepotVehicle(
-      plateNumber: 'KL 11 BH 4021',
-      model: 'Ashok Leyland Dost',
-      assignedDriverName: 'Rahul Kumar',
-      assignedDriverId: 'DRV002',
-      route: 'Route #2A \u2022 Bay 1 West',
-      status: 'Ready in Depot',
-    ),
-    DepotVehicle(
-      plateNumber: 'KL 08 CZ 9912',
-      model: 'Mahindra Bolero Maxi Truck',
-      assignedDriverName: 'Suresh Nair',
-      assignedDriverId: 'DRV003',
-      route: 'Route #5C \u2022 Bay 4 North',
-      status: 'Ready in Depot',
-    ),
-    DepotVehicle(
-      plateNumber: 'KL 22 5501',
-      model: 'Eicher Pro 2049 Standard',
-      assignedDriverName: 'Anil Menon',
-      assignedDriverId: 'DRV004',
-      route: 'Depot Standby / Fleet Reserve',
-      status: 'In Depot',
-    ),
-    DepotVehicle(
-      plateNumber: 'KL 11 2233',
-      model: 'Tata Ace Gold Utility',
-      assignedDriverName: 'Pradeep Varma',
-      assignedDriverId: 'DRV005',
-      route: 'Route #1D \u2022 Bay 2 South',
-      status: 'Ready in Depot',
-    ),
-    DepotVehicle(
-      plateNumber: 'KL 33 4455',
-      model: 'Tata 407 Delivery Truck',
-      assignedDriverName: 'Unassigned',
-      assignedDriverId: '',
-      route: 'Standby Fleet',
-      status: 'In Depot',
-    ),
-    DepotVehicle(
-      plateNumber: 'KL 55 6677',
-      model: 'Mahindra Loadking Star',
-      assignedDriverName: 'Unassigned',
-      assignedDriverId: '',
-      route: 'Bay 5 Reserve',
-      status: 'In Depot',
-    ),
-  ];
+  // Depot Vehicle Fleet - Strictly dynamic from backend DB
+  List<DepotVehicle> vehicles = [];
 
   // Depot Vehicle Fleet available for allocation
-  final List<String> availableVehicles = [
-    'KL 77 3803',
-    'KL 11 BH 4021',
-    'KL 08 CZ 9912',
-    'KL 22 5501',
-    'KL 11 2233',
-    'KL 33 4455',
-    'KL 55 6677',
-  ];
+  final List<String> availableVehicles = [];
 
   // Stock for Allocated Vehicle - Populated from backend DB
   late List<CylinderType> cylinders = [];
@@ -406,26 +327,59 @@ class AppState extends ChangeNotifier {
       final cachedDriver = prefs.getString('cached_driver_name');
       final cachedAllocId = prefs.getInt('cached_allocation_id');
 
-      bool changed = false;
-      if (cachedVehicle != null && cachedVehicle.isNotEmpty) {
+      // Reject any stale mock vehicle
+      if (cachedVehicle == 'KL 77 3803') {
+        await prefs.remove('cached_vehicle_number');
+      } else if (cachedVehicle != null && cachedVehicle.isNotEmpty) {
         vehicleNumber = cachedVehicle;
-        changed = true;
       }
-      if (cachedRoute != null && cachedRoute.isNotEmpty) {
+
+      if (cachedRoute != null && cachedRoute.contains('Kecheri')) {
+        await prefs.remove('cached_route_info');
+      } else if (cachedRoute != null && cachedRoute.isNotEmpty) {
         routeInfo = cachedRoute;
-        changed = true;
       }
+
       if (cachedDriver != null && cachedDriver.isNotEmpty) {
         driverName = cachedDriver;
-        changed = true;
       }
       if (cachedAllocId != null) {
         currentAllocationId = cachedAllocId;
       }
-      if (changed) {
-        notifyListeners();
-      }
+      notifyListeners();
     } catch (_) {}
+  }
+
+  /// Wipe all local device cache and reset state completely to start 100% fresh
+  Future<void> clearLocalCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('cached_vehicle_number');
+      await prefs.remove('cached_route_info');
+      await prefs.remove('cached_driver_name');
+      await prefs.remove('cached_allocation_id');
+      await prefs.remove('auth_token');
+      await prefs.remove('auth_user');
+      await prefs.clear();
+    } catch (_) {}
+
+    vehicleNumber = '';
+    routeInfo = '';
+    driverName = '';
+    fullName = '';
+    driverId = '';
+    currentDriverDbId = null;
+    currentAllocationId = null;
+    cylinders = [];
+    otherProducts = [];
+    orders.clear();
+    expenses.clear();
+    customers.clear();
+    vehicles.clear();
+    fleetDrivers.clear();
+    warehouseItems.clear();
+    _initDeliveryItems();
+    notifyListeners();
   }
 
   Future<void> _persistAllocationCache() async {
@@ -594,11 +548,17 @@ class AppState extends ChangeNotifier {
         }
       }
 
-      // If cylinders empty, fetch products from catalog
+      // If cylinders empty, fetch products from catalog (strictly cylinders only)
       if (cylinders.isEmpty) {
         final products = await ApiService.getProducts();
-        if (products.isNotEmpty) {
-          cylinders = products.map((p) => CylinderType(
+        final cylCatalog = products.where((p) {
+          final isCyl = p['IsCylinder'] == true;
+          final name = (p['ProductName'] ?? '').toString().toLowerCase();
+          return isCyl || name.contains('cylinder') || name.contains('kg') || name.contains('lpg');
+        }).toList();
+
+        if (cylCatalog.isNotEmpty) {
+          cylinders = cylCatalog.map((p) => CylinderType(
             productId: p['ProductId'],
             weight: (p['AppProductName'] != null && p['AppProductName'].toString().trim().isNotEmpty)
                 ? p['AppProductName'].toString().trim()
@@ -973,98 +933,7 @@ class AppState extends ChangeNotifier {
   double get bankBalance => upiBalance;
 
   // ================= ADMIN DEPOT STATE & ACTIONS =================
-  List<AdminDriver> fleetDrivers = [
-    AdminDriver(
-      id: 'DRV001',
-      name: 'John Driver',
-      vehicle: 'KL 77 3803',
-      phone: '+91 98470 23119',
-      password: '1234',
-      active: true,
-      deliveries: 8,
-      route: 'Route #4B \u2022 Bay 3 Loading',
-      cylindersOnboard: 48,
-      stockAllocation: {
-        '33 KG': 0,
-        '21 KG': 0,
-        '17 KG': 40,
-        '12 KG': 8,
-        '4 KG': 0,
-      },
-      mockCashIncome: 7960,
-      mockUpiIncome: 5400,
-      mockExpenses: [
-        DriverExpense(id: 'EXP-1', title: 'Fuel Topup (Diesel)', amount: 450, paymentMethod: 'Cash', time: '09:40 AM'),
-        DriverExpense(id: 'EXP-2', title: 'Toll Plaza Pass', amount: 130, paymentMethod: 'UPI', time: '11:15 AM'),
-      ],
-    ),
-    AdminDriver(
-      id: 'DRV002',
-      name: 'Rahul Kumar',
-      vehicle: 'KL 22 5501',
-      phone: '+91 98470 55201',
-      password: '1234',
-      active: true,
-      deliveries: 6,
-      route: 'Route #2A \u2022 Bay 1 West',
-      cylindersOnboard: 50,
-      mockCashIncome: 8400,
-      mockUpiIncome: 6200,
-      mockExpenses: [
-        DriverExpense(id: 'EXP-3', title: 'Fuel Refill', amount: 1200, paymentMethod: 'Cash', time: '08:30 AM'),
-        DriverExpense(id: 'EXP-4', title: 'Highway Toll', amount: 180, paymentMethod: 'UPI', time: '10:45 AM'),
-        DriverExpense(id: 'EXP-5', title: 'Driver Lunch Allowance', amount: 150, paymentMethod: 'Cash', time: '01:30 PM'),
-      ],
-    ),
-    AdminDriver(
-      id: 'DRV003',
-      name: 'Suresh Nair',
-      vehicle: 'KL 11 2233',
-      phone: '+91 94960 12345',
-      password: '1234',
-      active: true,
-      deliveries: 5,
-      route: 'Route #5C \u2022 Bay 4 North',
-      cylindersOnboard: 50,
-      mockCashIncome: 6100,
-      mockUpiIncome: 4800,
-      mockExpenses: [
-        DriverExpense(id: 'EXP-6', title: 'Fuel Topup', amount: 950, paymentMethod: 'Cash', time: '09:00 AM'),
-        DriverExpense(id: 'EXP-7', title: 'Depot Parking Fee', amount: 120, paymentMethod: 'Cash', time: '02:15 PM'),
-      ],
-    ),
-    AdminDriver(
-      id: 'DRV004',
-      name: 'Anil Menon',
-      vehicle: 'KL 33 4455',
-      phone: '+91 98765 43213',
-      password: '1234',
-      active: false,
-      deliveries: 0,
-      route: 'Depot Standby / Fleet Reserve',
-      cylindersOnboard: 0,
-      mockCashIncome: 0,
-      mockUpiIncome: 0,
-      mockExpenses: [],
-    ),
-    AdminDriver(
-      id: 'DRV005',
-      name: 'Pradeep Varma',
-      vehicle: 'KL 55 6677',
-      phone: '+91 98765 43214',
-      password: '1234',
-      active: true,
-      deliveries: 4,
-      route: 'Route #1D \u2022 Bay 2 South',
-      cylindersOnboard: 50,
-      mockCashIncome: 5300,
-      mockUpiIncome: 3900,
-      mockExpenses: [
-        DriverExpense(id: 'EXP-8', title: 'Toll Gate', amount: 240, paymentMethod: 'UPI', time: '10:00 AM'),
-        DriverExpense(id: 'EXP-9', title: 'Truck Maintenance & Air', amount: 200, paymentMethod: 'Cash', time: '03:00 PM'),
-      ],
-    ),
-  ];
+  List<AdminDriver> fleetDrivers = [];
 
   // Helper getters for driver-specific revenue & expenses
   double getDriverCashIncome(AdminDriver driver) {
@@ -1164,28 +1033,33 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<WarehouseItem> warehouseItems = [
-    WarehouseItem(weight: '17 KG', title: '17 KG Cylinder', filledStock: 200, emptyStock: 40, price: 1420),
-    WarehouseItem(weight: '21 KG', title: '21 KG Cylinder', filledStock: 100, emptyStock: 20, price: 1850),
-    WarehouseItem(weight: '33 KG', title: '33 KG Cylinder', filledStock: 50, emptyStock: 10, price: 2650),
-    WarehouseItem(weight: '12 KG', title: '12 KG Cylinder', filledStock: 150, emptyStock: 30, price: 980),
-    WarehouseItem(weight: '4 KG', title: '4 KG Cylinder', filledStock: 100, emptyStock: 20, price: 450),
-  ];
+  List<WarehouseItem> warehouseItems = [];
 
   int get totalWarehouseFilled => warehouseItems.fold(0, (sum, i) => sum + i.filledStock);
   int get totalWarehouseEmpty => warehouseItems.fold(0, (sum, i) => sum + i.emptyStock);
   int get totalActiveDrivers => fleetDrivers.where((d) => d.active).length;
 
   void reloadTruckStock(String weight, int qty) {
+    if (warehouseItems.isEmpty || cylinders.isEmpty) return;
     final wh = warehouseItems.firstWhere((w) => w.weight == weight, orElse: () => warehouseItems[0]);
     final truckCyl = cylinders.firstWhere((c) => c.weight == weight, orElse: () => cylinders[0]);
 
     if (wh.filledStock >= qty) {
       wh.filledStock -= qty;
       truckCyl.filledStock += qty;
-      fleetDrivers[0].cylindersOnboard = truckStock;
+      if (fleetDrivers.isNotEmpty) {
+        fleetDrivers[0].cylindersOnboard = truckStock;
+      }
       notifyListeners();
     }
+  }
+
+  void addWarehouseRefill(String weight, int qty) {
+    if (warehouseItems.isEmpty) return;
+    final wh = warehouseItems.firstWhere((w) => w.weight == weight, orElse: () => warehouseItems[0]);
+    wh.filledStock += qty;
+    notifyListeners();
+  }
   }
 
   void addWarehouseRefill(String weight, int qty) {
