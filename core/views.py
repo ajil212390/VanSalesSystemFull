@@ -2194,7 +2194,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             CompanyId=company_id,
             TransactionDate=today,
             TransactionType='VAN_SALE'
-        ).select_related('Product', 'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Driver').order_by('-StockMovementId')
+        ).select_related('Product').order_by('-StockMovementId')
 
         sales_by_ticket = {}
         for sm in today_sales_movs:
@@ -2209,11 +2209,12 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     if len(parts) > 1:
                         p_method = parts[1].strip()
 
+                alloc_info = alloc_van_map.get(sm.RouteVehicleDriverId, {})
                 sales_by_ticket[ticket] = {
                     'TicketNumber': ticket,
                     'AllocationId': sm.RouteVehicleDriverId,
-                    'VehicleNumber': sm.RouteVehicleDriver.Vehicle.VehicleNumber if sm.RouteVehicleDriver and sm.RouteVehicleDriver.Vehicle else 'Van',
-                    'DriverName': sm.RouteVehicleDriver.Driver.DriverName if sm.RouteVehicleDriver and sm.RouteVehicleDriver.Driver else 'Driver',
+                    'VehicleNumber': alloc_info.get('VehicleNumber') or 'Van',
+                    'DriverName': alloc_info.get('DriverName') or 'Driver',
                     'CustomerName': cust_name,
                     'PaymentMethod': p_method,
                     'DeliveredCylinders': 0,
@@ -2246,9 +2247,8 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
         today_deliveries = list(sales_by_ticket.values())
 
-        # Last sync time
-        last_mov = StockMovement.objects.filter(CompanyId=company_id).order_by('-StockMovementId').first()
-        last_sync_str = last_mov.CreatedAt.strftime('%I:%M %p') if (last_mov and hasattr(last_mov, 'CreatedAt') and last_mov.CreatedAt) else datetime.now().strftime('%I:%M %p')
+        # Last sync time (time this live stock snapshot was fetched)
+        last_sync_str = datetime.now().strftime('%I:%M %p')
 
         return Response({
             'summary': {

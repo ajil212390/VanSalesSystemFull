@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
 import '../widgets/app_theme.dart';
@@ -432,6 +432,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 1.1,
                         ),
                       ),
+                      const SizedBox(height: 3.5),
                       Text(
                         'Cylinders',
                         style: GoogleFonts.inter(
@@ -476,6 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 1.1,
                         ),
                       ),
+                      const SizedBox(height: 3.5),
                       Text(
                         'Cylinders',
                         style: GoogleFonts.inter(
@@ -520,6 +522,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 1.1,
                         ),
                       ),
+                      const SizedBox(height: 3.5),
                       Text(
                         'Products',
                         style: GoogleFonts.inter(
@@ -579,6 +582,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 1.1,
                         ),
                       ),
+                      const SizedBox(height: 4.5),
                       Text(
                         'Cylinders',
                         style: GoogleFonts.inter(
@@ -657,6 +661,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           height: 1.1,
                         ),
                       ),
+                      const SizedBox(height: 4.5),
                       Text(
                         'Cylinders',
                         style: GoogleFonts.inter(
@@ -1412,7 +1417,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       Text(
-                        'Review remaining stock & send Receipt Note',
+                        'Review remaining stock & Receipt Note',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w400,

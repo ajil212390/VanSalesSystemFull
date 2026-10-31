@@ -167,13 +167,7 @@ class AdminDriver {
     this.mockCashIncome = 0.0,
     this.mockUpiIncome = 0.0,
     List<DriverExpense>? mockExpenses,
-  })  : stockAllocation = stockAllocation ?? {
-          '33 KG': 4,
-          '21 KG': 6,
-          '17 KG': 24,
-          '12 KG': 10,
-          '4 KG': 6,
-        },
+  })  : stockAllocation = stockAllocation ?? {},
         mockExpenses = mockExpenses ?? [];
 }
 
@@ -216,13 +210,7 @@ class DepotVehicle {
         _emptyStock = emptyStock;
 
   Map<String, int> get stock {
-    _stock ??= {
-      '33 KG': 0,
-      '21 KG': 0,
-      '17 KG': 0,
-      '12 KG': 0,
-      '4 KG': 0,
-    };
+    _stock ??= {};
     return _stock!;
   }
 
@@ -231,13 +219,7 @@ class DepotVehicle {
   }
 
   Map<String, int> get emptyStock {
-    _emptyStock ??= {
-      '33 KG': 0,
-      '21 KG': 0,
-      '17 KG': 0,
-      '12 KG': 0,
-      '4 KG': 0,
-    };
+    _emptyStock ??= {};
     return _emptyStock!;
   }
 
@@ -1056,13 +1038,6 @@ class AppState extends ChangeNotifier {
 
   void addWarehouseRefill(String weight, int qty) {
     if (warehouseItems.isEmpty) return;
-    final wh = warehouseItems.firstWhere((w) => w.weight == weight, orElse: () => warehouseItems[0]);
-    wh.filledStock += qty;
-    notifyListeners();
-  }
-  }
-
-  void addWarehouseRefill(String weight, int qty) {
     final wh = warehouseItems.firstWhere((w) => w.weight == weight, orElse: () => warehouseItems[0]);
     wh.filledStock += qty;
     notifyListeners();
