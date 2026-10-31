@@ -407,14 +407,14 @@ export const DeliveryNotesPage: React.FC = () => {
               label={
                 <Group gap={8}>
                   <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                    Cylinders to Load from Godown
+                    Items to Load from Godown
                   </Text>
                   {currentLoadingTotal > 0 && (
                     <Badge
                       size="xs"
                       style={{ backgroundColor: '#800020', color: '#ffffff', fontWeight: 700 }}
                     >
-                      {currentLoadingTotal} Cylinders
+                      {currentLoadingTotal}
                     </Badge>
                   )}
                 </Group>
@@ -428,7 +428,7 @@ export const DeliveryNotesPage: React.FC = () => {
                 <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
                   <Box style={{ flex: 3 }}>
                     <Select
-                      label={idx === 0 ? 'Product / Cylinder' : undefined}
+                      label={idx === 0 ? 'Product' : undefined}
                       placeholder="Choose Product"
                       data={godownStock.map((p: any) => ({
                         value: String(p.ProductId),
@@ -447,7 +447,7 @@ export const DeliveryNotesPage: React.FC = () => {
                             <Text size="sm">{option.label}</Text>
                             <Group gap={4} wrap="nowrap">
                               <Text size="xs" c="dimmed">In Stock:</Text>
-                              <Text size="xs" fw={700} c="#800020">{stock} Cylinders</Text>
+                              <Text size="xs" fw={700} c="#800020">{stock}</Text>
                             </Group>
                           </Group>
                         );
@@ -457,12 +457,12 @@ export const DeliveryNotesPage: React.FC = () => {
                           <Group gap={4} mr="xs" wrap="nowrap">
                             <Text size="xs" c="dimmed">In Stock:</Text>
                             <Text size="xs" fw={700} c="#800020">
-                              {line.AvailableGodownQty} Cylinders
+                              {line.AvailableGodownQty}
                             </Text>
                           </Group>
                         ) : null
                       }
-                      rightSectionWidth={line.ProductId > 0 ? 190 : undefined}
+                      rightSectionWidth={line.ProductId > 0 ? 130 : undefined}
                       rightSectionPointerEvents="none"
                     />
                   </Box>
@@ -477,7 +477,7 @@ export const DeliveryNotesPage: React.FC = () => {
                     />
                   </Box>
                   <Group gap={6} align="flex-end" wrap="nowrap">
-                    <Tooltip label="Add another cylinder" withArrow>
+                    <Tooltip label="Add another product" withArrow>
                       <ActionIcon
                         color="burgundy"
                         radius={8}
@@ -489,7 +489,7 @@ export const DeliveryNotesPage: React.FC = () => {
                     </Tooltip>
 
                     {loadingLines.length > 1 ? (
-                      <Tooltip label="Remove cylinder" withArrow>
+                      <Tooltip label="Remove product" withArrow>
                         <ActionIcon
                           color="red"
                           variant="subtle"
@@ -571,7 +571,7 @@ export const DeliveryNotesPage: React.FC = () => {
               <Group justify="space-between" align="flex-start" wrap="nowrap">
                 <Stack gap={2}>
                   <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px', fontSize: 11 }}>
-                    Total Cylinders Loaded
+                    Total Stocks Loaded
                   </Text>
                   <Text fw={700} style={{ color: '#0f172a', fontSize: 24, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
                     {Number(totalLoadedCylinders)}
@@ -629,7 +629,7 @@ export const DeliveryNotesPage: React.FC = () => {
                     <Table.Th>ROUTE</Table.Th>
                     <Table.Th>VEHICLE</Table.Th>
                     <Table.Th>DRIVER</Table.Th>
-                    <Table.Th style={{ textAlign: 'center' }}>TOTAL CYLINDERS</Table.Th>
+                    <Table.Th style={{ textAlign: 'center' }}>TOTAL STOCKS</Table.Th>
                     <Table.Th>REMARKS</Table.Th>
                     <Table.Th style={{ textAlign: 'center', whiteSpace: 'nowrap', minWidth: 100 }}>STATUS</Table.Th>
                     <Table.Th style={{ textAlign: 'center', whiteSpace: 'nowrap', minWidth: 90 }}>ACTIONS</Table.Th>

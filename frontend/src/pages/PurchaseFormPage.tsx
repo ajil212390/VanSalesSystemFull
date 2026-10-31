@@ -926,22 +926,22 @@ export const PurchaseFormPage: React.FC = () => {
         </Box>
       )}
 
-      {/* Footer Section — FIXED AT THE BOTTOM OF THE CARD */}
+      {/* Footer Section — FIXED AT THE BOTTOM OF THE CARD (Enhanced Size) */}
       <Box
         style={{
           marginTop: 'auto',
-          borderTop: '1px solid #e2e8f0',
+          borderTop: '2px solid #e2e8f0',
           backgroundColor: '#ffffff',
           overflowX: 'auto',
         }}
       >
         {/* Row 1: Totals Row — mathematically aligned with items table columns */}
         <Table
-          verticalSpacing={1}
+          verticalSpacing="xs"
           horizontalSpacing="xs"
           style={{ tableLayout: 'fixed', width: '100%', minWidth: 880, borderBottom: 'none' }}
           styles={{
-            td: { border: 'none', paddingTop: 3, paddingBottom: 3, paddingLeft: 4, paddingRight: 4 },
+            td: { border: 'none', paddingTop: 8, paddingBottom: 8, paddingLeft: 4, paddingRight: 4 },
           }}
         >
           <colgroup>
@@ -955,35 +955,35 @@ export const PurchaseFormPage: React.FC = () => {
             <col style={{ width: 38 }} /> {/* Delete Action */}
           </colgroup>
           <Table.Tbody>
-            <Table.Tr style={{ height: 28, backgroundColor: '#ffffff', border: 'none' }}>
+            <Table.Tr style={{ minHeight: 38, backgroundColor: '#f8fafc', border: 'none' }}>
               <Table.Td style={{ textAlign: 'center', border: 'none' }} />
-              <Table.Td style={{ textAlign: 'right', color: '#475569', fontWeight: 700, fontSize: 13, border: 'none', paddingRight: 8 }}>
+              <Table.Td style={{ textAlign: 'right', color: '#1e293b', fontWeight: 800, fontSize: 14, border: 'none', paddingRight: 10 }}>
                 Total:
               </Table.Td>
-              {/* Total Qty directly under the 44px Qty box */}
+              {/* Total Qty directly under the Qty box */}
               <Table.Td style={{ border: 'none', paddingLeft: 4, paddingRight: 4 }}>
-                <div style={{ width: 42, textAlign: 'center' }}>
-                  <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                <div style={{ width: 44, textAlign: 'center' }}>
+                  <Text fw={800} style={{ fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                     {totals.totalQty}
                   </Text>
                 </div>
               </Table.Td>
               <Table.Td style={{ border: 'none' }} />
               {/* Taxable total */}
-              <Table.Td style={{ textAlign: 'right', border: 'none', paddingRight: 6 }}>
-                <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+              <Table.Td style={{ textAlign: 'right', border: 'none', paddingRight: 8 }}>
+                <Text fw={800} style={{ fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                   ₹{totals.subTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Table.Td>
               {/* GST total */}
-              <Table.Td style={{ textAlign: 'right', border: 'none', paddingRight: 6 }}>
-                <Text fw={700} style={{ fontSize: 13, color: '#0f766e', fontVariantNumeric: 'tabular-nums' }}>
+              <Table.Td style={{ textAlign: 'right', border: 'none', paddingRight: 8 }}>
+                <Text fw={800} style={{ fontSize: 14, color: '#0f766e', fontVariantNumeric: 'tabular-nums' }}>
                   ₹{totals.totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Table.Td>
               {/* Raw Total */}
-              <Table.Td style={{ textAlign: 'right', border: 'none', paddingRight: 6 }}>
-                <Text fw={700} style={{ fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+              <Table.Td style={{ textAlign: 'right', border: 'none', paddingRight: 8 }}>
+                <Text fw={800} style={{ fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                   ₹{(totals.subTotal + totals.totalTax).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Table.Td>
@@ -992,11 +992,11 @@ export const PurchaseFormPage: React.FC = () => {
           </Table.Tbody>
         </Table>
 
-        {/* Row 2: Action Bar (Notes, Round Off, Grand Total, Buttons) — NO extra top line */}
-        <Box pt={3} pb={6} px="sm">
+        {/* Row 2: Action Bar (Notes, Round Off, Grand Total, Buttons) — Enlarged Prominent Bar */}
+        <Box py="sm" px="md" style={{ borderTop: '1px solid #f1f5f9', backgroundColor: '#ffffff' }}>
           <Group justify="space-between" align="center" wrap="wrap" gap="md">
             {/* Left: Notes Input */}
-            <div style={{ flex: '1 1 240px', maxWidth: 460 }}>
+            <div style={{ flex: '1 1 260px', maxWidth: 480 }}>
               <TextInput
                 placeholder="Add invoice notes or instructions..."
                 value={notes}
@@ -1008,51 +1008,54 @@ export const PurchaseFormPage: React.FC = () => {
                   }
                 }}
                 radius="md"
-                size="xs"
+                size="sm"
+                styles={{ input: { height: 38, fontSize: 13.5 } }}
               />
             </div>
 
             {/* Right: Round Off, Grand Total, and Action Buttons */}
-            <Group gap="sm" align="center" wrap="wrap">
+            <Group gap="md" align="center" wrap="wrap">
               {/* Round Off */}
-              <Group gap={6} align="center" wrap="nowrap">
-                <Text size="xs" fw={500} c="dimmed">Round Off (₹):</Text>
+              <Group gap={8} align="center" wrap="nowrap">
+                <Text size="sm" fw={600} c="#64748b">Round Off (₹):</Text>
                 <NumberInput
-                  size="xs"
-                  radius="sm"
+                  size="sm"
+                  radius="md"
                   decimalScale={2}
                   step={0.01}
                   hideControls
                   placeholder="0.00"
                   value={manualRoundOff !== null ? manualRoundOff : totals.roundOff}
                   onChange={(val) => setManualRoundOff(val === '' || val === undefined ? null : Number(val))}
-                  style={{ width: 62 }}
-                  styles={{ input: { textAlign: 'right', fontWeight: 600, height: 28, minHeight: 28 } }}
+                  style={{ width: 75 }}
+                  styles={{ input: { textAlign: 'right', fontWeight: 700, height: 38, fontSize: 14 } }}
                 />
               </Group>
 
-              <Divider orientation="vertical" visibleFrom="xs" />
+              <Divider orientation="vertical" style={{ height: 28 }} visibleFrom="xs" />
 
               {/* Grand Total */}
-              <Group gap={6} align="baseline" wrap="nowrap">
-                <Text size="xs" fw={600} c="dimmed">Grand Total:</Text>
-                <Text fw={800} size="lg" c="#800020" style={{ whiteSpace: 'nowrap' }}>
+              <Group gap={8} align="baseline" wrap="nowrap">
+                <Text size="sm" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>Grand Total:</Text>
+                <Text fw={800} style={{ fontSize: 24, color: '#800020', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
                   ₹{totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </Text>
               </Group>
 
-              <Divider orientation="vertical" visibleFrom="xs" />
+              <Divider orientation="vertical" style={{ height: 28 }} visibleFrom="xs" />
 
               {/* Action Buttons */}
-              <Group gap="xs" wrap="wrap">
-                <Button variant="default" size="xs" radius={8} onClick={() => navigate('/purchases')}>
+              <Group gap="sm" wrap="wrap">
+                <Button variant="default" size="sm" radius={8} px="md" style={{ height: 38, fontWeight: 600 }} onClick={() => navigate('/purchases')}>
                   Cancel
                 </Button>
                 <Button
                   color="burgundy"
                   radius={8}
-                  size="xs"
-                  leftSection={<IconCurrencyRupee size={15} />}
+                  size="sm"
+                  px="lg"
+                  style={{ height: 38, fontWeight: 700 }}
+                  leftSection={<IconCurrencyRupee size={18} />}
                   loading={saveMutation.isPending}
                   disabled={!selectedLedgerId || items.every((i) => !i.ProductId)}
                   onClick={handleSave}

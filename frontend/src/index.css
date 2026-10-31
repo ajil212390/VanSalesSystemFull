@@ -57,6 +57,53 @@ body,
   background: #800020 !important;
 }
 
+/* Custom Burgundy Scrollbar for Tables */
+.burgundy-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #800020 transparent;
+}
+
+/* Completely remove scrollbar up/down arrow buttons — nuclear override */
+::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: none !important;
+}
+::-webkit-scrollbar-button:start:decrement,
+::-webkit-scrollbar-button:end:increment,
+::-webkit-scrollbar-button:start:increment,
+::-webkit-scrollbar-button:end:decrement {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.burgundy-scrollbar::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.burgundy-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 0px !important; /* Completely eliminate horizontal down bar */
+}
+
+.burgundy-scrollbar::-webkit-scrollbar-track {
+  background: transparent !important;
+  border-radius: 9999px;
+}
+
+.burgundy-scrollbar::-webkit-scrollbar-thumb {
+  background: #800020 !important;
+  border-radius: 9999px;
+}
+
+.burgundy-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #5c0017 !important;
+}
+
+
 /* World-Class Login Animations */
 @keyframes loginFadeUp {
   from {
@@ -86,7 +133,7 @@ body,
 }
 
 /* ==========================================================================
-   Table Header & Table Theme (Burgundy Tint UI)
+   Table Header & Table Theme (Clean White UI)
    ========================================================================== */
 .mantine-Table-table {
   width: 100%;
@@ -96,24 +143,24 @@ body,
 
 .mantine-Table-thead,
 table thead {
-  background-color: #fbf0f2;
+  background-color: #ffffff;
 }
 
 .mantine-Table-thead tr,
 table thead tr {
-  background-color: #fbf0f2 !important;
+  background-color: #ffffff !important;
 }
 
 .mantine-Table-th,
 table thead th {
-  background-color: #fbf0f2 !important;
+  background-color: #ffffff !important;
   color: #800020 !important;
   font-weight: 700 !important;
   font-size: 0.8125rem !important;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 13px 18px !important;
-  border-bottom: none !important;
+  border-bottom: 1px solid #f1f5f9 !important;
   white-space: nowrap;
 }
 
@@ -175,6 +222,15 @@ button.mantine-Button-root[data-variant="light"]:hover {
 /* ==========================================================================
    Mobile Optimization & Responsive Layout Enhancements
    ========================================================================== */
+
+/* Hide Mantine AppShell auto-generated mobile navbar drawer header
+   (the "FUTURE GAS / NAVIGATION MENU" title bar shown on small screens) */
+.mantine-AppShell-navbar[data-type="mobile"] > *:first-child:has(> [class*="close"]),
+.mantine-Drawer-header,
+[data-mantine-drawer-header] {
+  display: none !important;
+}
+
 @media (max-width: 768px) {
   /* Prevent horizontal page breakout on phones */
   html,

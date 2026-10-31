@@ -232,7 +232,7 @@ class ProfileScreen extends StatelessWidget {
                           ),
                           const SizedBox(width: 5),
                           Text(
-                            'Shift Active • On Duty',
+                            'Shift Active \u2022 On Duty',
                             style: GoogleFonts.inter(
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -289,7 +289,7 @@ class ProfileScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${state.truckStock} Full Cylinders • ${state.totalEmptyStock} Empty Returns',
+                        '${state.truckStock} Full Cylinders \u2022 ${state.totalEmptyStock} Empty Returns',
                         style: GoogleFonts.inter(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w500,
@@ -424,7 +424,7 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             Text(
-              '₹${state.todayCollectedTotal.toStringAsFixed(0)} Settled',
+              '\u20B9${state.todayCollectedTotal.toStringAsFixed(0)} Settled',
               style: GoogleFonts.inter(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w800,

@@ -26,6 +26,26 @@ class CylinderType {
   }
 }
 
+class OtherProductItem {
+  final int? productId;
+  final String name;
+  double price;
+  final String categoryName;
+  int initialStock;
+  int deliveredStock;
+  int balanceStock;
+
+  OtherProductItem({
+    this.productId,
+    required this.name,
+    required this.price,
+    this.categoryName = 'Other Items',
+    required this.initialStock,
+    this.deliveredStock = 0,
+    int? balanceStock,
+  }) : balanceStock = balanceStock ?? (initialStock - deliveredStock);
+}
+
 class Customer {
   final int? ledgerId;
   final String name;
@@ -88,7 +108,7 @@ class DeliveryOrder {
   String get cylinderSummary {
     final parts = items
         .where((i) => i.deliveryQty > 0)
-        .map((i) => '${i.cylinder.weight} × ${i.deliveryQty}')
+        .map((i) => '${i.cylinder.weight} \u00D7 ${i.deliveryQty}')
         .toList();
     return parts.join(', ');
   }
@@ -96,7 +116,7 @@ class DeliveryOrder {
   String get emptiesSummary {
     final parts = items
         .where((i) => i.emptyReturnQty > 0)
-        .map((i) => '${i.cylinder.weight} × ${i.emptyReturnQty}')
+        .map((i) => '${i.cylinder.weight} \u00D7 ${i.emptyReturnQty}')
         .toList();
     return parts.join(', ');
   }
@@ -245,8 +265,9 @@ class AppState extends ChangeNotifier {
   int? currentDriverDbId;
   int? currentAllocationId;
   String vehicleNumber = 'KL 77 3803';
-  String routeInfo = 'Kecheri – Kunnamkulam';
+  String routeInfo = 'Kecheri - Kunnamkulam';
   bool isLoadingFromBackend = false;
+  DateTime? lastSyncTime;
 
   // Depot Vehicle Fleet (Freshly initialized with 0 stock ready for allocation)
   List<DepotVehicle> vehicles = [
@@ -255,7 +276,7 @@ class AppState extends ChangeNotifier {
       model: 'Tata 407 Heavy Express',
       assignedDriverName: 'John Driver',
       assignedDriverId: 'DRV001',
-      route: 'Route #4B • Bay 3 Loading',
+      route: 'Route #4B \u2022 Bay 3 Loading',
       status: 'Ready in Depot',
       stock: {
         '33 KG': 0,
@@ -277,7 +298,7 @@ class AppState extends ChangeNotifier {
       model: 'Ashok Leyland Dost',
       assignedDriverName: 'Rahul Kumar',
       assignedDriverId: 'DRV002',
-      route: 'Route #2A • Bay 1 West',
+      route: 'Route #2A \u2022 Bay 1 West',
       status: 'Ready in Depot',
     ),
     DepotVehicle(
@@ -285,7 +306,7 @@ class AppState extends ChangeNotifier {
       model: 'Mahindra Bolero Maxi Truck',
       assignedDriverName: 'Suresh Nair',
       assignedDriverId: 'DRV003',
-      route: 'Route #5C • Bay 4 North',
+      route: 'Route #5C \u2022 Bay 4 North',
       status: 'Ready in Depot',
     ),
     DepotVehicle(
@@ -301,7 +322,7 @@ class AppState extends ChangeNotifier {
       model: 'Tata Ace Gold Utility',
       assignedDriverName: 'Pradeep Varma',
       assignedDriverId: 'DRV005',
-      route: 'Route #1D • Bay 2 South',
+      route: 'Route #1D \u2022 Bay 2 South',
       status: 'Ready in Depot',
     ),
     DepotVehicle(
@@ -333,64 +354,26 @@ class AppState extends ChangeNotifier {
     'KL 55 6677',
   ];
 
-  // Stock for Allocated Vehicle (KL 77 3803) - Matching Mockup
-  late List<CylinderType> cylinders = [
-    CylinderType(weight: '12KG', price: 950, initialFilledStock: 40, filledStock: 9, emptyStock: 30),
-    CylinderType(weight: '17KG', price: 1450, initialFilledStock: 45, filledStock: 10, emptyStock: 34),
-    CylinderType(weight: '04KG', price: 380, initialFilledStock: 5, filledStock: 1, emptyStock: 4),
-  ];
+  // Stock for Allocated Vehicle - Populated from backend DB
+  late List<CylinderType> cylinders = [];
 
   int get totalStartingFilled => cylinders.fold(0, (sum, c) => sum + c.initialFilledStock);
   int get totalStartingEmpty => 0;
-  int totalOtherStock = 19;
+
+  // Other Items allocated to vehicle (Stoves, Burners, Lighters, etc.)
+  List<OtherProductItem> otherProducts = [];
+
+  int get totalOtherStock => otherProducts.fold(0, (sum, i) => sum + i.initialStock);
+  int get totalOtherDelivered => otherProducts.fold(0, (sum, i) => sum + i.deliveredStock);
+  int get totalOtherBalance => otherProducts.fold(0, (sum, i) => sum + i.balanceStock);
+
   int get totalDeliveredFilled => cylinders.fold(0, (sum, c) => sum + c.deliveredStock);
-  int get totalDeliveredEmpty => cylinders.fold(0, (sum, c) => sum + c.emptyStock);
+  int get totalDeliveredEmpty => orders.fold(0, (sum, o) => sum + o.totalEmpties);
   int get totalClosingFilled => cylinders.fold(0, (sum, c) => sum + c.filledStock);
   int get totalClosingEmpty => cylinders.fold(0, (sum, c) => sum + c.emptyStock);
 
-  // Customers
-  final List<Customer> customers = [
-    Customer(
-      name: 'Apex Bakery',
-      phone: '+91 98470 23119',
-      address: 'Market Road, Near Clock Tower, Calicut',
-      type: 'Regular',
-      creditLimit: 15000,
-      outstanding: 0,
-    ),
-    Customer(
-      name: 'Hotel Grand Palace',
-      phone: '+91 98470 55201',
-      address: 'Beach Road, Kozhikode',
-      type: 'Premium',
-      creditLimit: 50000,
-      outstanding: 4200,
-    ),
-    Customer(
-      name: 'Krishna Store',
-      phone: '+91 94960 12345',
-      address: 'SM Street, Calicut',
-      type: 'Regular',
-      creditLimit: 10000,
-      outstanding: 980,
-    ),
-    Customer(
-      name: 'Mary Joseph',
-      phone: '+91 98765 43211',
-      address: 'Broadway, Ernakulam',
-      type: 'Regular',
-      creditLimit: 10000,
-      outstanding: 0,
-    ),
-    Customer(
-      name: 'Priya Nair',
-      phone: '+91 98765 43213',
-      address: 'Palarivattom, Kochi',
-      type: 'Regular',
-      creditLimit: 8000,
-      outstanding: 0,
-    ),
-  ];
+  // Customers - Populated strictly from backend DB Sundry Debtors
+  final List<Customer> customers = [];
 
   // Orders
   final List<DeliveryOrder> orders = [];
@@ -400,6 +383,7 @@ class AppState extends ChangeNotifier {
   // Current delivery state
   Customer? selectedCustomer;
   late List<DeliveryItem> deliveryItems;
+  Map<String, int> otherDeliveryQty = {};
   String paymentMethod = '';
   double collectedAmount = 0;
 
@@ -500,17 +484,96 @@ class AppState extends ChangeNotifier {
         if (currentAllocationId != null) {
           final vanStock = await ApiService.getVanStock(currentAllocationId!);
           if (vanStock.isNotEmpty) {
-            cylinders = vanStock.map((s) => CylinderType(
-              productId: s['ProductId'],
+            // Separate Cylinders from Other Items (stoves, burners, lighters, etc.)
+            final cylItems = vanStock.where((s) {
+              if (s['IsCylinder'] == true) return true;
+              if (s['IsOther'] == true) return false;
+              final name = (s['ProductName'] ?? '').toString().toLowerCase();
+              return name.contains('cylinder') || name.contains('kg') || name.contains('lpg');
+            }).toList();
+
+            final otherItems = vanStock.where((s) {
+              if (s['IsOther'] == true) return true;
+              if (s['IsCylinder'] == true) return false;
+              final name = (s['ProductName'] ?? '').toString().toLowerCase();
+              return !name.contains('cylinder') && !name.contains('kg') && !name.contains('lpg');
+            }).toList();
+
+            // Load cylinders strictly from backend DB van-stock (0 empty stock by default)
+            cylinders = cylItems.map((s) => CylinderType(
+              productId: s['ProductId'] as int?,
               weight: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
                   ? s['AppProductName'].toString().trim()
-                  : (s['ProductName'] ?? ''),
+                  : (s['ProductName'] ?? '').toString(),
               price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
               initialFilledStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
               filledStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
               emptyStock: 0,
             )).toList();
             _initDeliveryItems();
+
+            // Load only Other Products allocated to this vehicle (onboard stock > 0)
+            otherProducts = otherItems
+                .where((s) => ((s['OnboardQty'] as num?)?.toInt() ?? 0) > 0)
+                .map((s) => OtherProductItem(
+                  productId: s['ProductId'] as int?,
+                  name: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
+                      ? s['AppProductName'].toString().trim()
+                      : (s['ProductName'] ?? '').toString(),
+                  price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
+                  categoryName: (s['CategoryName'] ?? 'Other Items').toString(),
+                  initialStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
+                  deliveredStock: 0,
+                  balanceStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
+                ))
+                .toList();
+          }
+        }
+        // Fetch Driver's Sales for Today from Backend
+        if (currentAllocationId != null) {
+          try {
+            final backendSales = await ApiService.getDriverSales(currentAllocationId!);
+            if (backendSales.isNotEmpty) {
+              orders.clear();
+              for (final s in backendSales) {
+                final cData = s['customer'] as Map<String, dynamic>? ?? {};
+                final itemsList = (s['items'] as List? ?? []).map((it) {
+                  final w = it['weight']?.toString() ?? '';
+                  final matchedCyl = cylinders.firstWhere(
+                    (c) => c.weight == w,
+                    orElse: () => CylinderType(
+                      productId: it['productId'] as int?,
+                      weight: w,
+                      price: (it['rate'] as num?)?.toDouble() ?? 0.0,
+                      filledStock: 0,
+                    ),
+                  );
+                  return DeliveryItem(
+                    cylinder: matchedCyl,
+                    deliveryQty: (it['deliveryQty'] as num?)?.toInt() ?? 0,
+                    emptyReturnQty: (it['emptyReturnQty'] as num?)?.toInt() ?? 0,
+                  );
+                }).toList();
+
+                orders.add(DeliveryOrder(
+                  ticketId: s['ticketId'] ?? 'DT-ORD',
+                  customer: Customer(
+                    ledgerId: cData['ledgerId'] as int?,
+                    name: cData['name'] ?? 'Customer',
+                    phone: '',
+                  ),
+                  items: itemsList,
+                  totalCylinders: (s['totalCylinders'] as num?)?.toInt() ?? 0,
+                  totalEmpties: (s['totalEmpties'] as num?)?.toInt() ?? 0,
+                  amount: (s['amount'] as num?)?.toDouble() ?? 0.0,
+                  paymentMethod: s['paymentMethod'] ?? 'Cash',
+                  time: s['time'] ?? '10:00 AM',
+                  status: s['status'] ?? 'Delivered',
+                ));
+              }
+            }
+          } catch (e) {
+            debugPrint('Failed to load driver sales: $e');
           }
         }
       }
@@ -551,6 +614,7 @@ class AppState extends ChangeNotifier {
       debugPrint('Error syncing from backend: $e');
     } finally {
       isLoadingFromBackend = false;
+      lastSyncTime = DateTime.now();
       notifyListeners();
     }
   }
@@ -584,6 +648,16 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  int getOtherDeliveryQty(String name) => otherDeliveryQty[name] ?? 0;
+
+  void updateOtherDeliveryQty(String name, int qty) {
+    otherDeliveryQty[name] = qty.clamp(0, 999);
+    notifyListeners();
+  }
+
+  int get totalOtherDeliveryCount =>
+      otherDeliveryQty.values.fold(0, (sum, q) => sum + q);
+
   int get totalCylinders {
     return deliveryItems.fold(0, (sum, item) => sum + item.deliveryQty);
   }
@@ -614,7 +688,7 @@ class AppState extends ChangeNotifier {
 
   bool get canSubmitDelivery {
     return selectedCustomer != null &&
-        totalCylinders > 0 &&
+        (totalCylinders > 0 || totalOtherDeliveryCount > 0 || totalEmpties > 0) &&
         paymentMethod.isNotEmpty;
   }
 
@@ -623,8 +697,8 @@ class AppState extends ChangeNotifier {
     return 'DT-${88490 + _orderCounter}';
   }
 
-  void completeDelivery() {
-    if (!canSubmitDelivery) return;
+  Future<bool> completeDelivery() async {
+    if (!canSubmitDelivery) return false;
 
     _stopCounter++;
     final now = TimeOfDay.now();
@@ -637,10 +711,12 @@ class AppState extends ChangeNotifier {
         .where((i) => i.deliveryQty > 0 || i.emptyReturnQty > 0)
         .toList();
 
+    final ticketId = _generateTicketId();
+
     orders.insert(
       0,
       DeliveryOrder(
-        ticketId: _generateTicketId(),
+        ticketId: ticketId,
         customer: selectedCustomer!,
         items: activeItems
             .map((i) => DeliveryItem(
@@ -658,7 +734,7 @@ class AppState extends ChangeNotifier {
       ),
     );
 
-    // Update stock
+    // Update stock locally
     for (final item in deliveryItems) {
       if (item.deliveryQty > 0) {
         item.cylinder.filledStock -= item.deliveryQty;
@@ -668,11 +744,71 @@ class AppState extends ChangeNotifier {
       }
     }
 
+    for (final entry in otherDeliveryQty.entries) {
+      if (entry.value > 0) {
+        final prod = otherProducts.firstWhere(
+          (p) => p.name == entry.key,
+          orElse: () => OtherProductItem(name: entry.key, price: 0, initialStock: 0),
+        );
+        prod.deliveredStock += entry.value;
+        prod.balanceStock = (prod.initialStock - prod.deliveredStock).clamp(0, 9999);
+      }
+    }
+
+    lastSyncTime = DateTime.now();
     notifyListeners();
+
+    // Live sync to backend database
+    if (currentAllocationId != null && currentAllocationId! > 0) {
+      final backendItems = activeItems.map((it) => {
+        'product_id': it.cylinder.productId,
+        'weight': it.cylinder.weight,
+        'qty': it.deliveryQty,
+        'empty_qty': it.emptyReturnQty,
+        'rate': it.cylinder.price,
+      }).toList();
+
+      final backendOtherItems = otherDeliveryQty.entries
+          .where((e) => e.value > 0)
+          .map((e) {
+            final prod = otherProducts.firstWhere(
+              (p) => p.name == e.key,
+              orElse: () => OtherProductItem(name: e.key, price: 0, initialStock: 0),
+            );
+            return {
+              'product_id': prod.productId,
+              'weight': prod.name,
+              'qty': e.value,
+              'empty_qty': 0,
+              'rate': prod.price,
+            };
+          })
+          .toList();
+
+      final allBackendItems = [...backendItems, ...backendOtherItems];
+
+      try {
+        final res = await ApiService.createSale(
+          allocationId: currentAllocationId!,
+          customerLedgerId: selectedCustomer?.ledgerId ?? 0,
+          items: allBackendItems,
+          paymentMethod: paymentMethod,
+          amountCollected: collectedAmount,
+        );
+        if (res['success'] == true) {
+          lastSyncTime = DateTime.now();
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint('Live backend sale sync error: $e');
+      }
+    }
+
+    return true;
   }
 
-  void deleteOrder(DeliveryOrder order) {
-    // Restore cylinder stock
+  Future<void> deleteOrder(DeliveryOrder order) async {
+    // Restore cylinder stock locally
     for (final item in order.items) {
       final cylinder = cylinders.firstWhere(
         (c) => c.weight == item.cylinder.weight,
@@ -686,7 +822,40 @@ class AppState extends ChangeNotifier {
       }
     }
     orders.removeWhere((o) => o.ticketId == order.ticketId);
+    lastSyncTime = DateTime.now();
     notifyListeners();
+
+    // Synchronize deletion to backend to reverse StockMovement
+    try {
+      await ApiService.cancelSaleByTicket(order.ticketId);
+    } catch (e) {
+      debugPrint('Live backend order cancel error: $e');
+    }
+  }
+
+  /// Driver End Shift action
+  Future<Map<String, dynamic>> submitEndShift({
+    required List<Map<String, dynamic>> remainingCylinders,
+    required List<Map<String, dynamic>> remainingOther,
+  }) async {
+    if (currentAllocationId == null) {
+      return {'success': false, 'message': 'No active allocation found.'};
+    }
+
+    try {
+      final res = await ApiService.endShift(
+        allocationId: currentAllocationId!,
+        remainingCylinders: remainingCylinders,
+        remainingOther: remainingOther,
+        totalCollected: todayCollectedTotal,
+        totalDeliveries: orders.length,
+      );
+      lastSyncTime = DateTime.now();
+      notifyListeners();
+      return res;
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
   }
 
 
@@ -742,7 +911,9 @@ class AppState extends ChangeNotifier {
     selectedCustomer = null;
     paymentMethod = '';
     collectedAmount = 0;
+    otherDeliveryQty.clear();
     _initDeliveryItems();
+    notifyListeners();
   }
 
   // ================= DRIVER EXPENSES & BALANCE =================
@@ -811,7 +982,7 @@ class AppState extends ChangeNotifier {
       password: '1234',
       active: true,
       deliveries: 8,
-      route: 'Route #4B • Bay 3 Loading',
+      route: 'Route #4B \u2022 Bay 3 Loading',
       cylindersOnboard: 48,
       stockAllocation: {
         '33 KG': 0,
@@ -835,7 +1006,7 @@ class AppState extends ChangeNotifier {
       password: '1234',
       active: true,
       deliveries: 6,
-      route: 'Route #2A • Bay 1 West',
+      route: 'Route #2A \u2022 Bay 1 West',
       cylindersOnboard: 50,
       mockCashIncome: 8400,
       mockUpiIncome: 6200,
@@ -853,7 +1024,7 @@ class AppState extends ChangeNotifier {
       password: '1234',
       active: true,
       deliveries: 5,
-      route: 'Route #5C • Bay 4 North',
+      route: 'Route #5C \u2022 Bay 4 North',
       cylindersOnboard: 50,
       mockCashIncome: 6100,
       mockUpiIncome: 4800,
@@ -884,7 +1055,7 @@ class AppState extends ChangeNotifier {
       password: '1234',
       active: true,
       deliveries: 4,
-      route: 'Route #1D • Bay 2 South',
+      route: 'Route #1D \u2022 Bay 2 South',
       cylindersOnboard: 50,
       mockCashIncome: 5300,
       mockUpiIncome: 3900,

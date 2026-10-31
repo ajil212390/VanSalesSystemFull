@@ -93,6 +93,11 @@ class _HomeScreenState extends State<HomeScreen> {
               // 6. BALANCE SECTION (Dropdown to Cash in Hand & Bank Net)
               _buildBalanceSection(context, state),
 
+              const SizedBox(height: 14),
+
+              // 7. END SHIFT ACTION BUTTON (At bottom of balance section)
+              _buildEndShiftButton(context, state),
+
               const SizedBox(height: 90),
             ],
           ),
@@ -181,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'On Duty • Driver',
+                        'On Duty \u2022 Driver',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -403,7 +408,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             child: Row(
               children: [
-                // Allocated
+                // Allocated Cylinders
                 Expanded(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -424,6 +429,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFF64748B),
+                          height: 1.1,
+                        ),
+                      ),
+                      Text(
+                        'Cylinders',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF64748B),
+                          height: 1.1,
                         ),
                       ),
                     ],
@@ -432,12 +447,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 // Vertical Divider
                 Container(
-                  height: 28,
+                  height: 38,
                   width: 1,
                   color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
                 ),
 
-                // Empty
+                // Empty Cylinders
                 Expanded(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -458,6 +473,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFF64748B),
+                          height: 1.1,
+                        ),
+                      ),
+                      Text(
+                        'Cylinders',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF64748B),
+                          height: 1.1,
                         ),
                       ),
                     ],
@@ -466,12 +491,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 // Vertical Divider
                 Container(
-                  height: 28,
+                  height: 38,
                   width: 1,
                   color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
                 ),
 
-                // Others
+                // Other Products
                 Expanded(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -487,11 +512,21 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Others',
+                        'Other',
                         style: GoogleFonts.inter(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFF64748B),
+                          height: 1.1,
+                        ),
+                      ),
+                      Text(
+                        'Products',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF64748B),
+                          height: 1.1,
                         ),
                       ),
                     ],
@@ -541,9 +576,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF64748B),
+                          height: 1.1,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      Text(
+                        'Cylinders',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF64748B),
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
@@ -609,9 +654,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF800020),
+                          height: 1.1,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      Text(
+                        'Cylinders',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF800020),
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
@@ -769,7 +824,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 // Prominent Hero Total Income Display
                 Text(
-                  '₹${state.totalIncome.toStringAsFixed(0)}',
+                  '\u20B9${state.totalIncome.toStringAsFixed(0)}',
                   style: GoogleFonts.inter(
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
@@ -813,7 +868,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    '₹${state.cashIncome.toStringAsFixed(0)}',
+                                    '\u20B9${state.cashIncome.toStringAsFixed(0)}',
                                     style: GoogleFonts.inter(
                                       fontSize: 17,
                                       fontWeight: FontWeight.w700,
@@ -852,7 +907,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    '₹${state.bankIncome.toStringAsFixed(0)}',
+                                    '\u20B9${state.bankIncome.toStringAsFixed(0)}',
                                     style: GoogleFonts.inter(
                                       fontSize: 17,
                                       fontWeight: FontWeight.w700,
@@ -948,7 +1003,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   });
                 },
                 child: Text(
-                  '₹${state.totalExpense.toStringAsFixed(0)}',
+                  '\u20B9${state.totalExpense.toStringAsFixed(0)}',
                   style: GoogleFonts.inter(
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
@@ -991,7 +1046,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    '₹${state.cashExpense.toStringAsFixed(0)}',
+                                    '\u20B9${state.cashExpense.toStringAsFixed(0)}',
                                     style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: const Color(0xFF800020)),
                                   ),
                                 ],
@@ -1022,7 +1077,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    '₹${state.bankExpense.toStringAsFixed(0)}',
+                                    '\u20B9${state.bankExpense.toStringAsFixed(0)}',
                                     style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: const Color(0xFFB45309)),
                                   ),
                                 ],
@@ -1198,7 +1253,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 // Prominent Net Balance Display
                 Text(
-                  '₹${state.netBalance.toStringAsFixed(0)}',
+                  '\u20B9${state.netBalance.toStringAsFixed(0)}',
                   style: GoogleFonts.inter(
                     fontSize: 26,
                     fontWeight: FontWeight.w700,
@@ -1238,7 +1293,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    '₹${state.cashBalance.toStringAsFixed(0)}',
+                                    '\u20B9${state.cashBalance.toStringAsFixed(0)}',
                                     style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: _textPrimary),
                                   ),
                                 ],
@@ -1269,7 +1324,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 3),
                                   Text(
-                                    '₹${state.bankBalance.toStringAsFixed(0)}',
+                                    '\u20B9${state.bankBalance.toStringAsFixed(0)}',
                                     style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w700, color: _textPrimary),
                                   ),
                                 ],
@@ -1296,18 +1351,830 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- CYLINDER INVENTORY TABLE (Inside First Card) ---
+
+  // ================= 7. END SHIFT ACTION BUTTON =================
+  Widget _buildEndShiftButton(BuildContext context, AppState state) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            Color(0xFF5A0016), // Dark Burgundy
+            Color(0xFF800020), // Primary Burgundy
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+            spreadRadius: -2,
+          ),
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showEndShiftPreviewModal(context, state),
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(Icons.assignment_return_rounded, color: Colors.white, size: 21),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'END SHIFT & SEND GODOWN',
+                        style: GoogleFonts.inter(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                      Text(
+                        'Review remaining stock & send Receipt Note',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                          color: const Color(0xFFFEE2E2),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ================= END SHIFT PREVIEW & VERIFICATION MODAL =================
+  void _showEndShiftPreviewModal(BuildContext context, AppState state) {
+    // Clone local editable balances
+    final Map<String, int> editableCylBalance = {
+      for (final c in state.cylinders) c.weight: c.filledStock,
+    };
+    final Map<String, int> editableCylEmpty = {
+      for (final c in state.cylinders) c.weight: c.emptyStock,
+    };
+    final Map<String, int> editableOtherBalance = {
+      for (final p in state.otherProducts) p.name: p.balanceStock,
+    };
+
+    bool isSubmitting = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final availableOther = state.otherProducts.where((p) {
+              final bal = editableOtherBalance[p.name] ?? p.balanceStock;
+              return bal > 0 || p.initialStock > 0;
+            }).toList();
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.88,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Center Drag Handle
+                  const SizedBox(height: 12),
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFCBD5E1),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 16, 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF800020).withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(
+                                Icons.warehouse_rounded,
+                                size: 20,
+                                color: Color(0xFF800020),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'End Shift Summary',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF0F172A),
+                                    letterSpacing: -0.3,
+                                  ),
+                                ),
+                                Text(
+                                  'Inbound Receipt Note to Central Godown',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+                  // Scrollable Content
+                  Flexible(
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 1. Shift KPI Metrics Card (Clean matching palette)
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'DELIVERIES',
+                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${state.orders.length} Drops',
+                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'CASH IN HAND',
+                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '\u20B9${state.cashBalance.toStringAsFixed(0)}',
+                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'BANK / UPI',
+                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '\u20B9${state.bankBalance.toStringAsFixed(0)}',
+                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 16),
+
+                          // 2. CYLINDERS TO RETURN (Identical to Delivery Screen Table)
+                          Container(
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Section Header
+                                Row(
+                                  children: [
+                                    const Icon(Icons.propane_tank_rounded, size: 18, color: Color(0xFF800020)),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'CYLINDERS TO RETURN',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: const Color(0xFF800020),
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Column Headers: Weight | Full Cyls | Empty Return
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: Text(
+                                          'Weight',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 4,
+                                        child: Text(
+                                          'Full Cyls',
+                                          textAlign: TextAlign.center,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF800020),
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 4,
+                                        child: Text(
+                                          'Empty Return',
+                                          textAlign: TextAlign.center,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+
+                                // Cylinder Rows
+                                ...state.cylinders.map((cyl) {
+                                  final filledVal = editableCylBalance[cyl.weight] ?? cyl.filledStock;
+                                  final emptyVal = editableCylEmpty[cyl.weight] ?? cyl.emptyStock;
+
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                                    decoration: const BoxDecoration(
+                                      border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        // Weight Chip
+                                        Expanded(
+                                          flex: 3,
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF8FAFC),
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(
+                                                  color: const Color(0xFFE2E8F0),
+                                                  width: 1,
+                                                ),
+                                              ),
+                                              child: Text(
+                                                cyl.weight,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 12.5,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: const Color(0xFF0F172A),
+                                                  letterSpacing: 0.2,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+
+                                        // Full Cylinders Stepper Pill
+                                        Expanded(
+                                          flex: 4,
+                                          child: Center(
+                                            child: _buildModalStepperPill(
+                                              qty: filledVal,
+                                              canDecrease: filledVal > 0,
+                                              canIncrease: true,
+                                              activeColor: const Color(0xFF800020),
+                                              onDecrease: () {
+                                                setModalState(() => editableCylBalance[cyl.weight] = filledVal - 1);
+                                              },
+                                              onIncrease: () {
+                                                setModalState(() => editableCylBalance[cyl.weight] = filledVal + 1);
+                                              },
+                                            ),
+                                          ),
+                                        ),
+
+                                        // Empty Return Stepper Pill
+                                        Expanded(
+                                          flex: 4,
+                                          child: Center(
+                                            child: _buildModalStepperPill(
+                                              qty: emptyVal,
+                                              canDecrease: emptyVal > 0,
+                                              canIncrease: true,
+                                              activeColor: const Color(0xFF0F172A),
+                                              onDecrease: () {
+                                                setModalState(() => editableCylEmpty[cyl.weight] = emptyVal - 1);
+                                              },
+                                              onIncrease: () {
+                                                setModalState(() => editableCylEmpty[cyl.weight] = emptyVal + 1);
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
+
+                          // 3. OTHER PRODUCTS TO RETURN (Identical to Delivery Screen Table)
+                          if (availableOther.isNotEmpty) ...[
+                            const SizedBox(height: 14),
+                            Container(
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Section Header
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.category_rounded, size: 18, color: Color(0xFF800020)),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        'OTHER PRODUCTS TO RETURN',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFF800020),
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // Column Headers: Product | Return Qty
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 3,
+                                          child: Text(
+                                            'Product',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                              color: const Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          flex: 4,
+                                          child: Text(
+                                            'Return Qty',
+                                            textAlign: TextAlign.center,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                              color: const Color(0xFF800020),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+
+                                  // Product Rows
+                                  ...availableOther.map((prod) {
+                                    final balVal = editableOtherBalance[prod.name] ?? prod.balanceStock;
+
+                                    return Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                                      decoration: const BoxDecoration(
+                                        border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.center,
+                                        children: [
+                                          // Product Chip
+                                          Expanded(
+                                            flex: 3,
+                                            child: Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFF8FAFC),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  border: Border.all(
+                                                    color: const Color(0xFFE2E8F0),
+                                                    width: 1,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  prod.name,
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 12.5,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: const Color(0xFF0F172A),
+                                                    letterSpacing: 0.2,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+
+                                          // Return Stepper Pill
+                                          Expanded(
+                                            flex: 4,
+                                            child: Center(
+                                              child: _buildModalStepperPill(
+                                                qty: balVal,
+                                                canDecrease: balVal > 0,
+                                                canIncrease: true,
+                                                activeColor: const Color(0xFF800020),
+                                                onDecrease: () {
+                                                  setModalState(() => editableOtherBalance[prod.name] = balVal - 1);
+                                                },
+                                                onIncrease: () {
+                                                  setModalState(() => editableOtherBalance[prod.name] = balVal + 1);
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Bottom Action: Confirm and Submit Receipt Note (NO GLOW, clean & crisp)
+                  Container(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + MediaQuery.of(ctx).padding.bottom),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
+                    ),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF5A0016), Color(0xFF800020)],
+                          ),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: isSubmitting
+                                ? null
+                                : () async {
+                                    setModalState(() => isSubmitting = true);
+
+                                    // Build payload from editable values
+                                    final remCyl = state.cylinders.map((c) => {
+                                      'product_id': c.productId,
+                                      'weight': c.weight,
+                                      'qty': editableCylBalance[c.weight] ?? c.filledStock,
+                                      'empty_qty': editableCylEmpty[c.weight] ?? c.emptyStock,
+                                    }).toList();
+
+                                    final remOther = state.otherProducts.map((p) => {
+                                      'product_id': p.productId,
+                                      'name': p.name,
+                                      'qty': editableOtherBalance[p.name] ?? p.balanceStock,
+                                    }).toList();
+
+                                    final res = await state.submitEndShift(
+                                      remainingCylinders: remCyl,
+                                      remainingOther: remOther,
+                                    );
+
+                                    if (ctx.mounted) {
+                                      Navigator.pop(ctx);
+                                    }
+
+                                    if (context.mounted) {
+                                      final rn = res['receipt_no'] ?? 'RN-PENDING';
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Shift Ended! Receipt Note #$rn queued for Godown Transfer.'),
+                                          backgroundColor: const Color(0xFF800020),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                          duration: const Duration(seconds: 4),
+                                        ),
+                                      );
+                                    }
+                                  },
+                            borderRadius: BorderRadius.circular(12),
+                            child: Center(
+                              child: isSubmitting
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                      ),
+                                    )
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'CONFIRM & SUBMIT RECEIPT NOTE',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                            letterSpacing: 0.4,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Stepper Pill Widget matching delivery screen: [-  0  +]
+  Widget _buildModalStepperPill({
+    required int qty,
+    required bool canDecrease,
+    required bool canIncrease,
+    required Color activeColor,
+    required VoidCallback onDecrease,
+    required VoidCallback onIncrease,
+  }) {
+    final isSelected = qty > 0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      decoration: BoxDecoration(
+        color: isSelected ? Colors.white : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isSelected ? activeColor : const Color(0xFFCBD5E1),
+          width: isSelected ? 1.5 : 1.2,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Minus button
+          InkWell(
+            onTap: canDecrease ? onDecrease : null,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.remove_rounded,
+                size: 16,
+                color: canDecrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
+              ),
+            ),
+          ),
+
+          // Count Text
+          Container(
+            width: 26,
+            alignment: Alignment.center,
+            child: Text(
+              '$qty',
+              style: GoogleFonts.inter(
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+                color: isSelected ? activeColor : const Color(0xFF64748B),
+              ),
+            ),
+          ),
+
+          // Plus button
+          InkWell(
+            onTap: canIncrease ? onIncrease : null,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.add_rounded,
+                size: 16,
+                color: canIncrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- INVENTORY BREAKDOWN TABLE (Inside First Card) ---
   Widget _buildInventoryTable(AppState state) {
-    final totalAllocated = state.totalStartingFilled;
-    final totalDelivered = state.totalDeliveredFilled;
-    final totalBalance = state.totalClosingFilled;
-    final totalEmpty = state.totalClosingEmpty;
+    // Show only cylinders that are allocated or active
+    final displayCylinders = state.cylinders.where((c) =>
+      c.initialFilledStock > 0 || c.deliveredStock > 0 || c.filledStock > 0 || c.emptyStock > 0
+    ).toList();
+
+    // Show only other products that are allocated to this vehicle
+    final displayOtherProducts = state.otherProducts.where((p) =>
+      p.initialStock > 0 || p.balanceStock > 0 || p.deliveredStock > 0
+    ).toList();
+
+    final totalCylAllocated = state.totalStartingFilled;
+    final totalCylDelivered = state.totalDeliveredFilled;
+    final totalCylBalance = state.totalClosingFilled;
+    final totalCylEmpty = state.totalClosingEmpty;
+
+    final totalOtherAllo = state.totalOtherStock;
+    final totalOtherDel = state.totalOtherDelivered;
+    final totalOtherBal = state.totalOtherBalance;
+
+    final grandTotalAllocated = totalCylAllocated + totalOtherAllo;
+    final grandTotalDelivered = totalCylDelivered + totalOtherDel;
+    final grandTotalBalance = totalCylBalance + totalOtherBal;
 
     return Column(
       key: const ValueKey('first_card_inventory_table'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Table Header Row
+        // ================= SECTION 1: CYLINDERS =================
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 3.5,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF800020),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'CYLINDERS',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF800020),
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: _isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                    width: 0.8,
+                  ),
+                ),
+                child: Text(
+                  '${displayCylinders.length} TYPES',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF64748B),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // Cylinder Table Header Row
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           child: Row(
@@ -1376,8 +2243,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 2),
 
-        // Table Rows
-        ...state.cylinders.map((cyl) {
+        // Cylinder Rows
+        ...displayCylinders.map((cyl) {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7.5),
             decoration: const BoxDecoration(
@@ -1468,91 +2335,305 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }),
 
-        const SizedBox(height: 8),
-
-        // Table Total Row (Separated with distinct styling, font size and colors)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          decoration: BoxDecoration(
-            color: _isDark
-                ? const Color(0xFF7F1D1D).withValues(alpha: 0.15)
-                : const Color(0xFFFEF2F2),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: _isDark
-                  ? const Color(0xFF800020).withValues(alpha: 0.35)
-                  : const Color(0xFFFEE2E2),
-              width: 1.2,
+        // ================= SECTION 2: OTHER PRODUCTS =================
+        if (displayOtherProducts.isNotEmpty) ...[
+          const SizedBox(height: 18),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 3.5,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF800020),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'OTHER PRODUCTS',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF800020),
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: _isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Text(
+                    '${displayOtherProducts.length} ITEMS',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF64748B),
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          child: Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: Text(
-                  'Total',
-                  style: GoogleFonts.inter(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w900,
+
+          // Other Products Table Header Row
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Text(
+                    'Product',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'Allo.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'Del.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    'Bal.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
                     color: const Color(0xFF800020),
-                    letterSpacing: 0.3,
                   ),
                 ),
               ),
               Expanded(
                 flex: 2,
                 child: Text(
-                  '$totalAllocated',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: _isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  '$totalDelivered',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: _isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  '$totalBalance',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: const Color(0xFF800020),
-                  ),
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Text(
-                  '$totalEmpty',
+                  'Emp.',
                   textAlign: TextAlign.end,
                   style: GoogleFonts.inter(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: _isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF64748B),
                   ),
                 ),
               ),
             ],
           ),
         ),
+        const SizedBox(height: 2),
+
+        // Other Product Rows (Allocated products only)
+        ...displayOtherProducts.map((prod) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 7.5),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+            ),
+            child: Row(
+              children: [
+                // Product Name Column (Display Name)
+                Expanded(
+                  flex: 3,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        prod.name,
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: _textPrimary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Allocated Column
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    '${prod.initialStock}',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+
+                // Delivered Column
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    '${prod.deliveredStock}',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      color: _isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                  ),
+                ),
+
+                // Balance Column (Burgundy)
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    '${prod.balanceStock}',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF800020),
+                    ),
+                  ),
+                ),
+
+                // Empty Column (Dash)
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    '\u2014',
+                    textAlign: TextAlign.end,
+                    style: GoogleFonts.inter(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF94A3B8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
       ],
-    );
-  }
+
+      const SizedBox(height: 12),
+
+      // ================= SECTION 3: GRAND TOTAL ROW =================
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        decoration: BoxDecoration(
+          color: _isDark
+              ? const Color(0xFF7F1D1D).withValues(alpha: 0.15)
+              : const Color(0xFFFEF2F2),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: _isDark
+                ? const Color(0xFF800020).withValues(alpha: 0.35)
+                : const Color(0xFFFEE2E2),
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: Text(
+                'Grand Total',
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF800020),
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(
+                '$grandTotalAllocated',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w900,
+                  color: _isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(
+                '$grandTotalDelivered',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w900,
+                  color: _isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(
+                '$grandTotalBalance',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF800020),
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(
+                '$totalCylEmpty',
+                textAlign: TextAlign.end,
+                style: GoogleFonts.inter(
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w900,
+                  color: _isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
 
   // ================= 6. START NEW DELIVERY BUTTON =================
   Widget _buildStartDeliveryButton(BuildContext context, AppState state) {
@@ -1683,7 +2764,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                             Text(
-                              'Total spent: ₹${state.totalExpense.toStringAsFixed(0)} • ${state.expenses.length} records',
+                              'Total spent: \u20B9${state.totalExpense.toStringAsFixed(0)} \u2022 ${state.expenses.length} records',
                               style: GoogleFonts.inter(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w600,
@@ -1788,7 +2869,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                             // Expense Amount
                             Text(
-                              '₹${exp.amount.toStringAsFixed(0)}',
+                              '\u20B9${exp.amount.toStringAsFixed(0)}',
                               style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
@@ -1886,7 +2967,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     // Amount Field
                     Text(
-                      'Expense Amount (₹)',
+                      'Expense Amount (\u20B9)',
                       style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF475569)),
                     ),
                     const SizedBox(height: 6),
@@ -2067,7 +3148,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('Expense of ₹${amt.toStringAsFixed(0)} logged via $selectedMode.'),
+                              content: Text('Expense of \u20B9${amt.toStringAsFixed(0)} logged via $selectedMode.'),
                               backgroundColor: const Color(0xFF0F172A),
                               behavior: SnackBarBehavior.floating,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

@@ -192,4 +192,101 @@ class ApiService {
     }
     return [];
   }
+
+  /// 6. Create a delivery sale: POST /delivery-notes/create_sale/
+  static Future<Map<String, dynamic>> createSale({
+    required int allocationId,
+    required int customerLedgerId,
+    required List<Map<String, dynamic>> items,
+    required String paymentMethod,
+    required double amountCollected,
+  }) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/create_sale/');
+    final res = await http.post(
+      uri,
+      headers: await _headers(),
+      body: jsonEncode({
+        'allocation_id': allocationId,
+        'customer_ledger_id': customerLedgerId,
+        'items': items,
+        'payment_method': paymentMethod,
+        'amount_collected': amountCollected,
+      }),
+    );
+    try {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      return {'success': false, 'message': 'Server error ${res.statusCode}'};
+    }
+  }
+
+  /// 7. Get driver sales for today: GET /delivery-notes/driver_sales/?allocation_id=X
+  static Future<List<Map<String, dynamic>>> getDriverSales(int allocationId) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/driver_sales/?allocation_id=$allocationId');
+    final res = await http.get(uri, headers: await _headers());
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      if (data is List) return List<Map<String, dynamic>>.from(data);
+      if (data is Map && data.containsKey('results')) {
+        return List<Map<String, dynamic>>.from(data['results']);
+      }
+    }
+    return [];
+  }
+
+  /// 8. Cancel a delivery: POST /delivery-notes/cancel_sale/
+  static Future<bool> cancelSaleByTicket(String ticketId) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/cancel_sale/');
+    final res = await http.post(
+      uri,
+      headers: await _headers(),
+      body: jsonEncode({'ticket_id': ticketId}),
+    );
+    return res.statusCode == 200 || res.statusCode == 204;
+  }
+
+  static Future<bool> cancelSale(int deliveryNoteId) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/$deliveryNoteId/cancel/');
+    final res = await http.delete(uri, headers: await _headers());
+    return res.statusCode == 200 || res.statusCode == 204;
+  }
+
+  /// 9. End shift: POST /delivery-notes/end_shift/
+  static Future<Map<String, dynamic>> endShift({
+    required int allocationId,
+    required List<Map<String, dynamic>> remainingCylinders,
+    required List<Map<String, dynamic>> remainingOther,
+    required double totalCollected,
+    required int totalDeliveries,
+  }) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/end_shift/');
+    final res = await http.post(
+      uri,
+      headers: await _headers(),
+      body: jsonEncode({
+        'allocation_id': allocationId,
+        'remaining_cylinders': remainingCylinders,
+        'remaining_other': remainingOther,
+        'total_collected': totalCollected,
+        'total_deliveries': totalDeliveries,
+      }),
+    );
+    try {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      return {'success': false, 'message': 'Server error ${res.statusCode}'};
+    }
+  }
+
+  /// 10. Get last sync time: GET /delivery-notes/last_sync/?allocation_id=X
+  static Future<DateTime?> getLastSync(int allocationId) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/last_sync/?allocation_id=$allocationId');
+    final res = await http.get(uri, headers: await _headers());
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      final ts = data['last_updated'] as String?;
+      if (ts != null) return DateTime.tryParse(ts);
+    }
+    return null;
+  }
 }

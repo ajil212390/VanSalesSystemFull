@@ -359,7 +359,7 @@ class _AdminScreenState extends State<AdminScreen> {
               Expanded(
                 child: _buildStatCard(
                   title: "Today's Sale",
-                  value: '₹${todaySales.toStringAsFixed(0)}',
+                  value: '\u20B9${todaySales.toStringAsFixed(0)}',
                   icon: Icons.trending_up_rounded,
                 ),
               ),
@@ -1204,7 +1204,7 @@ class _AdminScreenState extends State<AdminScreen> {
                           ),
                         ),
                         Text(
-                          '$plateNumber • $driverName',
+                          '$plateNumber \u2022 $driverName',
                           style: GoogleFonts.inter(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w500,
@@ -1600,7 +1600,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '₹${totalRevenue.toStringAsFixed(0)}',
+                  '\u20B9${totalRevenue.toStringAsFixed(0)}',
                   style: GoogleFonts.inter(
                     fontSize: 26,
                     fontWeight: FontWeight.w900,
@@ -1634,7 +1634,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                 ),
                                 const SizedBox(height: 1),
                                 Text(
-                                  '₹${totalCash.toStringAsFixed(0)}',
+                                  '\u20B9${totalCash.toStringAsFixed(0)}',
                                   style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
                                 ),
                               ],
@@ -1665,7 +1665,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                 ),
                                 const SizedBox(height: 1),
                                 Text(
-                                  '₹${totalUpi.toStringAsFixed(0)}',
+                                  '\u20B9${totalUpi.toStringAsFixed(0)}',
                                   style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
                                 ),
                               ],
@@ -1771,7 +1771,7 @@ class _AdminScreenState extends State<AdminScreen> {
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               Text(
-                                '₹${balance.toStringAsFixed(0)}',
+                                '\u20B9${balance.toStringAsFixed(0)}',
                                 style: GoogleFonts.inter(
                                   fontSize: 15.5,
                                   fontWeight: FontWeight.w900,
@@ -1826,7 +1826,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                       style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
                                     ),
                                     Text(
-                                      '₹${total.toStringAsFixed(0)}',
+                                      '\u20B9${total.toStringAsFixed(0)}',
                                       style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
                                     ),
                                   ],
@@ -1838,11 +1838,11 @@ class _AdminScreenState extends State<AdminScreen> {
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Text(
-                                      'Cash: ₹${cash.toStringAsFixed(0)}',
+                                      'Cash: \u20B9${cash.toStringAsFixed(0)}',
                                       style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF16A34A)),
                                     ),
                                     Text(
-                                      'UPI: ₹${upi.toStringAsFixed(0)}',
+                                      'UPI: \u20B9${upi.toStringAsFixed(0)}',
                                       style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF2563EB)),
                                     ),
                                   ],
@@ -1888,7 +1888,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                   Row(
                                     children: [
                                       Text(
-                                        '-₹${totalExp.toStringAsFixed(0)}',
+                                        '-\u20B9${totalExp.toStringAsFixed(0)}',
                                         style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: const Color(0xFFDC2626)),
                                       ),
                                       const SizedBox(width: 4),
@@ -1932,7 +1932,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                         style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF0F172A)),
                                       ),
                                       Text(
-                                        '-₹${e.amount.toStringAsFixed(0)}',
+                                        '-\u20B9${e.amount.toStringAsFixed(0)}',
                                         style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFFDC2626)),
                                       ),
                                     ],

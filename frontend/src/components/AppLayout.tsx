@@ -17,7 +17,6 @@ import {
   Divider,
   UnstyledButton,
   ScrollArea,
-  ThemeIcon,
 } from '@mantine/core';
 import {
   IconLayoutDashboard,
@@ -41,7 +40,6 @@ import {
   IconReceipt,
   IconCreditCard,
   IconChartBar,
-  IconX,
 } from '@tabler/icons-react';
 
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
@@ -279,28 +277,6 @@ export const AppLayout: React.FC = () => {
       </AppShell.Header>
 
        <AppShell.Navbar px="xs" pt={6} pb="xs">
-        {/* Mobile Drawer Header with Close Button */}
-        <AppShell.Section hiddenFrom="sm">
-          <Group justify="space-between" align="center" pb="xs" mb="xs" style={{ borderBottom: '1px solid #f1f5f9' }}>
-            <Group gap="xs" wrap="nowrap">
-              <ThemeIcon size={30} radius="md" color="burgundy" variant="light" style={{ backgroundColor: '#fdf2f4', color: '#800020' }}>
-                <IconFolders size={17} />
-              </ThemeIcon>
-              <div>
-                <Text size="xs" fw={700} c="#800020">
-                  {user?.company_name || 'FUTURE GAS'}
-                </Text>
-                <Text size="10px" c="dimmed" fw={600} tt="uppercase" style={{ letterSpacing: '0.6px' }}>
-                  Navigation Menu
-                </Text>
-              </div>
-            </Group>
-            <ActionIcon variant="subtle" color="gray" size="sm" onClick={toggle} title="Close navigation">
-              <IconX size={18} />
-            </ActionIcon>
-          </Group>
-        </AppShell.Section>
-
         {/* Top Header with Seamless Collapse/Expand Sidebar Icon for Desktop */}
         <AppShell.Section visibleFrom="sm">
           <Box

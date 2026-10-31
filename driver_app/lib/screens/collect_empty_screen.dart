@@ -31,7 +31,7 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
   String _getSummaryString() {
     final parts = _counts.entries
         .where((e) => e.value > 0)
-        .map((e) => '${e.key} × ${e.value}')
+        .map((e) => '${e.key} \u00D7 ${e.value}')
         .toList();
     return parts.isEmpty ? 'No empties selected' : parts.join(', ');
   }
@@ -436,7 +436,7 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             Text(
-                              '${c.shopId ?? 'Customer'} • ${c.phone}',
+                              '${c.shopId ?? 'Customer'} \u2022 ${c.phone}',
                               style: const TextStyle(
                                 fontSize: 10.5,
                                 color: Color(0xFF64748B),

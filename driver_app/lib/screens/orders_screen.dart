@@ -90,6 +90,42 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ),
               ),
         actions: [
+          // Live Sync Pill
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF16A34A),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    state.lastSyncTime != null
+                        ? '${state.lastSyncTime!.hour.toString().padLeft(2, '0')}:${state.lastSyncTime!.minute.toString().padLeft(2, '0')}'
+                        : 'Live',
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF15803D),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
           IconButton(
             icon: Icon(
               _showSearch ? Icons.close_rounded : Icons.search_rounded,
@@ -192,7 +228,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
             // Hero Total Amount
             Text(
-              '₹${state.todayCollectedTotal.toStringAsFixed(0)}',
+              '\u20B9${state.todayCollectedTotal.toStringAsFixed(0)}',
               style: GoogleFonts.inter(
                 fontSize: 24,
                 fontWeight: FontWeight.w700,
@@ -234,7 +270,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '₹${cashTotal.toStringAsFixed(0)}',
+                          '\u20B9${cashTotal.toStringAsFixed(0)}',
                           style: GoogleFonts.inter(
                             fontSize: 15.5,
                             fontWeight: FontWeight.w700,
@@ -275,7 +311,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '₹${upiTotal.toStringAsFixed(0)}',
+                          '\u20B9${upiTotal.toStringAsFixed(0)}',
                           style: GoogleFonts.inter(
                             fontSize: 15.5,
                             fontWeight: FontWeight.w700,
@@ -315,10 +351,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFDC2626) : const Color(0xFFF1F5F9),
+          color: isSelected ? const Color(0xFF800020) : const Color(0xFFF1F5F9),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? const Color(0xFFDC2626) : const Color(0xFFCBD5E1),
+            color: isSelected ? const Color(0xFF800020) : const Color(0xFFCBD5E1),
             width: 1.2,
           ),
         ),
@@ -411,7 +447,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '₹${order.amount.toStringAsFixed(0)}',
+                      '\u20B9${order.amount.toStringAsFixed(0)}',
                       style: GoogleFonts.inter(
                         fontSize: 16.5,
                         fontWeight: FontWeight.w900,
@@ -458,10 +494,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.propane_tank_rounded, size: 13, color: Color(0xFFDC2626)),
+                      const Icon(Icons.propane_tank_rounded, size: 13, color: Color(0xFF800020)),
                       const SizedBox(width: 4),
                       Text(
-                        '${item.cylinder.weight} × ${item.deliveryQty}',
+                        '${item.cylinder.weight} \u00D7 ${item.deliveryQty}',
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -480,7 +516,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       const Icon(Icons.refresh_rounded, size: 13, color: Color(0xFF64748B)),
                       const SizedBox(width: 4),
                       Text(
-                        '${item.cylinder.weight} × ${item.emptyReturnQty} Empty',
+                        '${item.cylinder.weight} \u00D7 ${item.emptyReturnQty} Empty',
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
@@ -570,7 +606,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                       ),
                       Text(
-                        '₹${order.amount.toStringAsFixed(0)}',
+                        '\u20B9${order.amount.toStringAsFixed(0)}',
                         style: GoogleFonts.inter(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -646,7 +682,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       );
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFDC2626),
+                      backgroundColor: const Color(0xFF800020),
                       foregroundColor: Colors.white,
                       elevation: 0,
                       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -724,7 +760,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFDC2626),
+                backgroundColor: const Color(0xFF800020),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                 padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),

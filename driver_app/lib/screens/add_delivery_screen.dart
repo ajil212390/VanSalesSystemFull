@@ -31,12 +31,12 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       state.setCollectedAmount(state.totalBillAmount);
     }
     setState(() => _isSubmitting = true);
-    await Future.delayed(const Duration(milliseconds: 300));
+    final ok = await state.completeDelivery();
     if (!mounted) return;
-    state.completeDelivery();
     setState(() => _isSubmitting = false);
-    if (!mounted) return;
-    SuccessScreen.show(context);
+    if (ok) {
+      SuccessScreen.show(context);
+    }
   }
 
   void _selectOrAddCustomCustomer(AppState state, String name) {
@@ -78,14 +78,14 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final hasValidAmount = effectiveAmount > 0;
 
     final canSubmit = state.selectedCustomer != null &&
-        state.totalCylinders > 0 &&
+        (state.totalCylinders > 0 || state.totalOtherDeliveryCount > 0) &&
         state.paymentMethod.isNotEmpty &&
         hasValidAmount;
 
-    // Calculate completion progress (1: Customer, 2: Cylinders, 3: Payment & Amount)
+    // Calculate completion progress (1: Customer, 2: Cylinders/Products, 3: Payment & Amount)
     int completedStepCount = 0;
     if (state.selectedCustomer != null) completedStepCount++;
-    if (state.totalCylinders > 0) completedStepCount++;
+    if (state.totalCylinders > 0 || state.totalOtherDeliveryCount > 0) completedStepCount++;
     if (state.paymentMethod.isNotEmpty && hasValidAmount) completedStepCount++;
     final double completionProgress = completedStepCount / 3.0;
 
@@ -133,7 +133,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                               color: isDone
-                                  ? const Color(0xFFDC2626)
+                                  ? const Color(0xFF800020)
                                   : const Color(0xFF64748B),
                             ),
                           ),
@@ -142,7 +142,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                             style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,
-                              color: isDone ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+                              color: isDone ? const Color(0xFF800020) : const Color(0xFF64748B),
                             ),
                           ),
                         ],
@@ -154,7 +154,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           value: animatedProgress,
                           backgroundColor: const Color(0xFFE2E8F0),
                           valueColor: const AlwaysStoppedAnimation<Color>(
-                            Color(0xFFDC2626),
+                            Color(0xFF800020),
                           ),
                           minHeight: 4,
                         ),
@@ -181,6 +181,12 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             // 2. Unified Cylinder to Deliver & Return Empty Section (Single Table)
             _buildUnifiedCylinderTableCard(state),
 
+            // 2.1 Other Products Section
+            if (state.otherProducts.any((p) => p.balanceStock > 0)) ...[
+              const SizedBox(height: 14),
+              _buildOtherProductsCard(state),
+            ],
+
             const SizedBox(height: 14),
 
             // 3. Payment Method Section
@@ -206,16 +212,15 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   // ================= 1. CUSTOMER SELECTOR / CARD =================
   Widget _buildCustomerCardOrSelector(AppState state) {
     final c = state.selectedCustomer;
-
     final trimmedQuery = _searchQuery.trim();
-    final showSearchResults = trimmedQuery.isNotEmpty;
 
-    // Customer Search Filter
-    final filtered = state.customers.where((item) {
-      if (trimmedQuery.isEmpty) return false;
-      final q = trimmedQuery.toLowerCase();
-      return item.name.toLowerCase().contains(q) || item.phone.contains(q);
-    }).toList();
+    // Customer Dropdown Filter (Sundry Debtors from Backend)
+    final filtered = trimmedQuery.isEmpty
+        ? state.customers
+        : state.customers.where((item) {
+            final q = trimmedQuery.toLowerCase();
+            return item.name.toLowerCase().contains(q) || item.phone.contains(q);
+          }).toList();
 
     return Container(
       width: double.infinity,
@@ -246,14 +251,14 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.person_rounded, size: 16, color: Color(0xFF0F172A)),
+                    const Icon(Icons.person_rounded, size: 16, color: Color(0xFF800020)),
                     const SizedBox(width: 6),
                     Text(
-                      'CUSTOMER',
+                      'CUSTOMER (SUNDRY DEBTOR)',
                       style: GoogleFonts.inter(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w800,
-                        color: const Color(0xFF0F172A),
+                        color: const Color(0xFF800020),
                         letterSpacing: 0.5,
                       ),
                     ),
@@ -274,7 +279,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                         style: GoogleFonts.inter(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: const Color(0xFFDC2626),
+                          color: const Color(0xFF800020),
                         ),
                       ),
                     ),
@@ -296,182 +301,223 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 child: Row(
                   children: [
                     Container(
-                      width: 36,
-                      height: 36,
+                      width: 38,
+                      height: 38,
                       decoration: const BoxDecoration(
-                        color: Color(0xFFFEE2E2),
+                        color: Color(0xFFFEF2F2),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.person_rounded,
-                        size: 20,
-                        color: Color(0xFFDC2626),
+                      child: const Center(
+                        child: Icon(
+                          Icons.person_rounded,
+                          size: 20,
+                          color: Color(0xFF800020),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
-                        c.name,
-                        style: GoogleFonts.inter(
-                          fontSize: 14.5,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF0F172A),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            c.name,
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (c.phone.isNotEmpty)
+                            Text(
+                              c.phone,
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
+                    if (c.outstanding > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFFEE2E2)),
+                        ),
+                        child: Text(
+                          '\u20B9${c.outstanding.toStringAsFixed(0)} Due',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               )
             else ...[
-              // Clean blended search input directly inside card (no nested pill box or outline)
-              Row(
-                children: [
-                  const Icon(Icons.search_rounded, size: 20, color: Color(0xFF64748B)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (v) => setState(() => _searchQuery = v),
-                      onSubmitted: (v) {
-                        _selectOrAddCustomCustomer(state, v);
-                      },
-                      decoration: InputDecoration(
-                        hintText: 'Search customer...',
-                        hintStyle: GoogleFonts.inter(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF94A3B8),
+              // Search Input for selecting customer from dropdown
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.search_rounded, size: 18, color: Color(0xFF64748B)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        onChanged: (v) => setState(() => _searchQuery = v),
+                        onSubmitted: (v) {
+                          _selectOrAddCustomCustomer(state, v);
+                        },
+                        decoration: InputDecoration(
+                          hintText: 'Search or select customer from dropdown...',
+                          hintStyle: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                          border: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
                         ),
-                        border: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        errorBorder: InputBorder.none,
-                        disabledBorder: InputBorder.none,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                      ),
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF0F172A),
+                        style: GoogleFonts.inter(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF0F172A),
+                        ),
                       ),
                     ),
-                  ),
-                  if (_searchQuery.isNotEmpty)
-                    GestureDetector(
-                      onTap: () {
-                        _searchController.clear();
-                        setState(() => _searchQuery = '');
-                      },
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 6),
-                        child: Icon(Icons.close_rounded, size: 18, color: Color(0xFF64748B)),
+                    if (_searchQuery.isNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(Icons.close_rounded, size: 16, color: Color(0xFF64748B)),
+                        ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
 
-              if (showSearchResults) ...[
-                const SizedBox(height: 8),
+              const SizedBox(height: 8),
 
-                // If user typed a query that is not exact match, offer instant "Use '[name]' as customer"
-                if (!state.customers.any((c) => c.name.toLowerCase() == trimmedQuery.toLowerCase())) ...[
-                  InkWell(
-                    onTap: () => _selectOrAddCustomCustomer(state, trimmedQuery),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF2F2),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFFEE2E2)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.add_circle_outline_rounded, size: 17, color: Color(0xFFDC2626)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Use "$trimmedQuery" as Customer',
-                              style: GoogleFonts.inter(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFFDC2626),
-                              ),
+              // If user typed a custom customer name
+              if (trimmedQuery.isNotEmpty && !state.customers.any((c) => c.name.toLowerCase() == trimmedQuery.toLowerCase())) ...[
+                InkWell(
+                  onTap: () => _selectOrAddCustomCustomer(state, trimmedQuery),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFEE2E2)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.add_circle_outline_rounded, size: 17, color: Color(0xFF800020)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Use "$trimmedQuery" as Customer',
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF800020),
                             ),
                           ),
-                          const Icon(Icons.arrow_forward_rounded, size: 15, color: Color(0xFFDC2626)),
-                        ],
-                      ),
+                        ),
+                        const Icon(Icons.arrow_forward_rounded, size: 15, color: Color(0xFF800020)),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 6),
-                ],
+                ),
+                const SizedBox(height: 6),
+              ],
 
-                if (filtered.isNotEmpty)
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 200),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: filtered.length,
-                      separatorBuilder: (_, _) => const Divider(
-                        height: 1,
-                        color: Color(0xFFF1F5F9),
-                      ),
-                      itemBuilder: (context, index) {
-                        final cust = filtered[index];
-                        return InkWell(
-                          onTap: () {
-                            state.selectCustomer(cust);
-                            setState(() {
-                              _searchQuery = '';
-                              _searchController.clear();
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(8),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF1F5F9),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      cust.name.isNotEmpty ? cust.name.substring(0, 1) : 'C',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w800,
-                                        color: const Color(0xFF0F172A),
-                                      ),
+              // Dropdown list of Sundry Debtors
+              if (filtered.isNotEmpty)
+                Container(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, _) => const Divider(
+                      height: 1,
+                      color: Color(0xFFF1F5F9),
+                    ),
+                    itemBuilder: (context, index) {
+                      final cust = filtered[index];
+                      return InkWell(
+                        onTap: () {
+                          state.selectCustomer(cust);
+                          setState(() {
+                            _searchQuery = '';
+                            _searchController.clear();
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFEF2F2),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    cust.name.isNotEmpty ? cust.name.substring(0, 1).toUpperCase() : 'C',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF800020),
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        cust.name,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: const Color(0xFF0F172A),
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      cust.name,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF0F172A),
                                       ),
-                                      const SizedBox(height: 1),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    if (cust.phone.isNotEmpty || cust.address.isNotEmpty)
                                       Text(
                                         cust.address.isNotEmpty
-                                            ? '${cust.phone} • ${cust.address}'
+                                            ? '${cust.phone} \u2022 ${cust.address}'
                                             : cust.phone,
                                         style: GoogleFonts.inter(
                                           fontSize: 10.5,
@@ -481,22 +527,39 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
-                                    ],
-                                  ),
+                                  ],
                                 ),
+                              ),
+                              if (cust.outstanding > 0)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF2F2),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: const Color(0xFFFEE2E2)),
+                                  ),
+                                  child: Text(
+                                    '\u20B9${cust.outstanding.toStringAsFixed(0)}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF800020),
+                                    ),
+                                  ),
+                                )
+                              else
                                 const Icon(
                                   Icons.chevron_right_rounded,
                                   size: 16,
                                   color: Color(0xFF94A3B8),
                                 ),
-                              ],
-                            ),
+                            ],
                           ),
-                        );
-                      },
-                    ),
+                        ),
+                      );
+                    },
                   ),
-              ],
+                ),
             ],
           ],
         ),
@@ -532,14 +595,14 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             // Section Header
             Row(
               children: [
-                const Icon(Icons.propane_tank_rounded, size: 18, color: Color(0xFFDC2626)),
+                const Icon(Icons.propane_tank_rounded, size: 18, color: Color(0xFF800020)),
                 const SizedBox(width: 6),
                 Text(
                   'CYLINDERS TO DELIVER',
                   style: GoogleFonts.inter(
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFFDC2626),
+                    color: const Color(0xFF800020),
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -576,7 +639,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w800,
-                        color: const Color(0xFFDC2626),
+                        color: const Color(0xFF800020),
                       ),
                     ),
                   ),
@@ -608,93 +671,92 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                 decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1)),
+                  border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // Weight Badge Column (Bright vivid high-contrast badge)
-                        Expanded(
-                          flex: 3,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: hasStock ? const Color(0xFFFEF2F2) : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: hasStock ? const Color(0xFFF87171) : const Color(0xFFCBD5E1),
-                                  width: 1.3,
-                                ),
-                              ),
-                              child: Text(
-                                cyl.weight,
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                  color: hasStock ? const Color(0xFF991B1B) : const Color(0xFF0F172A),
-                                ),
+                    // Weight & Stock Column (Clean Minimal Design)
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                                width: 1,
                               ),
                             ),
-                          ),
-                        ),
-
-                        // Filled Delivery Stepper Pill [- QTY +]
-                        Expanded(
-                          flex: 4,
-                          child: Center(
-                            child: _buildStepperPill(
-                              qty: filledQty,
-                              canDecrease: filledQty > 0,
-                              canIncrease: filledQty < cyl.filledStock,
-                              activeColor: const Color(0xFFDC2626),
-                              onDecrease: () {
-                                state.updateDeliveryQty(index, filledQty - 1);
-                                setState(() {});
-                              },
-                              onIncrease: () {
-                                state.updateDeliveryQty(index, filledQty + 1);
-                                setState(() {});
-                              },
+                            child: Text(
+                              cyl.weight,
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                                letterSpacing: 0.2,
+                              ),
                             ),
                           ),
-                        ),
-
-                        // Empty Return Stepper Pill [- QTY +]
-                        Expanded(
-                          flex: 4,
-                          child: Center(
-                            child: _buildStepperPill(
-                              qty: emptyQty,
-                              canDecrease: emptyQty > 0,
-                              canIncrease: true,
-                              activeColor: const Color(0xFF0F172A),
-                              onDecrease: () {
-                                state.updateEmptyReturnQty(index, emptyQty - 1);
-                                setState(() {});
-                              },
-                              onIncrease: () {
-                                state.updateEmptyReturnQty(index, emptyQty + 1);
-                                setState(() {});
-                              },
+                          const SizedBox(height: 3),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 2),
+                            child: Text(
+                              hasStock ? '${cyl.filledStock} left' : '0 left',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 3),
-                    Padding(
-                      padding: const EdgeInsets.only(left: 2),
-                      child: Text(
-                        hasStock ? '${cyl.filledStock} left' : '0 left',
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: hasStock ? FontWeight.w800 : FontWeight.w600,
-                          color: hasStock ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+
+                    // Filled Delivery Stepper Pill [- QTY +]
+                    Expanded(
+                      flex: 4,
+                      child: Center(
+                        child: _buildStepperPill(
+                          qty: filledQty,
+                          canDecrease: filledQty > 0,
+                          canIncrease: filledQty < cyl.filledStock,
+                          activeColor: const Color(0xFF800020),
+                          onDecrease: () {
+                            state.updateDeliveryQty(index, filledQty - 1);
+                            setState(() {});
+                          },
+                          onIncrease: () {
+                            state.updateDeliveryQty(index, filledQty + 1);
+                            setState(() {});
+                          },
+                        ),
+                      ),
+                    ),
+
+                    // Empty Return Stepper Pill [- QTY +]
+                    Expanded(
+                      flex: 4,
+                      child: Center(
+                        child: _buildStepperPill(
+                          qty: emptyQty,
+                          canDecrease: emptyQty > 0,
+                          canIncrease: true,
+                          activeColor: const Color(0xFF0F172A),
+                          onDecrease: () {
+                            state.updateEmptyReturnQty(index, emptyQty - 1);
+                            setState(() {});
+                          },
+                          onIncrease: () {
+                            state.updateEmptyReturnQty(index, emptyQty + 1);
+                            setState(() {});
+                          },
                         ),
                       ),
                     ),
@@ -792,11 +854,183 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     );
   }
 
+
+
+  // ================= 2.1 OTHER PRODUCTS TABLE CARD =================
+  Widget _buildOtherProductsCard(AppState state) {
+    final otherList = state.otherProducts.where((p) => p.balanceStock > 0).toList();
+    if (otherList.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0E0F172A),
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+          BoxShadow(
+            color: Color(0x080F172A),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Section Header (Identical to Cylinders above)
+            Row(
+              children: [
+                const Icon(Icons.category_rounded, size: 18, color: Color(0xFF800020)),
+                const SizedBox(width: 6),
+                Text(
+                  'OTHER PRODUCTS TO DELIVER',
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF800020),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Table Column Headers: Product | Deliver Qty (Identical to Cylinders above)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: Text(
+                      'Product',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      'Deliver Qty',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF800020),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // Table Rows (Identical to Cylinders above)
+            ...otherList.map((prod) {
+              final qty = state.getOtherDeliveryQty(prod.name);
+              final hasStock = prod.balanceStock > 0;
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Product & Stock Column (Identical to Weight & Stock above)
+                    Expanded(
+                      flex: 3,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              prod.name,
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 2),
+                            child: Text(
+                              '${prod.balanceStock} left',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Deliver Stepper Pill (Identical to Filled Stepper Pill above)
+                    Expanded(
+                      flex: 4,
+                      child: Center(
+                        child: _buildStepperPill(
+                          qty: qty,
+                          canDecrease: qty > 0,
+                          canIncrease: hasStock ? qty < prod.balanceStock : false,
+                          activeColor: const Color(0xFF800020),
+                          onDecrease: () {
+                            state.updateOtherDeliveryQty(prod.name, qty - 1);
+                            setState(() {});
+                          },
+                          onIncrease: () {
+                            state.updateOtherDeliveryQty(prod.name, qty + 1);
+                            setState(() {});
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ================= 3. PAYMENT METHOD SECTION =================
   Widget _buildPaymentMethodSection(AppState state) {
     final methods = [
       {'key': 'Cash', 'title': 'Cash', 'icon': Icons.payments_outlined},
-      {'key': 'UPI', 'title': 'UPI / QR', 'icon': Icons.qr_code_2_rounded},
+      {'key': 'UPI', 'title': 'Bank', 'icon': Icons.qr_code_2_rounded},
     ];
 
     return Container(
@@ -858,13 +1092,13 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                         color: isSelected ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: isSelected ? const Color(0xFFDC2626) : const Color(0xFFE2E8F0),
+                          color: isSelected ? const Color(0xFF800020) : const Color(0xFFE2E8F0),
                           width: isSelected ? 1.5 : 1,
                         ),
                         boxShadow: isSelected
                             ? const [
                                 BoxShadow(
-                                  color: Color(0x1ADC2626),
+                                  color: Color(0x20800020),
                                   blurRadius: 4,
                                   offset: Offset(0, 2),
                                 ),
@@ -876,7 +1110,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           Icon(
                             m['icon'] as IconData,
                             size: 19,
-                            color: isSelected ? const Color(0xFFDC2626) : const Color(0xFF64748B),
+                            color: isSelected ? const Color(0xFF800020) : const Color(0xFF64748B),
                           ),
                           const SizedBox(height: 3),
                           Text(
@@ -884,7 +1118,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                             style: GoogleFonts.inter(
                               fontSize: 11.5,
                               fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                              color: isSelected ? const Color(0xFFDC2626) : const Color(0xFF475569),
+                              color: isSelected ? const Color(0xFF800020) : const Color(0xFF475569),
                             ),
                           ),
                         ],
@@ -947,7 +1181,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             Row(
               children: [
                 Text(
-                  '₹',
+                  '\u20B9',
                   style: GoogleFonts.inter(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
@@ -1020,8 +1254,8 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
                   colors: [
-                    Color(0xFF991B1B),
-                    Color(0xFFDC2626),
+                    Color(0xFF5A0016),
+                    Color(0xFF800020),
                   ],
                 )
               : null,
@@ -1029,7 +1263,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
           boxShadow: canSubmit && !_isSubmitting
               ? const [
                   BoxShadow(
-                    color: Color(0x30DC2626),
+                    color: Color(0x30800020),
                     blurRadius: 12,
                     offset: Offset(0, 4),
                   ),
@@ -1059,7 +1293,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(msg),
-                          backgroundColor: const Color(0xFFDC2626),
+                          backgroundColor: const Color(0xFF800020),
                           duration: const Duration(seconds: 2),
                         ),
                       );
