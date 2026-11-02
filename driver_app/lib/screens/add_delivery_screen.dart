@@ -17,6 +17,17 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   bool _isSubmitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final state = AppStateProvider.of(context);
+        state.fetchCustomers();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _amountController.dispose();
     _searchController.dispose();
@@ -35,6 +46,8 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     if (!mounted) return;
     setState(() => _isSubmitting = false);
     if (ok) {
+      state.resetDelivery();
+      state.syncFromBackend();
       SuccessScreen.show(context);
     }
   }
@@ -213,13 +226,21 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   Widget _buildCustomerCardOrSelector(AppState state) {
     final c = state.selectedCustomer;
     final trimmedQuery = _searchQuery.trim();
+    final isSearching = trimmedQuery.isNotEmpty;
 
     // Customer Dropdown Filter (Sundry Debtors from Backend)
-    final filtered = trimmedQuery.isEmpty
-        ? state.customers
+    // Only show customers if the driver types letters or numbers
+    final filtered = !isSearching
+        ? <Customer>[]
         : state.customers.where((item) {
             final q = trimmedQuery.toLowerCase();
-            return item.name.toLowerCase().contains(q) || item.phone.contains(q);
+            final nameMatch = item.name.toLowerCase().contains(q);
+            final phoneDigits = item.phone.replaceAll(RegExp(r'[^0-9]'), '');
+            final phoneMatch = item.phone.toLowerCase().contains(q) ||
+                (phoneDigits.isNotEmpty && phoneDigits.contains(q));
+            final shopMatch = item.shopId != null && item.shopId!.toLowerCase().contains(q);
+            final addressMatch = item.address.toLowerCase().contains(q);
+            return nameMatch || phoneMatch || shopMatch || addressMatch;
           }).toList();
 
     return Container(
@@ -254,7 +275,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                     const Icon(Icons.person_rounded, size: 16, color: Color(0xFF800020)),
                     const SizedBox(width: 6),
                     Text(
-                      'CUSTOMER (SUNDRY DEBTOR)',
+                      'CUSTOMER',
                       style: GoogleFonts.inter(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w800,
@@ -342,7 +363,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                         ],
                       ),
                     ),
-                    if (c.outstanding > 0)
+                    if (c.outstanding != 0)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
@@ -351,7 +372,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           border: Border.all(color: const Color(0xFFFEE2E2)),
                         ),
                         child: Text(
-                          '\u20B9${c.outstanding.toStringAsFixed(0)} Due',
+                          '\u20B9${c.outstanding.abs().toStringAsFixed(0)} ${c.outstanding > 0 ? "Dr" : "Cr"}',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
@@ -363,18 +384,35 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 ),
               )
             else ...[
-              // Search Input for selecting customer from dropdown
+              // Enhanced Touch-Friendly Search Input
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isSearching ? const Color(0xFF800020) : const Color(0xFFCBD5E1),
+                    width: isSearching ? 1.5 : 1.0,
+                  ),
+                  boxShadow: isSearching
+                      ? const [
+                          BoxShadow(
+                            color: Color(0x10800020),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.search_rounded, size: 18, color: Color(0xFF64748B)),
-                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.search_rounded,
+                      size: 22,
+                      color: isSearching ? const Color(0xFF800020) : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: TextField(
                         controller: _searchController,
@@ -383,9 +421,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           _selectOrAddCustomCustomer(state, v);
                         },
                         decoration: InputDecoration(
-                          hintText: 'Search or select customer from dropdown...',
+                          hintText: 'Type name or phone to search customer...',
                           hintStyle: GoogleFonts.inter(
-                            fontSize: 13,
+                            fontSize: 14,
                             fontWeight: FontWeight.w500,
                             color: const Color(0xFF94A3B8),
                           ),
@@ -398,7 +436,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           contentPadding: EdgeInsets.zero,
                         ),
                         style: GoogleFonts.inter(
-                          fontSize: 13.5,
+                          fontSize: 15,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFF0F172A),
                         ),
@@ -411,155 +449,168 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           setState(() => _searchQuery = '');
                         },
                         child: const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 4),
-                          child: Icon(Icons.close_rounded, size: 16, color: Color(0xFF64748B)),
+                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          child: Icon(Icons.cancel_rounded, size: 20, color: Color(0xFF94A3B8)),
                         ),
                       ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 8),
+              // When driver is typing (1st letter/number typed): Show dropdown options
+              if (isSearching) ...[
+                const SizedBox(height: 10),
 
-              // If user typed a custom customer name
-              if (trimmedQuery.isNotEmpty && !state.customers.any((c) => c.name.toLowerCase() == trimmedQuery.toLowerCase())) ...[
-                InkWell(
-                  onTap: () => _selectOrAddCustomCustomer(state, trimmedQuery),
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFFEE2E2)),
-                    ),
+                // Dropdown list of matching Sundry Debtors
+                if (filtered.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2, bottom: 8),
                     child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Icon(Icons.add_circle_outline_rounded, size: 17, color: Color(0xFF800020)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Use "$trimmedQuery" as Customer',
-                            style: GoogleFonts.inter(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF800020),
-                            ),
+                        Text(
+                          'CUSTOMERS FOUND (${filtered.length})',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF800020),
+                            letterSpacing: 0.5,
                           ),
                         ),
-                        const Icon(Icons.arrow_forward_rounded, size: 15, color: Color(0xFF800020)),
+                        Text(
+                          'Tap to select from dropdown',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ),
-                const SizedBox(height: 6),
-              ],
-
-              // Dropdown list of Sundry Debtors
-              if (filtered.isNotEmpty)
-                Container(
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, _) => const Divider(
-                      height: 1,
-                      color: Color(0xFFF1F5F9),
-                    ),
-                    itemBuilder: (context, index) {
-                      final cust = filtered[index];
-                      return InkWell(
-                        onTap: () {
-                          state.selectCustomer(cust);
-                          setState(() {
-                            _searchQuery = '';
-                            _searchController.clear();
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(8),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFEF2F2),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    cust.name.isNotEmpty ? cust.name.substring(0, 1).toUpperCase() : 'C',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w800,
-                                      color: const Color(0xFF800020),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      cust.name,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF0F172A),
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    if (cust.phone.isNotEmpty || cust.address.isNotEmpty)
-                                      Text(
-                                        cust.address.isNotEmpty
-                                            ? '${cust.phone} \u2022 ${cust.address}'
-                                            : cust.phone,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w500,
-                                          color: const Color(0xFF64748B),
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              if (cust.outstanding > 0)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFEF2F2),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: const Color(0xFFFEE2E2)),
-                                  ),
-                                  child: Text(
-                                    '\u20B9${cust.outstanding.toStringAsFixed(0)}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF800020),
-                                    ),
-                                  ),
-                                )
-                              else
-                                const Icon(
-                                  Icons.chevron_right_rounded,
-                                  size: 16,
-                                  color: Color(0xFF94A3B8),
-                                ),
-                            ],
-                          ),
+                  Container(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x0C0F172A),
+                          blurRadius: 10,
+                          offset: Offset(0, 4),
                         ),
-                      );
-                    },
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        padding: EdgeInsets.zero,
+                        physics: const ClampingScrollPhysics(),
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, _) => const Divider(
+                          height: 1,
+                          color: Color(0xFFF1F5F9),
+                        ),
+                        itemBuilder: (context, index) {
+                          final cust = filtered[index];
+                          return InkWell(
+                            onTap: () {
+                              state.selectCustomer(cust);
+                              setState(() {
+                                _searchQuery = '';
+                                _searchController.clear();
+                              });
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEF2F2),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        cust.name.isNotEmpty ? cust.name.substring(0, 1).toUpperCase() : 'C',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFF800020),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          cust.name,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: const Color(0xFF0F172A),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (cust.phone.isNotEmpty || cust.address.isNotEmpty)
+                                          Text(
+                                            cust.address.isNotEmpty
+                                                ? '${cust.phone.isNotEmpty ? "${cust.phone} \u2022 " : ""}${cust.address}'
+                                                : cust.phone,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w500,
+                                              color: const Color(0xFF64748B),
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 18,
+                                    color: Color(0xFF94A3B8),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                   ),
-                ),
+                ] else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.search_off_rounded, size: 28, color: Color(0xFF94A3B8)),
+                          const SizedBox(height: 6),
+                          Text(
+                            'No customer found matching "$trimmedQuery"',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ],
         ),

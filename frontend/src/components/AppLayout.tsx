@@ -17,6 +17,8 @@ import {
   Divider,
   UnstyledButton,
   ScrollArea,
+  Indicator,
+  Badge,
 } from '@mantine/core';
 import {
   IconLayoutDashboard,
@@ -40,11 +42,14 @@ import {
   IconReceipt,
   IconCreditCard,
   IconChartBar,
+  IconBell,
 } from '@tabler/icons-react';
 
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
+import { apiClient } from '../api/client';
 
 export const AppLayout: React.FC = () => {
   const [opened, { toggle }] = useDisclosure();
@@ -58,6 +63,17 @@ export const AppLayout: React.FC = () => {
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
   const location = useLocation();
+
+  const { data: receiptNotes = [] } = useQuery<any[]>({
+    queryKey: ['receipt-notes'],
+    queryFn: async () => {
+      const res = await apiClient.get('/delivery-notes/receipt-notes/');
+      return Array.isArray(res.data) ? res.data : [];
+    },
+    refetchInterval: 15000,
+  });
+
+  const pendingReceiptNotes = receiptNotes.filter((n: any) => n.status === 'pending');
 
   const handleLogout = () => {
     logout();
@@ -122,6 +138,8 @@ export const AppLayout: React.FC = () => {
         return { section: 'Payment', title: 'New Payment' };
       case '/delivery-notes':
         return { section: 'Operations', title: 'Delivery Notes' };
+      case '/receipt-notes':
+        return { section: 'Operations', title: 'Receipt Notes' };
       case '/stock-analysis':
         return { section: 'Inventory', title: 'Stock Analysis' };
 
@@ -201,7 +219,7 @@ export const AppLayout: React.FC = () => {
                 {breadcrumb.section}
               </Text>
               <Text size="xs" c="#cbd5e1">
-                /
+                
               </Text>
               <Text size="xs" fw={600} c="#1e293b">
                 {breadcrumb.title}
@@ -209,8 +227,125 @@ export const AppLayout: React.FC = () => {
             </Group>
           </Group>
 
-          {/* Right: Executive User Profile */}
+          {/* Right: Notifications & User Profile */}
           <Group gap="sm" wrap="nowrap">
+            {/* Notification Bell Icon for Receipt Notes */}
+            <Menu shadow="lg" width={320} position="bottom-end" radius="md">
+              <Menu.Target>
+                <Tooltip label="Receipt Note Notifications" withArrow position="bottom">
+                  <Indicator
+                    inline
+                    size={16}
+                    offset={4}
+                    position="top-end"
+                    color="burgundy"
+                    label={pendingReceiptNotes.length > 0 ? String(pendingReceiptNotes.length) : undefined}
+                    disabled={pendingReceiptNotes.length === 0}
+                    withBorder
+                    styles={{
+                      indicator: {
+                        backgroundColor: '#800020',
+                        fontWeight: 700,
+                        fontSize: 10,
+                        border: '2px solid #ffffff',
+                      },
+                    }}
+                  >
+                    <ActionIcon
+                      variant="light"
+                      color="gray"
+                      size={36}
+                      radius="md"
+                      style={{
+                        backgroundColor: '#f8fafc',
+                        border: '1px solid #e2e8f0',
+                        color: '#475569',
+                        transition: 'all 150ms ease',
+                      }}
+                    >
+                      <IconBell size={19} stroke={1.75} />
+                    </ActionIcon>
+                  </Indicator>
+                </Tooltip>
+              </Menu.Target>
+
+              <Menu.Dropdown p="xs" style={{ borderColor: '#e2e8f0', backgroundColor: '#ffffff' }}>
+                <Group justify="space-between" align="center" px="xs" py={6} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <Group gap={6}>
+                    <IconReceipt size={16} color="#800020" />
+                    <Text size="xs" fw={700} style={{ color: '#0f172a' }}>
+                      Receipt Note Alerts
+                    </Text>
+                  </Group>
+                  <Badge size="xs" color="burgundy" variant="light" styles={{ root: { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 } }}>
+                    {pendingReceiptNotes.length} Pending
+                  </Badge>
+                </Group>
+
+                <Box py={4}>
+                  {pendingReceiptNotes.length === 0 ? (
+                    <Box px="xs" py="md" style={{ textAlign: 'center' }}>
+                      <Text size="xs" c="dimmed">
+                        No pending receipt notes at the gate.
+                      </Text>
+                    </Box>
+                  ) : (
+                    pendingReceiptNotes.slice(0, 5).map((item: any) => (
+                      <Menu.Item
+                        key={item.id}
+                        component={Link}
+                        to="/receipt-notes"
+                        style={{
+                          borderRadius: 6,
+                          padding: '8px 10px',
+                          marginBottom: 3,
+                          backgroundColor: '#fdf2f4',
+                          border: '1px solid #f5c2cb',
+                        }}
+                      >
+                        <Group justify="space-between" align="flex-start" wrap="nowrap">
+                          <Stack gap={2}>
+                            <Group gap={6} align="center">
+                              <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                                {item.noteNumber}
+                              </Text>
+                              <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontSize: 10, height: 18, borderColor: '#e2e8f0', color: '#334155' } }}>
+                                {item.vehicleNumber}
+                              </Badge>
+                            </Group>
+                            <Text size="11px" c="dimmed">
+                              {item.driverName} • {item.emptyCylindersTotal} Empties • ₹{(item.cashCollected + item.digitalCollected).toLocaleString('en-IN')}
+                            </Text>
+                          </Stack>
+                          <Text size="10px" c="#94a3b8" fw={500}>
+                            {item.time || item.date}
+                          </Text>
+                        </Group>
+                      </Menu.Item>
+                    ))
+                  )}
+                </Box>
+
+                <Divider style={{ borderColor: '#f1f5f9' }} />
+
+                <Menu.Item
+                  component={Link}
+                  to="/receipt-notes"
+                  style={{
+                    borderRadius: 6,
+                    textAlign: 'center',
+                    fontWeight: 700,
+                    fontSize: 12,
+                    color: '#800020',
+                    backgroundColor: '#fdf2f4',
+                    marginTop: 4,
+                  }}
+                >
+                  View All Receipt Notes &rarr;
+                </Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
+
             <Menu shadow="md" width={220} position="bottom-end" radius="md">
               <Menu.Target>
                 <UnstyledButton
@@ -767,7 +902,52 @@ export const AppLayout: React.FC = () => {
           />
         </Tooltip>
 
-        {/* Stock Analysis Link */}
+        {/* Receipt Notes Link (Below Delivery Notes) */}
+        <Tooltip label="Receipt Notes" position="right" withArrow disabled={!effectiveCollapsed}>
+          <NavLink
+            component={Link}
+            to="/receipt-notes"
+            label="Receipt Notes"
+            leftSection={<IconReceipt size={20} stroke={1.75} />}
+            active={location.pathname === '/receipt-notes'}
+            color="burgundy"
+            variant="light"
+            mb={4}
+            onClick={() => opened && toggle()}
+            styles={{
+              root: {
+                borderRadius: '6px',
+                height: 40,
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                padding: effectiveCollapsed ? '0' : '0 12px',
+                backgroundColor: location.pathname === '/receipt-notes' ? '#fdf2f4' : 'transparent',
+                color: location.pathname === '/receipt-notes' ? '#800020' : '#475569',
+                fontWeight: 600,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
+              },
+              section: {
+                marginRight: effectiveCollapsed ? 0 : 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+              body: {
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                opacity: effectiveCollapsed ? 0 : 1,
+                maxWidth: effectiveCollapsed ? 0 : 160,
+                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+            }}
+          />
+        </Tooltip>
         <Tooltip label="Stock Analysis" position="right" withArrow disabled={!effectiveCollapsed}>
           <NavLink
             component={Link}

@@ -17,9 +17,10 @@ import {
   CloseButton,
   Grid,
   ActionIcon,
+  SegmentedControl,
 } from '@mantine/core';
 import {
-  IconBuildingWarehouse,
+  IconBuildingFactory2,
   IconTruckDelivery,
   IconPackage,
   IconSearch,
@@ -29,7 +30,7 @@ import {
   IconArrowLeft,
   IconChevronRight,
 } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
 interface VanProduct {
@@ -53,6 +54,10 @@ interface ProductVanDetail {
   VehicleNumber: string;
   RouteName: string;
   DriverName: string;
+  AllocatedQty?: number;
+  DeliveredQty?: number;
+  BalanceQty?: number;
+  EmptyQty?: number;
   Qty: number;
 }
 interface ProductStockItem {
@@ -69,9 +74,13 @@ interface ProductStockItem {
   Rate: number;
   GodownQty: number;
   AllocatedQty: number;
+  FilledQty?: number;
+  EmptyQty?: number;
+  TotalStockQty?: number;
   TotalQty: number;
   TotalValue: number;
   AllocationRate: number;
+  IsCylinder?: boolean;
   Vans: ProductVanDetail[];
 }
 interface StockLocationProduct {
@@ -79,6 +88,12 @@ interface StockLocationProduct {
   ProductName: string;
   ProductCode: string;
   UnitName: string;
+  CategoryName?: string;
+  IsCylinder?: boolean;
+  AllocatedQty?: number;
+  DeliveredQty?: number;
+  BalanceQty?: number;
+  EmptyQty?: number;
   Qty: number;
 }
 interface StockLocation {
@@ -86,7 +101,18 @@ interface StockLocation {
   name: string;
   description: string;
   type: 'godown' | 'vehicle';
+  driverName?: string;
+  routeName?: string;
   quantity: number;
+  filledQuantity?: number;
+  emptyQuantity?: number;
+  allocatedCylinders?: number;
+  deliveredCylinders?: number;
+  balanceCylinders?: number;
+  emptyCylinders?: number;
+  otherProductsAllocated?: number;
+  otherProductsDelivered?: number;
+  otherProductsBalance?: number;
   products: StockLocationProduct[];
 }
 interface RecentDispatchNote {
@@ -167,16 +193,16 @@ interface StockAnalysisResponse {
 const EMPTY_PRODUCT_STOCK: ProductStockItem[] = [];
 export const StockAnalysisPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const productParam = searchParams.get('product');
+  const locationParam = searchParams.get('location');
+
   // Section-specific search states (compact, non-spoiling inputs)
   const [productSearch, setProductSearch] = useState<string>('');
   const [locationSearch, setLocationSearch] = useState<string>('');
   const [allocationSearch, setAllocationSearch] = useState<string>('');
   const [storedProductSearch, setStoredProductSearch] = useState<string>('');
-
-
-  // Drilldown states for clicking rows
-  const [selectedProduct, setSelectedProduct] = useState<ProductStockItem | null>(null);
-  const [selectedLocation, setSelectedLocation] = useState<StockLocation | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'cylinders' | 'other'>('all');
   const {
     data,
     isLoading,
@@ -188,64 +214,105 @@ export const StockAnalysisPage: React.FC = () => {
       const res = await apiClient.get<StockAnalysisResponse>('/delivery-notes/stock-analysis/');
       return res.data;
     },
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
   const products = data?.products ?? EMPTY_PRODUCT_STOCK;
   const filteredProducts = useMemo(() => {
     const q = productSearch.toLowerCase().trim();
-    if (!q) return products;
-    return products.filter(
-      (p) =>
-        p.ProductName.toLowerCase().includes(q) ||
-        (p.AppProductName && p.AppProductName.toLowerCase().includes(q)) ||
-        p.ProductCode.toLowerCase().includes(q)
-    );
+    const list = !q
+      ? products
+      : products.filter(
+          (p) =>
+            p.ProductName.toLowerCase().includes(q) ||
+            (p.AppProductName && p.AppProductName.toLowerCase().includes(q)) ||
+            p.ProductCode.toLowerCase().includes(q)
+        );
+    return [...list].sort((a: any, b: any) => {
+      const aIsCyl = a.IsCylinder !== false && (a.IsCylinder === true || /cylinder|lpg|kg/i.test(a.ProductName || ''));
+      const bIsCyl = b.IsCylinder !== false && (b.IsCylinder === true || /cylinder|lpg|kg/i.test(b.ProductName || ''));
+      if (aIsCyl && !bIsCyl) return -1;
+      if (!aIsCyl && bIsCyl) return 1;
+      return (a.ProductName || '').localeCompare(b.ProductName || '');
+    });
   }, [products, productSearch]);
   const inventoryLocations = useMemo<StockLocation[]>(() => {
-    const godownProducts = products
+    const godownProducts: StockLocationProduct[] = products
       .filter((product) => product.GodownQty > 0)
-      .map((product) => ({
-        ProductId: product.ProductId,
-        ProductName: product.ProductName,
-        ProductCode: product.ProductCode,
-        UnitName: product.UnitName,
-        Qty: product.GodownQty,
-      }));
-    const godown: StockLocation = {
-      id: 'godown',
-      name: 'Central Godown',
-      description: 'Main warehouse',
-      type: 'godown',
-      quantity: godownProducts.reduce((total, product) => total + product.Qty, 0),
-      products: godownProducts,
-    };
-    const vehicles = new Map<number, StockLocation>();
-    products.forEach((product) => {
-      product.Vans.forEach((van) => {
-        let location = vehicles.get(van.RouteVehicleDriverId);
-        if (!location) {
-          location = {
-            id: `vehicle-${van.RouteVehicleDriverId}`,
-            name: van.VehicleNumber,
-            description: [van.RouteName, van.DriverName].filter(Boolean).join(' - '),
-            type: 'vehicle',
-            quantity: 0,
-            products: [],
-          };
-          vehicles.set(van.RouteVehicleDriverId, location);
-        }
-        location.quantity += van.Qty;
-        location.products.push({
+      .map((product) => {
+        const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
+        return {
           ProductId: product.ProductId,
           ProductName: product.ProductName,
           ProductCode: product.ProductCode,
-          UnitName: product.UnitName,
-          Qty: van.Qty,
-        });
+          UnitName: isCyl ? 'Cyls' : (product.UnitName || 'Nos'),
+          Qty: product.GodownQty,
+          AllocatedQty: product.GodownQty,
+          DeliveredQty: 0,
+          BalanceQty: product.GodownQty,
+          EmptyQty: 0,
+          IsCylinder: isCyl,
+        };
+      })
+      .sort((a, b) => {
+        const aIsCyl = a.IsCylinder !== false;
+        const bIsCyl = b.IsCylinder !== false;
+        if (aIsCyl && !bIsCyl) return -1;
+        if (!aIsCyl && bIsCyl) return 1;
+        return (a.ProductName || '').localeCompare(b.ProductName || '');
       });
+
+    const godownFilled = godownProducts.reduce((total, product) => total + product.Qty, 0);
+    const godownEmpty = 0;
+    const godown: StockLocation = {
+      id: 'godown',
+      name: 'Central Godown',
+      description: 'Main warehouse facility',
+      type: 'godown',
+      filledQuantity: godownFilled,
+      emptyQuantity: godownEmpty,
+      quantity: godownFilled + godownEmpty,
+      products: godownProducts,
+    };
+
+    const activeVansList: StockLocation[] = (data?.active_vans || []).map((van: any) => {
+      const vanFilled = (van.BalanceCylinders ?? van.TotalCylinders ?? 0) + (van.OtherProductsBalance ?? 0);
+      const vanEmpty = van.EmptyCylinders ?? 0;
+      return {
+        id: `vehicle-${van.RouteVehicleDriverId}`,
+        name: van.VehicleNumber || 'Delivery Van',
+        description: [van.RouteName, van.DriverName].filter(Boolean).join(' - '),
+        type: 'vehicle' as const,
+        driverName: van.DriverName,
+        routeName: van.RouteName,
+        filledQuantity: vanFilled,
+        emptyQuantity: vanEmpty,
+        quantity: vanFilled + vanEmpty,
+        allocatedCylinders: van.AllocatedCylinders ?? 0,
+        deliveredCylinders: van.DeliveredCylinders ?? 0,
+        balanceCylinders: van.BalanceCylinders ?? van.TotalCylinders ?? 0,
+        emptyCylinders: van.EmptyCylinders ?? 0,
+        otherProductsAllocated: van.OtherProductsAllocated ?? 0,
+        otherProductsDelivered: van.OtherProductsDelivered ?? 0,
+        otherProductsBalance: van.OtherProductsBalance ?? 0,
+        products: (van.Products || []).map((p: any) => ({
+          ProductId: p.ProductId,
+          ProductName: p.ProductName,
+          ProductCode: p.ProductCode || '—',
+          UnitName: p.IsCylinder ? 'Cyls' : 'Nos',
+          CategoryName: p.CategoryName,
+          IsCylinder: p.IsCylinder ?? true,
+          AllocatedQty: p.AllocatedQty ?? p.Qty,
+          DeliveredQty: p.DeliveredQty ?? 0,
+          BalanceQty: p.BalanceQty ?? p.Qty,
+          EmptyQty: p.EmptyQty ?? 0,
+          Qty: (p.BalanceQty ?? p.Qty) + (p.EmptyQty ?? 0),
+        })),
+      };
     });
-    return [godown, ...vehicles.values()];
-  }, [products]);
+
+    return [godown, ...activeVansList];
+  }, [products, data?.active_vans]);
+
   const filteredLocations = useMemo(() => {
     const q = locationSearch.toLowerCase().trim();
     if (!q) return inventoryLocations;
@@ -260,6 +327,45 @@ export const StockAnalysisPage: React.FC = () => {
         )
     );
   }, [inventoryLocations, locationSearch]);
+
+  const selectedProduct = useMemo(() => {
+    if (!productParam) return null;
+    return products.find((p) => String(p.ProductId) === productParam) || null;
+  }, [productParam, products]);
+
+  const selectedLocation = useMemo(() => {
+    if (!locationParam) return null;
+    return inventoryLocations.find((l) => l.id === locationParam) || null;
+  }, [locationParam, inventoryLocations]);
+
+  const totalProductFilled = useMemo(() => {
+    return filteredProducts.reduce((sum, p) => sum + (Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0), 0);
+  }, [filteredProducts]);
+
+  const totalProductEmpty = useMemo(() => {
+    return filteredProducts.reduce((sum, p) => sum + (Number(p.EmptyQty) || 0), 0);
+  }, [filteredProducts]);
+
+  const totalProductQuantity = useMemo(() => {
+    return filteredProducts.reduce((sum, p) => {
+      const filled = Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0;
+      const empty = Number(p.EmptyQty) || 0;
+      return sum + (Number(p.TotalStockQty) || (filled + empty) || (Number(p.TotalQty) || 0));
+    }, 0);
+  }, [filteredProducts]);
+
+  const totalLocationFilled = useMemo(() => {
+    return filteredLocations.reduce((sum, l) => sum + (Number(l.filledQuantity) || 0), 0);
+  }, [filteredLocations]);
+
+  const totalLocationEmpty = useMemo(() => {
+    return filteredLocations.reduce((sum, l) => sum + (Number(l.emptyQuantity) || 0), 0);
+  }, [filteredLocations]);
+
+  const totalLocationQuantity = useMemo(() => {
+    return filteredLocations.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0);
+  }, [filteredLocations]);
+
   const summary = data?.summary || {
     total_system_cylinders: 0,
     total_godown_cylinders: 0,
@@ -270,13 +376,7 @@ export const StockAnalysisPage: React.FC = () => {
     godown_percentage: 0,
     allocated_percentage: 0,
   };
-  // Table totals
-  const totalProductQuantity = useMemo(() => {
-    return filteredProducts.reduce((sum, p) => sum + (Number(p.TotalQty) || 0), 0);
-  }, [filteredProducts]);
-  const totalLocationQuantity = useMemo(() => {
-    return filteredLocations.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0);
-  }, [filteredLocations]);
+
 
 
   // ==========================================
@@ -305,7 +405,10 @@ export const StockAnalysisPage: React.FC = () => {
     });
 
     const filteredAllocationsCount = (isGodownMatch ? 1 : 0) + filteredVans.length;
-    const filteredAllocationsTotalQty = (isGodownMatch ? selectedProduct.GodownQty : 0) + filteredVans.reduce((sum, v) => sum + v.Qty, 0);
+    const isCyl = selectedProduct.IsCylinder !== false && (selectedProduct.IsCylinder === true || /cylinder|lpg|kg/i.test(selectedProduct.ProductName || ''));
+    const totalFilledAlloc = (isGodownMatch ? selectedProduct.GodownQty : 0) + filteredVans.reduce((sum, v) => sum + (v.BalanceQty ?? v.Qty), 0);
+    const totalEmptyAlloc = filteredVans.reduce((sum, v) => sum + (v.EmptyQty ?? 0), 0);
+    const filteredAllocationsTotalQty = totalFilledAlloc + totalEmptyAlloc;
 
     return (
       <Stack gap="lg">
@@ -317,7 +420,7 @@ export const StockAnalysisPage: React.FC = () => {
               color="gray"
               size="lg"
               onClick={() => {
-                setSelectedProduct(null);
+                setSearchParams({});
                 setAllocationSearch('');
               }}
               title="Back to Stock Analysis"
@@ -369,7 +472,7 @@ export const StockAnalysisPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Total Stock Valuation
             </Text>
-            <Text fw={700} style={{ color: '#800020', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={4}>
+            <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={4}>
               ₹{selectedProduct.TotalValue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
             <Text size="xs" c="dimmed" mt={4}>
@@ -377,6 +480,7 @@ export const StockAnalysisPage: React.FC = () => {
             </Text>
           </Paper>
         </SimpleGrid>
+
         {/* Detailed Allocations Table */}
         <Paper
           radius="md"
@@ -388,115 +492,139 @@ export const StockAnalysisPage: React.FC = () => {
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
           }}
         >
-          <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
+          <Group justify="space-between" align="center" p="md" px="lg" style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: '#ffffff' }}>
             <div>
-              <Text fw={700} style={{ color: '#800020', fontSize: 15 }}>
-                Location Allocation Breakdown
-              </Text>
-              <Text size="xs" c="dimmed">
-                Exact cylinder stock count inside Central Godown and active route delivery vans
+              <Group gap="xs" align="center">
+                <Text fw={700} style={{ color: '#0f172a', fontSize: 16.5, letterSpacing: '-0.01em' }}>
+                  Storage & Distribution Allocation
+                </Text>
+                <Badge
+                  variant="light"
+                  color="gray"
+                  size="sm"
+                  radius="sm"
+                  styles={{
+                    root: {
+                      backgroundColor: '#f1f5f9',
+                      color: '#475569',
+                      fontWeight: 600,
+                      fontSize: 11,
+                      height: 22,
+                    },
+                  }}
+                >
+                  {filteredAllocationsCount} Locations
+                </Badge>
+              </Group>
+              <Text size="xs" c="#64748b" mt={2}>
+                Live stock presence across Central Godown and active delivery vehicles
               </Text>
             </div>
             <Group gap="xs" align="center">
               <TextInput
-                placeholder="Search locations..."
+                placeholder="Search allocations..."
                 size="xs"
                 radius="md"
                 value={allocationSearch}
                 onChange={(e) => setAllocationSearch(e.currentTarget.value)}
-                leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
+                leftSection={<IconSearch size={14} stroke={1.5} color="#64748b" />}
                 rightSection={allocationSearch ? <CloseButton size="xs" onClick={() => setAllocationSearch('')} /> : null}
-                style={{ width: 175 }}
+                style={{ width: 210 }}
                 styles={{
                   input: {
-                    height: 28,
-                    minHeight: 28,
-                    fontSize: 12,
+                    height: 34,
+                    minHeight: 34,
+                    fontSize: 12.5,
                     borderColor: '#e2e8f0',
                     backgroundColor: '#ffffff',
                     '&:focus': { borderColor: '#800020' },
                   },
                 }}
               />
-              <Badge
-                variant="outline"
-                color="burgundy"
-                size="sm"
-                radius="xl"
-                styles={{
-                  root: {
-                    borderColor: '#800020',
-                    color: '#800020',
-                    backgroundColor: '#ffffff',
-                    fontWeight: 600,
-                    letterSpacing: '0.4px',
-                    padding: '0 8px',
-                    height: 22,
-                  },
-                }}
-              >
-                {filteredAllocationsCount} Locations
-              </Badge>
             </Group>
           </Group>
+
           <Table.ScrollContainer minWidth={600}>
             <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
-              <Table.Thead style={{ backgroundColor: '#ffffff' }}>
+              <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     LOCATION
                   </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     ROUTE / DRIVER
                   </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
-                    QUANTITY
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                    FILLED
+                  </Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                    EMPTY
+                  </Table.Th>
+                  <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 120 }}>
+                    TOTAL
                   </Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
                 {isGodownMatch && (
-                  <Table.Tr>
+                  <Table.Tr style={{ height: 44 }}>
                     <Table.Td>
                       <Group gap={8}>
-                        <IconBuildingWarehouse size={18} color="#800020" />
+                        <IconBuildingFactory2 size={16} color="#800020" />
                         <Text size="sm" fw={700} c="#0f172a">Central Godown</Text>
                       </Group>
                     </Table.Td>
                     <Table.Td>
                       <Text size="sm" c="dimmed">Main Storage Godown</Text>
                     </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                      {selectedProduct.GodownQty}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                      {isCyl ? 0 : '—'}
+                    </Table.Td>
                     <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
                       {selectedProduct.GodownQty}
                     </Table.Td>
                   </Table.Tr>
                 )}
-                {filteredVans.map((van) => (
-                  <Table.Tr key={van.RouteVehicleDriverId}>
-                    <Table.Td>
-                      <Group gap={8}>
-                        <IconTruck size={18} color="#800020" />
-                        <Text size="sm" fw={700} c="#0f172a">{van.VehicleNumber}</Text>
-                      </Group>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c="#0f172a" fw={600}>
-                        {van.RouteName || '—'}
-                      </Text>
-                      {van.DriverName && (
-                        <Text size="xs" c="dimmed">
-                          Driver: {van.DriverName}
+                {filteredVans.map((van) => {
+                  const filled = van.BalanceQty ?? van.Qty;
+                  const empty = van.EmptyQty ?? 0;
+                  const total = filled + empty;
+                  return (
+                    <Table.Tr key={van.RouteVehicleDriverId} style={{ height: 44 }}>
+                      <Table.Td>
+                        <Group gap={8}>
+                          <IconTruck size={16} color="#800020" />
+                          <Text size="sm" fw={700} c="#0f172a">{van.VehicleNumber}</Text>
+                        </Group>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="#0f172a" fw={600}>
+                          {van.RouteName || '—'}
                         </Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
-                      {van.Qty}
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
+                        {van.DriverName && (
+                          <Text size="xs" c="dimmed">
+                            Driver: {van.DriverName}
+                          </Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                        {filled}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                        {isCyl ? empty : '—'}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                        {total}
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
                 {!isGodownMatch && filteredVans.length === 0 && (
                   <Table.Tr>
-                    <Table.Td colSpan={3}>
+                    <Table.Td colSpan={5}>
                       <Center p="xl">
                         <Text size="sm" c="dimmed">No stock locations match your search query.</Text>
                       </Center>
@@ -504,12 +632,20 @@ export const StockAnalysisPage: React.FC = () => {
                   </Table.Tr>
                 )}
               </Table.Tbody>
-              <Table.Tfoot style={{ backgroundColor: '#ffffff', borderBottom: 'none' }}>
-                <Table.Tr style={{ borderBottom: 'none' }}>
-                  <Table.Td colSpan={2} style={{ borderBottom: 'none', fontWeight: 800, color: '#800020', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Total
+              <Table.Tfoot style={{ backgroundColor: '#ffffff', borderTop: '2px solid #e2e8f0' }}>
+                <Table.Tr style={{ height: 44 }}>
+                  <Table.Td colSpan={2} style={{ padding: '10px 16px' }}>
+                    <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Total
+                    </Text>
                   </Table.Td>
-                  <Table.Td style={{ borderBottom: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                    {totalFilledAlloc}
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                    {totalEmptyAlloc}
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
                     {filteredAllocationsTotalQty}
                   </Table.Td>
                 </Table.Tr>
@@ -520,10 +656,12 @@ export const StockAnalysisPage: React.FC = () => {
       </Stack>
     );
   }
+
   // ==========================================
   // DETAIL SCREEN 2: LOCATION CYLINDER AVAILABILITY
   // ==========================================
   if (selectedLocation) {
+    const isVehicle = selectedLocation.type === 'vehicle';
     const filteredLocationProducts = selectedLocation.products.filter((p) => {
       const q = storedProductSearch.toLowerCase().trim();
       if (!q) return true;
@@ -533,7 +671,32 @@ export const StockAnalysisPage: React.FC = () => {
       );
     });
 
-    const filteredLocationTotalQty = filteredLocationProducts.reduce((sum, p) => sum + p.Qty, 0);
+    // Separate Cylinders from Other Products
+    const cylProducts = filteredLocationProducts.filter((p) => p.IsCylinder !== false);
+    const otherProducts = filteredLocationProducts.filter((p) => p.IsCylinder === false);
+
+    const rawDisplayed =
+      categoryFilter === 'cylinders'
+        ? cylProducts
+        : categoryFilter === 'other'
+        ? otherProducts
+        : filteredLocationProducts;
+
+    const displayedProducts = [...rawDisplayed].sort((a, b) => {
+      const aIsCyl = a.IsCylinder !== false;
+      const bIsCyl = b.IsCylinder !== false;
+      if (aIsCyl && !bIsCyl) return -1;
+      if (!aIsCyl && bIsCyl) return 1;
+      return (a.ProductName || '').localeCompare(b.ProductName || '');
+    });
+
+    const cylBalTotal = cylProducts.reduce((sum, p) => sum + (p.BalanceQty ?? p.Qty), 0);
+    const otherBalTotal = otherProducts.reduce((sum, p) => sum + (p.BalanceQty ?? p.Qty), 0);
+
+    const totalAllocated = displayedProducts.reduce((sum, p) => sum + (p.AllocatedQty ?? p.Qty), 0);
+    const totalDelivered = displayedProducts.reduce((sum, p) => sum + (p.DeliveredQty ?? 0), 0);
+    const totalBalance = displayedProducts.reduce((sum, p) => sum + (p.BalanceQty ?? p.Qty), 0);
+    const totalEmpty = displayedProducts.reduce((sum, p) => sum + (p.EmptyQty ?? 0), 0);
 
     return (
       <Stack gap="lg">
@@ -545,8 +708,9 @@ export const StockAnalysisPage: React.FC = () => {
               color="gray"
               size="lg"
               onClick={() => {
-                setSelectedLocation(null);
+                setSearchParams({});
                 setStoredProductSearch('');
+                setCategoryFilter('all');
               }}
               title="Back to Stock Analysis"
               style={{ color: '#0f172a' }}
@@ -555,10 +719,10 @@ export const StockAnalysisPage: React.FC = () => {
             </ActionIcon>
             <div>
               <Group gap="xs" align="center">
-                {selectedLocation.type === 'godown' ? (
-                  <IconBuildingWarehouse size={22} color="#800020" />
-                ) : (
+                {isVehicle ? (
                   <IconTruck size={22} color="#800020" />
+                ) : (
+                  <IconBuildingFactory2 size={22} color="#800020" />
                 )}
                 <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
                   {selectedLocation.name}
@@ -575,7 +739,7 @@ export const StockAnalysisPage: React.FC = () => {
                     },
                   }}
                 >
-                  {selectedLocation.type === 'godown' ? 'Godown' : 'Van Stock'}
+                  {isVehicle ? 'Van Stock' : 'Godown'}
                 </Badge>
               </Group>
               <Text size="xs" c="dimmed">
@@ -584,31 +748,134 @@ export const StockAnalysisPage: React.FC = () => {
             </div>
           </Group>
         </Group>
+
         {/* Location Summary Cards */}
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-          <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-            <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Total Cylinders Onboard / In Stock
-            </Text>
-            <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={4}>
-              {selectedLocation.quantity}
-            </Text>
-            <Text size="xs" c="dimmed" mt={4}>
-              Available across {selectedLocation.products.length} product category types
-            </Text>
-          </Paper>
-          <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-            <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Location Status
-            </Text>
-            <Text fw={700} style={{ color: '#800020', fontSize: '24px', letterSpacing: '-0.02em' }} mt={4}>
-              {selectedLocation.type === 'godown' ? 'Primary Warehouse' : 'Active On Route'}
-            </Text>
-            <Text size="xs" c="dimmed" mt={4}>
-              {selectedLocation.description || 'Central storage facility'}
-            </Text>
-          </Paper>
-        </SimpleGrid>
+        {isVehicle ? (
+          <SimpleGrid cols={{ base: 2, sm: 3, md: 5 }} spacing="sm">
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Allocated Cylinders
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+                {selectedLocation.allocatedCylinders ?? selectedLocation.quantity}
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Morning loaded stock
+              </Text>
+            </Paper>
+
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Delivered Cylinders
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+                {selectedLocation.deliveredCylinders ?? 0}
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Delivered on route today
+              </Text>
+            </Paper>
+
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Balance Cylinders
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+                {selectedLocation.balanceCylinders ?? selectedLocation.quantity}
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Full cylinders on van
+              </Text>
+            </Paper>
+
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Empty Cylinders
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+                {selectedLocation.emptyCylinders ?? 0}
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Empties collected
+              </Text>
+            </Paper>
+
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Other Products
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+                {selectedLocation.otherProductsBalance ?? selectedLocation.otherProductsAllocated ?? 0}
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Stoves / Burners onboard
+              </Text>
+            </Paper>
+          </SimpleGrid>
+        ) : (
+          <SimpleGrid cols={{ base: 2, sm: 3, md: 5 }} spacing="sm">
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Total Warehouse Stock
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+                {selectedLocation.quantity}
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Stored inventory on hand
+              </Text>
+            </Paper>
+
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Filled Cylinders
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+                {cylBalTotal}
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Full cylinders ready for dispatch
+              </Text>
+            </Paper>
+
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Empty Cylinders
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+                {selectedLocation.emptyCylinders ?? 0}
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Empties awaiting refill
+              </Text>
+            </Paper>
+
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Other Products
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+                {otherBalTotal}
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Stoves / Burners in warehouse
+              </Text>
+            </Paper>
+
+            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+                Facility Status
+              </Text>
+              <Text fw={800} style={{ color: '#0f172a', fontSize: '20px', letterSpacing: '-0.02em' }} mt={2}>
+                Primary Warehouse
+              </Text>
+              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+                Central storage facility
+              </Text>
+            </Paper>
+          </SimpleGrid>
+        )}
+
         {/* Stored Products Table */}
         <Paper
           radius="md"
@@ -620,107 +887,296 @@ export const StockAnalysisPage: React.FC = () => {
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
           }}
         >
-          <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
+          <Group justify="space-between" align="center" p="md" px="lg" style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: '#ffffff' }}>
             <div>
-              <Text fw={700} style={{ color: '#800020', fontSize: 15 }}>
-                Stored Cylinders Availability
-              </Text>
-              <Text size="xs" c="dimmed">
-                Breakdown of cylinders by product stored at this location
+              <Group gap="xs" align="center">
+                <Text fw={700} style={{ color: '#0f172a', fontSize: 16.5, letterSpacing: '-0.01em' }}>
+                  {isVehicle ? 'Onboard Van Stock Breakdown' : 'Stored Warehouse Stock Breakdown'}
+                </Text>
+                <Badge
+                  variant="light"
+                  color="gray"
+                  size="sm"
+                  radius="sm"
+                  styles={{
+                    root: {
+                      backgroundColor: '#f1f5f9',
+                      color: '#475569',
+                      fontWeight: 600,
+                      fontSize: 11,
+                      height: 22,
+                    },
+                  }}
+                >
+                  {displayedProducts.length} Items
+                </Badge>
+              </Group>
+              <Text size="xs" c="#64748b" mt={2}>
+                {isVehicle
+                  ? 'Live morning load, deliveries, balance and empty returns for this route'
+                  : 'Breakdown of cylinders by product stored at this location'}
               </Text>
             </div>
-            <Group gap="xs" align="center">
+            <Group gap="sm" align="center" wrap="wrap">
+              <SegmentedControl
+                value={categoryFilter}
+                onChange={(val) => setCategoryFilter(val as any)}
+                data={[
+                  {
+                    label: (
+                      <span
+                        style={{
+                          color: categoryFilter === 'all' ? '#800020' : '#475569',
+                          fontWeight: categoryFilter === 'all' ? 700 : 500,
+                          fontSize: 12,
+                          transition: 'color 150ms ease',
+                        }}
+                      >
+                        All ({filteredLocationProducts.length})
+                      </span>
+                    ),
+                    value: 'all',
+                  },
+                  {
+                    label: (
+                      <span
+                        style={{
+                          color: categoryFilter === 'cylinders' ? '#800020' : '#475569',
+                          fontWeight: categoryFilter === 'cylinders' ? 700 : 500,
+                          fontSize: 12,
+                          transition: 'color 150ms ease',
+                        }}
+                      >
+                        Cylinders ({cylProducts.length})
+                      </span>
+                    ),
+                    value: 'cylinders',
+                  },
+                  {
+                    label: (
+                      <span
+                        style={{
+                          color: categoryFilter === 'other' ? '#800020' : '#475569',
+                          fontWeight: categoryFilter === 'other' ? 700 : 500,
+                          fontSize: 12,
+                          transition: 'color 150ms ease',
+                        }}
+                      >
+                        Other ({otherProducts.length})
+                      </span>
+                    ),
+                    value: 'other',
+                  },
+                ]}
+                radius="sm"
+                size="xs"
+                transitionDuration={250}
+                transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+                styles={{
+                  root: {
+                    backgroundColor: '#f1f5f9',
+                    padding: 3,
+                    borderRadius: 8,
+                    border: '1px solid #e2e8f0',
+                  },
+                  indicator: {
+                    backgroundColor: '#ffffff',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
+                    borderRadius: 6,
+                  },
+                  label: {
+                    padding: '4px 12px',
+                  },
+                }}
+              />
               <TextInput
-                placeholder="Search products..."
+                placeholder={isVehicle ? 'Search onboard products...' : 'Search warehouse products...'}
                 size="xs"
                 radius="md"
                 value={storedProductSearch}
                 onChange={(e) => setStoredProductSearch(e.currentTarget.value)}
-                leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
+                leftSection={<IconSearch size={14} stroke={1.5} color="#64748b" />}
                 rightSection={storedProductSearch ? <CloseButton size="xs" onClick={() => setStoredProductSearch('')} /> : null}
-                style={{ width: 175 }}
+                style={{ width: 210 }}
                 styles={{
                   input: {
-                    height: 28,
-                    minHeight: 28,
-                    fontSize: 12,
+                    height: 34,
+                    minHeight: 34,
+                    fontSize: 12.5,
                     borderColor: '#e2e8f0',
                     backgroundColor: '#ffffff',
                     '&:focus': { borderColor: '#800020' },
                   },
                 }}
               />
-              <Badge
-                variant="outline"
-                color="burgundy"
-                size="sm"
-                radius="xl"
-                styles={{
-                  root: {
-                    borderColor: '#800020',
-                    color: '#800020',
-                    backgroundColor: '#ffffff',
-                    fontWeight: 600,
-                    letterSpacing: '0.4px',
-                    padding: '0 8px',
-                    height: 22,
-                  },
-                }}
-              >
-                {filteredLocationProducts.length} Products
-              </Badge>
             </Group>
           </Group>
-          <Table.ScrollContainer minWidth={500}>
+
+          <Table.ScrollContainer minWidth={600}>
             <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
-              <Table.Thead style={{ backgroundColor: '#ffffff' }}>
+              <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', width: 100 }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', width: 90 }}>
                     CODE
                   </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     PRODUCT
                   </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
-                    QUANTITY
-                  </Table.Th>
+                  {isVehicle ? (
+                    <>
+                      <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                        ALLOCATED
+                      </Table.Th>
+                      <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                        DELIVERED
+                      </Table.Th>
+                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 130 }}>
+                        BALANCE (FULL)
+                      </Table.Th>
+                      <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 130 }}>
+                        EMPTY RETURNED
+                      </Table.Th>
+                    </>
+                  ) : (
+                    <>
+                      <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                        FILLED
+                      </Table.Th>
+                      <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                        EMPTY
+                      </Table.Th>
+                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 120 }}>
+                        TOTAL
+                      </Table.Th>
+                    </>
+                  )}
                 </Table.Tr>
               </Table.Thead>
+
               <Table.Tbody>
-                {filteredLocationProducts.map((p) => (
-                  <Table.Tr key={p.ProductId}>
-                    <Table.Td>
-                      <Text size="xs" c="#64748b" ff="monospace" fw={700}>
-                        {p.ProductCode || '—'}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td fw={700} style={{ color: '#0f172a', fontSize: 13.5 }}>
-                      {p.ProductName}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
-                      {p.Qty}
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-                {filteredLocationProducts.length === 0 && (
+                {isVehicle ? (
+                  <>
+                    {displayedProducts.map((p) => {
+                      const isCyl = p.IsCylinder !== false;
+                      return (
+                        <Table.Tr key={p.ProductId}>
+                          <Table.Td>
+                            <Text style={{ fontSize: 12.5 }} c="#64748b" ff="monospace" fw={700}>
+                              {p.ProductCode || '—'}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Group gap={8} wrap="nowrap" align="center">
+                              <Text fw={700} style={{ color: '#0f172a', fontSize: 13 }}>
+                                {p.ProductName}
+                              </Text>
+
+                            </Group>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#334155', fontVariantNumeric: 'tabular-nums' }}>
+                            {p.AllocatedQty ?? p.Qty}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#334155', fontVariantNumeric: 'tabular-nums' }}>
+                            {p.DeliveredQty ?? 0}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                            {p.BalanceQty ?? p.Qty}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                            {isCyl ? (p.EmptyQty ?? 0) : '—'}
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </>
+                ) : (
+                  /* Godown Table Body */
+                  <>
+                    {displayedProducts.map((p) => {
+                      const isCyl = p.IsCylinder !== false;
+                      const filled = p.BalanceQty ?? p.Qty;
+                      const empty = p.EmptyQty ?? 0;
+                      const total = filled + empty;
+                      return (
+                        <Table.Tr key={p.ProductId} style={{ height: 44 }}>
+                          <Table.Td>
+                            <Text style={{ fontSize: 12.5 }} c="#64748b" ff="monospace" fw={700}>
+                              {p.ProductCode || '—'}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Group gap={8} wrap="nowrap" align="center">
+                              <Text fw={700} style={{ color: '#0f172a', fontSize: 13.5 }}>
+                                {p.ProductName}
+                              </Text>
+
+                            </Group>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                            {filled}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                            {isCyl ? empty : '—'}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                            {total}
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </>
+                )}
+
+                {displayedProducts.length === 0 && (
                   <Table.Tr>
-                    <Table.Td colSpan={3}>
+                    <Table.Td colSpan={isVehicle ? 6 : 3}>
                       <Center p="xl">
-                        <Text size="sm" c="dimmed">No cylinders found matching search query.</Text>
+                        <Text size="sm" c="dimmed">No products found matching query.</Text>
                       </Center>
                     </Table.Td>
                   </Table.Tr>
                 )}
               </Table.Tbody>
-              <Table.Tfoot style={{ backgroundColor: '#ffffff', borderBottom: 'none' }}>
-                <Table.Tr style={{ borderBottom: 'none' }}>
-                  <Table.Td colSpan={2} style={{ borderBottom: 'none', fontWeight: 800, color: '#800020', fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Total
-                  </Table.Td>
-                  <Table.Td style={{ borderBottom: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
-                    {filteredLocationTotalQty}
-                  </Table.Td>
-                </Table.Tr>
+
+              <Table.Tfoot style={{ backgroundColor: '#ffffff', borderTop: '2px solid #e2e8f0' }}>
+                {isVehicle ? (
+                  <Table.Tr>
+                    <Table.Td colSpan={2} style={{ padding: '10px 16px' }}>
+                      <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Total
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                      {totalAllocated}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                      {totalDelivered}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                      {totalBalance}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                      {totalEmpty}
+                    </Table.Td>
+                  </Table.Tr>
+                ) : (
+                  <Table.Tr>
+                    <Table.Td colSpan={2} style={{ padding: '10px 16px' }}>
+                      <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Total
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                      {totalBalance}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                      {totalEmpty}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                      {totalBalance + totalEmpty}
+                    </Table.Td>
+                  </Table.Tr>
+                )}
               </Table.Tfoot>
             </Table>
           </Table.ScrollContainer>
@@ -854,7 +1310,7 @@ export const StockAnalysisPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Central Godown Stock
             </Text>
-            <IconBuildingWarehouse size={20} color="#800020" stroke={1.75} />
+            <IconBuildingFactory2 size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             {summary.total_godown_cylinders.toLocaleString()}
@@ -890,7 +1346,7 @@ export const StockAnalysisPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Allocated to Fleet
+              Allocated to Van
             </Text>
             <IconTruckDelivery size={20} color="#800020" stroke={1.75} />
           </Group>
@@ -967,11 +1423,8 @@ export const StockAnalysisPage: React.FC = () => {
           >
             <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
               <div>
-                <Text fw={700} style={{ color: '#800020', fontSize: 15 }}>
+                <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
                   Inventory by Product
-                </Text>
-                <Text size="xs" c="dimmed">
-                 
                 </Text>
               </div>
               <Group gap="xs" align="center">
@@ -986,8 +1439,8 @@ export const StockAnalysisPage: React.FC = () => {
                   style={{ width: 175 }}
                   styles={{
                     input: {
-                      height: 28,
-                      minHeight: 28,
+                      height: 32,
+                      minHeight: 32,
                       fontSize: 12,
                       borderColor: '#e2e8f0',
                       backgroundColor: '#ffffff',
@@ -1028,9 +1481,8 @@ export const StockAnalysisPage: React.FC = () => {
               </Center>
             ) : (
               <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                {/* 5-row fixed scrollable table container with Mantine custom Burgundy scrollbar (Zero native arrows) */}
                 <ScrollArea
-                  h={215}
+                  h={320}
                   scrollbars="y"
                   scrollbarSize={5}
                   type="hover"
@@ -1039,88 +1491,102 @@ export const StockAnalysisPage: React.FC = () => {
                     scrollbar: { backgroundColor: 'transparent' },
                   }}
                 >
-                  <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="sm" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
-                      <col style={{ width: 55 }} />
+                      <col style={{ width: 60 }} />
                       <col />
                       <col style={{ width: 85 }} />
-                      <col style={{ width: 120 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
                     </colgroup>
                     <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
                       <Table.Tr>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                           CODE
                         </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                          NAME
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                          PRODUCT
                         </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
-                          RATE
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                          FILLED
                         </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 24 }}>
-                          QUANTITY
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                          EMPTY
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
+                          TOTAL
                         </Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
-                      {filteredProducts.map((product) => (
-                        <Table.Tr
-                          key={product.ProductId}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => setSelectedProduct(product)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              setSelectedProduct(product);
-                            }
-                          }}
-                          style={{
-                            cursor: 'pointer',
-                            height: 36,
-                            transition: 'background-color 150ms ease',
-                          }}
-                        >
-                          <Table.Td>
-                            <Text size="xs" c="#64748b" ff="monospace" fw={700}>
-                              {product.ProductCode || '—'}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td>
-                            <Group gap={6} wrap="nowrap">
-                              <IconChevronRight size={14} color="#800020" style={{ flexShrink: 0 }} />
-                              <Text size="xs" fw={700} c="#0f172a" lineClamp={1}>
-                                {product.ProductName}
+                      {filteredProducts.map((product) => {
+                        const isCyl = product.IsCylinder !== false;
+                        const filled = product.FilledQty ?? (product.GodownQty + (product.AllocatedQty || 0));
+                        const empty = product.EmptyQty ?? 0;
+                        const total = product.TotalStockQty ?? (filled + empty);
+                        return (
+                          <Table.Tr
+                            key={product.ProductId}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setSearchParams({ product: String(product.ProductId) })}
+                            style={{
+                              cursor: 'pointer',
+                              height: 44,
+                              transition: 'background-color 150ms ease',
+                            }}
+                          >
+                            <Table.Td>
+                              <Text style={{ fontSize: 12.5 }} c="#64748b" ff="monospace" fw={700}>
+                                {product.ProductCode || '—'}
                               </Text>
-                            </Group>
-                          </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontSize: 12, color: '#800020', fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
-                            ₹{(product.Rate ?? product.PurchasePrice ?? product.SalesPrice).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 24 }}>
-                            {product.TotalQty}
-                          </Table.Td>
-                        </Table.Tr>
-                      ))}
+                            </Table.Td>
+                            <Table.Td>
+                              <Group gap={6} wrap="nowrap">
+                                <IconChevronRight size={14} color="#800020" style={{ flexShrink: 0 }} />
+                                <Text style={{ fontSize: 13.5 }} fw={700} c="#0f172a" lineClamp={1}>
+                                  {product.ProductName}
+                                </Text>
+                              </Group>
+                            </Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                              {filled}
+                            </Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                              {isCyl ? empty : '—'}
+                            </Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
+                              {total}
+                            </Table.Td>
+                          </Table.Tr>
+                        );
+                      })}
                     </Table.Tbody>
                   </Table>
                 </ScrollArea>
 
                 {/* Locked TOTAL Footer */}
                 <Box style={{ marginTop: 'auto', backgroundColor: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
-                  <Table verticalSpacing="xs" horizontalSpacing="sm" style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
-                      <col style={{ width: 55 }} />
+                      <col style={{ width: 60 }} />
                       <col />
                       <col style={{ width: 85 }} />
-                      <col style={{ width: 120 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
                     </colgroup>
                     <Table.Tbody>
-                      <Table.Tr style={{ border: 'none', height: 38 }}>
-                        <Table.Td colSpan={3} style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <Table.Tr style={{ border: 'none', height: 44 }}>
+                        <Table.Td colSpan={2} style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Total
                         </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 24 }}>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          {totalProductFilled}
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                          {totalProductEmpty}
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                           {totalProductQuantity}
                         </Table.Td>
                       </Table.Tr>
@@ -1131,6 +1597,7 @@ export const StockAnalysisPage: React.FC = () => {
             )}
           </Paper>
         </Grid.Col>
+
         {/* Table 2: Inventory by Location */}
         <Grid.Col span={{ base: 12, lg: 6 }}>
           <Paper
@@ -1148,11 +1615,8 @@ export const StockAnalysisPage: React.FC = () => {
           >
             <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
               <div>
-                <Text fw={700} style={{ color: '#800020', fontSize: 15 }}>
+                <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
                   Inventory by Location
-                </Text>
-                <Text size="xs" c="dimmed">
-                  
                 </Text>
               </div>
               <Group gap="xs" align="center">
@@ -1167,8 +1631,8 @@ export const StockAnalysisPage: React.FC = () => {
                   style={{ width: 175 }}
                   styles={{
                     input: {
-                      height: 28,
-                      minHeight: 28,
+                      height: 32,
+                      minHeight: 32,
                       fontSize: 12,
                       borderColor: '#e2e8f0',
                       backgroundColor: '#ffffff',
@@ -1209,9 +1673,8 @@ export const StockAnalysisPage: React.FC = () => {
               </Center>
             ) : (
               <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                {/* 5-row fixed scrollable table container with Mantine custom Burgundy scrollbar (Zero native arrows) */}
                 <ScrollArea
-                  h={215}
+                  h={320}
                   scrollbars="y"
                   scrollbarSize={5}
                   type="hover"
@@ -1220,18 +1683,26 @@ export const StockAnalysisPage: React.FC = () => {
                     scrollbar: { backgroundColor: 'transparent' },
                   }}
                 >
-                  <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="sm" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
                       <col />
-                      <col style={{ width: 120 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
                     </colgroup>
                     <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
                       <Table.Tr>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                           LOCATION
                         </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 24 }}>
-                          QUANTITY
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                          FILLED
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                          EMPTY
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
+                          TOTAL
                         </Table.Th>
                       </Table.Tr>
                     </Table.Thead>
@@ -1241,16 +1712,10 @@ export const StockAnalysisPage: React.FC = () => {
                           key={location.id}
                           role="button"
                           tabIndex={0}
-                          onClick={() => setSelectedLocation(location)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter' || event.key === ' ') {
-                              event.preventDefault();
-                              setSelectedLocation(location);
-                            }
-                          }}
+                          onClick={() => setSearchParams({ location: location.id })}
                           style={{
                             cursor: 'pointer',
-                            height: 36,
+                            height: 44,
                             transition: 'background-color 150ms ease',
                           }}
                         >
@@ -1258,16 +1723,22 @@ export const StockAnalysisPage: React.FC = () => {
                             <Group gap={6} wrap="nowrap">
                               <IconChevronRight size={14} color="#800020" style={{ flexShrink: 0 }} />
                               {location.type === 'godown' ? (
-                                <IconBuildingWarehouse size={16} color="#800020" style={{ flexShrink: 0 }} />
+                                <IconBuildingFactory2 size={15} color="#800020" style={{ flexShrink: 0 }} />
                               ) : (
-                                <IconTruck size={16} color="#800020" style={{ flexShrink: 0 }} />
+                                <IconTruck size={15} color="#800020" style={{ flexShrink: 0 }} />
                               )}
-                              <Text size="xs" fw={700} c="#0f172a">
+                              <Text style={{ fontSize: 13.5 }} fw={700} c="#0f172a" lineClamp={1}>
                                 {location.name}
                               </Text>
                             </Group>
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 24 }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                            {location.filledQuantity ?? location.quantity}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                            {location.emptyQuantity ?? 0}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                             {location.quantity}
                           </Table.Td>
                         </Table.Tr>
@@ -1278,17 +1749,25 @@ export const StockAnalysisPage: React.FC = () => {
 
                 {/* Locked TOTAL Footer */}
                 <Box style={{ marginTop: 'auto', backgroundColor: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
-                  <Table verticalSpacing="xs" horizontalSpacing="sm" style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
                       <col />
-                      <col style={{ width: 120 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
                     </colgroup>
                     <Table.Tbody>
-                      <Table.Tr style={{ border: 'none', height: 38 }}>
-                        <Table.Td style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <Table.Tr style={{ border: 'none', height: 44 }}>
+                        <Table.Td style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Total
                         </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 24 }}>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          {totalLocationFilled}
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                          {totalLocationEmpty}
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                           {totalLocationQuantity}
                         </Table.Td>
                       </Table.Tr>

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Title,
   Text,
@@ -14,6 +14,10 @@ import {
   ThemeIcon,
   UnstyledButton,
   Box,
+  TextInput,
+  CloseButton,
+  ScrollArea,
+  Grid,
 } from '@mantine/core';
 import {
   IconReceipt,
@@ -28,6 +32,9 @@ import {
   IconPackage,
   IconWallet,
   IconCalendar,
+  IconSearch,
+  IconChevronRight,
+  IconBuildingFactory2,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -37,6 +44,111 @@ import { apiClient } from '../api/client';
 export const DashboardPage: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+
+  // Stock inventory search states
+  const [productSearch, setProductSearch] = useState<string>('');
+  const [locationSearch, setLocationSearch] = useState<string>('');
+
+  // Live Stock Analysis Query (5s refresh)
+  const { data: stockAnalysis, isLoading: isLoadingStock } = useQuery<any>({
+    queryKey: ['stock-analysis'],
+    queryFn: async () => {
+      const res = await apiClient.get('/delivery-notes/stock-analysis/');
+      return res.data;
+    },
+    refetchInterval: 5000,
+  });
+
+  const stockProducts = stockAnalysis?.products || [];
+  const filteredStockProducts = useMemo(() => {
+    const q = productSearch.toLowerCase().trim();
+    const list = !q
+      ? stockProducts
+      : stockProducts.filter(
+          (p: any) =>
+            p.ProductName.toLowerCase().includes(q) ||
+            (p.AppProductName && p.AppProductName.toLowerCase().includes(q)) ||
+            (p.ProductCode && p.ProductCode.toLowerCase().includes(q))
+        );
+    return [...list].sort((a: any, b: any) => {
+      const aIsCyl = a.IsCylinder !== false && (a.IsCylinder === true || /cylinder|lpg|kg/i.test(a.ProductName || ''));
+      const bIsCyl = b.IsCylinder !== false && (b.IsCylinder === true || /cylinder|lpg|kg/i.test(b.ProductName || ''));
+      if (aIsCyl && !bIsCyl) return -1;
+      if (!aIsCyl && bIsCyl) return 1;
+      return (a.ProductName || '').localeCompare(b.ProductName || '');
+    });
+  }, [stockProducts, productSearch]);
+
+  const stockLocations = useMemo(() => {
+    const godownProducts = stockProducts
+      .filter((product: any) => product.GodownQty > 0)
+      .map((product: any) => ({
+        ProductId: product.ProductId,
+        ProductName: product.ProductName,
+        ProductCode: product.ProductCode,
+        Qty: product.GodownQty,
+      }));
+
+    const godownFilled = godownProducts.reduce((total: number, p: any) => total + p.Qty, 0);
+    const godownEmpty = 0;
+    const godown = {
+      id: 'godown',
+      name: 'Central Godown',
+      type: 'godown',
+      filledQuantity: godownFilled,
+      emptyQuantity: godownEmpty,
+      quantity: godownFilled + godownEmpty,
+    };
+
+    const activeVansList = (stockAnalysis?.active_vans || []).map((van: any) => {
+      const vanFilled = (van.BalanceCylinders ?? van.TotalCylinders ?? 0) + (van.OtherProductsBalance ?? 0);
+      const vanEmpty = van.EmptyCylinders ?? 0;
+      return {
+        id: `vehicle-${van.RouteVehicleDriverId}`,
+        name: van.VehicleNumber || 'Delivery Van',
+        type: 'vehicle',
+        filledQuantity: vanFilled,
+        emptyQuantity: vanEmpty,
+        quantity: vanFilled + vanEmpty,
+      };
+    });
+
+    return [godown, ...activeVansList];
+  }, [stockProducts, stockAnalysis?.active_vans]);
+
+  const filteredStockLocations = useMemo(() => {
+    const q = locationSearch.toLowerCase().trim();
+    if (!q) return stockLocations;
+    return stockLocations.filter((l: any) => l.name.toLowerCase().includes(q));
+  }, [stockLocations, locationSearch]);
+
+  const totalProductFilled = useMemo(() => {
+    return filteredStockProducts.reduce((sum: number, p: any) => sum + (Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0), 0);
+  }, [filteredStockProducts]);
+
+  const totalProductEmpty = useMemo(() => {
+    return filteredStockProducts.reduce((sum: number, p: any) => sum + (Number(p.EmptyQty) || 0), 0);
+  }, [filteredStockProducts]);
+
+  const totalProductQuantity = useMemo(() => {
+    return filteredStockProducts.reduce((sum: number, p: any) => {
+      const filled = Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0;
+      const empty = Number(p.EmptyQty) || 0;
+      return sum + (Number(p.TotalStockQty) || (filled + empty) || (Number(p.TotalQty) || 0));
+    }, 0);
+  }, [filteredStockProducts]);
+
+  const totalLocationFilled = useMemo(() => {
+    return filteredStockLocations.reduce((sum: number, l: any) => sum + (Number(l.filledQuantity) || 0), 0);
+  }, [filteredStockLocations]);
+
+  const totalLocationEmpty = useMemo(() => {
+    return filteredStockLocations.reduce((sum: number, l: any) => sum + (Number(l.emptyQuantity) || 0), 0);
+  }, [filteredStockLocations]);
+
+  const totalLocationQuantity = useMemo(() => {
+    return filteredStockLocations.reduce((sum: number, l: any) => sum + (Number(l.quantity) || 0), 0);
+  }, [filteredStockLocations]);
 
   // Current Date Display
   const todayFormatted = useMemo(() => {
@@ -199,7 +311,7 @@ export const DashboardPage: React.FC = () => {
           <Group gap="xs" wrap="wrap">
             <Button
               color="burgundy"
-              radius="sm"
+              radius={10}
               size="sm"
               fw={600}
               leftSection={<IconPlus size={16} />}
@@ -212,7 +324,7 @@ export const DashboardPage: React.FC = () => {
             </Button>
             <Button
               variant="outline"
-              radius="sm"
+              radius={10}
               size="sm"
               fw={600}
               leftSection={<IconPlus size={16} />}
@@ -407,7 +519,383 @@ export const DashboardPage: React.FC = () => {
         </Paper>
       </SimpleGrid>
 
-      {/* 3. Middle Grid: Recent Purchases & Recent Payments */}
+      {/* 3. Side-by-Side Dual Inventory Cards (Live Real-Time Stock) */}
+      <Grid gap="md" align="stretch">
+        {/* Table 1: Inventory by Product */}
+        <Grid.Col span={{ base: 12, lg: 6 }}>
+          <Paper
+            radius="md"
+            withBorder
+            style={{
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              backgroundColor: '#ffffff',
+              borderColor: '#e2e8f0',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+            }}
+          >
+            <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <div>
+                <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
+                  Inventory by Product
+                </Text>
+              </div>
+              <Group gap="xs" align="center">
+                <TextInput
+                  placeholder="Search products..."
+                  size="xs"
+                  radius="md"
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.currentTarget.value)}
+                  leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
+                  rightSection={productSearch ? <CloseButton size="xs" onClick={() => setProductSearch('')} /> : null}
+                  style={{ width: 175 }}
+                  styles={{
+                    input: {
+                      height: 32,
+                      minHeight: 32,
+                      fontSize: 12,
+                      borderColor: '#e2e8f0',
+                      backgroundColor: '#ffffff',
+                      '&:focus': { borderColor: '#800020' },
+                    },
+                  }}
+                />
+                <Badge
+                  variant="outline"
+                  color="burgundy"
+                  size="sm"
+                  radius="xl"
+                  styles={{
+                    root: {
+                      borderColor: '#800020',
+                      color: '#800020',
+                      backgroundColor: '#ffffff',
+                      fontWeight: 600,
+                      letterSpacing: '0.4px',
+                      padding: '0 8px',
+                      height: 22,
+                    },
+                  }}
+                >
+                  {filteredStockProducts.length} Products
+                </Badge>
+              </Group>
+            </Group>
+            {isLoadingStock ? (
+              <Center p="xl" style={{ flex: 1 }}>
+                <Loader color="burgundy" />
+              </Center>
+            ) : filteredStockProducts.length === 0 ? (
+              <Center p="xl" style={{ flex: 1 }}>
+                <Text c="dimmed" size="sm">
+                  No products found matching query.
+                </Text>
+              </Center>
+            ) : (
+              <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                <ScrollArea
+                  h={320}
+                  scrollbars="y"
+                  scrollbarSize={5}
+                  type="hover"
+                  styles={{
+                    thumb: { backgroundColor: '#800020', borderRadius: 9999 },
+                    scrollbar: { backgroundColor: 'transparent' },
+                  }}
+                >
+                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <colgroup>
+                      <col style={{ width: 60 }} />
+                      <col />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
+                    </colgroup>
+                    <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
+                      <Table.Tr>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                          CODE
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                          PRODUCT
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                          FILLED
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                          EMPTY
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
+                          TOTAL
+                        </Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {filteredStockProducts.map((product: any) => {
+                        const isCyl = product.IsCylinder !== false;
+                        const filled = product.FilledQty ?? (product.GodownQty + (product.AllocatedQty || 0));
+                        const empty = product.EmptyQty ?? 0;
+                        const total = product.TotalStockQty ?? (filled + empty);
+                        return (
+                          <Table.Tr
+                            key={product.ProductId}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => navigate(`/stock-analysis?product=${product.ProductId}`)}
+                            style={{
+                              cursor: 'pointer',
+                              height: 44,
+                              transition: 'background-color 150ms ease',
+                            }}
+                          >
+                            <Table.Td>
+                              <Text style={{ fontSize: 12.5 }} c="#64748b" ff="monospace" fw={700}>
+                                {product.ProductCode || '—'}
+                              </Text>
+                            </Table.Td>
+                            <Table.Td>
+                              <Group gap={6} wrap="nowrap">
+                                <IconChevronRight size={14} color="#800020" style={{ flexShrink: 0 }} />
+                                <Text style={{ fontSize: 13.5 }} fw={700} c="#0f172a" lineClamp={1}>
+                                  {product.ProductName}
+                                </Text>
+                              </Group>
+                            </Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                              {filled}
+                            </Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                              {isCyl ? empty : '—'}
+                            </Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
+                              {total}
+                            </Table.Td>
+                          </Table.Tr>
+                        );
+                      })}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea>
+
+                {/* Locked TOTAL Footer */}
+                <Box style={{ marginTop: 'auto', backgroundColor: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
+                  <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <colgroup>
+                      <col style={{ width: 60 }} />
+                      <col />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
+                    </colgroup>
+                    <Table.Tbody>
+                      <Table.Tr style={{ border: 'none', height: 44 }}>
+                        <Table.Td colSpan={2} style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Total
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          {totalProductFilled}
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                          {totalProductEmpty}
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
+                          {totalProductQuantity}
+                        </Table.Td>
+                      </Table.Tr>
+                    </Table.Tbody>
+                  </Table>
+                </Box>
+              </Box>
+            )}
+          </Paper>
+        </Grid.Col>
+
+        {/* Table 2: Inventory by Location */}
+        <Grid.Col span={{ base: 12, lg: 6 }}>
+          <Paper
+            radius="md"
+            withBorder
+            style={{
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              backgroundColor: '#ffffff',
+              borderColor: '#e2e8f0',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+            }}
+          >
+            <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <div>
+                <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
+                  Inventory by Location
+                </Text>
+              </div>
+              <Group gap="xs" align="center">
+                <TextInput
+                  placeholder="Search locations..."
+                  size="xs"
+                  radius="md"
+                  value={locationSearch}
+                  onChange={(e) => setLocationSearch(e.currentTarget.value)}
+                  leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
+                  rightSection={locationSearch ? <CloseButton size="xs" onClick={() => setLocationSearch('')} /> : null}
+                  style={{ width: 175 }}
+                  styles={{
+                    input: {
+                      height: 32,
+                      minHeight: 32,
+                      fontSize: 12,
+                      borderColor: '#e2e8f0',
+                      backgroundColor: '#ffffff',
+                      '&:focus': { borderColor: '#800020' },
+                    },
+                  }}
+                />
+                <Badge
+                  variant="outline"
+                  color="burgundy"
+                  size="sm"
+                  radius="xl"
+                  styles={{
+                    root: {
+                      borderColor: '#800020',
+                      color: '#800020',
+                      backgroundColor: '#ffffff',
+                      fontWeight: 600,
+                      letterSpacing: '0.4px',
+                      padding: '0 8px',
+                      height: 22,
+                    },
+                  }}
+                >
+                  {filteredStockLocations.length} Locations
+                </Badge>
+              </Group>
+            </Group>
+            {isLoadingStock ? (
+              <Center p="xl" style={{ flex: 1 }}>
+                <Loader color="burgundy" />
+              </Center>
+            ) : filteredStockLocations.length === 0 ? (
+              <Center p="xl" style={{ flex: 1 }}>
+                <Text c="dimmed" size="sm">
+                  No stock locations found matching query.
+                </Text>
+              </Center>
+            ) : (
+              <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                <ScrollArea
+                  h={320}
+                  scrollbars="y"
+                  scrollbarSize={5}
+                  type="hover"
+                  styles={{
+                    thumb: { backgroundColor: '#800020', borderRadius: 9999 },
+                    scrollbar: { backgroundColor: 'transparent' },
+                  }}
+                >
+                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <colgroup>
+                      <col />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
+                    </colgroup>
+                    <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
+                      <Table.Tr>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                          LOCATION
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                          FILLED
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                          EMPTY
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
+                          TOTAL
+                        </Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {filteredStockLocations.map((location: any) => (
+                        <Table.Tr
+                          key={location.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => navigate(`/stock-analysis?location=${location.id}`)}
+                          style={{
+                            cursor: 'pointer',
+                            height: 44,
+                            transition: 'background-color 150ms ease',
+                          }}
+                        >
+                          <Table.Td>
+                            <Group gap={6} wrap="nowrap">
+                              <IconChevronRight size={14} color="#800020" style={{ flexShrink: 0 }} />
+                              {location.type === 'godown' ? (
+                                <IconBuildingFactory2 size={15} color="#800020" style={{ flexShrink: 0 }} />
+                              ) : (
+                                <IconTruck size={15} color="#800020" style={{ flexShrink: 0 }} />
+                              )}
+                              <Text style={{ fontSize: 13.5 }} fw={700} c="#0f172a" lineClamp={1}>
+                                {location.name}
+                              </Text>
+                            </Group>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                            {location.filledQuantity ?? location.quantity}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                            {location.emptyQuantity ?? 0}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
+                            {location.quantity}
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea>
+
+                {/* Locked TOTAL Footer */}
+                <Box style={{ marginTop: 'auto', backgroundColor: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
+                  <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <colgroup>
+                      <col />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
+                    </colgroup>
+                    <Table.Tbody>
+                      <Table.Tr style={{ border: 'none', height: 44 }}>
+                        <Table.Td style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Total
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          {totalLocationFilled}
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                          {totalLocationEmpty}
+                        </Table.Td>
+                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
+                          {totalLocationQuantity}
+                        </Table.Td>
+                      </Table.Tr>
+                    </Table.Tbody>
+                  </Table>
+                </Box>
+              </Box>
+            )}
+          </Paper>
+        </Grid.Col>
+      </Grid>
+
+      {/* 4. Middle Grid: Recent Purchases & Recent Payments */}
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
         {/* Recent Purchases Card */}
         <Paper

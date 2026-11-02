@@ -1,4 +1,5 @@
-﻿import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
 import '../widgets/app_theme.dart';
@@ -27,6 +28,8 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _expenseExpanded = false;
   bool _balanceExpanded = false;
 
+  Timer? _liveSyncTimer;
+
   @override
   void initState() {
     super.initState();
@@ -35,6 +38,18 @@ class _HomeScreenState extends State<HomeScreen> {
         AppStateProvider.of(context).syncFromBackend();
       }
     });
+    // Live real-time sync every 8 seconds for instant stock updates
+    _liveSyncTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (mounted && (ModalRoute.of(context)?.isCurrent ?? true)) {
+        AppStateProvider.of(context).syncFromBackend();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _liveSyncTimer?.cancel();
+    super.dispose();
   }
 
   String _getFormattedDate() {
@@ -109,12 +124,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ================= 1. DRIVER PROFILE & VEHICLE CARD =================
   Widget _buildDriverProfileCard(BuildContext context, AppState state) {
-    final avatarInitials = state.driverName.trim().isNotEmpty
-        ? (state.driverName.trim().length >= 2
-            ? state.driverName.trim().substring(0, 2).toUpperCase()
-            : state.driverName.trim().toUpperCase())
-        : 'AR';
-
     return Container(
       width: double.infinity,
       decoration: _cardDecor(16),
@@ -125,7 +134,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // 1. Driver Profile Row (Avatar, Name + Status, Date Badge)
           Row(
             children: [
-              // Avatar
+              // Modern Unique Driver Profile Icon
               InkWell(
                 splashColor: Colors.transparent,
                 highlightColor: Colors.transparent,
@@ -143,15 +152,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Color(0xFF800020),
                     shape: BoxShape.circle,
                   ),
-                  child: Center(
-                    child: Text(
-                      avatarInitials,
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: 0.5,
-                      ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.person,
+                      size: 26,
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -2123,9 +2128,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final totalOtherDel = state.totalOtherDelivered;
     final totalOtherBal = state.totalOtherBalance;
 
-    final grandTotalAllocated = totalCylAllocated + totalOtherAllo;
-    final grandTotalDelivered = totalCylDelivered + totalOtherDel;
-    final grandTotalBalance = totalCylBalance + totalOtherBal;
 
     return Column(
       key: const ValueKey('first_card_inventory_table'),
@@ -2154,27 +2156,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   letterSpacing: 0.6,
                 ),
               ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                decoration: BoxDecoration(
-                  color: _isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                    width: 0.8,
-                  ),
-                ),
-                child: Text(
-                  '${displayCylinders.length} TYPES',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF64748B),
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ),
+              
             ],
           ),
         ),
@@ -2340,6 +2322,83 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         }),
 
+        // Dedicated Separate Total Row for Cylinders
+        Container(
+          margin: const EdgeInsets.only(top: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7.5),
+          decoration: BoxDecoration(
+            color: _isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Text(
+                  'Total',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF800020),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  '$totalCylAllocated',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  '$totalCylDelivered',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: _isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  '$totalCylBalance',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF800020),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  '$totalCylEmpty',
+                  textAlign: TextAlign.end,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: _isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
         // ================= SECTION 2: OTHER PRODUCTS =================
         if (displayOtherProducts.isNotEmpty) ...[
           const SizedBox(height: 18),
@@ -2365,27 +2424,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     letterSpacing: 0.6,
                   ),
                 ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                  decoration: BoxDecoration(
-                    color: _isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
-                      width: 0.8,
-                    ),
-                  ),
-                  child: Text(
-                    '${displayOtherProducts.length} ITEMS',
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF64748B),
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ),
+                
               ],
             ),
           ),
@@ -2552,90 +2591,84 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           );
         }),
-      ],
 
-      const SizedBox(height: 12),
-
-      // ================= SECTION 3: GRAND TOTAL ROW =================
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: _isDark
-              ? const Color(0xFF7F1D1D).withValues(alpha: 0.15)
-              : const Color(0xFFFEF2F2),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: _isDark
-                ? const Color(0xFF800020).withValues(alpha: 0.35)
-                : const Color(0xFFFEE2E2),
-            width: 1.2,
+        // Dedicated Separate Total Row for Other Products
+        Container(
+          margin: const EdgeInsets.only(top: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7.5),
+          decoration: BoxDecoration(
+            color: _isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: Text(
+                  'Total',
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF800020),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  '$totalOtherAllo',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF64748B),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  '$totalOtherDel',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: _isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  '$totalOtherBal',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF800020),
+                  ),
+                ),
+              ),
+              Expanded(
+                flex: 2,
+                child: Text(
+                  '\u2014',
+                  textAlign: TextAlign.end,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 3,
-              child: Text(
-                'Grand Total',
-                style: GoogleFonts.inter(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF800020),
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                '$grandTotalAllocated',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w900,
-                  color: _isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569),
-                ),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                '$grandTotalDelivered',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w900,
-                  color: _isDark ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
-                ),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                '$grandTotalBalance',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF800020),
-                ),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: Text(
-                '$totalCylEmpty',
-                textAlign: TextAlign.end,
-                style: GoogleFonts.inter(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w900,
-                  color: _isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      ],
     ],
   );
 }

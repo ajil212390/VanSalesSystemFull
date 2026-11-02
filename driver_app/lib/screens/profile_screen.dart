@@ -217,23 +217,19 @@ class ProfileScreen extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Driver Avatar 'JO' in SuperGas Red Gradient
+                // Modern Unique Driver Profile Icon
                 Container(
-                  width: 52,
-                  height: 52,
+                  width: 56,
+                  height: 56,
                   decoration: const BoxDecoration(
-                    color: Color(0xFF991B1B),
+                    color: Color(0xFF800020),
                     shape: BoxShape.circle,
                   ),
-                  child: Center(
-                    child: Text(
-                      'JO',
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                        letterSpacing: 0.5,
-                      ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.person,
+                      size: 34,
+                      color: Colors.white,
                     ),
                   ),
                 ),

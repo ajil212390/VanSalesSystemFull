@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // Default to computer's Wi-Fi LAN IP so connected phones can reach backend
-  static String baseUrl = 'http://192.168.1.33:8000/api/v1';
+  static String baseUrl = 'http://192.168.1.34:8000/api/v1';
 
   static const String _tokenKey = 'auth_token';
   static const String _userKey = 'auth_user';
@@ -15,7 +15,13 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     final savedUrl = prefs.getString(_customUrlKey);
     if (savedUrl != null && savedUrl.isNotEmpty) {
-      baseUrl = savedUrl;
+      if (savedUrl.contains('192.168.1.33')) {
+        // Automatically migrate stale .33 IP to current PC IP .34
+        baseUrl = 'http://192.168.1.34:8000/api/v1';
+        await prefs.setString(_customUrlKey, baseUrl);
+      } else {
+        baseUrl = savedUrl;
+      }
     }
   }
 
@@ -180,16 +186,35 @@ class ApiService {
     return [];
   }
 
-  /// 5. Fetch Customers List: GET /ledgers/?AccountType=CUSTOMER
+  /// 5. Fetch Customers List: GET /ledgers/customers/ (Sundry Debtors)
   static Future<List<Map<String, dynamic>>> getCustomers() async {
-    final uri = Uri.parse('$baseUrl/ledgers/?AccountType=CUSTOMER');
-    final res = await http.get(uri, headers: await _headers());
+    // 1. Primary: dedicated /ledgers/customers/ endpoint
+    try {
+      final uri = Uri.parse('$baseUrl/ledgers/customers/');
+      final res = await http.get(uri, headers: await _headers());
 
-    if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
-      final list = data is List ? data : (data['results'] as List? ?? []);
-      return List<Map<String, dynamic>>.from(list);
-    }
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        if (list.isNotEmpty) {
+          return List<Map<String, dynamic>>.from(list);
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fallback: standard /ledgers/?AccountType=CUSTOMER&page_size=200
+    try {
+      final uri = Uri.parse('$baseUrl/ledgers/?AccountType=CUSTOMER&page_size=200');
+      final res = await http.get(uri, headers: await _headers());
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        if (list.isNotEmpty) {
+          return List<Map<String, dynamic>>.from(list);
+        }
+      }
+    } catch (_) {}
     return [];
   }
 

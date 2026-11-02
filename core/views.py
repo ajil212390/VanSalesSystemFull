@@ -494,8 +494,18 @@ class LedgerViewSet(viewsets.ModelViewSet):
     serializer_class = LedgerSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_permissions(self):
+        if self.action in ['customers', 'list'] and (
+            self.request.query_params.get('AccountType', '').upper() in ('CUSTOMER', 'DEBTOR', 'SUNDRY_DEBTOR')
+            or self.request.query_params.get('is_customer')
+            or self.action == 'customers'
+        ):
+            return [AllowAny()]
+        return super().get_permissions()
+
     def get_queryset(self):
-        company_id = self.request.user.CompanyId
+        user = getattr(self.request, 'user', None)
+        company_id = getattr(user, 'CompanyId', 1) or 1
 
         qs = (
             Ledger.objects
@@ -522,13 +532,14 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
         return qs
 
-    @action(detail=False, methods=['get'], url_path='customers')
+    @action(detail=False, methods=['get'], url_path='customers', permission_classes=[AllowAny])
     def customers(self, request):
         """
         Specialized endpoint returning Sundry Debtors (Customers) for driver mobile app.
         Includes contact details and current outstanding balance.
         """
-        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        user = getattr(request, 'user', None)
+        company_id = getattr(user, 'CompanyId', 1) or 1
         debtor_ledgers = (
             Ledger.objects.filter(CompanyId=company_id)
             .filter(Q(Group__GroupName__icontains='debtor') | Q(Group__GroupName__icontains='customer'))
@@ -541,10 +552,12 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 'LedgerId': l.LedgerId,
                 'LedgerName': l.LedgerName,
                 'GroupName': l.Group.GroupName if l.Group else 'Sundry Debtors',
-                'Phone': getattr(l, 'Phone', '') or '',
+                'Phone': (getattr(l, 'MobileNumber', '') or getattr(l, 'PhoneNumber', '') or ''),
+                'MobileNumber': getattr(l, 'MobileNumber', '') or '',
+                'PhoneNumber': getattr(l, 'PhoneNumber', '') or '',
                 'AddressLine1': getattr(l, 'AddressLine1', '') or '',
                 'CurrentBalance': float(l.CurrentBalance or 0),
-                'BalanceType': l.CurrentBalanceType or 'DR'
+                'BalanceType': getattr(l, 'OpeningBalanceType', 'DR') or ('DR' if (l.CurrentBalance or 0) >= 0 else 'CR')
             })
         return Response(data)
 
@@ -1986,14 +1999,18 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         products = Product.objects.filter(CompanyId=company_id, IsActive=True).select_related('Category', 'Category__ParentCategory', 'Unit')
         stock_list = []
         for p in products:
-            agg = StockMovement.objects.filter(
+            v_movs = StockMovement.objects.filter(
                 CompanyId=company_id,
                 Product=p,
                 RouteVehicleDriverId=allocation_id
-            ).aggregate(tot_in=Sum('InQty'), tot_out=Sum('OutQty'))
-            in_q = agg['tot_in'] or Decimal('0.00')
-            out_q = agg['tot_out'] or Decimal('0.00')
-            onboard = in_q - out_q
+            )
+            dn_in = v_movs.filter(TransactionType='DELIVERY_NOTE').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+            sale_out = v_movs.filter(TransactionType='VAN_SALE').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+            empty_in = v_movs.filter(TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+
+            v_in = v_movs.exclude(TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+            v_out = v_movs.aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+            v_bal = max(Decimal('0.00'), v_in - v_out)
 
             cat_name = p.Category.CategoryName if p.Category else ''
             parent_cat = p.Category.ParentCategory.CategoryName if p.Category and p.Category.ParentCategory else ''
@@ -2010,7 +2027,11 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'ParentCategoryName': parent_cat,
                 'IsCylinder': is_cylinder,
                 'IsOther': is_other,
-                'OnboardQty': float(onboard),
+                'AllocatedQty': float(dn_in),
+                'DeliveredQty': float(sale_out),
+                'BalanceQty': float(v_bal),
+                'EmptyQty': float(empty_in),
+                'OnboardQty': float(v_bal),
                 'UnitName': p.Unit.UnitName if p.Unit else '',
                 'SalesPrice': float(p.SalesPrice or 0),
             })
@@ -2039,6 +2060,13 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'RouteName': a.Route.RouteName if a.Route else '',
                 'DriverName': a.Driver.DriverName if a.Driver else '',
                 'TotalCylinders': 0.0,
+                'AllocatedCylinders': 0.0,
+                'DeliveredCylinders': 0.0,
+                'BalanceCylinders': 0.0,
+                'EmptyCylinders': 0.0,
+                'OtherProductsAllocated': 0.0,
+                'OtherProductsDelivered': 0.0,
+                'OtherProductsBalance': 0.0,
                 'EstimatedValue': 0.0,
                 'Products': []
             }
@@ -2049,6 +2077,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         total_system_value = Decimal('0.00')
 
         for p in products:
+            cat_n = p.Category.CategoryName.lower() if p.Category else ''
+            p_n = p.ProductName.lower()
+            is_cylinder = ('cylinder' in cat_n) or ('cylinder' in p_n) or ('kg' in p_n) or ('lpg' in p_n)
+
             g_agg = all_movements.filter(Product=p, RouteVehicleDriverId=1).aggregate(
                 tot_in=Sum('InQty'), tot_out=Sum('OutQty')
             )
@@ -2075,29 +2107,55 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             unit_conv = Decimal(str(p.UnitConversion or 1))
 
             for a_id, van_obj in alloc_van_map.items():
-                v_agg = all_movements.filter(Product=p, RouteVehicleDriverId=a_id).aggregate(
-                    tot_in=Sum('InQty'), tot_out=Sum('OutQty')
-                )
-                v_in = v_agg['tot_in'] or Decimal('0.00')
-                v_out = v_agg['tot_out'] or Decimal('0.00')
+                v_movs = all_movements.filter(Product=p, RouteVehicleDriverId=a_id)
+                dn_in = v_movs.filter(TransactionType='DELIVERY_NOTE').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+                sale_out = v_movs.filter(TransactionType='VAN_SALE').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+                empty_in = v_movs.filter(TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+
+                v_in = v_movs.exclude(TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+                v_out = v_movs.aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
                 v_bal = max(Decimal('0.00'), v_in - v_out)
 
-                if v_bal > 0:
+                if dn_in > 0 or sale_out > 0 or v_bal > 0 or empty_in > 0:
+                    val = float(v_bal * unit_conv * purch_rate)
+                    van_obj['EstimatedValue'] += val
+
                     p_allocated += v_bal
+                    if is_cylinder:
+                        van_obj['AllocatedCylinders'] += float(dn_in)
+                        van_obj['DeliveredCylinders'] += float(sale_out)
+                        van_obj['BalanceCylinders'] += float(v_bal)
+                        van_obj['EmptyCylinders'] += float(empty_in)
+                        van_obj['TotalCylinders'] += float(v_bal)
+                    else:
+                        van_obj['OtherProductsAllocated'] += float(dn_in)
+                        van_obj['OtherProductsDelivered'] += float(sale_out)
+                        van_obj['OtherProductsBalance'] += float(v_bal)
+
                     p_vans.append({
                         'RouteVehicleDriverId': a_id,
                         'VehicleNumber': van_obj['VehicleNumber'],
                         'RouteName': van_obj['RouteName'],
                         'DriverName': van_obj['DriverName'],
+                        'AllocatedQty': float(dn_in),
+                        'DeliveredQty': float(sale_out),
+                        'BalanceQty': float(v_bal),
+                        'EmptyQty': float(empty_in),
                         'Qty': float(v_bal),
+                        'IsCylinder': is_cylinder,
                     })
-                    val = float(v_bal * unit_conv * purch_rate)
-                    van_obj['TotalCylinders'] += float(v_bal)
-                    van_obj['EstimatedValue'] += val
+
                     van_obj['Products'].append({
                         'ProductId': p.ProductId,
                         'ProductName': p.ProductName,
                         'AppProductName': p.AppProductName or p.ProductName,
+                        'ProductCode': p.ProductCode or '—',
+                        'CategoryName': p.Category.CategoryName if p.Category else 'General',
+                        'IsCylinder': is_cylinder,
+                        'AllocatedQty': float(dn_in),
+                        'DeliveredQty': float(sale_out),
+                        'BalanceQty': float(v_bal),
+                        'EmptyQty': float(empty_in),
                         'Qty': float(v_bal),
                         'SalesPrice': float(p.SalesPrice or 0),
                         'EstimatedValue': val,
@@ -2110,12 +2168,18 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             p_val = alt_qty * purch_rate
             total_system_value += p_val
 
+            p_empty = sum(v['EmptyQty'] for v in p_vans)
+            g_empty = all_movements.filter(
+                Product=p, RouteVehicleDriverId=1, TransactionType='VAN_EMPTY_RETURN'
+            ).aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+            total_empty = float(p_empty) + float(g_empty) if is_cylinder else 0.0
+
             product_analysis.append({
                 'ProductId': p.ProductId,
                 'ProductName': p.ProductName,
                 'AppProductName': p.AppProductName or p.ProductName,
                 'ProductCode': p.ProductCode,
-                'UnitName': 'Cyls',
+                'UnitName': 'Cyls' if is_cylinder else (p.Unit.UnitName if p.Unit else 'Nos'),
                 'AltUnitName': p.Unit.UnitName if p.Unit else 'KG',
                 'UnitConversion': float(unit_conv),
                 'AltQty': float(alt_qty),
@@ -2124,14 +2188,24 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'Rate': float(purch_rate),
                 'GodownQty': float(g_qty),
                 'AllocatedQty': float(p_allocated),
-                'TotalQty': float(total_p_qty),
+                'FilledQty': float(total_p_qty),
+                'EmptyQty': total_empty,
+                'TotalQty': float(total_p_qty) + total_empty,
+                'TotalStockQty': float(total_p_qty) + total_empty,
                 'TotalValue': float(p_val),
                 'AllocationRate': round(float((p_allocated / total_p_qty) * 100), 1) if total_p_qty > 0 else 0.0,
+                'IsCylinder': is_cylinder,
                 'Vans': p_vans
             })
 
-        active_vans = [v for v in alloc_van_map.values() if v['TotalCylinders'] > 0]
-        empty_vans = [v for v in alloc_van_map.values() if v['TotalCylinders'] == 0]
+        # Sort product_analysis: Cylinders first, then other products
+        product_analysis.sort(key=lambda p: (not p.get('IsCylinder', False), p.get('ProductName', '')))
+
+        for van_obj in alloc_van_map.values():
+            van_obj['Products'].sort(key=lambda p: (not p.get('IsCylinder', False), p.get('ProductName', '')))
+
+        active_vans = [v for v in alloc_van_map.values() if (v['TotalCylinders'] > 0 or v['AllocatedCylinders'] > 0 or v['OtherProductsAllocated'] > 0)]
+        empty_vans = [v for v in alloc_van_map.values() if v not in active_vans]
 
         total_system = total_godown + total_allocated
         godown_pct = round(float((total_godown / total_system) * 100), 1) if total_system > 0 else 0.0
@@ -2203,11 +2277,17 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 narr = sm.Narration or ''
                 cust_name = 'Counter Customer'
                 p_method = 'Cash'
+                typed_amt = 0.0
                 if 'Sold to ' in narr:
                     parts = narr.replace('Sold to ', '').split(' • ')
                     cust_name = parts[0].strip()
                     if len(parts) > 1:
                         p_method = parts[1].strip()
+                    if len(parts) > 2 and 'Amount: ' in parts[2]:
+                        try:
+                            typed_amt = float(parts[2].replace('Amount: ', '').strip())
+                        except:
+                            typed_amt = 0.0
 
                 alloc_info = alloc_van_map.get(sm.RouteVehicleDriverId, {})
                 sales_by_ticket[ticket] = {
@@ -2219,15 +2299,21 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'PaymentMethod': p_method,
                     'DeliveredCylinders': 0,
                     'EmptyReturns': 0,
-                    'TotalAmount': 0.0,
+                    'TotalAmount': typed_amt,
                     'Time': sm.CreatedAt.strftime('%I:%M %p') if (hasattr(sm, 'CreatedAt') and sm.CreatedAt) else '',
                     'Items': []
                 }
 
             qty = float(sm.OutQty or 0)
             rate = float(sm.OutCostRate or 0)
-            sales_by_ticket[ticket]['DeliveredCylinders'] += int(qty)
-            sales_by_ticket[ticket]['TotalAmount'] += float(sm.OutCostAmount or (Decimal(str(qty)) * Decimal(str(rate))))
+            cat_n = sm.Product.Category.CategoryName.lower() if (sm.Product and sm.Product.Category) else ''
+            p_n = sm.Product.ProductName.lower() if sm.Product else ''
+            is_cyl = ('cylinder' in cat_n) or ('cylinder' in p_n) or ('kg' in p_n) or ('lpg' in p_n)
+
+            if is_cyl:
+                sales_by_ticket[ticket]['DeliveredCylinders'] += int(qty)
+            if sales_by_ticket[ticket]['TotalAmount'] == 0.0:
+                sales_by_ticket[ticket]['TotalAmount'] += float(sm.OutCostAmount or (Decimal(str(qty)) * Decimal(str(rate))))
             sales_by_ticket[ticket]['Items'].append({
                 'ProductName': sm.Product.ProductName if sm.Product else 'Gas Cylinder',
                 'Qty': qty,
@@ -2520,6 +2606,15 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 if not prod:
                     continue
 
+                # Check if product is cylinder or other product
+                cat_n = prod.Category.CategoryName.lower() if prod.Category else ''
+                p_n = prod.ProductName.lower()
+                is_cylinder = ('cylinder' in cat_n) or ('cylinder' in p_n) or ('kg' in p_n) or ('lpg' in p_n)
+
+                # Other products have 0 rate/amount added; driver's typed amount is final
+                item_rate = (rate or prod.SalesPrice or Decimal('0.00')) if is_cylinder else Decimal('0.00')
+                item_amount = (qty * item_rate) if is_cylinder else Decimal('0.00')
+
                 # 1. Van Delivered Stock OUT
                 if qty > 0:
                     StockMovement.objects.create(
@@ -2533,9 +2628,9 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                         TransactionDate=date.today(),
                         InQty=Decimal('0.00'),
                         OutQty=qty,
-                        OutCostRate=rate or prod.SalesPrice or Decimal('0.00'),
-                        OutCostAmount=qty * (rate or prod.SalesPrice or Decimal('0.00')),
-                        Narration=f"Sold to {customer_name} • {payment_method}"
+                        OutCostRate=item_rate,
+                        OutCostAmount=item_amount,
+                        Narration=f"Sold to {customer_name} • {payment_method} • Amount: {amount_collected}"
                     )
 
                 # 2. Empty Cylinders Return IN to Van
@@ -2593,11 +2688,17 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 narr = m.Narration or ''
                 c_name = 'Customer'
                 p_method = 'Cash'
+                driver_typed_amt = 0.0
                 if 'Sold to ' in narr:
                     parts = narr.replace('Sold to ', '').split(' • ')
                     c_name = parts[0].strip()
                     if len(parts) > 1:
                         p_method = parts[1].strip()
+                    if len(parts) > 2 and 'Amount: ' in parts[2]:
+                        try:
+                            driver_typed_amt = float(parts[2].replace('Amount: ', '').strip())
+                        except:
+                            driver_typed_amt = 0.0
 
                 time_str = m.CreatedAt.strftime("%I:%M %p") if hasattr(m, 'CreatedAt') and m.CreatedAt else datetime.now().strftime("%I:%M %p")
 
@@ -2610,7 +2711,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'items': [],
                     'totalCylinders': 0,
                     'totalEmpties': 0,
-                    'amount': 0.0,
+                    'amount': driver_typed_amt,
                     'paymentMethod': p_method,
                     'time': time_str,
                     'status': 'Delivered'
@@ -2619,9 +2720,15 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             order = grouped[t_no]
             p_weight = (m.Product.AppProductName if m.Product and m.Product.AppProductName else (m.Product.ProductName if m.Product else ''))
 
+            cat_n = m.Product.Category.CategoryName.lower() if (m.Product and m.Product.Category) else ''
+            p_n = m.Product.ProductName.lower() if m.Product else ''
+            is_cylinder = ('cylinder' in cat_n) or ('cylinder' in p_n) or ('kg' in p_n) or ('lpg' in p_n)
+
             if m.TransactionType == 'VAN_SALE':
-                order['totalCylinders'] += int(m.OutQty)
-                order['amount'] += float(m.OutCostAmount or 0)
+                if is_cylinder:
+                    order['totalCylinders'] += int(m.OutQty)
+                if order['amount'] == 0.0:
+                    order['amount'] += float(m.OutCostAmount or 0)
                 found = False
                 for it in order['items']:
                     if it['weight'] == p_weight:
@@ -2793,6 +2900,228 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             'success': True,
             'message': f'Receipt Note {rn.DeliveryNoteNo} processed. Stock successfully transferred to Central Godown.'
         })
+
+    @action(detail=False, methods=['get', 'post'], url_path='receipt-notes')
+    def receipt_notes(self, request):
+        """
+        Inbound Van Route Receipt Notes:
+        GET: Returns real receipt notes and pending shift returns from active vans.
+        POST: Allows Godown Supervisor to record an incoming van check-in, returned empties, and collections.
+        """
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+
+        if request.method == 'GET':
+            notes_qs = DeliveryNote.objects.filter(
+                CompanyId=company_id
+            ).filter(
+                Q(Status__in=['RECEIPT_PENDING', 'SETTLED']) | Q(DeliveryNoteNo__startswith='RN-')
+            ).select_related(
+                'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Route', 'RouteVehicleDriver__Driver'
+            ).prefetch_related('lines__Product').order_by('-DeliveryDate', '-DeliveryNoteId')
+
+            results = []
+            for n in notes_qs:
+                alloc = n.RouteVehicleDriver
+                veh_no = alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else 'Delivery Van'
+                r_name = alloc.Route.RouteName if alloc and alloc.Route else 'Route'
+                d_name = alloc.Driver.DriverName if alloc and alloc.Driver else 'Driver'
+
+                # Find referenced Delivery Note
+                loaded_dn = DeliveryNote.objects.filter(
+                    CompanyId=company_id,
+                    RouteVehicleDriver=alloc,
+                    DeliveryDate=n.DeliveryDate,
+                    Status='LOADED'
+                ).exclude(DeliveryNoteId=n.DeliveryNoteId).first()
+                if not loaded_dn:
+                    loaded_dn = DeliveryNote.objects.filter(
+                        CompanyId=company_id,
+                        RouteVehicleDriver=alloc
+                    ).exclude(DeliveryNoteId=n.DeliveryNoteId).order_by('-DeliveryDate', '-DeliveryNoteId').first()
+
+                dn_ref = loaded_dn.DeliveryNoteNo if loaded_dn else '—'
+
+                # Lines breakdown
+                empty_breakdown = []
+                full_breakdown = []
+                total_empties = 0
+                total_full = 0
+
+                for line in n.lines.all():
+                    p_name = line.Product.ProductName if line.Product else 'Gas Cylinder'
+                    q = int(line.Quantity)
+                    empty_breakdown.append({'product': p_name, 'qty': q})
+                    total_empties += q
+
+                # Compute remaining full balance from van movements if applicable
+                if alloc:
+                    v_movs = StockMovement.objects.filter(
+                        CompanyId=company_id,
+                        RouteVehicleDriverId=alloc.RouteVehicleDriverId
+                    )
+                    v_in = v_movs.exclude(TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+                    v_out = v_movs.aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+                    total_full = max(0, int(v_in - v_out))
+
+                cash_amt = 0.0
+                digital_amt = 0.0
+                rem = n.Remarks or ''
+                if 'Cash: ₹' in rem:
+                    try:
+                        c_part = rem.split('Cash: ₹')[1].split(',')[0].strip()
+                        cash_amt = float(c_part)
+                    except:
+                        pass
+                if 'Bank: ₹' in rem:
+                    try:
+                        b_part = rem.split('Bank: ₹')[1].split('•')[0].split(',')[0].strip()
+                        digital_amt = float(b_part)
+                    except:
+                        pass
+                if 'Digital: ₹' in rem:
+                    try:
+                        d_part = rem.split('Digital: ₹')[1].split('•')[0].split(',')[0].strip()
+                        digital_amt = float(d_part)
+                    except:
+                        pass
+
+                if cash_amt == 0 and digital_amt == 0 and alloc:
+                    sales_movs = StockMovement.objects.filter(
+                        CompanyId=company_id,
+                        RouteVehicleDriverId=alloc.RouteVehicleDriverId,
+                        TransactionDate=n.DeliveryDate,
+                        TransactionType='VAN_SALE'
+                    )
+                    for sm in sales_movs:
+                        amt = float(sm.OutCostAmount or 0)
+                        narr = sm.Narration or ''
+                        if 'UPI' in narr or 'Bank' in narr or 'Digital' in narr:
+                            digital_amt += amt
+                        else:
+                            cash_amt += amt
+
+                results.append({
+                    'id': str(n.DeliveryNoteId),
+                    'deliveryNoteId': n.DeliveryNoteId,
+                    'noteNumber': n.DeliveryNoteNo,
+                    'date': n.DeliveryDate.strftime('%d %b %Y'),
+                    'time': n.CreatedAt.strftime('%I:%M %p') if (hasattr(n, 'CreatedAt') and n.CreatedAt) else '',
+                    'vehicleNumber': veh_no,
+                    'routeName': r_name,
+                    'driverName': d_name,
+                    'deliveryNoteRef': dn_ref,
+                    'emptyCylindersTotal': total_empties,
+                    'filledCylindersTotal': total_full,
+                    'emptyBreakdown': empty_breakdown,
+                    'filledBreakdown': full_breakdown,
+                    'cashCollected': cash_amt,
+                    'digitalCollected': digital_amt,
+                    'status': 'pending' if n.Status == 'RECEIPT_PENDING' else 'settled',
+                    'notes': n.Remarks or '',
+                })
+
+            return Response(results)
+
+        elif request.method == 'POST':
+            data = request.data
+            allocation_id = data.get('allocation_id')
+            delivery_date = data.get('delivery_date') or date.today()
+            empty_items = data.get('empty_items', [])
+            cash_collected = float(data.get('cash_collected') or 0)
+            digital_collected = float(data.get('digital_collected') or 0)
+            remarks = data.get('remarks', '')
+            auto_settle = data.get('auto_settle', True)
+
+            if not allocation_id:
+                return Response({'detail': 'Please select an active vehicle / route allocation.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            alloc = RouteVehicleDriver.objects.filter(RouteVehicleDriverId=allocation_id).select_related('Route', 'Vehicle', 'Driver').first()
+            if not alloc:
+                return Response({'detail': 'Allocation not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            today_str = date.today().strftime('%Y')
+            last_rn = DeliveryNote.objects.filter(DeliveryNoteNo__startswith=f"RN-{today_str}-").order_by('-DeliveryNoteId').first()
+            next_seq = 1
+            if last_rn and '-' in last_rn.DeliveryNoteNo:
+                try:
+                    parts = last_rn.DeliveryNoteNo.split('-')
+                    next_seq = int(parts[-1]) + 1
+                except:
+                    next_seq = DeliveryNote.objects.count() + 1
+
+            rn_no = f"RN-{today_str}-{next_seq:04d}"
+            while DeliveryNote.objects.filter(DeliveryNoteNo=rn_no).exists():
+                next_seq += 1
+                rn_no = f"RN-{today_str}-{next_seq:04d}"
+
+            final_remarks = f"{remarks} • Cash: ₹{cash_collected:.0f}, Digital: ₹{digital_collected:.0f}".strip(' •')
+            note_status = 'SETTLED' if auto_settle else 'RECEIPT_PENDING'
+
+            with transaction.atomic():
+                rn = DeliveryNote.objects.create(
+                    DeliveryNoteNo=rn_no,
+                    DeliveryDate=delivery_date,
+                    RouteVehicleDriver=alloc,
+                    CompanyId=company_id,
+                    Remarks=final_remarks,
+                    Status=note_status
+                )
+
+                for it in empty_items:
+                    p_id = it.get('product_id') or it.get('ProductId')
+                    qty = Decimal(str(it.get('qty') or it.get('quantity') or 0))
+                    if not p_id or qty <= 0:
+                        continue
+                    prod = Product.objects.filter(ProductId=p_id).first()
+                    if not prod:
+                        continue
+
+                    line = DeliveryNoteLine.objects.create(
+                        DeliveryNote=rn,
+                        Product=prod,
+                        Unit_id=prod.Unit_id or 1,
+                        Quantity=qty,
+                        Rate=prod.SalesPrice or Decimal('0.00'),
+                        Amount=qty * (prod.SalesPrice or Decimal('0.00'))
+                    )
+
+                    if auto_settle:
+                        StockMovement.objects.create(
+                            CompanyId=company_id,
+                            Product=prod,
+                            Unit_id=prod.Unit_id or 1,
+                            RouteVehicleDriverId=alloc.RouteVehicleDriverId,
+                            TransactionType='RECEIPT_NOTE_RETURN',
+                            ReferenceId=rn.DeliveryNoteId,
+                            ReferenceLineId=line.DeliveryNoteLineId,
+                            TransactionNo=rn.DeliveryNoteNo,
+                            TransactionDate=rn.DeliveryDate,
+                            InQty=Decimal('0.00'),
+                            OutQty=qty,
+                            Narration=f"Shift Return Empties to Godown: {rn.DeliveryNoteNo}"
+                        )
+                        StockMovement.objects.create(
+                            CompanyId=company_id,
+                            Product=prod,
+                            Unit_id=prod.Unit_id or 1,
+                            RouteVehicleDriverId=1,
+                            TransactionType='RECEIPT_NOTE_RETURN',
+                            ReferenceId=rn.DeliveryNoteId,
+                            ReferenceLineId=line.DeliveryNoteLineId,
+                            TransactionNo=rn.DeliveryNoteNo,
+                            TransactionDate=rn.DeliveryDate,
+                            InQty=qty,
+                            OutQty=Decimal('0.00'),
+                            Narration=f"Shift Return from Van {alloc.Vehicle.VehicleNumber if alloc.Vehicle else ''}"
+                        )
+
+            return Response({
+                'success': True,
+                'id': str(rn.DeliveryNoteId),
+                'noteNumber': rn.DeliveryNoteNo,
+                'status': 'settled' if auto_settle else 'pending',
+                'message': f'Receipt Note {rn.DeliveryNoteNo} created and {"settled into Godown" if auto_settle else "queued for verification"}.'
+            }, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get'], url_path='last_sync')
     def last_sync(self, request):

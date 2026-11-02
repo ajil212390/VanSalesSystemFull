@@ -271,12 +271,38 @@ class AppState extends ChangeNotifier {
   int get totalOtherBalance => otherProducts.fold(0, (sum, i) => sum + i.balanceStock);
 
   int get totalDeliveredFilled => cylinders.fold(0, (sum, c) => sum + c.deliveredStock);
-  int get totalDeliveredEmpty => orders.fold(0, (sum, o) => sum + o.totalEmpties);
+  int get totalDeliveredEmpty {
+    final fromCyl = cylinders.fold(0, (sum, c) => sum + c.emptyStock);
+    if (fromCyl > 0) return fromCyl;
+    return orders.fold(0, (sum, o) => sum + o.totalEmpties);
+  }
   int get totalClosingFilled => cylinders.fold(0, (sum, c) => sum + c.filledStock);
   int get totalClosingEmpty => cylinders.fold(0, (sum, c) => sum + c.emptyStock);
 
   // Customers - Populated strictly from backend DB Sundry Debtors
-  final List<Customer> customers = [];
+  final List<Customer> customers = [
+    Customer(
+      ledgerId: 55,
+      name: 'AJIL',
+      phone: '08078923590',
+      address: 'Cheruvathoor House, Pengamuck PO, Thrissur',
+      outstanding: -1200.0,
+    ),
+    Customer(
+      ledgerId: 53,
+      name: 'Green City Traders',
+      phone: '9847199999',
+      address: '',
+      outstanding: -40554.0,
+    ),
+    Customer(
+      ledgerId: 51,
+      name: 'Kochi Supermarkets',
+      phone: '9847012345',
+      address: '',
+      outstanding: 40000.0,
+    ),
+  ];
 
   // Orders
   final List<DeliveryOrder> orders = [];
@@ -295,10 +321,32 @@ class AppState extends ChangeNotifier {
     loadCachedAllocation();
   }
 
-  void _initDeliveryItems() {
-    deliveryItems = cylinders
-        .map((c) => DeliveryItem(cylinder: c))
-        .toList();
+  void _initDeliveryItems({bool forceReset = false}) {
+    final existingQuantities = <String, Map<String, int>>{};
+    if (!forceReset) {
+      try {
+        for (final item in deliveryItems) {
+          existingQuantities[item.cylinder.weight] = {
+            'deliveryQty': item.deliveryQty,
+            'emptyReturnQty': item.emptyReturnQty,
+          };
+        }
+      } catch (_) {}
+    }
+
+    deliveryItems = cylinders.map((c) {
+      final existing = existingQuantities[c.weight];
+      if (existing != null && !forceReset) {
+        final dQty = existing['deliveryQty'] ?? 0;
+        final eQty = existing['emptyReturnQty'] ?? 0;
+        return DeliveryItem(
+          cylinder: c,
+          deliveryQty: dQty.clamp(0, c.filledStock),
+          emptyReturnQty: eQty,
+        );
+      }
+      return DeliveryItem(cylinder: c);
+    }).toList();
   }
 
   Future<void> loadCachedAllocation() async {
@@ -333,6 +381,31 @@ class AppState extends ChangeNotifier {
   }
 
   /// Wipe all local device cache and reset state completely to start 100% fresh
+  /// Fetch Sundry Debtors from backend DB and populate customers list
+  Future<void> fetchCustomers() async {
+    try {
+      final backendCustomers = await ApiService.getCustomers();
+      if (backendCustomers.isNotEmpty) {
+        customers.clear();
+        for (final c in backendCustomers) {
+          final balance = (c['CurrentBalance'] as num?)?.toDouble() ?? 0.0;
+          final phone = (c['Phone'] ?? c['MobileNumber'] ?? c['PhoneNumber'] ?? '').toString().trim();
+          final addr = (c['AddressLine1'] ?? c['Address'] ?? '').toString().trim();
+          customers.add(Customer(
+            ledgerId: c['LedgerId'] as int?,
+            name: (c['LedgerName'] ?? '').toString().trim(),
+            phone: phone,
+            address: addr,
+            outstanding: balance,
+          ));
+        }
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error fetching customers: $e');
+    }
+  }
+
   Future<void> clearLocalCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -435,22 +508,22 @@ class AppState extends ChangeNotifier {
               return !name.contains('cylinder') && !name.contains('kg') && !name.contains('lpg');
             }).toList();
 
-            // Load cylinders strictly from backend DB van-stock (0 empty stock by default)
+            // Load cylinders strictly from backend DB van-stock with live allocated, delivered, balance, empty
             cylinders = cylItems.map((s) => CylinderType(
               productId: s['ProductId'] as int?,
               weight: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
                   ? s['AppProductName'].toString().trim()
                   : (s['ProductName'] ?? '').toString(),
               price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
-              initialFilledStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
-              filledStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
-              emptyStock: 0,
+              initialFilledStock: (s['AllocatedQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
+              filledStock: (s['BalanceQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
+              emptyStock: (s['EmptyQty'] as num?)?.toInt() ?? 0,
             )).toList();
             _initDeliveryItems();
 
-            // Load only Other Products allocated to this vehicle (onboard stock > 0)
+            // Load Other Products allocated to this vehicle
             otherProducts = otherItems
-                .where((s) => ((s['OnboardQty'] as num?)?.toInt() ?? 0) > 0)
+                .where((s) => (((s['AllocatedQty'] ?? s['OnboardQty'] ?? 0) as num).toInt()) > 0)
                 .map((s) => OtherProductItem(
                   productId: s['ProductId'] as int?,
                   name: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
@@ -458,9 +531,9 @@ class AppState extends ChangeNotifier {
                       : (s['ProductName'] ?? '').toString(),
                   price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
                   categoryName: (s['CategoryName'] ?? 'Other Items').toString(),
-                  initialStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
-                  deliveredStock: 0,
-                  balanceStock: (s['OnboardQty'] as num?)?.toInt() ?? 0,
+                  initialStock: (s['AllocatedQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
+                  deliveredStock: (s['DeliveredQty'] as num?)?.toInt() ?? 0,
+                  balanceStock: (s['BalanceQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
                 ))
                 .toList();
           }
@@ -514,21 +587,8 @@ class AppState extends ChangeNotifier {
         }
       }
 
-      // Customers from Backend
-      final backendCustomers = await ApiService.getCustomers();
-      if (backendCustomers.isNotEmpty) {
-        customers.clear();
-        for (final c in backendCustomers) {
-          final balance = (c['CurrentBalance'] as num?)?.toDouble() ?? 0.0;
-          customers.add(Customer(
-            ledgerId: c['LedgerId'],
-            name: c['LedgerName'] ?? '',
-            phone: c['Phone'] ?? '',
-            address: c['AddressLine1'] ?? '',
-            outstanding: balance,
-          ));
-        }
-      }
+      // Customers from Backend (Sundry Debtors)
+      await fetchCustomers();
 
       // If cylinders empty, fetch products from catalog (strictly cylinders only)
       if (cylinders.isEmpty) {
@@ -722,7 +782,7 @@ class AppState extends ChangeNotifier {
               'weight': prod.name,
               'qty': e.value,
               'empty_qty': 0,
-              'rate': prod.price,
+              'rate': 0.0, // Other product price not added; driver typed amount is final
             };
           })
           .toList();
@@ -854,7 +914,7 @@ class AppState extends ChangeNotifier {
     paymentMethod = '';
     collectedAmount = 0;
     otherDeliveryQty.clear();
-    _initDeliveryItems();
+    _initDeliveryItems(forceReset: true);
     notifyListeners();
   }
 

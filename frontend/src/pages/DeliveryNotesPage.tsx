@@ -27,7 +27,7 @@ import {
   IconTrash,
   IconSearch,
   IconPackage,
-  IconBuildingWarehouse,
+  IconBuildingFactory2,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -607,7 +607,7 @@ export const DeliveryNotesPage: React.FC = () => {
                     Vehicles ready on routes
                   </Text>
                 </Stack>
-                <IconBuildingWarehouse size={26} color="#800020" stroke={1.5} />
+                <IconBuildingFactory2 size={26} color="#800020" stroke={1.5} />
               </Group>
             </Paper>
           </SimpleGrid>
