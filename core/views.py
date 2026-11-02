@@ -2945,57 +2945,16 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
         products = Product.objects.filter(ProductId__in=prod_ids).select_related('Unit', 'Category').order_by('ProductName')
         results = []
-        import re
         for p in products:
             cat_n = p.Category.CategoryName.lower() if p.Category else ''
             p_n = p.ProductName.lower()
             is_cyl = ('cylinder' in cat_n) or ('cylinder' in p_n) or ('kg' in p_n) or ('lpg' in p_n)
-
-            # Short weight / clean display name (e.g. "04KG", "12KG", "17KG", "Stove", "Burner")
-            weight_match = re.search(r'(\d+\s*KG)', p.ProductName, re.IGNORECASE)
-            if weight_match:
-                short_name = weight_match.group(1).replace(' ', '').upper()
-            else:
-                short_name = p.AppProductName or p.ProductName
-                # Clean prefix if generic
-                for prefix in ['LPG ', 'Prestige ', 'Butterfly ', 'Gas ']:
-                    if short_name.startswith(prefix) and len(short_name) > len(prefix) + 2:
-                        short_name = short_name[len(prefix):].strip()
-
-            v_movs = StockMovement.objects.filter(
-                CompanyId=company_id,
-                Product=p,
-                RouteVehicleDriverId=alloc.RouteVehicleDriverId
-            )
-            dn_in = v_movs.filter(TransactionType='DELIVERY_NOTE').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
-            sale_out = v_movs.filter(TransactionType='VAN_SALE').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
-            empty_in = v_movs.filter(TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
-            v_in = v_movs.exclude(TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
-            v_out = v_movs.aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
-            v_bal = max(Decimal('0.00'), v_in - v_out)
-
-            # Fallback if no stock movements recorded yet but outbound DeliveryNote lines exist
-            if dn_in == 0:
-                dn_line_sum = DeliveryNoteLine.objects.filter(
-                    DeliveryNote__CompanyId=company_id,
-                    DeliveryNote__RouteVehicleDriver=alloc,
-                    Product=p
-                ).aggregate(s=Sum('Quantity'))['s'] or Decimal('0.00')
-                if dn_line_sum > 0:
-                    dn_in = dn_line_sum
-                    v_bal = dn_line_sum
-
             results.append({
                 'product_id': p.ProductId,
                 'product_name': p.ProductName,
-                'short_name': short_name,
                 'unit_id': p.Unit_id,
                 'unit_name': p.Unit.UnitName if p.Unit else 'Unit',
                 'is_cylinder': is_cyl,
-                'allocated_qty': int(dn_in),
-                'delivered_qty': int(sale_out),
-                'balance_qty': int(v_bal),
-                'empty_qty': int(empty_in),
             })
         return Response(results)
 

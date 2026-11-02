@@ -34,91 +34,11 @@ import {
   IconCash,
   IconClock,
   IconPlus,
-  IconMinus,
   IconTrash,
-  IconGasStation,
-  IconCategory,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
-
-// Stepper Pill Widget matching mobile app: [-  QTY  +]
-const StepperPill: React.FC<{
-  value: number;
-  activeColor?: string;
-  onChange: (val: number) => void;
-  min?: number;
-}> = ({ value, activeColor = '#800020', onChange, min = 0 }) => {
-  const isSelected = value > 0;
-  const canDecrease = value > min;
-
-  return (
-    <Box
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '2px 4px',
-        backgroundColor: isSelected ? '#ffffff' : '#f8fafc',
-        borderRadius: 10,
-        border: `1.5px solid ${isSelected ? activeColor : '#cbd5e1'}`,
-        transition: 'all 0.15s ease',
-        userSelect: 'none',
-        height: 36,
-        width: 120,
-        boxShadow: isSelected ? `0 1px 4px ${activeColor}18` : undefined,
-      }}
-    >
-      <ActionIcon
-        size="sm"
-        variant="subtle"
-        disabled={!canDecrease}
-        onClick={() => canDecrease && onChange(value - 1)}
-        style={{
-          color: canDecrease ? activeColor : '#cbd5e1',
-          cursor: canDecrease ? 'pointer' : 'default',
-        }}
-      >
-        <IconMinus size={14} stroke={2.5} />
-      </ActionIcon>
-
-      <input
-        type="number"
-        min={min}
-        value={value === 0 ? '0' : value}
-        onChange={(e) => {
-          const val = e.target.value === '' ? 0 : Math.max(min, parseInt(e.target.value, 10) || 0);
-          onChange(val);
-        }}
-        style={{
-          width: 44,
-          textAlign: 'center',
-          border: 'none',
-          outline: 'none',
-          backgroundColor: 'transparent',
-          fontFamily: 'inherit',
-          fontSize: 14,
-          fontWeight: 800,
-          color: isSelected ? activeColor : '#64748b',
-          MozAppearance: 'textfield',
-        }}
-      />
-
-      <ActionIcon
-        size="sm"
-        variant="subtle"
-        onClick={() => onChange(value + 1)}
-        style={{
-          color: activeColor,
-          cursor: 'pointer',
-        }}
-      >
-        <IconPlus size={14} stroke={2.5} />
-      </ActionIcon>
-    </Box>
-  );
-};
 
 interface EmptyBreakdownItem {
   product: string;
