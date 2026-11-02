@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Title,
   Text,
@@ -34,11 +34,91 @@ import {
   IconCash,
   IconClock,
   IconPlus,
+  IconMinus,
   IconTrash,
+  IconGasStation,
+  IconCategory,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+
+// Stepper Pill Widget matching mobile app: [-  QTY  +]
+const StepperPill: React.FC<{
+  value: number;
+  activeColor?: string;
+  onChange: (val: number) => void;
+  min?: number;
+}> = ({ value, activeColor = '#800020', onChange, min = 0 }) => {
+  const isSelected = value > 0;
+  const canDecrease = value > min;
+
+  return (
+    <Box
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '2px 4px',
+        backgroundColor: isSelected ? '#ffffff' : '#f8fafc',
+        borderRadius: 10,
+        border: `1.5px solid ${isSelected ? activeColor : '#cbd5e1'}`,
+        transition: 'all 0.15s ease',
+        userSelect: 'none',
+        height: 36,
+        width: 120,
+        boxShadow: isSelected ? `0 1px 4px ${activeColor}18` : undefined,
+      }}
+    >
+      <ActionIcon
+        size="sm"
+        variant="subtle"
+        disabled={!canDecrease}
+        onClick={() => canDecrease && onChange(value - 1)}
+        style={{
+          color: canDecrease ? activeColor : '#cbd5e1',
+          cursor: canDecrease ? 'pointer' : 'default',
+        }}
+      >
+        <IconMinus size={14} stroke={2.5} />
+      </ActionIcon>
+
+      <input
+        type="number"
+        min={min}
+        value={value === 0 ? '0' : value}
+        onChange={(e) => {
+          const val = e.target.value === '' ? 0 : Math.max(min, parseInt(e.target.value, 10) || 0);
+          onChange(val);
+        }}
+        style={{
+          width: 44,
+          textAlign: 'center',
+          border: 'none',
+          outline: 'none',
+          backgroundColor: 'transparent',
+          fontFamily: 'inherit',
+          fontSize: 14,
+          fontWeight: 800,
+          color: isSelected ? activeColor : '#64748b',
+          MozAppearance: 'textfield',
+        }}
+      />
+
+      <ActionIcon
+        size="sm"
+        variant="subtle"
+        onClick={() => onChange(value + 1)}
+        style={{
+          color: activeColor,
+          cursor: 'pointer',
+        }}
+      >
+        <IconPlus size={14} stroke={2.5} />
+      </ActionIcon>
+    </Box>
+  );
+};
 
 interface EmptyBreakdownItem {
   product: string;
@@ -79,40 +159,109 @@ export const ReceiptNotesPage: React.FC = () => {
   const [createRemarks, setCreateRemarks] = useState('');
   const [createCash, setCreateCash] = useState<number | string>('');
   const [createDigital, setCreateDigital] = useState<number | string>('');
-  const [createEmptyLines, setCreateEmptyLines] = useState<Array<{ productId: number; qty: number }>>([
-    { productId: 0, qty: 1 },
-  ]);
+  const [createCylinderLines, setCreateCylinderLines] = useState<
+    Array<{ productId: number; productName?: string; filledQty: number | ''; emptyQty: number | '' }>
+  >([{ productId: 0, filledQty: 0, emptyQty: 0 }]);
+  const [createOtherLines, setCreateOtherLines] = useState<
+    Array<{ productId: number; productName?: string; qty: number | '' }>
+  >([]);
 
   // Fetch Active Allocations (vans, drivers, routes)
   const { data: allocations = [] } = useQuery<any[]>({
     queryKey: ['allocations'],
     queryFn: async () => {
-      const res = await apiClient.get('/allocations/');
-      return Array.isArray(res.data) ? res.data : [];
+      const res = await apiClient.get<any>('/allocations/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     },
   });
 
-  // Fetch Available Cylinder Products
+  // Fetch Available Cylinder Products (all products fallback)
   const { data: products = [] } = useQuery<any[]>({
     queryKey: ['products'],
     queryFn: async () => {
-      const res = await apiClient.get('/products/');
-      return Array.isArray(res.data) ? res.data : [];
+      const res = await apiClient.get<any>('/products/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     },
   });
 
+  // Fetch Products allocated to the currently selected Van / Route
+  const { data: allocatedProducts = [], isFetching: isFetchingAllocated } = useQuery<any[]>({
+    queryKey: ['allocated-products', createAllocation],
+    queryFn: async () => {
+      if (!createAllocation) return [];
+      const res = await apiClient.get<any>(`/delivery-notes/allocated-products/?allocation_id=${createAllocation}`);
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.results || []);
+    },
+    enabled: Boolean(createAllocation),
+  });
+
+  // Helper to determine if product is a gas cylinder
+  const isCylinderProduct = (p: any) => {
+    const cat = (p.CategoryName || p.category_name || (p.Category && p.Category.CategoryName) || '').toLowerCase();
+    const name = (p.ProductName || p.name || p.product_name || '').toLowerCase();
+    return Boolean(p.is_cylinder) || cat.includes('cylinder') || name.includes('cylinder') || name.includes('kg') || name.includes('lpg');
+  };
+
+  // Auto-populate return lines when a Van / Route is selected: Cylinders first, other products second
+  useEffect(() => {
+    if (allocatedProducts.length > 0 && isCreateModalOpen) {
+      const cyls = allocatedProducts.filter((p: any) => p.is_cylinder ?? isCylinderProduct(p));
+      const others = allocatedProducts.filter((p: any) => !(p.is_cylinder ?? isCylinderProduct(p)));
+
+      if (cyls.length > 0) {
+        setCreateCylinderLines(
+          cyls.map((p: any) => ({
+            productId: p.product_id || p.ProductId,
+            productName: p.product_name || p.ProductName,
+            filledQty: 0,
+            emptyQty: 0,
+          }))
+        );
+      }
+      setCreateOtherLines(
+        others.map((p: any) => ({
+          productId: p.product_id || p.ProductId,
+          productName: p.product_name || p.ProductName,
+          qty: 0,
+        }))
+      );
+    }
+  }, [allocatedProducts, isCreateModalOpen]);
+
   const allocationOptions = useMemo(() => {
-    return allocations.map((a: any) => ({
-      value: String(a.RouteVehicleDriverId),
-      label: `${a.VehicleNumber} • ${a.DriverName} (${a.RouteName})`,
-    }));
+    const list = Array.isArray(allocations) ? allocations : (allocations as any)?.results || [];
+    return list
+      .filter((a: any) => a.RouteVehicleDriverId !== 1 && (a.IsActive ?? true))
+      .map((a: any) => {
+        const vNum = a.VehicleNumber || a.vehicle_number || (a.Vehicle && a.Vehicle.VehicleNumber) || 'Van';
+        const dName = a.DriverName || a.driver_name || (a.Driver && a.Driver.DriverName) || 'Driver';
+        const rName = a.RouteName || a.route_name || (a.Route && a.Route.RouteName) || 'Route';
+        return {
+          value: String(a.RouteVehicleDriverId),
+          label: `${vNum} • ${dName} (${rName})`.trim(),
+        };
+      });
   }, [allocations]);
 
-  const productOptions = useMemo(() => {
-    return products.map((p: any) => ({
-      value: String(p.ProductId),
-      label: p.ProductName,
-    }));
+  const cylinderProductOptions = useMemo(() => {
+    const list = Array.isArray(products) ? products : (products as any)?.results || [];
+    return list
+      .filter((p: any) => isCylinderProduct(p))
+      .map((p: any) => ({
+        value: String(p.ProductId || p.id),
+        label: p.ProductName || p.name || `Cylinder ${p.ProductId}`,
+      }));
+  }, [products]);
+
+  const otherProductOptions = useMemo(() => {
+    const list = Array.isArray(products) ? products : (products as any)?.results || [];
+    return list
+      .filter((p: any) => !isCylinderProduct(p))
+      .map((p: any) => ({
+        value: String(p.ProductId || p.id),
+        label: p.ProductName || p.name || `Product ${p.ProductId}`,
+      }));
   }, [products]);
 
   const handleOpenCreateModal = () => {
@@ -121,31 +270,76 @@ export const ReceiptNotesPage: React.FC = () => {
     setCreateRemarks('');
     setCreateCash('');
     setCreateDigital('');
-    setCreateEmptyLines([{ productId: 0, qty: 1 }]);
+    setCreateCylinderLines([{ productId: 0, filledQty: 0, emptyQty: 0 }]);
+    setCreateOtherLines([]);
     setIsCreateModalOpen(true);
   };
 
-  const handleAddEmptyLine = () => {
-    setCreateEmptyLines((prev) => [...prev, { productId: 0, qty: 1 }]);
+  const handleAddCylinderLine = () => {
+    setCreateCylinderLines((prev) => [...prev, { productId: 0, filledQty: 0, emptyQty: 0 }]);
   };
 
-  const handleRemoveEmptyLine = (index: number) => {
-    setCreateEmptyLines((prev) => prev.filter((_, i) => i !== index));
+  const handleRemoveCylinderLine = (index: number) => {
+    setCreateCylinderLines((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleLineProductChange = (index: number, val: string | null) => {
     const pId = val ? Number(val) : 0;
-    setCreateEmptyLines((prev) =>
-      prev.map((l, i) => (i === index ? { ...l, productId: pId } : l))
+    const pObj = products.find((p: any) => p.ProductId === pId);
+    setCreateCylinderLines((prev) =>
+      prev.map((l, i) => (i === index ? { ...l, productId: pId, productName: pObj?.ProductName } : l))
     );
   };
 
-  const handleLineQtyChange = (index: number, val: number | string) => {
-    const qty = typeof val === 'number' ? val : Number(val) || 0;
-    setCreateEmptyLines((prev) =>
+  const handleLineFilledQtyChange = (index: number, val: number | string) => {
+    const qty = typeof val === 'number' ? val : val === '' ? '' : Number(val) || 0;
+    setCreateCylinderLines((prev) =>
+      prev.map((l, i) => (i === index ? { ...l, filledQty: qty } : l))
+    );
+  };
+
+  const handleLineEmptyQtyChange = (index: number, val: number | string) => {
+    const qty = typeof val === 'number' ? val : val === '' ? '' : Number(val) || 0;
+    setCreateCylinderLines((prev) =>
+      prev.map((l, i) => (i === index ? { ...l, emptyQty: qty } : l))
+    );
+  };
+
+  // Handlers for Other Products (Stoves, Accessories)
+  const handleAddOtherLine = () => {
+    setCreateOtherLines((prev) => [...prev, { productId: 0, qty: 0 }]);
+  };
+
+  const handleRemoveOtherLine = (index: number) => {
+    setCreateOtherLines((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleOtherProductChange = (index: number, val: string | null) => {
+    const pId = val ? Number(val) : 0;
+    const pObj = products.find((p: any) => p.ProductId === pId);
+    setCreateOtherLines((prev) =>
+      prev.map((l, i) => (i === index ? { ...l, productId: pId, productName: pObj?.ProductName } : l))
+    );
+  };
+
+  const handleOtherQtyChange = (index: number, val: number | string) => {
+    const qty = typeof val === 'number' ? val : val === '' ? '' : Number(val) || 0;
+    setCreateOtherLines((prev) =>
       prev.map((l, i) => (i === index ? { ...l, qty } : l))
     );
   };
+
+  const totalModalFilled = useMemo(() => {
+    return createCylinderLines.reduce((sum, l) => sum + (Number(l.filledQty) || 0), 0);
+  }, [createCylinderLines]);
+
+  const totalModalEmpty = useMemo(() => {
+    return createCylinderLines.reduce((sum, l) => sum + (Number(l.emptyQty) || 0), 0);
+  }, [createCylinderLines]);
+
+  const totalModalOther = useMemo(() => {
+    return createOtherLines.reduce((sum, l) => sum + (Number(l.qty) || 0), 0);
+  }, [createOtherLines]);
 
   // 1. Fetch Real Receipt Notes from Backend (populated via mobile driver shift ends)
   const {
@@ -197,14 +391,26 @@ export const ReceiptNotesPage: React.FC = () => {
       if (!createAllocation) {
         throw new Error('Please select an active vehicle / route allocation.');
       }
-      const empty_items = createEmptyLines
-        .filter((l) => l.productId > 0 && l.qty > 0)
-        .map((l) => ({ product_id: l.productId, qty: l.qty }));
+      const items = createCylinderLines
+        .filter((l) => l.productId > 0 && ((Number(l.filledQty) || 0) > 0 || (Number(l.emptyQty) || 0) > 0))
+        .map((l) => ({
+          product_id: l.productId,
+          filled_qty: Number(l.filledQty) || 0,
+          empty_qty: Number(l.emptyQty) || 0,
+        }));
+
+      const other_items = createOtherLines
+        .filter((l) => l.productId > 0 && (Number(l.qty) || 0) > 0)
+        .map((l) => ({
+          product_id: l.productId,
+          qty: Number(l.qty) || 0,
+        }));
 
       const payload = {
         allocation_id: Number(createAllocation),
         delivery_date: createDate,
-        empty_items,
+        items,
+        other_items,
         cash_collected: Number(createCash) || 0,
         digital_collected: Number(createDigital) || 0,
         remarks: createRemarks,
@@ -943,32 +1149,41 @@ export const ReceiptNotesPage: React.FC = () => {
               <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
                 <Table.Tr>
                   <Table.Th style={{ fontSize: 11.5, color: '#475569' }}>PRODUCT</Table.Th>
-                  <Table.Th style={{ fontSize: 11.5, color: '#475569', textAlign: 'right' }}>RETURNED EMPTY</Table.Th>
-                  <Table.Th style={{ fontSize: 11.5, color: '#475569', textAlign: 'center' }}>CONDITION</Table.Th>
+                  <Table.Th style={{ fontSize: 11.5, color: '#0f172a', textAlign: 'right' }}>FILLED (UNSOLD)</Table.Th>
+                  <Table.Th style={{ fontSize: 11.5, color: '#800020', textAlign: 'right' }}>EMPTY RETURNED</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {selectedNote.emptyBreakdown && selectedNote.emptyBreakdown.length > 0 ? (
-                  selectedNote.emptyBreakdown.map((item, idx) => (
-                    <Table.Tr key={idx}>
-                      <Table.Td style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>{item.product}</Table.Td>
-                      <Table.Td style={{ textAlign: 'right', fontWeight: 700, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
-                        {item.qty}
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'center' }}>
-                        <Badge size="xs" variant="outline" styles={{ root: { borderColor: '#e2e8f0', color: '#0f172a', backgroundColor: '#f8fafc' } }}>
-                          Sound Quality
-                        </Badge>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))
-                ) : (
-                  <Table.Tr>
-                    <Table.Td colSpan={3} style={{ textAlign: 'center' }}>
-                      <Text size="xs" c="dimmed">No specific cylinder lines recorded.</Text>
-                    </Table.Td>
-                  </Table.Tr>
-                )}
+                {(() => {
+                  const prods = Array.from(new Set([
+                    ...(selectedNote.emptyBreakdown || []).map((e) => e.product),
+                    ...(selectedNote.filledBreakdown || []).map((f) => f.product),
+                  ]));
+                  if (prods.length === 0) {
+                    return (
+                      <Table.Tr>
+                        <Table.Td colSpan={3} style={{ textAlign: 'center' }}>
+                          <Text size="xs" c="dimmed">No specific cylinder lines recorded.</Text>
+                        </Table.Td>
+                      </Table.Tr>
+                    );
+                  }
+                  return prods.map((pName, idx) => {
+                    const eItem = selectedNote.emptyBreakdown?.find((e) => e.product === pName);
+                    const fItem = selectedNote.filledBreakdown?.find((f) => f.product === pName);
+                    return (
+                      <Table.Tr key={idx}>
+                        <Table.Td style={{ fontWeight: 600, fontSize: 13, color: '#0f172a' }}>{pName}</Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 700, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          {fItem ? fItem.qty : 0}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 700, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                          {eItem ? eItem.qty : 0}
+                        </Table.Td>
+                      </Table.Tr>
+                    );
+                  });
+                })()}
               </Table.Tbody>
             </Table>
 
@@ -1023,11 +1238,11 @@ export const ReceiptNotesPage: React.FC = () => {
           <Group gap="xs">
             <IconReceipt size={20} color="#800020" />
             <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
-              Add Receipt Note (Van Route Return)
+              Add Receipt Note
             </Text>
           </Group>
         }
-        size="lg"
+        size="xl"
         radius="md"
       >
         <Stack gap="md">
@@ -1040,6 +1255,8 @@ export const ReceiptNotesPage: React.FC = () => {
               onChange={setCreateAllocation}
               searchable
               clearable
+              nothingFoundMessage="No active allocations found"
+              comboboxProps={{ withinPortal: true, zIndex: 1000 }}
               required
             />
             <TextInput
@@ -1051,42 +1268,62 @@ export const ReceiptNotesPage: React.FC = () => {
             />
           </SimpleGrid>
 
+          {/* Section 1: Cylinders Returned (Filled & Empty) */}
           <Divider
             label={
-              <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                Empty Cylinders Returned to Godown
-              </Text>
+              <Group gap="xs">
+                <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                  1. Cylinders Returned to Godown (Filled & Empty)
+                </Text>
+                {isFetchingAllocated && (
+                  <Group gap={4}>
+                    <Loader size={12} color="#800020" />
+                    <Text size="11px" c="#800020" fw={500}>Fetching van products...</Text>
+                  </Group>
+                )}
+              </Group>
             }
             labelPosition="left"
           />
 
           <Stack gap="xs">
-            {createEmptyLines.map((line, idx) => (
+            {createCylinderLines.map((line, idx) => (
               <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
-                <Box style={{ flex: 3 }}>
+                <Box style={{ flex: 4 }}>
                   <Select
-                    label={idx === 0 ? 'Product' : undefined}
+                    label={idx === 0 ? 'Cylinder Product' : undefined}
                     placeholder="Choose Cylinder Product"
-                    data={productOptions}
+                    data={cylinderProductOptions}
                     value={line.productId > 0 ? String(line.productId) : null}
                     onChange={(val) => handleLineProductChange(idx, val)}
                     searchable
+                    nothingFoundMessage="No cylinder products found"
+                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                  />
+                </Box>
+                <Box style={{ flex: 2 }}>
+                  <NumberInput
+                    label={idx === 0 ? 'Filled Qty' : undefined}
+                    placeholder="Unsold Full"
+                    min={0}
+                    value={line.filledQty}
+                    onChange={(val) => handleLineFilledQtyChange(idx, val)}
                   />
                 </Box>
                 <Box style={{ flex: 2 }}>
                   <NumberInput
                     label={idx === 0 ? 'Empty Qty' : undefined}
-                    placeholder="Count"
+                    placeholder="Empties"
                     min={0}
-                    value={line.qty}
-                    onChange={(val) => handleLineQtyChange(idx, val)}
+                    value={line.emptyQty}
+                    onChange={(val) => handleLineEmptyQtyChange(idx, val)}
                   />
                 </Box>
-                {createEmptyLines.length > 1 && (
+                {createCylinderLines.length > 1 && (
                   <ActionIcon
                     variant="subtle"
                     color="gray"
-                    onClick={() => handleRemoveEmptyLine(idx)}
+                    onClick={() => handleRemoveCylinderLine(idx)}
                     style={{ marginBottom: 4 }}
                   >
                     <IconTrash size={16} />
@@ -1100,17 +1337,176 @@ export const ReceiptNotesPage: React.FC = () => {
               size="xs"
               color="burgundy"
               leftSection={<IconPlus size={14} />}
-              onClick={handleAddEmptyLine}
+              onClick={handleAddCylinderLine}
               style={{ alignSelf: 'flex-start', color: '#800020', fontWeight: 600 }}
             >
               + Add Cylinder Line
             </Button>
+
+            {/* Cylinder Totals Card (Mobile App End Shift Summary Segmented Style) */}
+            <Box
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                backgroundColor: '#f8fafc',
+                borderRadius: 10,
+                border: '1px solid #e2e8f0',
+                marginTop: 6,
+                overflow: 'hidden',
+              }}
+            >
+              {/* 1. Filled Cylinders */}
+              <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+                <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  FILLED CYLINDERS
+                </Text>
+                <Group gap={6} align="baseline" mt={2}>
+                  <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                    {totalModalFilled}
+                  </Text>
+                  <Text size="xs" fw={700} c="#64748b">
+                    Full
+                  </Text>
+                </Group>
+              </Box>
+
+              {/* 2. Empty Returns */}
+              <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+                <Text size="10px" fw={800} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  EMPTY RETURNS
+                </Text>
+                <Group gap={6} align="baseline" mt={2}>
+                  <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
+                    {totalModalEmpty}
+                  </Text>
+                  <Text size="xs" fw={700} c="#800020">
+                    Empties
+                  </Text>
+                </Group>
+              </Box>
+
+              {/* 3. Total Check-in */}
+              <Box style={{ padding: '8px 14px' }}>
+                <Text size="10px" fw={800} c="#0f172a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  TOTAL CHECK-IN
+                </Text>
+                <Group gap={6} align="baseline" mt={2}>
+                  <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                    {totalModalFilled + totalModalEmpty}
+                  </Text>
+                  <Text size="xs" fw={700} c="#64748b">
+                    Cylinders
+                  </Text>
+                </Group>
+              </Box>
+            </Box>
+          </Stack>
+
+          {/* Section 2: Other Products / Appliances Returned */}
+          <Divider
+            label={
+              <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                2. Other Products Returned (Stoves & Accessories)
+              </Text>
+            }
+            labelPosition="left"
+          />
+
+          <Stack gap="xs">
+            {createOtherLines.map((line, idx) => (
+              <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
+                <Box style={{ flex: 5 }}>
+                  <Select
+                    label={idx === 0 ? 'Product (Stove / Accessory)' : undefined}
+                    placeholder="Choose Product"
+                    data={otherProductOptions}
+                    value={line.productId > 0 ? String(line.productId) : null}
+                    onChange={(val) => handleOtherProductChange(idx, val)}
+                    searchable
+                    nothingFoundMessage="No other products found"
+                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                  />
+                </Box>
+                <Box style={{ flex: 3 }}>
+                  <NumberInput
+                    label={idx === 0 ? 'Remaining Qty Returned' : undefined}
+                    placeholder="Count"
+                    min={0}
+                    value={line.qty}
+                    onChange={(val) => handleOtherQtyChange(idx, val)}
+                  />
+                </Box>
+                <ActionIcon
+                  variant="subtle"
+                  color="gray"
+                  onClick={() => handleRemoveOtherLine(idx)}
+                  style={{ marginBottom: 4 }}
+                >
+                  <IconTrash size={16} />
+                </ActionIcon>
+              </Group>
+            ))}
+
+            <Button
+              variant="subtle"
+              size="xs"
+              color="burgundy"
+              leftSection={<IconPlus size={14} />}
+              onClick={handleAddOtherLine}
+              style={{ alignSelf: 'flex-start', color: '#800020', fontWeight: 600 }}
+            >
+              + Add Other Product
+            </Button>
+
+            {createOtherLines.length > 0 && (
+              <Box
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  backgroundColor: '#f8fafc',
+                  borderRadius: 10,
+                  border: '1px solid #e2e8f0',
+                  marginTop: 6,
+                  overflow: 'hidden',
+                }}
+              >
+                {/* 1. SKUs Count */}
+                <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+                  <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                    PRODUCTS COUNT
+                  </Text>
+                  <Group gap={6} align="baseline" mt={2}>
+                    <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                      {createOtherLines.filter((l) => (Number(l.qty) || 0) > 0).length}
+                    </Text>
+                    <Text size="xs" fw={700} c="#64748b">
+                      Active SKUs
+                    </Text>
+                  </Group>
+                </Box>
+
+                {/* 2. Total Units Returned */}
+                <Box style={{ padding: '8px 14px' }}>
+                  <Text size="10px" fw={800} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                    TOTAL ITEMS RETURNED
+                  </Text>
+                  <Group gap={6} align="baseline" mt={2}>
+                    <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
+                      {totalModalOther}
+                    </Text>
+                    <Text size="xs" fw={700} c="#800020">
+                      Units
+                    </Text>
+                  </Group>
+                </Box>
+              </Box>
+            )}
           </Stack>
 
           <Divider
             label={
               <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                Route Collections
+                3. Route Collections & Settlement
               </Text>
             }
             labelPosition="left"
@@ -1134,6 +1530,55 @@ export const ReceiptNotesPage: React.FC = () => {
               onChange={setCreateDigital}
             />
           </SimpleGrid>
+
+          {/* Route Collections KPI summary card matching mobile app */}
+          <Box
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              backgroundColor: '#f8fafc',
+              borderRadius: 10,
+              border: '1px solid #e2e8f0',
+              marginTop: 4,
+              overflow: 'hidden',
+            }}
+          >
+            {/* Cash */}
+            <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+              <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                CASH IN HAND
+              </Text>
+              <Group gap={4} align="baseline" mt={2}>
+                <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
+                  ₹{Number(createCash || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </Group>
+            </Box>
+
+            {/* Digital */}
+            <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+              <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                BANK / UPI
+              </Text>
+              <Group gap={4} align="baseline" mt={2}>
+                <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                  ₹{Number(createDigital || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </Group>
+            </Box>
+
+            {/* Total Settlement */}
+            <Box style={{ padding: '8px 14px' }}>
+              <Text size="10px" fw={800} c="#0f172a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                TOTAL SETTLEMENT
+              </Text>
+              <Group gap={4} align="baseline" mt={2}>
+                <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                  ₹{(Number(createCash || 0) + Number(createDigital || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </Group>
+            </Box>
+          </Box>
 
           <TextInput
             label="Remarks / Gate Notes"
