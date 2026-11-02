@@ -21,6 +21,8 @@ import {
   Tooltip,
   Loader,
   Center,
+  Collapse,
+  Transition,
 } from '@mantine/core';
 import {
   IconReceipt,
@@ -398,7 +400,7 @@ export const ReceiptNotesPage: React.FC = () => {
 
   return (
     <Stack gap="lg">
-      {/* 1. Header */}
+      {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
@@ -410,32 +412,442 @@ export const ReceiptNotesPage: React.FC = () => {
         </div>
 
         <Group gap="sm" align="center">
-          <Button
-            variant="default"
-            size="sm"
-            leftSection={<IconRefresh size={15} className={isRefetching ? 'animate-spin' : ''} />}
-            onClick={() => refetch()}
-            loading={isRefetching}
-            style={{ borderColor: '#e2e8f0', color: '#800020', fontWeight: 600 }}
-          >
-            Refresh
-          </Button>
+          <Transition mounted={!isCreateModalOpen} transition="fade" duration={200}>
+            {(btnStyles) => (
+              <Group gap="sm" align="center" style={btnStyles}>
+                <Button
+                  variant="default"
+                  size="sm"
+                  leftSection={<IconRefresh size={15} className={isRefetching ? 'animate-spin' : ''} />}
+                  onClick={() => refetch()}
+                  loading={isRefetching}
+                  style={{ borderColor: '#e2e8f0', color: '#800020', fontWeight: 600 }}
+                >
+                  Refresh
+                </Button>
 
-          <Button
-            color="burgundy"
-            size="sm"
-            radius={10}
-            leftSection={<IconPlus size={16} />}
-            onClick={handleOpenCreateModal}
-            style={{ backgroundColor: '#800020', color: '#ffffff', fontWeight: 600 }}
-          >
-            Add Receipt Note
-          </Button>
+                <Button
+                  color="burgundy"
+                  size="sm"
+                  radius={10}
+                  leftSection={<IconPlus size={16} />}
+                  onClick={handleOpenCreateModal}
+                  style={{ backgroundColor: '#800020', color: '#ffffff', fontWeight: 600 }}
+                >
+                  + Add Receipt Note
+                </Button>
+              </Group>
+            )}
+          </Transition>
         </Group>
       </Group>
 
-      {/* 2. Top 4 Metric KPI Cards: Settled First, Pending Second, Returns (Filled & Empty) Third */}
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+      {/* Seamless Form & Table Container */}
+      <Box>
+        {/* Smooth Slide-Down Form Panel */}
+        <Collapse expanded={isCreateModalOpen} transitionDuration={250} transitionTimingFunction="ease">
+          <Paper
+            p="lg"
+            radius="sm"
+            withBorder
+            style={{
+              backgroundColor: '#ffffff',
+              borderColor: '#f5c2cb',
+              borderLeft: '4px solid #800020',
+            }}
+          >
+            <Group justify="space-between" align="flex-start" mb="md">
+              <div>
+                <Text fw={700} style={{ color: '#800020' }}>
+                  New Receipt Note Details
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Record unsold full & empty cylinders and cash/digital route collections unloaded into Central Godown.
+                </Text>
+              </div>
+              <CloseButton
+                size="md"
+                onClick={() => setIsCreateModalOpen(false)}
+              />
+            </Group>
+
+            <Stack gap="md">
+              <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
+              <Select
+                label="Van / Route Allocation"
+                placeholder="Select Vehicle • Driver (Route)"
+                data={allocationOptions}
+                value={createAllocation}
+                onChange={setCreateAllocation}
+                searchable
+                clearable
+                nothingFoundMessage="No active allocations found"
+                comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                required
+              />
+              <TextInput
+                label="Receipt Date"
+                type="date"
+                value={createDate}
+                onChange={(e) => setCreateDate(e.currentTarget.value)}
+                required
+              />
+              <TextInput
+                label="Remarks / Gate Notes"
+                placeholder="e.g. Route settlement, cylinders inspected at godown"
+                value={createRemarks}
+                onChange={(e) => setCreateRemarks(e.currentTarget.value)}
+              />
+            </SimpleGrid>
+
+            {/* Section 1: Cylinders Returned (Filled & Empty) */}
+            <Divider
+              label={
+                <Group gap="xs">
+                  <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                    1. Cylinders Returned to Godown (Filled & Empty)
+                  </Text>
+                  {isFetchingAllocated && (
+                    <Group gap={4}>
+                      <Loader size={12} color="#800020" />
+                      <Text size="11px" c="#800020" fw={500}>Fetching van products...</Text>
+                    </Group>
+                  )}
+                </Group>
+              }
+              labelPosition="left"
+            />
+
+            <Stack gap="xs">
+              {createCylinderLines.map((line, idx) => (
+                <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
+                  <Box style={{ flex: 5 }}>
+                    <Select
+                      label={idx === 0 ? 'Cylinder Product' : undefined}
+                      placeholder="Choose Cylinder Product"
+                      data={cylinderProductOptions}
+                      value={line.productId > 0 ? String(line.productId) : null}
+                      onChange={(val) => handleLineProductChange(idx, val)}
+                      searchable
+                      nothingFoundMessage="No cylinder products found"
+                      comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                    />
+                  </Box>
+                  <Box style={{ flex: 3 }}>
+                    <NumberInput
+                      label={idx === 0 ? 'Filled Qty (Unsold Full)' : undefined}
+                      placeholder="Unsold Full"
+                      min={0}
+                      value={line.filledQty}
+                      onChange={(val) => handleLineFilledQtyChange(idx, val)}
+                    />
+                  </Box>
+                  <Box style={{ flex: 3 }}>
+                    <NumberInput
+                      label={idx === 0 ? 'Empty Qty (Empties Returned)' : undefined}
+                      placeholder="Empties"
+                      min={0}
+                      value={line.emptyQty}
+                      onChange={(val) => handleLineEmptyQtyChange(idx, val)}
+                    />
+                  </Box>
+                  {createCylinderLines.length > 1 && (
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      onClick={() => handleRemoveCylinderLine(idx)}
+                      style={{ marginBottom: 4 }}
+                    >
+                      <IconTrash size={16} />
+                    </ActionIcon>
+                  )}
+                </Group>
+              ))}
+
+              <Button
+                variant="subtle"
+                size="xs"
+                color="burgundy"
+                leftSection={<IconPlus size={14} />}
+                onClick={handleAddCylinderLine}
+                style={{ alignSelf: 'flex-start', color: '#800020', fontWeight: 600 }}
+              >
+                + Add Cylinder Line
+              </Button>
+
+              {/* Cylinder Totals Card (Mobile App End Shift Summary Segmented Style) */}
+              <Box
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  backgroundColor: '#f8fafc',
+                  borderRadius: 10,
+                  border: '1px solid #e2e8f0',
+                  marginTop: 6,
+                  overflow: 'hidden',
+                }}
+              >
+                {/* 1. Filled Cylinders */}
+                <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+                  <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                    FILLED CYLINDERS
+                  </Text>
+                  <Group gap={6} align="baseline" mt={2}>
+                    <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                      {totalModalFilled}
+                    </Text>
+                    <Text size="xs" fw={700} c="#64748b">
+                      Full
+                    </Text>
+                  </Group>
+                </Box>
+
+                {/* 2. Empty Returns */}
+                <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+                  <Text size="10px" fw={800} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                    EMPTY RETURNS
+                  </Text>
+                  <Group gap={6} align="baseline" mt={2}>
+                    <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
+                      {totalModalEmpty}
+                    </Text>
+                    <Text size="xs" fw={700} c="#800020">
+                      Empties
+                    </Text>
+                  </Group>
+                </Box>
+
+                {/* 3. Total Check-in */}
+                <Box style={{ padding: '8px 14px' }}>
+                  <Text size="10px" fw={800} c="#0f172a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                    TOTAL CHECK-IN
+                  </Text>
+                  <Group gap={6} align="baseline" mt={2}>
+                    <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                      {totalModalFilled + totalModalEmpty}
+                    </Text>
+                    <Text size="xs" fw={700} c="#64748b">
+                      Cylinders
+                    </Text>
+                  </Group>
+                </Box>
+              </Box>
+            </Stack>
+
+            {/* Section 2: Other Products / Appliances Returned */}
+            <Divider
+              label={
+                <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                  2. Other Products Returned (Stoves & Accessories)
+                </Text>
+              }
+              labelPosition="left"
+            />
+
+            <Stack gap="xs">
+              {createOtherLines.map((line, idx) => (
+                <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
+                  <Box style={{ flex: 6 }}>
+                    <Select
+                      label={idx === 0 ? 'Product (Stove / Accessory)' : undefined}
+                      placeholder="Choose Product"
+                      data={otherProductOptions}
+                      value={line.productId > 0 ? String(line.productId) : null}
+                      onChange={(val) => handleOtherProductChange(idx, val)}
+                      searchable
+                      nothingFoundMessage="No other products found"
+                      comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                    />
+                  </Box>
+                  <Box style={{ flex: 4 }}>
+                    <NumberInput
+                      label={idx === 0 ? 'Remaining Qty Returned' : undefined}
+                      placeholder="Count"
+                      min={0}
+                      value={line.qty}
+                      onChange={(val) => handleOtherQtyChange(idx, val)}
+                    />
+                  </Box>
+                  <ActionIcon
+                    variant="subtle"
+                    color="gray"
+                    onClick={() => handleRemoveOtherLine(idx)}
+                    style={{ marginBottom: 4 }}
+                  >
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Group>
+              ))}
+
+              <Button
+                variant="subtle"
+                size="xs"
+                color="burgundy"
+                leftSection={<IconPlus size={14} />}
+                onClick={handleAddOtherLine}
+                style={{ alignSelf: 'flex-start', color: '#800020', fontWeight: 600 }}
+              >
+                + Add Other Product
+              </Button>
+
+              {createOtherLines.length > 0 && (
+                <Box
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(2, 1fr)',
+                    backgroundColor: '#f8fafc',
+                    borderRadius: 10,
+                    border: '1px solid #e2e8f0',
+                    marginTop: 6,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* 1. SKUs Count */}
+                  <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+                    <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                      PRODUCTS COUNT
+                    </Text>
+                    <Group gap={6} align="baseline" mt={2}>
+                      <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                        {createOtherLines.filter((l) => (Number(l.qty) || 0) > 0).length}
+                      </Text>
+                      <Text size="xs" fw={700} c="#64748b">
+                        Active SKUs
+                      </Text>
+                    </Group>
+                  </Box>
+
+                  {/* 2. Total Units Returned */}
+                  <Box style={{ padding: '8px 14px' }}>
+                    <Text size="10px" fw={800} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                      TOTAL ITEMS RETURNED
+                    </Text>
+                    <Group gap={6} align="baseline" mt={2}>
+                      <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
+                        {totalModalOther}
+                      </Text>
+                      <Text size="xs" fw={700} c="#800020">
+                        Units
+                      </Text>
+                    </Group>
+                  </Box>
+                </Box>
+              )}
+            </Stack>
+
+            {/* Section 3: Route Collections & Settlement */}
+            <Divider
+              label={
+                <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                  3. Route Collections & Settlement
+                </Text>
+              }
+              labelPosition="left"
+            />
+
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <NumberInput
+                label="Cash Collected (₹)"
+                placeholder="0.00"
+                min={0}
+                decimalScale={2}
+                value={createCash}
+                onChange={setCreateCash}
+              />
+              <NumberInput
+                label="Digital / UPI Collected (₹)"
+                placeholder="0.00"
+                min={0}
+                decimalScale={2}
+                value={createDigital}
+                onChange={setCreateDigital}
+              />
+            </SimpleGrid>
+
+            {/* Route Collections KPI summary card matching mobile app */}
+            <Box
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                backgroundColor: '#f8fafc',
+                borderRadius: 10,
+                border: '1px solid #e2e8f0',
+                marginTop: 4,
+                overflow: 'hidden',
+              }}
+            >
+              {/* Cash */}
+              <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+                <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  CASH IN HAND
+                </Text>
+                <Group gap={4} align="baseline" mt={2}>
+                  <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
+                    ₹{Number(createCash || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </Group>
+              </Box>
+
+              {/* Digital */}
+              <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
+                <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  BANK / UPI
+                </Text>
+                <Group gap={4} align="baseline" mt={2}>
+                  <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                    ₹{Number(createDigital || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </Group>
+              </Box>
+
+              {/* Total Settlement */}
+              <Box style={{ padding: '8px 14px' }}>
+                <Text size="10px" fw={800} c="#0f172a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  TOTAL SETTLEMENT
+                </Text>
+                <Group gap={4} align="baseline" mt={2}>
+                  <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
+                    ₹{(Number(createCash || 0) + Number(createDigital || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </Group>
+              </Box>
+            </Box>
+
+            {/* Bottom Actions matching Vehicles page */}
+            <Group justify="flex-end" mt="md" gap="sm">
+              <Button variant="default" onClick={() => setIsCreateModalOpen(false)} radius={10}>
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                radius={10}
+                style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
+                loading={createReceiptNoteMutation.isPending}
+                onClick={() => createReceiptNoteMutation.mutate(false)}
+              >
+                Save as Pending
+              </Button>
+              <Button
+                color="burgundy"
+                radius={10}
+                style={{ backgroundColor: '#800020', color: '#ffffff', fontWeight: 600 }}
+                loading={createReceiptNoteMutation.isPending}
+                onClick={() => createReceiptNoteMutation.mutate(true)}
+              >
+                Save & Settle Note
+              </Button>
+            </Group>
+          </Stack>
+        </Paper>
+        </Collapse>
+
+        {/* Animated KPI Cards & Table (fade in/out matching Vehicles page) */}
+        <Transition mounted={!isCreateModalOpen} transition="fade" duration={250} timingFunction="ease">
+          {(styles) => (
+            <Box style={styles} mt={isCreateModalOpen ? 0 : 'md'}>
+              <Stack gap="lg">
+                {/* Top 4 Metric KPI Cards: Settled First, Pending Second, Returns (Filled & Empty) Third */}
+                <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
         {/* Card 1: Settled Notes */}
         <Paper
           p="md"
@@ -1024,6 +1436,11 @@ export const ReceiptNotesPage: React.FC = () => {
           </Table.ScrollContainer>
         )}
       </Paper>
+            </Stack>
+          </Box>
+        )}
+      </Transition>
+    </Box>
 
       {/* 4. Detail & Verification Modal */}
       <Modal
@@ -1148,389 +1565,6 @@ export const ReceiptNotesPage: React.FC = () => {
             </Group>
           </Stack>
         )}
-      </Modal>
-
-      {/* 5. Create Receipt Note Modal */}
-      <Modal
-        opened={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        title={
-          <Group gap="xs">
-            <IconReceipt size={20} color="#800020" />
-            <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
-              Add Receipt Note
-            </Text>
-          </Group>
-        }
-        size="xl"
-        radius="md"
-      >
-        <Stack gap="md">
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-            <Select
-              label="Van / Route Allocation"
-              placeholder="Select Vehicle • Driver (Route)"
-              data={allocationOptions}
-              value={createAllocation}
-              onChange={setCreateAllocation}
-              searchable
-              clearable
-              nothingFoundMessage="No active allocations found"
-              comboboxProps={{ withinPortal: true, zIndex: 1000 }}
-              required
-            />
-            <TextInput
-              label="Receipt Date"
-              type="date"
-              value={createDate}
-              onChange={(e) => setCreateDate(e.currentTarget.value)}
-              required
-            />
-          </SimpleGrid>
-
-          {/* Section 1: Cylinders Returned (Filled & Empty) */}
-          <Divider
-            label={
-              <Group gap="xs">
-                <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                  1. Cylinders Returned to Godown (Filled & Empty)
-                </Text>
-                {isFetchingAllocated && (
-                  <Group gap={4}>
-                    <Loader size={12} color="#800020" />
-                    <Text size="11px" c="#800020" fw={500}>Fetching van products...</Text>
-                  </Group>
-                )}
-              </Group>
-            }
-            labelPosition="left"
-          />
-
-          <Stack gap="xs">
-            {createCylinderLines.map((line, idx) => (
-              <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
-                <Box style={{ flex: 4 }}>
-                  <Select
-                    label={idx === 0 ? 'Cylinder Product' : undefined}
-                    placeholder="Choose Cylinder Product"
-                    data={cylinderProductOptions}
-                    value={line.productId > 0 ? String(line.productId) : null}
-                    onChange={(val) => handleLineProductChange(idx, val)}
-                    searchable
-                    nothingFoundMessage="No cylinder products found"
-                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
-                  />
-                </Box>
-                <Box style={{ flex: 2 }}>
-                  <NumberInput
-                    label={idx === 0 ? 'Filled Qty' : undefined}
-                    placeholder="Unsold Full"
-                    min={0}
-                    value={line.filledQty}
-                    onChange={(val) => handleLineFilledQtyChange(idx, val)}
-                  />
-                </Box>
-                <Box style={{ flex: 2 }}>
-                  <NumberInput
-                    label={idx === 0 ? 'Empty Qty' : undefined}
-                    placeholder="Empties"
-                    min={0}
-                    value={line.emptyQty}
-                    onChange={(val) => handleLineEmptyQtyChange(idx, val)}
-                  />
-                </Box>
-                {createCylinderLines.length > 1 && (
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    onClick={() => handleRemoveCylinderLine(idx)}
-                    style={{ marginBottom: 4 }}
-                  >
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                )}
-              </Group>
-            ))}
-
-            <Button
-              variant="subtle"
-              size="xs"
-              color="burgundy"
-              leftSection={<IconPlus size={14} />}
-              onClick={handleAddCylinderLine}
-              style={{ alignSelf: 'flex-start', color: '#800020', fontWeight: 600 }}
-            >
-              + Add Cylinder Line
-            </Button>
-
-            {/* Cylinder Totals Card (Mobile App End Shift Summary Segmented Style) */}
-            <Box
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                backgroundColor: '#f8fafc',
-                borderRadius: 10,
-                border: '1px solid #e2e8f0',
-                marginTop: 6,
-                overflow: 'hidden',
-              }}
-            >
-              {/* 1. Filled Cylinders */}
-              <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-                <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                  FILLED CYLINDERS
-                </Text>
-                <Group gap={6} align="baseline" mt={2}>
-                  <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                    {totalModalFilled}
-                  </Text>
-                  <Text size="xs" fw={700} c="#64748b">
-                    Full
-                  </Text>
-                </Group>
-              </Box>
-
-              {/* 2. Empty Returns */}
-              <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-                <Text size="10px" fw={800} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                  EMPTY RETURNS
-                </Text>
-                <Group gap={6} align="baseline" mt={2}>
-                  <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
-                    {totalModalEmpty}
-                  </Text>
-                  <Text size="xs" fw={700} c="#800020">
-                    Empties
-                  </Text>
-                </Group>
-              </Box>
-
-              {/* 3. Total Check-in */}
-              <Box style={{ padding: '8px 14px' }}>
-                <Text size="10px" fw={800} c="#0f172a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                  TOTAL CHECK-IN
-                </Text>
-                <Group gap={6} align="baseline" mt={2}>
-                  <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                    {totalModalFilled + totalModalEmpty}
-                  </Text>
-                  <Text size="xs" fw={700} c="#64748b">
-                    Cylinders
-                  </Text>
-                </Group>
-              </Box>
-            </Box>
-          </Stack>
-
-          {/* Section 2: Other Products / Appliances Returned */}
-          <Divider
-            label={
-              <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                2. Other Products Returned (Stoves & Accessories)
-              </Text>
-            }
-            labelPosition="left"
-          />
-
-          <Stack gap="xs">
-            {createOtherLines.map((line, idx) => (
-              <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
-                <Box style={{ flex: 5 }}>
-                  <Select
-                    label={idx === 0 ? 'Product (Stove / Accessory)' : undefined}
-                    placeholder="Choose Product"
-                    data={otherProductOptions}
-                    value={line.productId > 0 ? String(line.productId) : null}
-                    onChange={(val) => handleOtherProductChange(idx, val)}
-                    searchable
-                    nothingFoundMessage="No other products found"
-                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
-                  />
-                </Box>
-                <Box style={{ flex: 3 }}>
-                  <NumberInput
-                    label={idx === 0 ? 'Remaining Qty Returned' : undefined}
-                    placeholder="Count"
-                    min={0}
-                    value={line.qty}
-                    onChange={(val) => handleOtherQtyChange(idx, val)}
-                  />
-                </Box>
-                <ActionIcon
-                  variant="subtle"
-                  color="gray"
-                  onClick={() => handleRemoveOtherLine(idx)}
-                  style={{ marginBottom: 4 }}
-                >
-                  <IconTrash size={16} />
-                </ActionIcon>
-              </Group>
-            ))}
-
-            <Button
-              variant="subtle"
-              size="xs"
-              color="burgundy"
-              leftSection={<IconPlus size={14} />}
-              onClick={handleAddOtherLine}
-              style={{ alignSelf: 'flex-start', color: '#800020', fontWeight: 600 }}
-            >
-              + Add Other Product
-            </Button>
-
-            {createOtherLines.length > 0 && (
-              <Box
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
-                  backgroundColor: '#f8fafc',
-                  borderRadius: 10,
-                  border: '1px solid #e2e8f0',
-                  marginTop: 6,
-                  overflow: 'hidden',
-                }}
-              >
-                {/* 1. SKUs Count */}
-                <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-                  <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                    PRODUCTS COUNT
-                  </Text>
-                  <Group gap={6} align="baseline" mt={2}>
-                    <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                      {createOtherLines.filter((l) => (Number(l.qty) || 0) > 0).length}
-                    </Text>
-                    <Text size="xs" fw={700} c="#64748b">
-                      Active SKUs
-                    </Text>
-                  </Group>
-                </Box>
-
-                {/* 2. Total Units Returned */}
-                <Box style={{ padding: '8px 14px' }}>
-                  <Text size="10px" fw={800} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                    TOTAL ITEMS RETURNED
-                  </Text>
-                  <Group gap={6} align="baseline" mt={2}>
-                    <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
-                      {totalModalOther}
-                    </Text>
-                    <Text size="xs" fw={700} c="#800020">
-                      Units
-                    </Text>
-                  </Group>
-                </Box>
-              </Box>
-            )}
-          </Stack>
-
-          <Divider
-            label={
-              <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                3. Route Collections & Settlement
-              </Text>
-            }
-            labelPosition="left"
-          />
-
-          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-            <NumberInput
-              label="Cash Collected (₹)"
-              placeholder="0.00"
-              min={0}
-              decimalScale={2}
-              value={createCash}
-              onChange={setCreateCash}
-            />
-            <NumberInput
-              label="Digital / UPI Collected (₹)"
-              placeholder="0.00"
-              min={0}
-              decimalScale={2}
-              value={createDigital}
-              onChange={setCreateDigital}
-            />
-          </SimpleGrid>
-
-          {/* Route Collections KPI summary card matching mobile app */}
-          <Box
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              backgroundColor: '#f8fafc',
-              borderRadius: 10,
-              border: '1px solid #e2e8f0',
-              marginTop: 4,
-              overflow: 'hidden',
-            }}
-          >
-            {/* Cash */}
-            <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-              <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                CASH IN HAND
-              </Text>
-              <Group gap={4} align="baseline" mt={2}>
-                <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
-                  ₹{Number(createCash || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-              </Group>
-            </Box>
-
-            {/* Digital */}
-            <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-              <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                BANK / UPI
-              </Text>
-              <Group gap={4} align="baseline" mt={2}>
-                <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                  ₹{Number(createDigital || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-              </Group>
-            </Box>
-
-            {/* Total Settlement */}
-            <Box style={{ padding: '8px 14px' }}>
-              <Text size="10px" fw={800} c="#0f172a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                TOTAL SETTLEMENT
-              </Text>
-              <Group gap={4} align="baseline" mt={2}>
-                <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                  ₹{(Number(createCash || 0) + Number(createDigital || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </Text>
-              </Group>
-            </Box>
-          </Box>
-
-          <TextInput
-            label="Remarks / Gate Notes"
-            placeholder="e.g. Route settlement, cylinders inspected at godown"
-            value={createRemarks}
-            onChange={(e) => setCreateRemarks(e.currentTarget.value)}
-          />
-
-          <Group justify="space-between" mt="md">
-            <Button variant="default" onClick={() => setIsCreateModalOpen(false)}>
-              Cancel
-            </Button>
-            <Group gap="sm">
-              <Button
-                variant="outline"
-                style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
-                loading={createReceiptNoteMutation.isPending}
-                onClick={() => createReceiptNoteMutation.mutate(false)}
-              >
-                Save as Pending
-              </Button>
-              <Button
-                color="burgundy"
-                style={{ backgroundColor: '#800020', color: '#ffffff', fontWeight: 600 }}
-                loading={createReceiptNoteMutation.isPending}
-                onClick={() => createReceiptNoteMutation.mutate(true)}
-              >
-                Save & Settle Note
-              </Button>
-            </Group>
-          </Group>
-        </Stack>
       </Modal>
     </Stack>
   );
