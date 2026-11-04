@@ -168,7 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       controller: serverController,
                       style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500),
                       decoration: InputDecoration(
-                        hintText: 'http://192.168.1.34:8000/api/v1',
+                        hintText: 'https://z0v56js5-8000.inc1.devtunnels.ms//api/v1',
                         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -237,7 +237,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(width: 8),
                         TextButton(
                           onPressed: () {
-                            serverController.text = 'http://192.168.1.34:8000/api/v1';
+                            serverController.text = 'https://z0v56js5-8000.inc1.devtunnels.ms//api/v1';
                           },
                           child: Text(
                             'Reset Default',

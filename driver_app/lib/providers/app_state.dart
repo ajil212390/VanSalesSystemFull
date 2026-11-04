@@ -243,11 +243,17 @@ class AppState extends ChangeNotifier {
   // Driver info
   String driverName = '';
   String fullName = '';
+  String loggedInUsername = '';
   String driverId = '';
   int? currentDriverDbId;
   int? currentAllocationId;
   String vehicleNumber = '';
   String routeInfo = '';
+  String endShiftStatus = 'ACTIVE';
+  bool get isShiftLocked =>
+      endShiftStatus.toUpperCase() == 'PENDING' ||
+      endShiftStatus.toUpperCase() == 'SETTLED' ||
+      endShiftStatus.toUpperCase() == 'APPROVED';
   bool isLoadingFromBackend = false;
   DateTime? lastSyncTime;
 
@@ -271,11 +277,7 @@ class AppState extends ChangeNotifier {
   int get totalOtherBalance => otherProducts.fold(0, (sum, i) => sum + i.balanceStock);
 
   int get totalDeliveredFilled => cylinders.fold(0, (sum, c) => sum + c.deliveredStock);
-  int get totalDeliveredEmpty {
-    final fromCyl = cylinders.fold(0, (sum, c) => sum + c.emptyStock);
-    if (fromCyl > 0) return fromCyl;
-    return orders.fold(0, (sum, o) => sum + o.totalEmpties);
-  }
+  int get totalDeliveredEmpty => orders.fold(0, (sum, o) => sum + o.totalEmpties);
   int get totalClosingFilled => cylinders.fold(0, (sum, c) => sum + c.filledStock);
   int get totalClosingEmpty => cylinders.fold(0, (sum, c) => sum + c.emptyStock);
 
@@ -376,6 +378,13 @@ class AppState extends ChangeNotifier {
       if (cachedAllocId != null) {
         currentAllocationId = cachedAllocId;
       }
+      final savedUser = await ApiService.getSavedUser();
+      if (savedUser != null) {
+        final uname = savedUser['username']?.toString().trim();
+        if (uname != null && uname.isNotEmpty) {
+          loggedInUsername = uname;
+        }
+      }
       notifyListeners();
     } catch (_) {}
   }
@@ -459,7 +468,7 @@ class AppState extends ChangeNotifier {
       if (user != null) {
         final uname = user['username']?.toString().trim();
         if (uname != null && uname.isNotEmpty) {
-          driverName = uname;
+          loggedInUsername = uname;
           fullName = uname;
         }
       }
@@ -585,6 +594,15 @@ class AppState extends ChangeNotifier {
             debugPrint('Failed to load driver sales: $e');
           }
         }
+      }
+
+      if (currentAllocationId != null) {
+        try {
+          final statusData = await ApiService.getShiftStatus(currentAllocationId!);
+          if (statusData != null) {
+            endShiftStatus = (statusData['status'] ?? 'ACTIVE').toString();
+          }
+        } catch (_) {}
       }
 
       // Customers from Backend (Sundry Debtors)
@@ -835,6 +853,42 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> cancelOrder(DeliveryOrder order) => deleteOrder(order);
+
+  /// Update an existing order's typed bill amount and payment method
+  Future<bool> updateOrderAmount(String ticketId, double newAmount, {String? newPaymentMethod}) async {
+    final index = orders.indexWhere((o) => o.ticketId == ticketId);
+    if (index == -1) return false;
+
+    final oldOrder = orders[index];
+    orders[index] = DeliveryOrder(
+      ticketId: oldOrder.ticketId,
+      customer: oldOrder.customer,
+      items: oldOrder.items,
+      totalCylinders: oldOrder.totalCylinders,
+      totalEmpties: oldOrder.totalEmpties,
+      amount: newAmount,
+      paymentMethod: newPaymentMethod ?? oldOrder.paymentMethod,
+      time: oldOrder.time,
+      status: oldOrder.status,
+      stopNumber: oldOrder.stopNumber,
+    );
+    lastSyncTime = DateTime.now();
+    notifyListeners();
+
+    try {
+      final res = await ApiService.updateSale(
+        ticketId: ticketId,
+        amountCollected: newAmount,
+        paymentMethod: newPaymentMethod,
+      );
+      return res['success'] == true;
+    } catch (e) {
+      debugPrint('Live backend order update error: $e');
+      return false;
+    }
+  }
+
   /// Driver End Shift action
   Future<Map<String, dynamic>> submitEndShift({
     required List<Map<String, dynamic>> remainingCylinders,
@@ -851,7 +905,12 @@ class AppState extends ChangeNotifier {
         remainingOther: remainingOther,
         totalCollected: todayCollectedTotal,
         totalDeliveries: orders.length,
+        cashCollected: cashBalance,
+        bankCollected: bankBalance,
       );
+      if (res['success'] == true) {
+        endShiftStatus = 'PENDING';
+      }
       lastSyncTime = DateTime.now();
       notifyListeners();
       return res;

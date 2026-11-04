@@ -11,7 +11,7 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
     return (
       <Center style={{ minHeight: '100vh', backgroundColor: '#0f172a' }}>
         <Stack align="center" gap="sm">
-          <Loader color="orange" size="lg" />
+          <Loader color="burgundy" size="lg" />
           <Text c="dimmed" size="sm">
             Verifying your session...
           </Text>

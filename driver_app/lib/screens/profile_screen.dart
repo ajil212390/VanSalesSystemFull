@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/smooth_transitions.dart';
 import 'login_screen.dart';
@@ -12,6 +11,7 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppStateProvider.of(context);
+    final isPendingShift = state.endShiftStatus.toUpperCase() == 'PENDING';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
@@ -30,7 +30,7 @@ class ProfileScreen extends StatelessWidget {
               )
             : null,
         title: Text(
-          'Driver Profile',
+          'Profile',
           style: GoogleFonts.inter(
             fontSize: 22,
             fontWeight: FontWeight.w800,
@@ -46,88 +46,25 @@ class ProfileScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. UNIFIED EXECUTIVE DRIVER & VEHICLE PROFILE CARD
-              _buildUnifiedDriverCard(context, state),
+              // 1. UNIFIED EXECUTIVE USER & VEHICLE PROFILE CARD
+              _buildUnifiedUserCard(context, state),
+
+              // 2. END SHIFT REQUEST UPDATE CARD (Prominent in Burgundy)
+              if (isPendingShift) ...[
+                const SizedBox(height: 16),
+                _buildEndShiftPendingCard(context, state),
+              ],
 
               const SizedBox(height: 20),
 
-              // 2. DISPATCH & SUPPORT
-              _buildSectionTitle('SERVICES & DISPATCH'),
-              const SizedBox(height: 10),
-
-              _buildMenuCard(
-                icon: Icons.phone_in_talk_rounded,
-                title: 'Central Dispatch Support',
-                subtitle: '24/7 Helpline: 1234567890',
-                onTap: _callDispatchSupport,
-              ),
-              const SizedBox(height: 20),
-
-              // 2.5 CLEAR CACHE & RESET
-              Container(
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x0E0F172A),
-                      blurRadius: 10,
-                      offset: Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () async {
-                      await state.clearLocalCache();
-                      await state.syncFromBackend();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Cache cleared & state synced fresh from DB!',
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-                            ),
-                            backgroundColor: const Color(0xFF800020),
-                          ),
-                        );
-                      }
-                    },
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.cleaning_services_rounded,
-                          size: 18,
-                          color: Color(0xFF64748B),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Clear Cache & Fresh DB Sync',
-                          style: GoogleFonts.inter(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF334155),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // 3. END SHIFT & LOGOUT ACTION
+              // 3. END SHIFT & LOGOUT ACTION (Clean Burgundy Accent)
               Container(
                 width: double.infinity,
                 height: 48,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF5C2CB)),
                   boxShadow: const [
                     BoxShadow(
                       color: Color(0x0E0F172A),
@@ -152,7 +89,7 @@ class ProfileScreen extends StatelessWidget {
                         const Icon(
                           Icons.logout_rounded,
                           size: 18,
-                          color: Color(0xFFDC2626),
+                          color: Color(0xFF800020),
                         ),
                         const SizedBox(width: 8),
                         Text(
@@ -160,7 +97,7 @@ class ProfileScreen extends StatelessWidget {
                           style: GoogleFonts.inter(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFFDC2626),
+                            color: const Color(0xFF800020),
                           ),
                         ),
                       ],
@@ -177,21 +114,12 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  // Section Title
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: GoogleFonts.inter(
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
-        color: const Color(0xFF64748B),
-        letterSpacing: 0.8,
-      ),
-    );
-  }
+  // 1. UNIFIED USER & VEHICLE CARD (Strictly Burgundy & Slate Neutrals)
+  Widget _buildUnifiedUserCard(BuildContext context, AppState state) {
+    final displayName = state.loggedInUsername.isNotEmpty
+        ? state.loggedInUsername
+        : (state.fullName.isNotEmpty ? state.fullName : 'User');
 
-  // 1. UNIFIED DRIVER & VEHICLE CARD
-  Widget _buildUnifiedDriverCard(BuildContext context, AppState state) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -212,12 +140,12 @@ class ProfileScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Top Half: Driver Profile Row
+          // Top Half: User Profile Row
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // Modern Unique Driver Profile Icon
+                // Modern Unique Profile Icon
                 Container(
                   width: 56,
                   height: 56,
@@ -235,7 +163,7 @@ class ProfileScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 14),
 
-                // Driver Information
+                // User Information
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -244,7 +172,7 @@ class ProfileScreen extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Text(
-                              state.fullName,
+                              displayName,
                               style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
@@ -263,7 +191,7 @@ class ProfileScreen extends StatelessWidget {
                               border: Border.all(color: const Color(0xFFE2E8F0)),
                             ),
                             child: Text(
-                              state.driverId,
+                              state.driverId.isNotEmpty ? state.driverId : 'USER',
                               style: GoogleFonts.inter(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
@@ -273,28 +201,75 @@ class ProfileScreen extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (state.driverName.isNotEmpty &&
+                          state.driverName.toLowerCase() != displayName.toLowerCase()) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Driver: ${state.driverName}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 5),
-                      Row(
-                        children: [
-                          Container(
-                            width: 7,
-                            height: 7,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF16A34A),
-                              shape: BoxShape.circle,
+
+                      // Status Indicator in Burgundy
+                      Builder(builder: (context) {
+                        final status = state.endShiftStatus.toUpperCase();
+                        final String statusText;
+                        final String? statusSubtitle;
+
+                        if (status == 'PENDING') {
+                          statusText = 'End Shift Pending Verification';
+                          statusSubtitle = 'Awaiting Admin Approval from Web Portal';
+                        } else if (status == 'SETTLED' || status == 'APPROVED') {
+                          statusText = 'Shift Settled & Approved';
+                          statusSubtitle = 'Verified by Admin';
+                        } else {
+                          statusText = 'Shift Active \u2022 On Duty';
+                          statusSubtitle = null;
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 7,
+                                  height: 7,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFF800020),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  statusText,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF800020),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            'Shift Active \u2022 On Duty',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF16A34A),
-                            ),
-                          ),
-                        ],
-                      ),
+                            if (statusSubtitle != null) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                statusSubtitle,
+                                style: GoogleFonts.inter(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ],
+                        );
+                      }),
                     ],
                   ),
                 ),
@@ -324,7 +299,7 @@ class ProfileScreen extends StatelessWidget {
                     child: Icon(
                       Icons.local_shipping_rounded,
                       size: 22,
-                      color: Color(0xFFDC2626),
+                      color: Color(0xFF800020),
                     ),
                   ),
                 ),
@@ -334,7 +309,7 @@ class ProfileScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        state.vehicleNumber,
+                        state.vehicleNumber.isNotEmpty ? state.vehicleNumber : 'No Vehicle Assigned',
                         style: GoogleFonts.inter(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w800,
@@ -361,104 +336,116 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  // 2. MENU TILE
-  Widget _buildMenuCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    Widget? trailing,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0D0F172A),
-                blurRadius: 12,
-                offset: Offset(0, 3),
-              ),
-              BoxShadow(
-                color: Color(0x060F172A),
-                blurRadius: 3,
-                offset: Offset(0, 1),
+  // 2. END SHIFT PENDING CARD
+  Widget _buildEndShiftPendingCard(BuildContext context, AppState state) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF2F4),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFF5C2CB), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.schedule_rounded, size: 18, color: Color(0xFF800020)),
+              const SizedBox(width: 8),
+              Text(
+                'END SHIFT REQUEST SUBMITTED',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF800020),
+                  letterSpacing: 0.5,
+                ),
               ),
             ],
           ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: Center(
-                  child: Icon(icon, size: 22, color: const Color(0xFFDC2626)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
+          const SizedBox(height: 6),
+          Text(
+            'Your route returns & collections are queued for warehouse gate inspection and settlement verification by the Admin.',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF475569),
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      title,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF0F172A),
-                      ),
+                      'CASH IN HAND',
+                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      subtitle,
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF64748B),
-                      ),
+                      '\u20B9${state.cashBalance.toStringAsFixed(0)}',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
                     ),
                   ],
                 ),
-              ),
-              ?trailing,
-            ],
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'BANK / UPI',
+                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '\u20B9${state.bankBalance.toStringAsFixed(0)}',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                    ),
+                  ],
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'EMPTIES',
+                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${state.totalClosingEmpty}',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  // Dial Dispatch Support Number
-  Future<void> _callDispatchSupport() async {
-    final Uri launchUri = Uri(
-      scheme: 'tel',
-      path: '1234567890',
-    );
-    try {
-      if (await canLaunchUrl(launchUri)) {
-        await launchUrl(launchUri);
-      } else {
-        await launchUrl(launchUri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {}
-  }
-
-  // Logout confirmation modal
+  // Logout confirmation modal in Burgundy
   Future<void> _confirmLogout(BuildContext context, AppState state) async {
     final confirmed = await showSuperGasConfirmDialog(
       context: context,
       title: 'End Shift & Logout?',
-      message: 'Are you sure you want to end your shift and logout? All delivery records are synchronized with the depot.',
-      confirmLabel: 'End Shift & Logout',
+      message: 'Are you sure you want to logout? Shift returns and delivery records remain securely synchronized.',
+      confirmLabel: 'Logout',
       icon: Icons.logout_rounded,
-      confirmButtonColor: const Color(0xFFDC2626),
+      iconColor: const Color(0xFF800020),
+      iconBgColor: const Color(0xFFFDF2F4),
+      confirmButtonColor: const Color(0xFF800020),
       extraContent: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
@@ -478,11 +465,11 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             Text(
-              '\u20B9${state.todayCollectedTotal.toStringAsFixed(0)} Settled',
+              '\u20B9${state.todayCollectedTotal.toStringAsFixed(0)} Collected',
               style: GoogleFonts.inter(
                 fontSize: 11.5,
                 fontWeight: FontWeight.w800,
-                color: const Color(0xFFDC2626),
+                color: const Color(0xFF800020),
               ),
             ),
           ],
@@ -491,8 +478,6 @@ class ProfileScreen extends StatelessWidget {
     );
 
     if (confirmed == true && context.mounted) {
-      await state.clearLocalCache();
-      if (!context.mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
         SmoothPageRoute(page: const LoginScreen()),

@@ -6,7 +6,7 @@ from drf_spectacular.utils import extend_schema_field
 from core.models import (
     User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver,
     Category, Unit, Product, Group, Ledger, ProductPriceAudit,
-    Purchase, PurchaseLine, StockMovement, Voucher, VoucherLine,
+    Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
     Payment, PaymentLine, BillwiseAllocation, LedgerLine
 )
 
@@ -840,7 +840,10 @@ class LedgerLineSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['LedgerLineId', 'CreatedAt', 'UpdatedAt']
 
-from core.models import DeliveryNote, DeliveryNoteLine
+from core.models import (
+    DeliveryNote, DeliveryNoteLine, ReceiptNote, ReceiptNoteLine,
+    EndRouteDriver, EndRouteDriverLine
+)
 
 class DeliveryNoteLineSerializer(serializers.ModelSerializer):
     product_name = serializers.CharField(source='Product.ProductName', read_only=True)
@@ -891,3 +894,183 @@ class DeliveryNoteSerializer(serializers.ModelSerializer):
 
     def get_total_cylinders(self, obj):
         return sum(line.Quantity for line in obj.lines.all())
+
+
+class ReceiptNoteLineSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='Product.ProductName', read_only=True)
+    product_code = serializers.CharField(source='Product.ProductCode', read_only=True)
+    unit_name = serializers.CharField(source='Unit.UnitName', read_only=True)
+
+    class Meta:
+        model = ReceiptNoteLine
+        fields = [
+            'ReceiptNoteLineId',
+            'ReceiptNote',
+            'Product',
+            'product_name',
+            'product_code',
+            'Unit',
+            'unit_name',
+            'Quantity',
+            'Rate',
+            'Amount'
+        ]
+        read_only_fields = ['ReceiptNote']
+
+
+class ReceiptNoteSerializer(serializers.ModelSerializer):
+    lines = ReceiptNoteLineSerializer(many=True, required=False)
+    route_name = serializers.CharField(source='RouteVehicleDriver.Route.RouteName', read_only=True)
+    vehicle_number = serializers.CharField(source='RouteVehicleDriver.Vehicle.VehicleNumber', read_only=True)
+    driver_name = serializers.CharField(source='RouteVehicleDriver.Driver.DriverName', read_only=True)
+    total_quantity = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReceiptNote
+        fields = [
+            'ReceiptNoteId',
+            'ReceiptNoteNo',
+            'ReceiptDate',
+            'RouteVehicleDriver',
+            'route_name',
+            'vehicle_number',
+            'driver_name',
+            'Remarks',
+            'Status',
+            'CompanyId',
+            'CreatedAt',
+            'lines',
+            'total_quantity'
+        ]
+
+    def get_total_quantity(self, obj):
+        return sum(line.Quantity for line in obj.lines.all())
+
+
+class EndRouteDriverLineSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='Product.ProductName', read_only=True)
+    unit_name = serializers.CharField(source='Unit.UnitName', read_only=True)
+
+    class Meta:
+        model = EndRouteDriverLine
+        fields = [
+            'EndRouteDriverLineId',
+            'EndRouteDriver',
+            'Product',
+            'product_name',
+            'Unit',
+            'unit_name',
+            'FilledQty',
+            'EmptyQty',
+            'Rate',
+            'Amount'
+        ]
+        read_only_fields = ['EndRouteDriver']
+
+
+class EndRouteDriverSerializer(serializers.ModelSerializer):
+    lines = EndRouteDriverLineSerializer(many=True, required=False)
+    ledger_name = serializers.CharField(source='Ledger.LedgerName', read_only=True)
+    driver_name = serializers.CharField(source='RouteVehicleDriver.Driver.DriverName', read_only=True)
+    vehicle_number = serializers.CharField(source='RouteVehicleDriver.Vehicle.VehicleNumber', read_only=True)
+    route_name = serializers.CharField(source='RouteVehicleDriver.Route.RouteName', read_only=True)
+    total_filled = serializers.SerializerMethodField()
+    total_empty = serializers.SerializerMethodField()
+
+    def get_total_filled(self, obj):
+        return sum(line.FilledQty or 0 for line in obj.lines.all())
+
+    def get_total_empty(self, obj):
+        return sum(line.EmptyQty or 0 for line in obj.lines.all())
+
+    class Meta:
+        model = EndRouteDriver
+        fields = [
+            'EndRouteDriverId',
+            'ShiftDate',
+            'RouteVehicleDriver',
+            'driver_name',
+            'vehicle_number',
+            'route_name',
+            'Ledger',
+            'ledger_name',
+            'CompanyId',
+            'Remarks',
+            'Status',
+            'CreatedAt',
+            'lines',
+            'total_filled',
+            'total_empty'
+        ]
+
+
+class SalesLineSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='Product.ProductName', read_only=True)
+    product_code = serializers.CharField(source='Product.ProductCode', read_only=True)
+    unit_name = serializers.CharField(source='Unit.UnitName', read_only=True)
+
+    class Meta:
+        model = SalesLine
+        fields = [
+            'SalesLineId',
+            'Sales',
+            'LineNo',
+            'Product',
+            'product_name',
+            'product_code',
+            'Unit',
+            'unit_name',
+            'SalesPrice',
+            'TaxPercent',
+            'TaxAmount',
+            'Quantity',
+            'EmptyQuantity',
+            'Total',
+            'DiscPercent',
+            'DiscAmount',
+            'CompanyId'
+        ]
+        read_only_fields = ['Sales']
+
+
+class SalesSerializer(serializers.ModelSerializer):
+    lines = SalesLineSerializer(many=True, required=False)
+    route_name = serializers.CharField(source='RouteVehicleDriver.Route.RouteName', read_only=True)
+    vehicle_number = serializers.CharField(source='RouteVehicleDriver.Vehicle.VehicleNumber', read_only=True)
+    driver_name = serializers.CharField(source='RouteVehicleDriver.Driver.DriverName', read_only=True)
+    customer_name = serializers.CharField(source='CustomerLedger.LedgerName', read_only=True)
+    approved_by_name = serializers.CharField(source='ApprovedBy.Username', read_only=True)
+
+    class Meta:
+        model = Sales
+        fields = [
+            'SalesId',
+            'SalesNo',
+            'SalesDate',
+            'InvoiceNo',
+            'RouteVehicleDriver',
+            'route_name',
+            'vehicle_number',
+            'driver_name',
+            'CustomerLedger',
+            'customer_name',
+            'PaymentMethod',
+            'Notes',
+            'SubTotal',
+            'TaxAmount',
+            'GrandTotal',
+            'RoundOff',
+            'TotalDeliveredQty',
+            'TotalEmptyQty',
+            'Status',
+            'ApprovedBy',
+            'approved_by_name',
+            'ApprovedAt',
+            'CompanyId',
+            'CreatedAt',
+            'UpdatedAt',
+            'lines'
+        ]
+
+
+

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Title,
   Text,
@@ -33,10 +33,10 @@ import {
   IconEye,
   IconPrinter,
   IconPackage,
-  IconCash,
   IconClock,
   IconPlus,
   IconTrash,
+  IconGasStation,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -49,7 +49,8 @@ interface EmptyBreakdownItem {
 
 interface ReceiptNoteItem {
   id: string;
-  deliveryNoteId: number;
+  receiptNoteId: number;
+  deliveryNoteId?: number;
   noteNumber: string;
   date: string;
   time: string;
@@ -74,19 +75,12 @@ export const ReceiptNotesPage: React.FC = () => {
   const [selectedNote, setSelectedNote] = useState<ReceiptNoteItem | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [deleteNote, setDeleteNote] = useState<ReceiptNoteItem | null>(null);
 
   // Form State for "Add Receipt Note"
   const [createAllocation, setCreateAllocation] = useState<string | null>(null);
   const [createDate, setCreateDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [createRemarks, setCreateRemarks] = useState('');
-  const [createCash, setCreateCash] = useState<number | string>('');
-  const [createDigital, setCreateDigital] = useState<number | string>('');
-  const [createCylinderLines, setCreateCylinderLines] = useState<
-    Array<{ productId: number; productName?: string; filledQty: number | ''; emptyQty: number | '' }>
-  >([{ productId: 0, filledQty: 0, emptyQty: 0 }]);
-  const [createOtherLines, setCreateOtherLines] = useState<
-    Array<{ productId: number; productName?: string; qty: number | '' }>
-  >([]);
 
   // Fetch Active Allocations (vans, drivers, routes)
   const { data: allocations = [] } = useQuery<any[]>({
@@ -111,7 +105,7 @@ export const ReceiptNotesPage: React.FC = () => {
     queryKey: ['allocated-products', createAllocation],
     queryFn: async () => {
       if (!createAllocation) return [];
-      const res = await apiClient.get<any>(`/delivery-notes/allocated-products/?allocation_id=${createAllocation}`);
+      const res = await apiClient.get<any>(`/receipt-notes/allocated-products/?allocation_id=${createAllocation}`);
       const raw = res.data;
       return Array.isArray(raw) ? raw : (raw?.results || []);
     },
@@ -120,36 +114,29 @@ export const ReceiptNotesPage: React.FC = () => {
 
   // Helper to determine if product is a gas cylinder
   const isCylinderProduct = (p: any) => {
-    const cat = (p.CategoryName || p.category_name || (p.Category && p.Category.CategoryName) || '').toLowerCase();
-    const name = (p.ProductName || p.name || p.product_name || '').toLowerCase();
-    return Boolean(p.is_cylinder) || cat.includes('cylinder') || name.includes('cylinder') || name.includes('kg') || name.includes('lpg');
-  };
-
-  // Auto-populate return lines when a Van / Route is selected: Cylinders first, other products second
-  useEffect(() => {
-    if (allocatedProducts.length > 0 && isCreateModalOpen) {
-      const cyls = allocatedProducts.filter((p: any) => p.is_cylinder ?? isCylinderProduct(p));
-      const others = allocatedProducts.filter((p: any) => !(p.is_cylinder ?? isCylinderProduct(p)));
-
-      if (cyls.length > 0) {
-        setCreateCylinderLines(
-          cyls.map((p: any) => ({
-            productId: p.product_id || p.ProductId,
-            productName: p.product_name || p.ProductName,
-            filledQty: 0,
-            emptyQty: 0,
-          }))
-        );
-      }
-      setCreateOtherLines(
-        others.map((p: any) => ({
-          productId: p.product_id || p.ProductId,
-          productName: p.product_name || p.ProductName,
-          qty: 0,
-        }))
-      );
+    if (typeof p.is_cylinder === 'boolean') {
+      return p.is_cylinder;
     }
-  }, [allocatedProducts, isCreateModalOpen]);
+    const name = (p.ProductName || p.name || p.product_name || '').toLowerCase();
+    const cat = (p.CategoryName || p.category_name || (p.Category && p.Category.CategoryName) || '').toLowerCase();
+
+    // Explicit non-cylinder checks
+    if (
+      name.includes('stove') ||
+      name.includes('burner') ||
+      name.includes('regulator') ||
+      name.includes('pipe') ||
+      name.includes('lighter') ||
+      name.includes('hose') ||
+      name.includes('trolley') ||
+      cat.includes('stove') ||
+      cat.includes('accessory') ||
+      cat.includes('accessories')
+    ) {
+      return false;
+    }
+    return cat.includes('cylinder') || name.includes('cylinder') || name.includes('kg') || name.includes('lpg');
+  };
 
   const allocationOptions = useMemo(() => {
     const list = Array.isArray(allocations) ? allocations : (allocations as any)?.results || [];
@@ -166,102 +153,79 @@ export const ReceiptNotesPage: React.FC = () => {
       });
   }, [allocations]);
 
-  const cylinderProductOptions = useMemo(() => {
-    const list = Array.isArray(products) ? products : (products as any)?.results || [];
-    return list
-      .filter((p: any) => isCylinderProduct(p))
-      .map((p: any) => ({
-        value: String(p.ProductId || p.id),
-        label: p.ProductName || p.name || `Cylinder ${p.ProductId}`,
-      }));
-  }, [products]);
+  // Unified Dropdown options with all allocated products (or all products fallback)
+  const productOptions = useMemo(() => {
+    const sourceList = (createAllocation && allocatedProducts.length > 0)
+      ? allocatedProducts.map((ap: any) => ({
+          ProductId: ap.product_id || ap.ProductId,
+          ProductName: ap.product_name || ap.ProductName,
+          is_cylinder: ap.is_cylinder ?? isCylinderProduct(ap),
+        }))
+      : (Array.isArray(products) ? products : (products as any)?.results || []).map((p: any) => ({
+          ProductId: p.ProductId || p.id,
+          ProductName: p.ProductName || p.name,
+          is_cylinder: isCylinderProduct(p),
+        }));
 
-  const otherProductOptions = useMemo(() => {
-    const list = Array.isArray(products) ? products : (products as any)?.results || [];
-    return list
-      .filter((p: any) => !isCylinderProduct(p))
-      .map((p: any) => ({
-        value: String(p.ProductId || p.id),
-        label: p.ProductName || p.name || `Product ${p.ProductId}`,
-      }));
-  }, [products]);
+    return sourceList.map((p: any) => ({
+      value: String(p.ProductId),
+      label: p.ProductName || `Product ${p.ProductId}`,
+      is_cylinder: Boolean(p.is_cylinder),
+    }));
+  }, [products, allocatedProducts, createAllocation]);
+
+  const [createLines, setCreateLines] = useState<
+    Array<{ productId: number; productName?: string; filledQty: number | string; emptyQty: number | string; isCylinder?: boolean }>
+  >([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
 
   const handleOpenCreateModal = () => {
     setCreateAllocation(null);
     setCreateDate(new Date().toISOString().split('T')[0]);
     setCreateRemarks('');
-    setCreateCash('');
-    setCreateDigital('');
-    setCreateCylinderLines([{ productId: 0, filledQty: 0, emptyQty: 0 }]);
-    setCreateOtherLines([]);
+    setCreateLines([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
     setIsCreateModalOpen(true);
   };
 
-  const handleAddCylinderLine = () => {
-    setCreateCylinderLines((prev) => [...prev, { productId: 0, filledQty: 0, emptyQty: 0 }]);
+  const handleAllocationChange = (val: string | null) => {
+    setCreateAllocation(val);
+    setCreateLines([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
   };
 
-  const handleRemoveCylinderLine = (index: number) => {
-    setCreateCylinderLines((prev) => prev.filter((_, i) => i !== index));
+  const handleAddLine = () => {
+    setCreateLines((prev) => [...prev, { productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
+  };
+
+  const handleRemoveLine = (index: number) => {
+    setCreateLines((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleLineProductChange = (index: number, val: string | null) => {
     const pId = val ? Number(val) : 0;
-    const pObj = products.find((p: any) => p.ProductId === pId);
-    setCreateCylinderLines((prev) =>
-      prev.map((l, i) => (i === index ? { ...l, productId: pId, productName: pObj?.ProductName } : l))
+    const pOpt = productOptions.find((p: any) => Number(p.value) === pId);
+    setCreateLines((prev) =>
+      prev.map((l, i) => (i === index ? {
+        ...l,
+        productId: pId,
+        productName: pOpt?.label,
+        isCylinder: pOpt?.is_cylinder ?? true,
+        emptyQty: pOpt?.is_cylinder ? l.emptyQty : 0,
+      } : l))
     );
   };
 
   const handleLineFilledQtyChange = (index: number, val: number | string) => {
     const qty = typeof val === 'number' ? val : val === '' ? '' : Number(val) || 0;
-    setCreateCylinderLines((prev) =>
+    setCreateLines((prev) =>
       prev.map((l, i) => (i === index ? { ...l, filledQty: qty } : l))
     );
   };
 
   const handleLineEmptyQtyChange = (index: number, val: number | string) => {
     const qty = typeof val === 'number' ? val : val === '' ? '' : Number(val) || 0;
-    setCreateCylinderLines((prev) =>
+    setCreateLines((prev) =>
       prev.map((l, i) => (i === index ? { ...l, emptyQty: qty } : l))
     );
   };
-
-  // Handlers for Other Products (Stoves, Accessories)
-  const handleAddOtherLine = () => {
-    setCreateOtherLines((prev) => [...prev, { productId: 0, qty: 0 }]);
-  };
-
-  const handleRemoveOtherLine = (index: number) => {
-    setCreateOtherLines((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const handleOtherProductChange = (index: number, val: string | null) => {
-    const pId = val ? Number(val) : 0;
-    const pObj = products.find((p: any) => p.ProductId === pId);
-    setCreateOtherLines((prev) =>
-      prev.map((l, i) => (i === index ? { ...l, productId: pId, productName: pObj?.ProductName } : l))
-    );
-  };
-
-  const handleOtherQtyChange = (index: number, val: number | string) => {
-    const qty = typeof val === 'number' ? val : val === '' ? '' : Number(val) || 0;
-    setCreateOtherLines((prev) =>
-      prev.map((l, i) => (i === index ? { ...l, qty } : l))
-    );
-  };
-
-  const totalModalFilled = useMemo(() => {
-    return createCylinderLines.reduce((sum, l) => sum + (Number(l.filledQty) || 0), 0);
-  }, [createCylinderLines]);
-
-  const totalModalEmpty = useMemo(() => {
-    return createCylinderLines.reduce((sum, l) => sum + (Number(l.emptyQty) || 0), 0);
-  }, [createCylinderLines]);
-
-  const totalModalOther = useMemo(() => {
-    return createOtherLines.reduce((sum, l) => sum + (Number(l.qty) || 0), 0);
-  }, [createOtherLines]);
 
   // 1. Fetch Real Receipt Notes from Backend (populated via mobile driver shift ends)
   const {
@@ -272,7 +236,7 @@ export const ReceiptNotesPage: React.FC = () => {
   } = useQuery<ReceiptNoteItem[]>({
     queryKey: ['receipt-notes'],
     queryFn: async () => {
-      const res = await apiClient.get<ReceiptNoteItem[]>('/delivery-notes/receipt-notes/');
+      const res = await apiClient.get<ReceiptNoteItem[]>('/receipt-notes/');
       return Array.isArray(res.data) ? res.data : [];
     },
     refetchInterval: 10000,
@@ -281,8 +245,8 @@ export const ReceiptNotesPage: React.FC = () => {
   // Mutation: Verify and Settle Pending Receipt Note into Central Godown
   const verifyNoteMutation = useMutation({
     mutationFn: async (noteId: number) => {
-      const res = await apiClient.post('/delivery-notes/process_receipt_note/', {
-        delivery_note_id: noteId,
+      const res = await apiClient.post('/receipt-notes/process_receipt_note/', {
+        receipt_note_id: noteId,
       });
       return res.data;
     },
@@ -313,7 +277,7 @@ export const ReceiptNotesPage: React.FC = () => {
       if (!createAllocation) {
         throw new Error('Please select an active vehicle / route allocation.');
       }
-      const items = createCylinderLines
+      const items = createLines
         .filter((l) => l.productId > 0 && ((Number(l.filledQty) || 0) > 0 || (Number(l.emptyQty) || 0) > 0))
         .map((l) => ({
           product_id: l.productId,
@@ -321,24 +285,16 @@ export const ReceiptNotesPage: React.FC = () => {
           empty_qty: Number(l.emptyQty) || 0,
         }));
 
-      const other_items = createOtherLines
-        .filter((l) => l.productId > 0 && (Number(l.qty) || 0) > 0)
-        .map((l) => ({
-          product_id: l.productId,
-          qty: Number(l.qty) || 0,
-        }));
-
       const payload = {
         allocation_id: Number(createAllocation),
         delivery_date: createDate,
         items,
-        other_items,
-        cash_collected: Number(createCash) || 0,
-        digital_collected: Number(createDigital) || 0,
+        cash_collected: 0,
+        digital_collected: 0,
         remarks: createRemarks,
         auto_settle: autoSettle,
       };
-      const res = await apiClient.post('/delivery-notes/receipt-notes/', payload);
+      const res = await apiClient.post('/receipt-notes/', payload);
       return res.data;
     },
     onSuccess: (data) => {
@@ -357,6 +313,32 @@ export const ReceiptNotesPage: React.FC = () => {
       notifications.show({
         title: 'Failed to Create Receipt Note',
         message: err.response?.data?.detail || err.response?.data?.message || err.message || 'Could not create receipt note.',
+        color: 'red',
+      });
+    },
+  });
+
+  // Mutation: Delete Receipt Note
+  const deleteReceiptNoteMutation = useMutation({
+    mutationFn: async (id: number | string) => {
+      await apiClient.delete(`/receipt-notes/${id}/`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['receipt-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      setDeleteNote(null);
+      notifications.show({
+        title: 'Receipt Note Deleted',
+        message: 'Receipt note and stock movements removed.',
+        color: 'burgundy',
+      });
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Delete Failed',
+        message: err.response?.data?.detail || err.message || 'Could not delete receipt note.',
         color: 'red',
       });
     },
@@ -384,7 +366,9 @@ export const ReceiptNotesPage: React.FC = () => {
       if (a.status !== 'settled' && b.status === 'settled') return 1;
       if (a.status === 'pending' && b.status !== 'pending') return -1;
       if (a.status !== 'pending' && b.status === 'pending') return 1;
-      return b.deliveryNoteId - a.deliveryNoteId;
+      const bId = b.receiptNoteId || b.deliveryNoteId || Number(b.id) || 0;
+      const aId = a.receiptNoteId || a.deliveryNoteId || Number(a.id) || 0;
+      return bId - aId;
     });
   }, [receiptNotes, searchQuery, statusFilter]);
 
@@ -393,10 +377,6 @@ export const ReceiptNotesPage: React.FC = () => {
   const pendingCount = receiptNotes.filter((n) => n.status === 'pending').length;
   const totalFilledReceived = receiptNotes.reduce((sum, n) => sum + (n.filledCylindersTotal || 0), 0);
   const totalEmptiesReceived = receiptNotes.reduce((sum, n) => sum + (n.emptyCylindersTotal || 0), 0);
-  const totalCollections = receiptNotes.reduce(
-    (sum, n) => sum + (Number(n.cashCollected) || 0) + (Number(n.digitalCollected) || 0),
-    0
-  );
 
   return (
     <Stack gap="lg">
@@ -434,7 +414,7 @@ export const ReceiptNotesPage: React.FC = () => {
                   onClick={handleOpenCreateModal}
                   style={{ backgroundColor: '#800020', color: '#ffffff', fontWeight: 600 }}
                 >
-                  + Add Receipt Note
+                  Add Receipt Note
                 </Button>
               </Group>
             )}
@@ -472,370 +452,142 @@ export const ReceiptNotesPage: React.FC = () => {
             </Group>
 
             <Stack gap="md">
-              <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
-              <Select
-                label="Van / Route Allocation"
-                placeholder="Select Vehicle • Driver (Route)"
-                data={allocationOptions}
-                value={createAllocation}
-                onChange={setCreateAllocation}
-                searchable
-                clearable
-                nothingFoundMessage="No active allocations found"
-                comboboxProps={{ withinPortal: true, zIndex: 1000 }}
-                required
-              />
-              <TextInput
-                label="Receipt Date"
-                type="date"
-                value={createDate}
-                onChange={(e) => setCreateDate(e.currentTarget.value)}
-                required
-              />
-              <TextInput
-                label="Remarks / Gate Notes"
-                placeholder="e.g. Route settlement, cylinders inspected at godown"
-                value={createRemarks}
-                onChange={(e) => setCreateRemarks(e.currentTarget.value)}
-              />
-            </SimpleGrid>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+                <Select
+                  label="Van / Route Allocation"
+                  placeholder="Select Vehicle • Driver (Route)"
+                  data={allocationOptions}
+                  value={createAllocation}
+                  onChange={handleAllocationChange}
+                  searchable
+                  clearable
+                  nothingFoundMessage="No active allocations found"
+                  comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                  required
+                />
+                <TextInput
+                  label="Receipt Date"
+                  type="date"
+                  value={createDate}
+                  onChange={(e) => setCreateDate(e.currentTarget.value)}
+                  required
+                />
+              </SimpleGrid>
 
-            {/* Section 1: Cylinders Returned (Filled & Empty) */}
-            <Divider
-              label={
-                <Group gap="xs">
-                  <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                    1. Cylinders Returned to Godown (Filled & Empty)
-                  </Text>
-                  {isFetchingAllocated && (
-                    <Group gap={4}>
-                      <Loader size={12} color="#800020" />
-                      <Text size="11px" c="#800020" fw={500}>Fetching van products...</Text>
-                    </Group>
-                  )}
-                </Group>
-              }
-              labelPosition="left"
-            />
-
-            <Stack gap="xs">
-              {createCylinderLines.map((line, idx) => (
-                <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
-                  <Box style={{ flex: 5 }}>
-                    <Select
-                      label={idx === 0 ? 'Cylinder Product' : undefined}
-                      placeholder="Choose Cylinder Product"
-                      data={cylinderProductOptions}
-                      value={line.productId > 0 ? String(line.productId) : null}
-                      onChange={(val) => handleLineProductChange(idx, val)}
-                      searchable
-                      nothingFoundMessage="No cylinder products found"
-                      comboboxProps={{ withinPortal: true, zIndex: 1000 }}
-                    />
-                  </Box>
-                  <Box style={{ flex: 3 }}>
-                    <NumberInput
-                      label={idx === 0 ? 'Filled Qty (Unsold Full)' : undefined}
-                      placeholder="Unsold Full"
-                      min={0}
-                      value={line.filledQty}
-                      onChange={(val) => handleLineFilledQtyChange(idx, val)}
-                    />
-                  </Box>
-                  <Box style={{ flex: 3 }}>
-                    <NumberInput
-                      label={idx === 0 ? 'Empty Qty (Empties Returned)' : undefined}
-                      placeholder="Empties"
-                      min={0}
-                      value={line.emptyQty}
-                      onChange={(val) => handleLineEmptyQtyChange(idx, val)}
-                    />
-                  </Box>
-                  {createCylinderLines.length > 1 && (
-                    <ActionIcon
-                      variant="subtle"
-                      color="gray"
-                      onClick={() => handleRemoveCylinderLine(idx)}
-                      style={{ marginBottom: 4 }}
-                    >
-                      <IconTrash size={16} />
-                    </ActionIcon>
-                  )}
-                </Group>
-              ))}
-
-              <Button
-                variant="subtle"
-                size="xs"
-                color="burgundy"
-                leftSection={<IconPlus size={14} />}
-                onClick={handleAddCylinderLine}
-                style={{ alignSelf: 'flex-start', color: '#800020', fontWeight: 600 }}
-              >
-                + Add Cylinder Line
-              </Button>
-
-              {/* Cylinder Totals Card (Mobile App End Shift Summary Segmented Style) */}
-              <Box
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  backgroundColor: '#f8fafc',
-                  borderRadius: 10,
-                  border: '1px solid #e2e8f0',
-                  marginTop: 6,
-                  overflow: 'hidden',
-                }}
-              >
-                {/* 1. Filled Cylinders */}
-                <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-                  <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                    FILLED CYLINDERS
-                  </Text>
-                  <Group gap={6} align="baseline" mt={2}>
-                    <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                      {totalModalFilled}
+              {/* Unified Section: Products Returned to Godown */}
+              <Divider
+                label={
+                  <Group gap="xs">
+                    <IconGasStation size={16} color="#800020" />
+                    <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Products Returned to Godown
                     </Text>
-                    <Text size="xs" fw={700} c="#64748b">
-                      Full
-                    </Text>
+                    {isFetchingAllocated && (
+                      <Group gap={4}>
+                        <Loader size={12} color="#800020" />
+                        <Text size="11px" c="#800020" fw={500}>Fetching van products...</Text>
+                      </Group>
+                    )}
                   </Group>
-                </Box>
+                }
+                labelPosition="left"
+              />
 
-                {/* 2. Empty Returns */}
-                <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-                  <Text size="10px" fw={800} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                    EMPTY RETURNS
-                  </Text>
-                  <Group gap={6} align="baseline" mt={2}>
-                    <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
-                      {totalModalEmpty}
-                    </Text>
-                    <Text size="xs" fw={700} c="#800020">
-                      Empties
-                    </Text>
+              {/* Single Unified Returned Products List */}
+              <Stack gap="xs">
+                {createLines.map((line, idx) => (
+                  <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
+                    <Box style={{ flex: 1, minWidth: 220 }}>
+                      <Select
+                        label={idx === 0 ? 'Product (Cylinders & Accessories)' : undefined}
+                        placeholder="Choose Product"
+                        data={productOptions}
+                        value={line.productId > 0 ? String(line.productId) : null}
+                        onChange={(val) => handleLineProductChange(idx, val)}
+                        searchable
+                        nothingFoundMessage="No products found"
+                        comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                      />
+                    </Box>
+                    <Box style={{ width: 180, minWidth: 120 }}>
+                      <NumberInput
+                        label={idx === 0 ? 'Unsold Full / Return Qty' : undefined}
+                        placeholder="0"
+                        min={0}
+                        value={line.filledQty}
+                        onChange={(val) => handleLineFilledQtyChange(idx, val)}
+                      />
+                    </Box>
+                    <Box style={{ width: 180, minWidth: 120 }}>
+                      <NumberInput
+                        label={idx === 0 ? 'Empty Returns Qty' : undefined}
+                        placeholder={line.isCylinder ? '0' : '—'}
+                        disabled={!line.isCylinder}
+                        min={0}
+                        value={line.isCylinder ? line.emptyQty : 0}
+                        onChange={(val) => handleLineEmptyQtyChange(idx, val)}
+                      />
+                    </Box>
+                    {createLines.length > 1 ? (
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        onClick={() => handleRemoveLine(idx)}
+                        style={{ marginBottom: 4 }}
+                      >
+                        <IconTrash size={16} />
+                      </ActionIcon>
+                    ) : (
+                      <Box style={{ width: 28 }} />
+                    )}
                   </Group>
-                </Box>
+                ))}
 
-                {/* 3. Total Check-in */}
-                <Box style={{ padding: '8px 14px' }}>
-                  <Text size="10px" fw={800} c="#0f172a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                    TOTAL CHECK-IN
-                  </Text>
-                  <Group gap={6} align="baseline" mt={2}>
-                    <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                      {totalModalFilled + totalModalEmpty}
-                    </Text>
-                    <Text size="xs" fw={700} c="#64748b">
-                      Cylinders
-                    </Text>
-                  </Group>
-                </Box>
-              </Box>
-            </Stack>
-
-            {/* Section 2: Other Products / Appliances Returned */}
-            <Divider
-              label={
-                <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                  2. Other Products Returned (Stoves & Accessories)
-                </Text>
-              }
-              labelPosition="left"
-            />
-
-            <Stack gap="xs">
-              {createOtherLines.map((line, idx) => (
-                <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
-                  <Box style={{ flex: 6 }}>
-                    <Select
-                      label={idx === 0 ? 'Product (Stove / Accessory)' : undefined}
-                      placeholder="Choose Product"
-                      data={otherProductOptions}
-                      value={line.productId > 0 ? String(line.productId) : null}
-                      onChange={(val) => handleOtherProductChange(idx, val)}
-                      searchable
-                      nothingFoundMessage="No other products found"
-                      comboboxProps={{ withinPortal: true, zIndex: 1000 }}
-                    />
-                  </Box>
-                  <Box style={{ flex: 4 }}>
-                    <NumberInput
-                      label={idx === 0 ? 'Remaining Qty Returned' : undefined}
-                      placeholder="Count"
-                      min={0}
-                      value={line.qty}
-                      onChange={(val) => handleOtherQtyChange(idx, val)}
-                    />
-                  </Box>
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    onClick={() => handleRemoveOtherLine(idx)}
-                    style={{ marginBottom: 4 }}
-                  >
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                </Group>
-              ))}
-
-              <Button
-                variant="subtle"
-                size="xs"
-                color="burgundy"
-                leftSection={<IconPlus size={14} />}
-                onClick={handleAddOtherLine}
-                style={{ alignSelf: 'flex-start', color: '#800020', fontWeight: 600 }}
-              >
-                + Add Other Product
-              </Button>
-
-              {createOtherLines.length > 0 && (
-                <Box
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(2, 1fr)',
-                    backgroundColor: '#f8fafc',
-                    borderRadius: 10,
-                    border: '1px solid #e2e8f0',
-                    marginTop: 6,
-                    overflow: 'hidden',
-                  }}
+                <Button
+                  variant="subtle"
+                  size="xs"
+                  color="burgundy"
+                  leftSection={<IconPlus size={14} />}
+                  onClick={handleAddLine}
+                  style={{ alignSelf: 'flex-start', color: '#800020', fontWeight: 600, marginTop: 4 }}
                 >
-                  {/* 1. SKUs Count */}
-                  <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-                    <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                      PRODUCTS COUNT
-                    </Text>
-                    <Group gap={6} align="baseline" mt={2}>
-                      <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                        {createOtherLines.filter((l) => (Number(l.qty) || 0) > 0).length}
-                      </Text>
-                      <Text size="xs" fw={700} c="#64748b">
-                        Active SKUs
-                      </Text>
-                    </Group>
-                  </Box>
+                  Add Product Line
+                </Button>
+              </Stack>
 
-                  {/* 2. Total Units Returned */}
-                  <Box style={{ padding: '8px 14px' }}>
-                    <Text size="10px" fw={800} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                      TOTAL ITEMS RETURNED
-                    </Text>
-                    <Group gap={6} align="baseline" mt={2}>
-                      <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
-                        {totalModalOther}
-                      </Text>
-                      <Text size="xs" fw={700} c="#800020">
-                        Units
-                      </Text>
-                    </Group>
-                  </Box>
-                </Box>
-              )}
-            </Stack>
-
-            {/* Section 3: Route Collections & Settlement */}
-            <Divider
-              label={
-                <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                  3. Route Collections & Settlement
-                </Text>
-              }
-              labelPosition="left"
+            {/* Remarks / Gate Notes */}
+            <TextInput
+              label="Remarks / Gate Notes"
+              placeholder="e.g. Route settlement, cylinders inspected at godown"
+              value={createRemarks}
+              onChange={(e) => setCreateRemarks(e.currentTarget.value)}
             />
 
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              <NumberInput
-                label="Cash Collected (₹)"
-                placeholder="0.00"
-                min={0}
-                decimalScale={2}
-                value={createCash}
-                onChange={setCreateCash}
-              />
-              <NumberInput
-                label="Digital / UPI Collected (₹)"
-                placeholder="0.00"
-                min={0}
-                decimalScale={2}
-                value={createDigital}
-                onChange={setCreateDigital}
-              />
-            </SimpleGrid>
-
-            {/* Route Collections KPI summary card matching mobile app */}
-            <Box
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                backgroundColor: '#f8fafc',
-                borderRadius: 10,
-                border: '1px solid #e2e8f0',
-                marginTop: 4,
-                overflow: 'hidden',
-              }}
-            >
-              {/* Cash */}
-              <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-                <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                  CASH IN HAND
-                </Text>
-                <Group gap={4} align="baseline" mt={2}>
-                  <Text size="lg" fw={800} c="#800020" style={{ lineHeight: 1 }}>
-                    ₹{Number(createCash || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </Text>
-                </Group>
-              </Box>
-
-              {/* Digital */}
-              <Box style={{ padding: '8px 14px', borderRight: '1px solid #e2e8f0' }}>
-                <Text size="10px" fw={800} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                  BANK / UPI
-                </Text>
-                <Group gap={4} align="baseline" mt={2}>
-                  <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                    ₹{Number(createDigital || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </Text>
-                </Group>
-              </Box>
-
-              {/* Total Settlement */}
-              <Box style={{ padding: '8px 14px' }}>
-                <Text size="10px" fw={800} c="#0f172a" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-                  TOTAL SETTLEMENT
-                </Text>
-                <Group gap={4} align="baseline" mt={2}>
-                  <Text size="lg" fw={800} c="#0f172a" style={{ lineHeight: 1 }}>
-                    ₹{(Number(createCash || 0) + Number(createDigital || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </Text>
-                </Group>
-              </Box>
-            </Box>
-
-            {/* Bottom Actions matching Vehicles page */}
-            <Group justify="flex-end" mt="md" gap="sm">
+            {/* Bottom Actions matching Vehicles & Allocations page */}
+            <Group justify="space-between" mt="md">
               <Button variant="default" onClick={() => setIsCreateModalOpen(false)} radius={10}>
                 Cancel
               </Button>
-              <Button
-                variant="outline"
-                radius={10}
-                style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
-                loading={createReceiptNoteMutation.isPending}
-                onClick={() => createReceiptNoteMutation.mutate(false)}
-              >
-                Save as Pending
-              </Button>
-              <Button
-                color="burgundy"
-                radius={10}
-                style={{ backgroundColor: '#800020', color: '#ffffff', fontWeight: 600 }}
-                loading={createReceiptNoteMutation.isPending}
-                onClick={() => createReceiptNoteMutation.mutate(true)}
-              >
-                Save & Settle Note
-              </Button>
+              <Group gap="sm">
+                <Button
+                  variant="outline"
+                  radius={10}
+                  style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
+                  loading={createReceiptNoteMutation.isPending}
+                  onClick={() => createReceiptNoteMutation.mutate(false)}
+                >
+                  Save as Pending
+                </Button>
+                <Button
+                  color="burgundy"
+                  radius={10}
+                  style={{ backgroundColor: '#800020', color: '#ffffff', fontWeight: 600 }}
+                  loading={createReceiptNoteMutation.isPending}
+                  onClick={() => createReceiptNoteMutation.mutate(true)}
+                >
+                  Save & Settle Note
+                </Button>
+              </Group>
             </Group>
           </Stack>
         </Paper>
@@ -846,8 +598,8 @@ export const ReceiptNotesPage: React.FC = () => {
           {(styles) => (
             <Box style={styles} mt={isCreateModalOpen ? 0 : 'md'}>
               <Stack gap="lg">
-                {/* Top 4 Metric KPI Cards: Settled First, Pending Second, Returns (Filled & Empty) Third */}
-                <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+                {/* Top 3 Metric KPI Cards: Settled First, Pending Second, Returns (Filled & Empty) Third */}
+                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
         {/* Card 1: Settled Notes */}
         <Paper
           p="md"
@@ -1013,50 +765,6 @@ export const ReceiptNotesPage: React.FC = () => {
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" truncate>
               Unsold full & empty returns
-            </Text>
-          </Group>
-        </Paper>
-
-        {/* Card 4: Route Collections */}
-        <Paper
-          p="md"
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            height: '100%',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-            e.currentTarget.style.borderColor = '#cbd5e1';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'none';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-            e.currentTarget.style.borderColor = '#e2e8f0';
-          }}
-        >
-          <div>
-            <Group justify="space-between" align="center" mb="xs">
-              <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-                Route Collections
-              </Text>
-              <IconCash size={20} color="#800020" stroke={1.75} />
-            </Group>
-            <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-              ₹{totalCollections.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </Text>
-          </div>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed" truncate>
-              Cash and digital route collections
             </Text>
           </Group>
         </Paper>
@@ -1231,13 +939,10 @@ export const ReceiptNotesPage: React.FC = () => {
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 170 }}>
                     RETURNS
                   </Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 150 }}>
-                    TOTAL COLLECTED
-                  </Table.Th>
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', width: 120 }}>
                     STATUS
                   </Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 130 }}>
                     ACTIONS
                   </Table.Th>
                 </Table.Tr>
@@ -1343,17 +1048,6 @@ export const ReceiptNotesPage: React.FC = () => {
                         )}
                       </Table.Td>
 
-                      {/* Total Collections */}
-                      <Table.Td style={{ textAlign: 'right' }}>
-                        <Text fw={700} size="sm" style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                          ₹{(note.cashCollected + note.digitalCollected).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </Text>
-                        <Text size="xs" c="dimmed">
-                          Cash: ₹{note.cashCollected.toLocaleString('en-IN')}
-                          {note.digitalCollected > 0 && ` • Bank: ₹${note.digitalCollected.toLocaleString('en-IN')}`}
-                        </Text>
-                      </Table.Td>
-
                       {/* Status */}
                       <Table.Td style={{ textAlign: 'center' }}>
                         <Badge
@@ -1401,7 +1095,7 @@ export const ReceiptNotesPage: React.FC = () => {
                                 variant="subtle"
                                 color="burgundy"
                                 size="sm"
-                                onClick={() => verifyNoteMutation.mutate(note.deliveryNoteId)}
+                                onClick={() => verifyNoteMutation.mutate(note.receiptNoteId || note.deliveryNoteId || Number(note.id))}
                                 loading={verifyNoteMutation.isPending}
                                 style={{ color: '#800020' }}
                               >
@@ -1424,6 +1118,18 @@ export const ReceiptNotesPage: React.FC = () => {
                               style={{ color: '#475569' }}
                             >
                               <IconPrinter size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+
+                          <Tooltip label="Delete Note" withArrow position="top">
+                            <ActionIcon
+                              variant="subtle"
+                              color="red"
+                              size="sm"
+                              onClick={() => setDeleteNote(note)}
+                              style={{ color: '#dc2626' }}
+                            >
+                              <IconTrash size={16} />
                             </ActionIcon>
                           </Tooltip>
                         </Group>
@@ -1524,23 +1230,6 @@ export const ReceiptNotesPage: React.FC = () => {
               </Table.Tbody>
             </Table>
 
-            <Divider label="Collections & Settlements" labelPosition="left" />
-
-            <SimpleGrid cols={2} spacing="sm">
-              <Paper p="xs" radius="sm" style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
-                <Text size="xs" c="dimmed">Cash Collections</Text>
-                <Text fw={700} size="md" c="#0f172a">
-                  ₹{selectedNote.cashCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-              </Paper>
-              <Paper p="xs" radius="sm" style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
-                <Text size="xs" c="dimmed">Digital / Bank Collections</Text>
-                <Text fw={700} size="md" c="#0f172a">
-                  ₹{selectedNote.digitalCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-              </Paper>
-            </SimpleGrid>
-
             {selectedNote.notes && (
               <Text size="xs" c="dimmed">
                 <strong>Gate Remarks:</strong> {selectedNote.notes}
@@ -1555,7 +1244,7 @@ export const ReceiptNotesPage: React.FC = () => {
                 <Button
                   color="burgundy"
                   leftSection={<IconCheck size={16} />}
-                  onClick={() => verifyNoteMutation.mutate(selectedNote.deliveryNoteId)}
+                  onClick={() => verifyNoteMutation.mutate(selectedNote.receiptNoteId || selectedNote.deliveryNoteId || Number(selectedNote.id))}
                   loading={verifyNoteMutation.isPending}
                   styles={{ root: { backgroundColor: '#800020', fontWeight: 600 } }}
                 >
@@ -1565,6 +1254,47 @@ export const ReceiptNotesPage: React.FC = () => {
             </Group>
           </Stack>
         )}
+      </Modal>
+
+      {/* 5. Delete Confirmation Modal */}
+      <Modal
+        opened={Boolean(deleteNote)}
+        onClose={() => setDeleteNote(null)}
+        title={
+          <Group gap="xs">
+            <IconTrash size={20} color="#dc2626" />
+            <Text fw={700} style={{ color: '#0f172a', fontSize: 16 }}>
+              Delete Receipt Note
+            </Text>
+          </Group>
+        }
+        size="sm"
+        radius="md"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm" c="#475569">
+            Are you sure you want to delete Receipt Note{' '}
+            <strong style={{ color: '#800020' }}>{deleteNote?.noteNumber}</strong>?
+            This will also reverse associated stock check-ins. This action cannot be undone.
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" onClick={() => setDeleteNote(null)}>
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              onClick={() => {
+                if (deleteNote) {
+                  deleteReceiptNoteMutation.mutate(deleteNote.receiptNoteId || deleteNote.deliveryNoteId || deleteNote.id);
+                }
+              }}
+              loading={deleteReceiptNoteMutation.isPending}
+            >
+              Delete
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </Stack>
   );

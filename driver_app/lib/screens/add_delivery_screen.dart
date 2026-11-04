@@ -46,9 +46,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     if (!mounted) return;
     setState(() => _isSubmitting = false);
     if (ok) {
-      state.resetDelivery();
+      final lastOrder = state.orders.isNotEmpty ? state.orders.first : null;
       state.syncFromBackend();
-      SuccessScreen.show(context);
+      SuccessScreen.show(context, order: lastOrder);
     }
   }
 
@@ -90,7 +90,8 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         : (state.collectedAmount > 0 ? state.collectedAmount : state.totalBillAmount);
     final hasValidAmount = effectiveAmount > 0;
 
-    final canSubmit = state.selectedCustomer != null &&
+    final canSubmit = !state.isShiftLocked &&
+        state.selectedCustomer != null &&
         (state.totalCylinders > 0 || state.totalOtherDeliveryCount > 0) &&
         state.paymentMethod.isNotEmpty &&
         hasValidAmount;
@@ -186,6 +187,33 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (state.isShiftLocked) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF800020).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF800020).withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lock_clock_rounded, color: Color(0xFF800020), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Shift End request submitted. New deliveries are locked awaiting Godown settlement.',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF800020),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             // 1. Customer Section
             _buildCustomerCardOrSelector(state),
 

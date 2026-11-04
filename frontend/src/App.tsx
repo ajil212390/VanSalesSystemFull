@@ -14,6 +14,7 @@ import { DriversPage } from './pages/DriversPage';
 import { RoutesPage } from './pages/RoutesPage';
 import { VehiclesPage } from './pages/VehiclesPage';
 import { AllocationsPage }   from './pages/AllocationsPage';
+import { EndAllocationsPage } from './pages/EndAllocationsPage';
 import { UsersPage } from './pages/UsersPage';
 import { CategoriesPage } from './pages/CategoriesPage';
 import { ProductsPage } from './pages/ProductsPage';
@@ -126,6 +127,7 @@ export const App: React.FC = () => {
               <Route path="/vehicles" element={<VehiclesPage />} />
               <Route path="/routes" element={<RoutesPage/>} />
               <Route path="/allocations" element={<AllocationsPage/>} />
+              <Route path="/end-allocations" element={<EndAllocationsPage />} />
               <Route path="/users" element={<UsersPage />} />
               <Route path="/categories" element={<CategoriesPage />} />
               <Route path="/products" element={<ProductsPage />} />

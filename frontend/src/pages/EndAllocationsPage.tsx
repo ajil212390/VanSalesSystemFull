@@ -1,0 +1,859 @@
+import React, { useState, useMemo } from 'react';
+import {
+  Title,
+  Text,
+  Paper,
+  SimpleGrid,
+  Box,
+  Group,
+  Stack,
+  Badge,
+  Button,
+  Table,
+  TextInput,
+  ActionIcon,
+  Divider,
+  Collapse,
+  CloseButton,
+  SegmentedControl,
+  Tooltip,
+  Loader,
+  Center,
+} from '@mantine/core';
+import {
+  IconSearch,
+  IconRefresh,
+  IconTruck,
+  IconCheck,
+  IconEye,
+  IconPackage,
+  IconTrash,
+  IconClock,
+  IconCreditCard,
+  IconReceipt,
+} from '@tabler/icons-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { notifications } from '@mantine/notifications';
+import { apiClient } from '../api/client';
+
+interface EndRouteDriverLineItem {
+  EndRouteDriverLineId: number;
+  Product: number;
+  product_name: string;
+  Unit: number;
+  unit_name: string;
+  FilledQty: number;
+  EmptyQty: number;
+  Rate: string | number;
+  Amount: string | number;
+}
+
+interface EndRouteDriverItem {
+  EndRouteDriverId: number;
+  ShiftDate: string;
+  RouteVehicleDriver: number;
+  driver_name: string;
+  vehicle_number: string;
+  route_name: string;
+  Ledger: number;
+  ledger_name: string;
+  CompanyId: number;
+  Remarks: string;
+  Status: 'PENDING' | 'SETTLED' | string;
+  CreatedAt: string;
+  lines?: EndRouteDriverLineItem[];
+  total_filled?: number;
+  total_empty?: number;
+}
+
+export const EndAllocationsPage: React.FC = () => {
+  const queryClient = useQueryClient();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
+  const [selectedItem, setSelectedItem] = useState<EndRouteDriverItem | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+
+  // Fetch EndRouteDriver data from backend
+  const { data: endRouteDrivers = [], isLoading, isRefetching, refetch } = useQuery<EndRouteDriverItem[]>({
+    queryKey: ['end-route-drivers'],
+    queryFn: async () => {
+      const res = await apiClient.get('/end-route-drivers/');
+      return res.data;
+    },
+  });
+
+  // Approve & Settle Mutation
+  // Delete Mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiClient.delete(`/end-route-drivers/${id}/`);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['end-route-drivers'] });
+      setIsDetailOpen(false);
+      setSelectedItem(null);
+      notifications.show({
+        title: 'Record Removed',
+        message: 'Shift settlement record deleted.',
+        color: 'burgundy',
+      });
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Delete Failed',
+        message: err.response?.data?.detail || 'Could not delete settlement record.',
+        color: 'red',
+      });
+    },
+  });
+
+  const settleMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiClient.post(`/end-route-drivers/${id}/settle/`);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['end-route-drivers'] });
+      queryClient.invalidateQueries({ queryKey: ['receipt-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['van-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      setIsDetailOpen(false);
+      notifications.show({
+        title: 'Settlement Approved',
+        message: data.message || 'Driver shift end settlement approved and verified.',
+        color: 'burgundy',
+      });
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Settlement Failed',
+        message: err.response?.data?.message || err.message || 'Could not approve settlement.',
+        color: 'red',
+      });
+    },
+  });
+
+  // Counts & Summaries
+  const pendingCount = useMemo(
+    () => endRouteDrivers.filter((i) => i.Status?.toUpperCase() === 'PENDING').length,
+    [endRouteDrivers]
+  );
+  const settledCount = useMemo(
+    () => endRouteDrivers.filter((i) => i.Status?.toUpperCase() === 'SETTLED').length,
+    [endRouteDrivers]
+  );
+
+  const totalFilled = useMemo(
+    () => endRouteDrivers.reduce((sum, item) => sum + (item.total_filled || 0), 0),
+    [endRouteDrivers]
+  );
+  const totalEmpty = useMemo(
+    () => endRouteDrivers.reduce((sum, item) => sum + (item.total_empty || 0), 0),
+    [endRouteDrivers]
+  );
+
+  // Filtered List
+  const filteredData = useMemo(() => {
+    return endRouteDrivers.filter((item) => {
+      const s = item.Status?.toUpperCase() || '';
+      if (statusFilter === 'pending' && s !== 'PENDING') return false;
+      if (statusFilter === 'settled' && s !== 'SETTLED') return false;
+
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        item.driver_name?.toLowerCase().includes(q) ||
+        item.vehicle_number?.toLowerCase().includes(q) ||
+        item.route_name?.toLowerCase().includes(q) ||
+        item.ledger_name?.toLowerCase().includes(q) ||
+        item.Remarks?.toLowerCase().includes(q) ||
+        String(item.EndRouteDriverId).includes(q)
+      );
+    });
+  }, [endRouteDrivers, statusFilter, searchQuery]);
+
+  // Handle open details modal
+  const handleOpenDetail = (item: EndRouteDriverItem) => {
+    setSelectedItem(item);
+    setIsDetailOpen(true);
+  };
+
+  // Helper to extract amounts from remarks or ledger
+  const parseSettlementAmounts = (item: EndRouteDriverItem | null) => {
+    if (!item) return { cash: 0, bank: 0, total: 0 };
+    let cash = 0;
+    let bank = 0;
+    const remarks = item.Remarks || '';
+
+    const cashMatch = remarks.match(/cash.*?₹?\s*([\d,.]+)/i);
+    const bankMatch = remarks.match(/(bank|upi).*?₹?\s*([\d,.]+)/i);
+
+    if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
+    if (bankMatch) bank = parseFloat(bankMatch[2].replace(/,/g, '')) || 0;
+
+    if (cash === 0 && bank === 0) {
+      // If ledger indicates Cash or Bank
+      const lName = (item.ledger_name || '').toLowerCase();
+      const numMatch = remarks.match(/₹?\s*([\d,.]+)/);
+      const amt = numMatch ? parseFloat(numMatch[1].replace(/,/g, '')) : 0;
+      if (lName.includes('cash')) cash = amt;
+      else if (lName.includes('bank')) bank = amt;
+      else cash = amt;
+    }
+
+    return { cash, bank, total: cash + bank };
+  };
+
+  const modalAmounts = parseSettlementAmounts(selectedItem);
+  const modalLines = selectedItem?.lines || [];
+  const modalTotalFilled = modalLines.reduce((acc, l) => acc + (Number(l.FilledQty) || 0), 0);
+  const modalTotalEmpty = modalLines.reduce((acc, l) => acc + (Number(l.EmptyQty) || 0), 0);
+
+  return (
+    <Stack gap="lg">
+      {/* Page Header */}
+      <Group justify="space-between" align="center" wrap="wrap" gap="md">
+        <div>
+          <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
+            End Allocation
+          </Title>
+          <Text size="xs" c="#64748b" mt={2}>
+            Driver route returns, empty cylinder receipts & settlement verification into Central Godown
+          </Text>
+        </div>
+
+        <Group gap="sm" align="center">
+          <Button
+            variant="default"
+            size="sm"
+            leftSection={<IconRefresh size={15} className={isRefetching ? 'animate-spin' : ''} />}
+            onClick={() => refetch()}
+            loading={isRefetching}
+            style={{ borderColor: '#e2e8f0', color: '#800020', fontWeight: 600 }}
+          >
+            Refresh
+          </Button>
+        </Group>
+      </Group>
+
+      {/* Top 4 Metric KPI Cards matching Receipt Notes page */}
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+        {/* Card 1: Settled Notes */}
+        <Paper
+          p="md"
+          radius="md"
+          withBorder
+          style={{
+            backgroundColor: '#ffffff',
+            borderColor: '#e2e8f0',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            height: '100%',
+          }}
+        >
+          <div>
+            <Group justify="space-between" align="center" mb="xs">
+              <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                SETTLED NOTES
+              </Text>
+              <IconReceipt size={20} color="#800020" stroke={1.75} />
+            </Group>
+            <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+              {settledCount}
+            </Text>
+          </div>
+          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
+            <Text size="xs" c="dimmed" truncate>
+              Reconciled with central godown ledger
+            </Text>
+          </Group>
+        </Paper>
+
+        {/* Card 2: Pending Verification */}
+        <Paper
+          p="md"
+          radius="md"
+          withBorder
+          style={{
+            backgroundColor: '#ffffff',
+            borderColor: '#e2e8f0',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            height: '100%',
+          }}
+        >
+          <div>
+            <Group justify="space-between" align="center" mb="xs">
+              <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                PENDING VERIFICATION
+              </Text>
+              <IconClock size={20} color="#800020" stroke={1.75} />
+            </Group>
+            <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+              {pendingCount}
+            </Text>
+          </div>
+          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
+            <Text size="xs" c="dimmed" truncate>
+              Drivers waiting at warehouse gate
+            </Text>
+          </Group>
+        </Paper>
+
+        {/* Card 3: Returns (Filled & Empty) */}
+        <Paper
+          p="md"
+          radius="md"
+          withBorder
+          style={{
+            backgroundColor: '#ffffff',
+            borderColor: '#e2e8f0',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            height: '100%',
+          }}
+        >
+          <div>
+            <Group justify="space-between" align="center" mb="xs">
+              <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                RETURNS
+              </Text>
+              <IconPackage size={20} color="#800020" stroke={1.75} />
+            </Group>
+            <Group gap="md" align="baseline" wrap="nowrap">
+              <Group gap={6} align="baseline" wrap="nowrap">
+                <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                  {totalFilled.toLocaleString()}
+                </Text>
+                <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ fontSize: 10, letterSpacing: '0.4px' }}>
+                  FILLED
+                </Text>
+              </Group>
+
+              <Divider orientation="vertical" style={{ borderColor: '#e2e8f0', height: 18, alignSelf: 'center' }} />
+
+              <Group gap={6} align="baseline" wrap="nowrap">
+                <Text fw={700} style={{ color: '#800020', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                  {totalEmpty.toLocaleString()}
+                </Text>
+                <Text size="xs" fw={700} style={{ color: '#800020', fontSize: 10, letterSpacing: '0.4px' }} tt="uppercase">
+                  EMPTY
+                </Text>
+              </Group>
+            </Group>
+          </div>
+          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
+            <Text size="xs" c="dimmed" truncate>
+              Unsold full & empty returns
+            </Text>
+          </Group>
+        </Paper>
+
+        {/* Card 4: Route Collections */}
+        <Paper
+          p="md"
+          radius="md"
+          withBorder
+          style={{
+            backgroundColor: '#ffffff',
+            borderColor: '#e2e8f0',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            height: '100%',
+          }}
+        >
+          <div>
+            <Group justify="space-between" align="center" mb="xs">
+              <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                ROUTE COLLECTIONS
+              </Text>
+              <IconCreditCard size={20} color="#800020" stroke={1.75} />
+            </Group>
+            <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+              ₹
+              {endRouteDrivers
+                .reduce((acc, item) => acc + parseSettlementAmounts(item).total, 0)
+                .toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          </div>
+          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
+            <Text size="xs" c="dimmed" truncate>
+              Cash and digital route collections
+            </Text>
+          </Group>
+        </Paper>
+      </SimpleGrid>
+
+      {/* Smooth Slide-Down Settlement Verification Panel */}
+      <Collapse expanded={isDetailOpen && !!selectedItem} transitionDuration={250} transitionTimingFunction="ease">
+        {selectedItem && (
+          <Paper
+            p="lg"
+            radius="md"
+            withBorder
+            mb="md"
+            style={{
+              backgroundColor: '#ffffff',
+              borderColor: '#f5c2cb',
+              borderLeft: '4px solid #800020',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
+            }}
+          >
+            <Group justify="space-between" align="flex-start" mb="md">
+              <div>
+                <Group gap="xs" align="center">
+                  <Text fw={700} style={{ color: '#800020', fontSize: 17 }}>
+                    Shift Settlement Verification
+                  </Text>
+                  <Badge size="sm" variant="light" color="burgundy" radius="sm">
+                    ERD-{selectedItem.EndRouteDriverId}
+                  </Badge>
+                  <Badge
+                    size="sm"
+                    radius="sm"
+                    variant="filled"
+                    style={{
+                      backgroundColor: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#f1f5f9' : '#fef3c7',
+                      color: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#334155' : '#b45309',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {selectedItem.Status?.toUpperCase()}
+                  </Badge>
+                </Group>
+                <Text size="xs" c="dimmed" mt={2}>
+                  Shift Date: {selectedItem.ShiftDate} • Route: {selectedItem.route_name} • Vehicle: {selectedItem.vehicle_number} • Driver: {selectedItem.driver_name}
+                </Text>
+              </div>
+
+              <CloseButton
+                size="md"
+                onClick={() => {
+                  setIsDetailOpen(false);
+                  setSelectedItem(null);
+                }}
+              />
+            </Group>
+
+            <Stack gap="md">
+              {/* Route Collections Box */}
+              <Box
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  backgroundColor: '#f8fafc',
+                  borderRadius: 8,
+                  border: '1px solid #e2e8f0',
+                  overflow: 'hidden',
+                }}
+              >
+                <Box style={{ padding: '10px 16px', borderRight: '1px solid #e2e8f0' }}>
+                  <Text size="10.5px" fw={700} c="#64748b" tt="uppercase">
+                    Cash Collected
+                  </Text>
+                  <Text fw={700} size="md" c="#0f172a" mt={2}>
+                    ₹{modalAmounts.cash.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </Box>
+                <Box style={{ padding: '10px 16px' }}>
+                  <Text size="10.5px" fw={700} c="#64748b" tt="uppercase">
+                    Digital / UPI Collected
+                  </Text>
+                  <Text fw={700} size="md" c="#0f172a" mt={2}>
+                    ₹{modalAmounts.bank.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                </Box>
+              </Box>
+
+              {/* Remarks */}
+              {selectedItem.Remarks && (
+                <Paper p="xs" radius="sm" style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <Text size="xs" c="#334155">
+                    <strong>Remarks:</strong> {selectedItem.Remarks}
+                  </Text>
+                </Paper>
+              )}
+
+              {/* Returned Stocks & Cylinders */}
+              <Stack gap="xs">
+                <Group justify="space-between" align="center">
+                  <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    RETURNED STOCKS & CYLINDERS
+                  </Text>
+                  <Group gap="xs">
+                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#0f172a', color: '#0f172a', fontWeight: 700 }}>
+                      UNSOLD FULL: {modalTotalFilled}
+                    </Badge>
+                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#800020', color: '#800020', fontWeight: 700 }}>
+                      EMPTIES: {modalTotalEmpty}
+                    </Badge>
+                  </Group>
+                </Group>
+
+                {modalLines.length === 0 ? (
+                  <Center p="md" style={{ border: '1px dashed #e2e8f0', borderRadius: 8 }}>
+                    <Text size="xs" c="dimmed">
+                      No physical cylinder returns recorded for this shift.
+                    </Text>
+                  </Center>
+                ) : (
+                  <Paper radius="sm" withBorder style={{ overflow: 'hidden', borderColor: '#e2e8f0' }}>
+                    <Table verticalSpacing="xs" horizontalSpacing="sm">
+                      <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <Table.Tr>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>PRODUCT</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>UNIT</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>FILLED QTY</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>EMPTY QTY</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {modalLines.map((line) => (
+                          <Table.Tr key={line.EndRouteDriverLineId}>
+                            <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{line.product_name}</Table.Td>
+                            <Table.Td style={{ fontSize: 12, color: '#64748b' }}>{line.unit_name || 'Nos'}</Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a' }}>{line.FilledQty}</Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#800020' }}>{line.EmptyQty}</Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  </Paper>
+                )}
+              </Stack>
+
+              {/* Action Buttons */}
+              <Group justify="flex-end" gap="sm">
+                <Button
+                  variant="default"
+                  radius="sm"
+                  onClick={() => {
+                    setIsDetailOpen(false);
+                    setSelectedItem(null);
+                  }}
+                  style={{ borderColor: '#cbd5e1', color: '#475569', fontWeight: 600 }}
+                >
+                  Close
+                </Button>
+
+                {selectedItem.Status?.toUpperCase() === 'PENDING' ? (
+                  <Button
+                    color="burgundy"
+                    radius="sm"
+                    leftSection={<IconCheck size={16} />}
+                    loading={settleMutation.isPending}
+                    onClick={() => settleMutation.mutate(selectedItem.EndRouteDriverId)}
+                    style={{
+                      backgroundColor: '#800020',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      letterSpacing: '0.2px',
+                    }}
+                  >
+                    Submit & Approve Settlement
+                  </Button>
+                ) : (
+                  <Badge size="lg" radius="sm" variant="outline" color="green" style={{ fontWeight: 700 }}>
+                    Settlement Verified & Approved
+                  </Badge>
+                )}
+              </Group>
+            </Stack>
+          </Paper>
+        )}
+      </Collapse>
+
+      {/* Main Table Container matching Receipt Notes Page */}
+      <Paper
+        radius="md"
+        withBorder
+        style={{
+          overflow: 'hidden',
+          backgroundColor: '#ffffff',
+          borderColor: '#e2e8f0',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+        }}
+      >
+        {/* Table Toolbar */}
+        <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
+          <div>
+            <Group gap="xs" align="center">
+              <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
+                Driver Shift End Settlements
+              </Text>
+              <Badge
+                variant="light"
+                size="sm"
+                radius="sm"
+                styles={{
+                  root: {
+                    backgroundColor: '#f1f5f9',
+                    color: '#475569',
+                    fontWeight: 600,
+                    fontSize: 11,
+                  },
+                }}
+              >
+                {filteredData.length} NOTES
+              </Badge>
+            </Group>
+            <Text size="xs" c="#64748b">
+              Review driver shift returns, verify empty cylinder counts, and accept inventory into Central Godown
+            </Text>
+          </div>
+
+          <Group gap="sm" align="center">
+            <SegmentedControl
+              size="xs"
+              value={statusFilter}
+              onChange={(val) => setStatusFilter(val as any)}
+              data={[
+                { label: `Pending (${pendingCount})`, value: 'pending' },
+                { label: `Settled (${settledCount})`, value: 'settled' },
+                { label: `All (${endRouteDrivers.length})`, value: 'all' },
+              ]}
+              styles={{
+                root: {
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                },
+                indicator: {
+                  backgroundColor: '#ffffff',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                },
+                label: {
+                  fontWeight: 600,
+                  fontSize: 12,
+                  color: '#475569',
+                  '&[dataActive]': {
+                    color: '#800020',
+                  },
+                },
+              }}
+            />
+
+            <TextInput
+              placeholder="Search driver, vehicle, route..."
+              leftSection={<IconSearch size={14} color="#94a3b8" />}
+              size="xs"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+              style={{ width: 250 }}
+            />
+          </Group>
+        </Group>
+
+        {/* Table */}
+        {isLoading ? (
+          <Center py="xl">
+            <Loader color="burgundy" />
+          </Center>
+        ) : filteredData.length === 0 ? (
+          <Center py="xl">
+            <Text size="sm" c="dimmed">
+              No shift settlements found matching the selected filters.
+            </Text>
+          </Center>
+        ) : (
+          <Table.ScrollContainer minWidth={900}>
+            <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
+              <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
+                <Table.Tr>
+                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    SHIFT DATE & ID
+                  </Table.Th>
+                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    VEHICLE & ROUTE
+                  </Table.Th>
+                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    SETTLEMENT LEDGER
+                  </Table.Th>
+                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    RETURNS
+                  </Table.Th>
+                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    TOTAL COLLECTED
+                  </Table.Th>
+                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center' }}>
+                    STATUS
+                  </Table.Th>
+                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>
+                    ACTIONS
+                  </Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {filteredData.map((item) => {
+                  const amounts = parseSettlementAmounts(item);
+                  const isSettled = item.Status?.toUpperCase() === 'SETTLED';
+
+                  return (
+                    <Table.Tr
+                      key={item.EndRouteDriverId}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => handleOpenDetail(item)}
+                    >
+                      {/* 1. Date & ID */}
+                      <Table.Td>
+                        <Stack gap={2}>
+                          <Text fw={700} style={{ color: '#800020', fontSize: 13 }}>
+                            ERD-{item.EndRouteDriverId}
+                          </Text>
+                          <Text size="11px" c="#64748b">
+                            {item.ShiftDate}
+                          </Text>
+                        </Stack>
+                      </Table.Td>
+
+                      {/* 2. Vehicle & Route */}
+                      <Table.Td>
+                        <Group gap="xs" wrap="nowrap">
+                          <IconTruck size={18} color="#800020" style={{ flexShrink: 0 }} />
+                          <div>
+                            <Text fw={700} style={{ color: '#0f172a', fontSize: 13 }}>
+                              {item.vehicle_number || 'Van'}
+                            </Text>
+                            <Text size="11px" c="#64748b">
+                              {item.route_name || 'Route'} • Driver: <span style={{ fontWeight: 600, color: '#0f172a' }}>{item.driver_name || 'Driver'}</span>
+                            </Text>
+                          </div>
+                        </Group>
+                      </Table.Td>
+
+                      {/* 3. Settlement Ledger */}
+                      <Table.Td>
+                        <Badge
+                          variant="outline"
+                          size="sm"
+                          radius="sm"
+                          style={{
+                            borderColor: '#e2e8f0',
+                            color: '#0f172a',
+                            fontWeight: 600,
+                            backgroundColor: '#f8fafc',
+                          }}
+                        >
+                          {item.ledger_name || 'Cash / Bank Ledger'}
+                        </Badge>
+                      </Table.Td>
+
+                      {/* 4. Returns */}
+                      <Table.Td>
+                        <Group gap={6} wrap="nowrap">
+                          {(item.total_filled || 0) > 0 && (
+                            <Badge
+                              size="xs"
+                              radius="sm"
+                              variant="filled"
+                              style={{ backgroundColor: '#f1f5f9', color: '#0f172a', fontWeight: 700 }}
+                            >
+                              {item.total_filled} FILLED
+                            </Badge>
+                          )}
+                          <Badge
+                            size="xs"
+                            radius="sm"
+                            variant="filled"
+                            style={{ backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 }}
+                          >
+                            {item.total_empty || 0} EMPTY
+                          </Badge>
+                        </Group>
+                      </Table.Td>
+
+                      {/* 5. Total Collected */}
+                      <Table.Td>
+                        <Stack gap={1}>
+                          <Text fw={700} style={{ color: '#0f172a', fontSize: 13 }}>
+                            ₹{amounts.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </Text>
+                          {amounts.cash > 0 && (
+                            <Text size="10.5px" c="#64748b">
+                              Cash: ₹{amounts.cash.toLocaleString('en-IN')}
+                            </Text>
+                          )}
+                          {amounts.bank > 0 && (
+                            <Text size="10.5px" c="#64748b">
+                              Bank: ₹{amounts.bank.toLocaleString('en-IN')}
+                            </Text>
+                          )}
+                        </Stack>
+                      </Table.Td>
+
+                      {/* 6. Status */}
+                      <Table.Td style={{ textAlign: 'center' }}>
+                        <Badge
+                          size="sm"
+                          radius="sm"
+                          variant="filled"
+                          style={{
+                            backgroundColor: isSettled ? '#f1f5f9' : '#fef3c7',
+                            color: isSettled ? '#334155' : '#b45309',
+                            fontWeight: 700,
+                            letterSpacing: '0.4px',
+                          }}
+                        >
+                          {isSettled ? 'SETTLED' : 'PENDING'}
+                        </Badge>
+                      </Table.Td>
+
+                      {/* 7. Actions */}
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Group gap={4} justify="flex-end" wrap="nowrap">
+                          <Tooltip label="View Settlement Details" withArrow position="left">
+                            <ActionIcon
+                              variant="subtle"
+                              color="gray"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDetail(item);
+                              }}
+                            >
+                              <IconEye size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+
+                          <Tooltip label="Delete Settlement Record" withArrow position="left">
+                            <ActionIcon
+                              variant="subtle"
+                              color="red"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`Delete settlement ERD-${item.EndRouteDriverId}?`)) {
+                                  deleteMutation.mutate(item.EndRouteDriverId);
+                                }
+                              }}
+                            >
+                              <IconTrash size={15} />
+                            </ActionIcon>
+                          </Tooltip>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </Paper>
+
+
+    </Stack>
+  );
+};
+export default EndAllocationsPage;
+

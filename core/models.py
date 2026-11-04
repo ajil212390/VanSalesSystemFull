@@ -1,3 +1,4 @@
+from datetime import date
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager
 
@@ -103,6 +104,9 @@ class User(AbstractBaseUser):
     def check_password(self, raw_password):
         from django.contrib.auth.hashers import check_password
         return check_password(raw_password, (self.password or '').strip())
+    def set_password(self, raw_password):
+        from django.contrib.auth.hashers import make_password
+        self.password = make_password(raw_password)
     
     @property
     def is_active(self):
@@ -420,6 +424,93 @@ class PurchaseLine(models.Model):
         return f"Line {self.LineNo}: {self.ProductName} x {self.Quantity}"
 
 
+class Sales(models.Model):
+    SalesId = models.BigAutoField(primary_key=True, db_column='SalesId')
+    SalesNo = models.CharField(max_length=50, db_column='SalesNo')
+    SalesDate = models.DateField(db_column='SalesDate')
+    InvoiceNo = models.CharField(max_length=50, null=True, blank=True, db_column='InvoiceNo')
+    RouteVehicleDriver = models.ForeignKey(
+        'RouteVehicleDriver',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='RouteVehicleDriverId',
+        related_name='sales'
+    )
+    RouteTripId = models.BigIntegerField(null=True, blank=True, db_column='RouteTripId')
+    RouteName = models.CharField(max_length=150, null=True, blank=True, db_column='RouteName')
+    DriverName = models.CharField(max_length=150, null=True, blank=True, db_column='DriverName')
+    VehicleName = models.CharField(max_length=150, null=True, blank=True, db_column='VehicleName')
+    CustomerLedger = models.ForeignKey(
+        'Ledger',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        db_column='CustomerLedgerId',
+        related_name='sales_records'
+    )
+    PaymentMethod = models.CharField(max_length=50, default='CASH', db_column='PaymentMethod')
+    Notes = models.CharField(max_length=500, null=True, blank=True, db_column='Notes')
+    SubTotal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='SubTotal')
+    TaxAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TaxAmount')
+    GrandTotal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='GrandTotal')
+    RoundOff = models.DecimalField(max_digits=10, decimal_places=2, default=0, null=True, blank=True, db_column='RoundOff')
+    TotalDeliveredQty = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TotalDeliveredQty')
+    TotalEmptyQty = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TotalEmptyQty')
+    Status = models.CharField(max_length=50, default='PENDING', db_column='Status')  # PENDING, COMPLETED, CANCELLED
+    ApprovedBy = models.ForeignKey(
+        'User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='ApprovedById',
+        related_name='approved_sales'
+    )
+    ApprovedAt = models.DateTimeField(null=True, blank=True, db_column='ApprovedAt')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"Sales"'
+        ordering = ['-SalesDate', '-SalesId']
+
+    def __str__(self):
+        return f"{self.SalesNo} ({self.SalesDate}) - {self.GrandTotal}"
+
+
+class SalesLine(models.Model):
+    SalesLineId = models.BigAutoField(primary_key=True, db_column='SalesLineId')
+    Sales = models.ForeignKey(
+        Sales,
+        on_delete=models.CASCADE,
+        db_column='SalesId',
+        related_name='lines'
+    )
+    LineNo = models.IntegerField(default=1, db_column='LineNo')
+    Product = models.ForeignKey('Product', on_delete=models.PROTECT, db_column='ProductId', related_name='sales_lines')
+    ProductName = models.CharField(max_length=150, null=True, blank=True, db_column='ProductName')
+    Unit = models.ForeignKey('Unit', on_delete=models.PROTECT, null=True, blank=True, db_column='UnitId', related_name='sales_units')
+    SalesPrice = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='SalesPrice')
+    TaxPercent = models.DecimalField(max_digits=5, decimal_places=2, default=0, null=True, blank=True, db_column='TaxPercent')
+    TaxAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, null=True, blank=True, db_column='TaxAmount')
+    Quantity = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Quantity')
+    EmptyQuantity = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='EmptyQuantity')
+    Total = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Total')
+    DiscPercent = models.DecimalField(max_digits=5, decimal_places=2, default=0, null=True, blank=True, db_column='DiscPercent')
+    DiscAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, null=True, blank=True, db_column='DiscAmount')
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+
+    class Meta:
+        managed = False
+        db_table = '"SalesLine"'
+        ordering = ['LineNo']
+
+    def __str__(self):
+        return f"Line {self.LineNo}: {self.ProductName} x {self.Quantity} (Empty: {self.EmptyQuantity})"
+
+
 class StockMovement(models.Model):
     StockMovementId = models.BigAutoField(primary_key=True, db_column='StockMovementId')
     CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
@@ -602,3 +693,110 @@ class DeliveryNoteLine(models.Model):
         managed = False
         db_table = '"DeliveryNoteLine"'
         ordering = ['DeliveryNoteLineId']
+
+
+class ReceiptNote(models.Model):
+    ReceiptNoteId = models.BigAutoField(primary_key=True, db_column='ReceiptNoteId')
+    ReceiptNoteNo = models.CharField(max_length=50, unique=True, db_column='ReceiptNoteNo')
+    ReceiptDate = models.DateField(db_column='ReceiptDate')
+    RouteVehicleDriver = models.ForeignKey(
+        RouteVehicleDriver,
+        on_delete=models.PROTECT,
+        db_column='RouteVehicleDriverId',
+        related_name='receipt_notes'
+    )
+    CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    Remarks = models.TextField(null=True, blank=True, db_column='Remarks')
+    Status = models.CharField(max_length=50, default='RECEIPT_PENDING', db_column='Status')  # RECEIPT_PENDING, SETTLED, CANCELLED
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"ReceiptNote"'
+        ordering = ['-ReceiptDate', '-ReceiptNoteId']
+
+    def __str__(self):
+        return f"{self.ReceiptNoteNo} ({self.RouteVehicleDriver})"
+
+
+class ReceiptNoteLine(models.Model):
+    ReceiptNoteLineId = models.BigAutoField(primary_key=True, db_column='ReceiptNoteLineId')
+    ReceiptNote = models.ForeignKey(
+        ReceiptNote,
+        on_delete=models.CASCADE,
+        db_column='ReceiptNoteId',
+        related_name='lines'
+    )
+    Product = models.ForeignKey(Product, on_delete=models.PROTECT, db_column='ProductId')
+    Unit = models.ForeignKey(Unit, on_delete=models.PROTECT, db_column='UnitId')
+    Quantity = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Quantity')
+    Rate = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Rate')
+    Amount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Amount')
+
+    class Meta:
+        managed = False
+        db_table = '"ReceiptNoteLine"'
+        ordering = ['ReceiptNoteLineId']
+
+
+class EndRouteDriver(models.Model):
+    EndRouteDriverId = models.BigAutoField(primary_key=True, db_column='EndRouteDriverId')
+    ShiftDate = models.DateField(default=date.today, db_column='ShiftDate')
+    RouteVehicleDriver = models.ForeignKey(
+        RouteVehicleDriver,
+        on_delete=models.PROTECT,
+        db_column='RouteVehicleDriverId',
+        related_name='end_route_records'
+    )
+    Ledger = models.ForeignKey(
+        Ledger,
+        on_delete=models.PROTECT,
+        db_column='LedgerId',
+        related_name='end_route_driver_ledgers'
+    )
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+    Remarks = models.CharField(max_length=250, null=True, blank=True, db_column='Remarks')
+    Status = models.CharField(max_length=20, default='PENDING', db_column='Status')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"EndRouteDriver"'
+        ordering = ['-ShiftDate', '-EndRouteDriverId']
+
+    def __str__(self):
+        return f"EndRoute {self.EndRouteDriverId} - {self.RouteVehicleDriver} ({self.Ledger.LedgerName})"
+
+
+class EndRouteDriverLine(models.Model):
+    EndRouteDriverLineId = models.BigAutoField(primary_key=True, db_column='EndRouteDriverLineId')
+    EndRouteDriver = models.ForeignKey(
+        EndRouteDriver,
+        on_delete=models.CASCADE,
+        db_column='EndRouteDriverId',
+        related_name='lines'
+    )
+    Product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        db_column='ProductId'
+    )
+    Unit = models.ForeignKey(
+        Unit,
+        on_delete=models.PROTECT,
+        db_column='UnitId'
+    )
+    FilledQty = models.IntegerField(default=0, db_column='FilledQty')
+    EmptyQty = models.IntegerField(default=0, db_column='EmptyQty')
+    Rate = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Rate')
+    Amount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Amount')
+
+    class Meta:
+        managed = False
+        db_table = '"EndRouteDriverLine"'
+        ordering = ['EndRouteDriverLineId']
+
+    def __str__(self):
+        return f"Line {self.EndRouteDriverLineId} - Prod {self.Product_id} (Full:{self.FilledQty}, Empty:{self.EmptyQty})"
+
+

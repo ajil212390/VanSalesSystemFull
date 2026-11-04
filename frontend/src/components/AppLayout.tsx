@@ -26,6 +26,7 @@ import {
   IconTruck,
   IconRoute,
   IconArrowsJoin2,
+  IconClipboardCheck,
   IconUsers,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
@@ -67,7 +68,7 @@ export const AppLayout: React.FC = () => {
   const { data: receiptNotes = [] } = useQuery<any[]>({
     queryKey: ['receipt-notes'],
     queryFn: async () => {
-      const res = await apiClient.get('/delivery-notes/receipt-notes/');
+      const res = await apiClient.get('/receipt-notes/');
       return Array.isArray(res.data) ? res.data : [];
     },
     refetchInterval: 15000,
@@ -86,6 +87,7 @@ export const AppLayout: React.FC = () => {
     { label: 'Routes', path: '/routes', icon: IconRoute },
     { label: 'Add User', path: '/users', icon: IconUsers },
     { label: 'Allocations', path: '/allocations', icon: IconArrowsJoin2 },
+    { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
   ];
 
   const isVanOpsActive = vanOpsItems.some((item) => location.pathname === item.path);
@@ -120,6 +122,8 @@ export const AppLayout: React.FC = () => {
         return { section: 'Van Operations', title: 'Add User' };
       case '/allocations':
         return { section: 'Van Operations', title: 'Allocations' };
+      case '/end-allocations':
+        return { section: 'Van Operations', title: 'End Allocation' };
       case '/categories':
         return { section: 'Master', title: 'Categories' };
       case '/products':

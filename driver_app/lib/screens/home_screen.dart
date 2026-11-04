@@ -1413,7 +1413,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'END SHIFT & SEND GODOWN',
+                        'END SHIFT',
                         style: GoogleFonts.inter(
                           fontSize: 14,
                           fontWeight: FontWeight.w900,
@@ -1442,19 +1442,77 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ================= END SHIFT PREVIEW & VERIFICATION MODAL =================
-  void _showEndShiftPreviewModal(BuildContext context, AppState state) {
-    // Clone local editable balances
-    final Map<String, int> editableCylBalance = {
-      for (final c in state.cylinders) c.weight: c.filledStock,
-    };
-    final Map<String, int> editableCylEmpty = {
-      for (final c in state.cylinders) c.weight: c.emptyStock,
-    };
-    final Map<String, int> editableOtherBalance = {
-      for (final p in state.otherProducts) p.name: p.balanceStock,
-    };
+  void _showQuickEditInModal(BuildContext context, AppState state, DeliveryOrder order, VoidCallback onUpdated) {
+    final amountController = TextEditingController(text: order.amount.toStringAsFixed(0));
+    String selectedMethod = order.paymentMethod;
 
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'Edit Amount for ${order.customer.name}',
+            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Ticket: ${order.ticketId}', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: const Color(0xFF64748B))),
+              const SizedBox(height: 12),
+              TextField(
+                controller: amountController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Collected Amount (\u20B9)',
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                children: ['Cash', 'UPI', 'Credit'].map((m) {
+                  final sel = selectedMethod.toLowerCase() == m.toLowerCase();
+                  return ChoiceChip(
+                    label: Text(m, style: GoogleFonts.inter(fontSize: 11)),
+                    selected: sel,
+                    onSelected: (val) {
+                      if (val) setDialogState(() => selectedMethod = m);
+                    },
+                    selectedColor: const Color(0xFF800020),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final amt = double.tryParse(amountController.text.trim()) ?? order.amount;
+                await state.updateOrderAmount(order.ticketId, amt, newPaymentMethod: selectedMethod);
+                onUpdated();
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF800020), foregroundColor: Colors.white),
+              child: const Text('Update'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEndShiftPreviewModal(BuildContext context, AppState state) {
     bool isSubmitting = false;
+    bool showDeliveriesList = false;
 
     showModalBottomSheet(
       context: context,
@@ -1464,8 +1522,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return StatefulBuilder(
           builder: (context, setModalState) {
             final availableOther = state.otherProducts.where((p) {
-              final bal = editableOtherBalance[p.name] ?? p.balanceStock;
-              return bal > 0 || p.initialStock > 0;
+              return p.balanceStock > 0 || p.initialStock > 0;
             }).toList();
 
             return Container(
@@ -1555,71 +1612,192 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 1. Shift KPI Metrics Card (Clean matching palette)
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                          // 1. Shift KPI Metrics Card (Interactive - Tap to expand deliveries list)
+                          InkWell(
+                            onTap: () {
+                              setModalState(() => showDeliveriesList = !showDeliveriesList);
+                            },
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: showDeliveriesList ? const Color(0xFF800020) : const Color(0xFFE2E8F0),
+                                  width: showDeliveriesList ? 1.5 : 1.0,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
                                     children: [
-                                      Text(
-                                        'DELIVERIES',
-                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'DELIVERIES',
+                                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '${state.orders.length} Drops',
+                                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '${state.orders.length} Drops',
-                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                      Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'CASH IN HAND',
+                                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '\u20B9${state.cashBalance.toStringAsFixed(0)}',
+                                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'BANK / UPI',
+                                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '\u20B9${state.bankBalance.toStringAsFixed(0)}',
+                                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ],
                                   ),
-                                ),
-                                Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
                                       Text(
-                                        'CASH IN HAND',
-                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                        showDeliveriesList ? 'Hide Today\'s Deliveries' : 'Tap to inspect or edit today\'s deliveries',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFF800020),
+                                        ),
                                       ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '\u20B9${state.cashBalance.toStringAsFixed(0)}',
-                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
+                                      const SizedBox(width: 4),
+                                      Icon(
+                                        showDeliveriesList ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                                        size: 16,
+                                        color: const Color(0xFF800020),
                                       ),
                                     ],
                                   ),
-                                ),
-                                Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'BANK / UPI',
-                                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        '\u20B9${state.bankBalance.toStringAsFixed(0)}',
-                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
+
+                          // Expandable Deliveries Breakdown
+                          if (showDeliveriesList) ...[
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              constraints: const BoxConstraints(maxHeight: 260),
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                              ),
+                              child: state.orders.isEmpty
+                                  ? Center(
+                                      child: Text(
+                                        'No deliveries recorded today',
+                                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                      shrinkWrap: true,
+                                      physics: const BouncingScrollPhysics(),
+                                      itemCount: state.orders.length,
+                                      separatorBuilder: (_, index) => const SizedBox(height: 6),
+                                      itemBuilder: (context, idx) {
+                                        final ord = state.orders[idx];
+                                        return Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      ord.customer.name,
+                                                      style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                    Text(
+                                                      '${ord.ticketId} • ${ord.totalCylinders} Delivered, ${ord.totalEmpties} Empty',
+                                                      style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w500, color: const Color(0xFF64748B)),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                children: [
+                                                  Text(
+                                                    '\u20B9${ord.amount.toStringAsFixed(0)}',
+                                                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
+                                                  ),
+                                                  Text(
+                                                    ord.paymentMethod.toUpperCase(),
+                                                    style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w700, color: const Color(0xFF64748B)),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(width: 8),
+                                              InkWell(
+                                                onTap: () {
+                                                  _showQuickEditInModal(context, state, ord, () => setModalState(() {}));
+                                                },
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(5),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFF1F5F9),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: const Icon(Icons.edit_outlined, size: 14, color: Color(0xFF475569)),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ],
 
                           const SizedBox(height: 16),
 
@@ -1703,10 +1881,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 const SizedBox(height: 6),
 
-                                // Cylinder Rows
+                                // Cylinder Rows (Read-only Verification)
                                 ...state.cylinders.map((cyl) {
-                                  final filledVal = editableCylBalance[cyl.weight] ?? cyl.filledStock;
-                                  final emptyVal = editableCylEmpty[cyl.weight] ?? cyl.emptyStock;
+                                  final filledVal = cyl.filledStock;
+                                  final emptyVal = cyl.emptyStock;
 
                                   return Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -1744,40 +1922,52 @@ class _HomeScreenState extends State<HomeScreen> {
                                           ),
                                         ),
 
-                                        // Full Cylinders Stepper Pill
+                                        // Full Cylinders Read-only Display
                                         Expanded(
                                           flex: 4,
                                           child: Center(
-                                            child: _buildModalStepperPill(
-                                              qty: filledVal,
-                                              canDecrease: filledVal > 0,
-                                              canIncrease: true,
-                                              activeColor: const Color(0xFF800020),
-                                              onDecrease: () {
-                                                setModalState(() => editableCylBalance[cyl.weight] = filledVal - 1);
-                                              },
-                                              onIncrease: () {
-                                                setModalState(() => editableCylBalance[cyl.weight] = filledVal + 1);
-                                              },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                              decoration: BoxDecoration(
+                                                color: filledVal > 0 ? const Color(0xFF800020).withValues(alpha: 0.08) : const Color(0xFFF8FAFC),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(
+                                                  color: filledVal > 0 ? const Color(0xFF800020).withValues(alpha: 0.25) : const Color(0xFFE2E8F0),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                '$filledVal Full',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: filledVal > 0 ? const Color(0xFF800020) : const Color(0xFF64748B),
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ),
 
-                                        // Empty Return Stepper Pill
+                                        // Empty Return Read-only Display
                                         Expanded(
                                           flex: 4,
                                           child: Center(
-                                            child: _buildModalStepperPill(
-                                              qty: emptyVal,
-                                              canDecrease: emptyVal > 0,
-                                              canIncrease: true,
-                                              activeColor: const Color(0xFF0F172A),
-                                              onDecrease: () {
-                                                setModalState(() => editableCylEmpty[cyl.weight] = emptyVal - 1);
-                                              },
-                                              onIncrease: () {
-                                                setModalState(() => editableCylEmpty[cyl.weight] = emptyVal + 1);
-                                              },
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                              decoration: BoxDecoration(
+                                                color: emptyVal > 0 ? const Color(0xFF0F172A).withValues(alpha: 0.06) : const Color(0xFFF8FAFC),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(
+                                                  color: emptyVal > 0 ? const Color(0xFF0F172A).withValues(alpha: 0.2) : const Color(0xFFE2E8F0),
+                                                ),
+                                              ),
+                                              child: Text(
+                                                '$emptyVal Empties',
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: emptyVal > 0 ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -1859,9 +2049,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                   const SizedBox(height: 6),
 
-                                  // Product Rows
+                                  // Product Rows (Read-only Verification)
                                   ...availableOther.map((prod) {
-                                    final balVal = editableOtherBalance[prod.name] ?? prod.balanceStock;
+                                    final balVal = prod.balanceStock;
 
                                     return Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -1899,21 +2089,27 @@ class _HomeScreenState extends State<HomeScreen> {
                                             ),
                                           ),
 
-                                          // Return Stepper Pill
+                                          // Return Qty Read-only Display
                                           Expanded(
                                             flex: 4,
                                             child: Center(
-                                              child: _buildModalStepperPill(
-                                                qty: balVal,
-                                                canDecrease: balVal > 0,
-                                                canIncrease: true,
-                                                activeColor: const Color(0xFF800020),
-                                                onDecrease: () {
-                                                  setModalState(() => editableOtherBalance[prod.name] = balVal - 1);
-                                                },
-                                                onIncrease: () {
-                                                  setModalState(() => editableOtherBalance[prod.name] = balVal + 1);
-                                                },
+                                              child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                                decoration: BoxDecoration(
+                                                  color: balVal > 0 ? const Color(0xFF800020).withValues(alpha: 0.08) : const Color(0xFFF8FAFC),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(
+                                                    color: balVal > 0 ? const Color(0xFF800020).withValues(alpha: 0.25) : const Color(0xFFE2E8F0),
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  '$balVal Units',
+                                                  style: GoogleFonts.inter(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: balVal > 0 ? const Color(0xFF800020) : const Color(0xFF64748B),
+                                                  ),
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -1955,18 +2151,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : () async {
                                     setModalState(() => isSubmitting = true);
 
-                                    // Build payload from editable values
+                                    // Build payload directly from current state balances (read-only verification)
                                     final remCyl = state.cylinders.map((c) => {
                                       'product_id': c.productId,
                                       'weight': c.weight,
-                                      'qty': editableCylBalance[c.weight] ?? c.filledStock,
-                                      'empty_qty': editableCylEmpty[c.weight] ?? c.emptyStock,
+                                      'qty': c.filledStock,
+                                      'empty_qty': c.emptyStock,
                                     }).toList();
 
                                     final remOther = state.otherProducts.map((p) => {
                                       'product_id': p.productId,
                                       'name': p.name,
-                                      'qty': editableOtherBalance[p.name] ?? p.balanceStock,
+                                      'qty': p.balanceStock,
                                     }).toList();
 
                                     final res = await state.submitEndShift(
@@ -1980,14 +2176,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
                                     if (context.mounted) {
                                       final rn = res['receipt_no'] ?? 'RN-PENDING';
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('Shift Ended! Receipt Note #$rn queued for Godown Transfer.'),
-                                          backgroundColor: const Color(0xFF800020),
-                                          behavior: SnackBarBehavior.floating,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                          duration: const Duration(seconds: 4),
-                                        ),
+                                      _showEndShiftSuccessAlert(
+                                        context: context,
+                                        receiptNo: rn.toString(),
+                                        cash: state.cashBalance,
+                                        bank: state.bankBalance,
+                                        filledReturns: state.totalClosingFilled,
+                                        emptyReturns: state.totalClosingEmpty,
                                       );
                                     }
                                   },
@@ -2033,79 +2228,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Stepper Pill Widget matching delivery screen: [-  0  +]
-  Widget _buildModalStepperPill({
-    required int qty,
-    required bool canDecrease,
-    required bool canIncrease,
-    required Color activeColor,
-    required VoidCallback onDecrease,
-    required VoidCallback onIncrease,
-  }) {
-    final isSelected = qty > 0;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      decoration: BoxDecoration(
-        color: isSelected ? Colors.white : const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isSelected ? activeColor : const Color(0xFFCBD5E1),
-          width: isSelected ? 1.5 : 1.2,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Minus button
-          InkWell(
-            onTap: canDecrease ? onDecrease : null,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.remove_rounded,
-                size: 16,
-                color: canDecrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
-              ),
-            ),
-          ),
-
-          // Count Text
-          Container(
-            width: 26,
-            alignment: Alignment.center,
-            child: Text(
-              '$qty',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                color: isSelected ? activeColor : const Color(0xFF64748B),
-              ),
-            ),
-          ),
-
-          // Plus button
-          InkWell(
-            onTap: canIncrease ? onIncrease : null,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.add_rounded,
-                size: 16,
-                color: canIncrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   // --- INVENTORY BREAKDOWN TABLE (Inside First Card) ---
   Widget _buildInventoryTable(AppState state) {
@@ -3208,6 +3330,207 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  void _showEndShiftSuccessAlert({
+    required BuildContext context,
+    required String receiptNo,
+    required double cash,
+    required double bank,
+    required int filledReturns,
+    required int emptyReturns,
+  }) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      barrierColor: const Color(0x66000000),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (ctx, a1, a2) {
+        return Center(
+          child: Container(
+            width: MediaQuery.of(ctx).size.width * 0.88,
+            constraints: const BoxConstraints(maxWidth: 360),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.5),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 24,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF2F4),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFFF5C2CB), width: 1.5),
+                    ),
+                    child: const Center(
+                      child: Icon(
+                        Icons.verified_rounded,
+                        color: Color(0xFF800020),
+                        size: 28,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  Text(
+                    'Shift Ended & Submitted',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF0F172A),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+
+                  Text(
+                    'Receipt Note #$receiptNo has been queued for warehouse gate inspection and settlement verification.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w500,
+                      height: 1.4,
+                    ),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Shift Status',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFDF2F4),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFF5C2CB)),
+                              ),
+                              child: Text(
+                                'PENDING APPROVAL',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF800020),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        const Divider(height: 1, thickness: 1, color: Color(0xFFE2E8F0)),
+                        const SizedBox(height: 8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Collections',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                            Text(
+                              'Cash \u20B9${cash.toStringAsFixed(0)} • Bank \u20B9${bank.toStringAsFixed(0)}',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Returned Stock',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                            Text(
+                              '$filledReturns Full • $emptyReturns Empties',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF800020),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 42,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF800020),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: Text(
+                        'Got it',
+                        style: GoogleFonts.inter(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         );
       },
     );

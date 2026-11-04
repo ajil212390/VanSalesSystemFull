@@ -140,9 +140,9 @@ class _HomeShellState extends State<HomeShell> {
                         index: 1,
                       ),
                       _navItem(
-                        selectedIcon: Icons.assignment_rounded,
-                        unselectedIcon: Icons.assignment_outlined,
-                        label: 'Orders',
+                        selectedIcon: Icons.receipt_long_rounded,
+                        unselectedIcon: Icons.receipt_long_outlined,
+                        label: 'Sales',
                         index: 2,
                       ),
                       _navItem(

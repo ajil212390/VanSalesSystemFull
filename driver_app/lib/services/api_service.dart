@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // Default to computer's Wi-Fi LAN IP so connected phones can reach backend
-  static String baseUrl = 'http://192.168.1.34:8000/api/v1';
+  static String baseUrl = 'https://z0v56js5-8000.inc1.devtunnels.ms//api/v1';
 
   static const String _tokenKey = 'auth_token';
   static const String _userKey = 'auth_user';
@@ -17,7 +17,7 @@ class ApiService {
     if (savedUrl != null && savedUrl.isNotEmpty) {
       if (savedUrl.contains('192.168.1.33')) {
         // Automatically migrate stale .33 IP to current PC IP .34
-        baseUrl = 'http://192.168.1.34:8000/api/v1';
+        baseUrl = 'https://z0v56js5-8000.inc1.devtunnels.ms//api/v1';
         await prefs.setString(_customUrlKey, baseUrl);
       } else {
         baseUrl = savedUrl;
@@ -270,6 +270,31 @@ class ApiService {
     return res.statusCode == 200 || res.statusCode == 204;
   }
 
+  /// 8b. Update a delivery sale: POST /delivery-notes/update_sale/
+  static Future<Map<String, dynamic>> updateSale({
+    required String ticketId,
+    required double amountCollected,
+    String? paymentMethod,
+    List<Map<String, dynamic>>? items,
+  }) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/update_sale/');
+    final res = await http.post(
+      uri,
+      headers: await _headers(),
+      body: jsonEncode({
+        'ticket_id': ticketId,
+        'amount_collected': amountCollected,
+        ...?paymentMethod != null ? {'payment_method': paymentMethod} : null,
+        ...?items != null ? {'items': items} : null,
+      }),
+    );
+    try {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      return {'success': false, 'message': 'Server error ${res.statusCode}'};
+    }
+  }
+
   static Future<bool> cancelSale(int deliveryNoteId) async {
     final uri = Uri.parse('$baseUrl/delivery-notes/$deliveryNoteId/cancel/');
     final res = await http.delete(uri, headers: await _headers());
@@ -283,6 +308,8 @@ class ApiService {
     required List<Map<String, dynamic>> remainingOther,
     required double totalCollected,
     required int totalDeliveries,
+    double cashCollected = 0.0,
+    double bankCollected = 0.0,
   }) async {
     final uri = Uri.parse('$baseUrl/delivery-notes/end_shift/');
     final res = await http.post(
@@ -294,6 +321,10 @@ class ApiService {
         'remaining_other': remainingOther,
         'total_collected': totalCollected,
         'total_deliveries': totalDeliveries,
+        'cash_balance': cashCollected,
+        'bank_balance': bankCollected,
+        'cash_collected': cashCollected,
+        'bank_collected': bankCollected,
       }),
     );
     try {
@@ -301,6 +332,18 @@ class ApiService {
     } catch (_) {
       return {'success': false, 'message': 'Server error ${res.statusCode}'};
     }
+  }
+
+  /// Get shift status: GET /end-route-drivers/shift_status/?allocation_id=X
+  static Future<Map<String, dynamic>?> getShiftStatus(int allocationId) async {
+    final uri = Uri.parse('/end-route-drivers/shift_status/?allocation_id=');
+    final res = await http.get(uri, headers: await _headers());
+    if (res.statusCode == 200) {
+      try {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+    return null;
   }
 
   /// 10. Get last sync time: GET /delivery-notes/last_sync/?allocation_id=X
