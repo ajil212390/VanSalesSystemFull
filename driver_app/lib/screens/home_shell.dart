@@ -113,13 +113,8 @@ class _HomeShellState extends State<HomeShell> {
                     border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
                     boxShadow: const [
                       BoxShadow(
-                        color: Color(0x1A000000),
-                        blurRadius: 18,
-                        offset: Offset(0, 6),
-                      ),
-                      BoxShadow(
-                        color: Color(0x06000000),
-                        blurRadius: 4,
+                        color: Color(0x0A0F172A),
+                        blurRadius: 6,
                         offset: Offset(0, 2),
                       ),
                     ],

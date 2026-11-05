@@ -27,6 +27,8 @@ import { PaymentFormPage } from './pages/PaymentFormPage';
 import { DeliveryNotesPage } from './pages/DeliveryNotesPage';
 import { ReceiptNotesPage } from './pages/ReceiptNotesPage';
 import { StockAnalysisPage } from './pages/StockAnalysisPage';
+import { VanManagementPage } from './pages/VanManagementPage';
+import { RouteDetailsPage } from './pages/RouteDetailsPage';
 
 
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -142,6 +144,8 @@ export const App: React.FC = () => {
               <Route path="/delivery-notes" element={<DeliveryNotesPage />} />
               <Route path="/receipt-notes" element={<ReceiptNotesPage />} />
               <Route path="/stock-analysis" element={<StockAnalysisPage />} />
+              <Route path="/van-management" element={<VanManagementPage />} />
+              <Route path="/van-management/:routeId" element={<RouteDetailsPage />} />
 
 
             </Route>

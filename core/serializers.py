@@ -976,12 +976,48 @@ class EndRouteDriverSerializer(serializers.ModelSerializer):
     route_name = serializers.CharField(source='RouteVehicleDriver.Route.RouteName', read_only=True)
     total_filled = serializers.SerializerMethodField()
     total_empty = serializers.SerializerMethodField()
+    cash_amount = serializers.SerializerMethodField()
+    bank_amount = serializers.SerializerMethodField()
 
     def get_total_filled(self, obj):
         return sum(line.FilledQty or 0 for line in obj.lines.all())
 
     def get_total_empty(self, obj):
         return sum(line.EmptyQty or 0 for line in obj.lines.all())
+
+    def get_cash_amount(self, obj):
+        import re
+        m = re.search(r'Cash(?:\s*Collection)?:\s*[₹\u20b9]?\s*([\d,.]+)', obj.Remarks or '', re.IGNORECASE)
+        if m:
+            try:
+                return float(m.group(1).replace(',', ''))
+            except Exception:
+                pass
+        if obj.Ledger and 'cash' in (obj.Ledger.LedgerName or '').lower():
+            m2 = re.search(r'[₹\u20b9]?\s*([\d,.]+)', obj.Remarks or '')
+            if m2:
+                try:
+                    return float(m2.group(1).replace(',', ''))
+                except Exception:
+                    pass
+        return 0.0
+
+    def get_bank_amount(self, obj):
+        import re
+        m = re.search(r'(?:Bank|UPI)(?:\s*Collection)?:\s*[₹\u20b9]?\s*([\d,.]+)', obj.Remarks or '', re.IGNORECASE)
+        if m:
+            try:
+                return float(m.group(1).replace(',', ''))
+            except Exception:
+                pass
+        if obj.Ledger and ('bank' in (obj.Ledger.LedgerName or '').lower() or 'sbi' in (obj.Ledger.LedgerName or '').lower()):
+            m2 = re.search(r'[₹\u20b9]?\s*([\d,.]+)', obj.Remarks or '')
+            if m2:
+                try:
+                    return float(m2.group(1).replace(',', ''))
+                except Exception:
+                    pass
+        return 0.0
 
     class Meta:
         model = EndRouteDriver
@@ -1000,7 +1036,9 @@ class EndRouteDriverSerializer(serializers.ModelSerializer):
             'CreatedAt',
             'lines',
             'total_filled',
-            'total_empty'
+            'total_empty',
+            'cash_amount',
+            'bank_amount'
         ]
 
 

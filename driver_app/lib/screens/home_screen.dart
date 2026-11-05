@@ -1,3 +1,4 @@
+import '../widgets/app_toast.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -1364,6 +1365,107 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ================= 7. END SHIFT ACTION BUTTON =================
   Widget _buildEndShiftButton(BuildContext context, AppState state) {
+    final bool isSettled = state.endShiftStatus.toUpperCase() == 'SETTLED';
+    if (isSettled) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0FDF4),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFBBF7D0)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                color: Color(0xFFDCFCE7),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle_rounded, color: Color(0xFF16A34A), size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'SHIFT SETTLED & APPROVED',
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF15803D),
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'All data reset to 0. Awaiting next Delivery Note allocation.',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF166534),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final bool isPending = state.endShiftStatus.toUpperCase() == 'PENDING';
+    if (isPending) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF3C7),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFDE68A),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.hourglass_top_rounded, color: Color(0xFFB45309), size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'SHIFT END SUBMITTED',
+                    style: GoogleFonts.inter(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFFB45309),
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Awaiting Godown Admin verification and settlement approval.',
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF92400E),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
@@ -1375,17 +1477,11 @@ class _HomeScreenState extends State<HomeScreen> {
             Color(0xFF800020), // Primary Burgundy
           ],
         ),
-        boxShadow: [
+        boxShadow: const [
           BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.18),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-            spreadRadius: -2,
-          ),
-          BoxShadow(
-            color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+            color: Color(0x0C0F172A),
             blurRadius: 6,
-            offset: const Offset(0, 2),
+            offset: Offset(0, 2),
           ),
         ],
       ),
@@ -1855,7 +1951,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       Expanded(
                                         flex: 4,
                                         child: Text(
-                                          'Full Cyls',
+                                          'Full Cyl',
                                           textAlign: TextAlign.center,
                                           style: GoogleFonts.inter(
                                             fontSize: 12,
@@ -2175,15 +2271,19 @@ class _HomeScreenState extends State<HomeScreen> {
                                     }
 
                                     if (context.mounted) {
-                                      final rn = res['receipt_no'] ?? 'RN-PENDING';
-                                      _showEndShiftSuccessAlert(
-                                        context: context,
-                                        receiptNo: rn.toString(),
-                                        cash: state.cashBalance,
-                                        bank: state.bankBalance,
-                                        filledReturns: state.totalClosingFilled,
-                                        emptyReturns: state.totalClosingEmpty,
-                                      );
+                                      if (res['success'] == true) {
+                                        final rn = res['receipt_no'] ?? res['settlement_id'] ?? 'ERD-${res['settlement_id'] ?? 'PENDING'}';
+                                        _showEndShiftSuccessAlert(
+                                          context: context,
+                                          receiptNo: rn.toString(),
+                                          cash: state.cashBalance,
+                                          bank: state.bankBalance,
+                                          filledReturns: state.totalClosingFilled,
+                                          emptyReturns: state.totalClosingEmpty,
+                                        );
+                                      } else {
+                                        AppToast.error(context, res['message'] ?? 'Could not submit End Shift. Please try again.');
+                                      }
                                     }
                                   },
                             borderRadius: BorderRadius.circular(12),
@@ -2203,7 +2303,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
                                         const SizedBox(width: 8),
                                         Text(
-                                          'CONFIRM & SUBMIT RECEIPT NOTE',
+                                          'CONFIRM & SUBMIT END SHIFT',
                                           style: GoogleFonts.inter(
                                             fontSize: 13.5,
                                             fontWeight: FontWeight.w800,
@@ -3373,17 +3473,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 52,
-                    height: 52,
+                    width: 50,
+                    height: 50,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFDF2F4),
+                      color: const Color(0xFFF0FDF4),
                       shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFFF5C2CB), width: 1.5),
+                      border: Border.all(color: const Color(0xFFBBF7D0), width: 1.5),
                     ),
                     child: const Center(
                       child: Icon(
-                        Icons.verified_rounded,
-                        color: Color(0xFF800020),
+                        Icons.check_circle_rounded,
+                        color: Color(0xFF16A34A),
                         size: 28,
                       ),
                     ),
@@ -3402,7 +3502,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 6),
 
                   Text(
-                    'Receipt Note #$receiptNo has been queued for warehouse gate inspection and settlement verification.',
+                    'Settlement #$receiptNo queued for Godown verification & reconciliation.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(
                       fontSize: 12.5,
@@ -3442,11 +3542,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                 border: Border.all(color: const Color(0xFFF5C2CB)),
                               ),
                               child: Text(
-                                'PENDING APPROVAL',
+                                'PENDING VERIFICATION',
                                 style: GoogleFonts.inter(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w800,
-                                  color: const Color(0xFF800020),
+                                  color: const Color(0xFFB45309),
                                 ),
                               ),
                             ),

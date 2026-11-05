@@ -12,7 +12,6 @@ import {
   Loader,
   Center,
   ThemeIcon,
-  UnstyledButton,
   Box,
   TextInput,
   CloseButton,
@@ -28,8 +27,6 @@ import {
   IconArrowRight,
   IconArrowUpRight,
   IconRoute,
-  IconUser,
-  IconPackage,
   IconWallet,
   IconCalendar,
   IconSearch,
@@ -187,35 +184,11 @@ export const DashboardPage: React.FC = () => {
     },
   });
 
-  // 4. Fetch Fleet & Master Operations
-  const { data: drivers = [] } = useQuery<any[]>({
-    queryKey: ['drivers'],
-    queryFn: async () => {
-      const res = await apiClient.get('/drivers/');
-      return Array.isArray(res.data) ? res.data : res.data.results || [];
-    },
-  });
-
-  const { data: vehicles = [] } = useQuery<any[]>({
-    queryKey: ['vehicles'],
-    queryFn: async () => {
-      const res = await apiClient.get('/vehicles/');
-      return Array.isArray(res.data) ? res.data : res.data.results || [];
-    },
-  });
-
+  // 4. Fetch Routes for Van Management
   const { data: routes = [] } = useQuery<any[]>({
     queryKey: ['routes'],
     queryFn: async () => {
       const res = await apiClient.get('/routes/');
-      return Array.isArray(res.data) ? res.data : res.data.results || [];
-    },
-  });
-
-  const { data: products = [] } = useQuery<any[]>({
-    queryKey: ['products'],
-    queryFn: async () => {
-      const res = await apiClient.get('/products/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
   });
@@ -477,12 +450,12 @@ export const DashboardPage: React.FC = () => {
           </Group>
         </Paper>
 
-        {/* Card 4: Van Operations */}
+        {/* Card 4: Van Management */}
         <Paper
           p="md"
           radius="md"
           withBorder
-          onClick={() => navigate('/allocations')}
+          onClick={() => navigate('/van-management')}
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
@@ -503,16 +476,16 @@ export const DashboardPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Van Operations
+              Van Management
             </Text>
-            <IconTruck size={20} color="#800020" stroke={1.75} />
+            <IconRoute size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em' }}>
-            {vehicles.length} Van{vehicles.length !== 1 ? 's' : ''} &bull; {drivers.length} Driver{drivers.length !== 1 ? 's' : ''}
+          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+            {routes.length} Active Route{routes.length !== 1 ? 's' : ''}
           </Text>
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
-              {routes.length} Route{routes.length !== 1 ? 's' : ''} &bull; {products.length} Products
+              View live fleet &amp; route operations
             </Text>
             <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
           </Group>
@@ -1117,420 +1090,131 @@ export const DashboardPage: React.FC = () => {
         </Paper>
       </SimpleGrid>
 
-      {/* 4. Bottom Grid: Accounts & Liquidity + Van Operations Hub */}
-      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
-        {/* Left Column: Accounts & Liquidity Overview Table */}
-        <Paper
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: '#e2e8f0',
-            overflow: 'hidden',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
-        >
-          <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
-            <Group gap="xs" align="center">
-              <IconBuildingBank size={20} color="#800020" stroke={1.75} />
-              <div>
-                <Group gap={6} align="center">
-                  <Text fw={700} size="sm" c="#1e293b">
-                    Cash & Bank Accounts
-                  </Text>
-                  <Badge size="xs" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020' }}>
-                    {metrics.cashAndBankLedgers.length} Ledgers
-                  </Badge>
-                </Group>
-                <Text size="xs" c="dimmed">
-                  Real-time balances for Cash and Bank ledgers
-                </Text>
-              </div>
-            </Group>
-            <Button
-              variant="subtle"
-              color="gray"
-              c="#800020"
-              size="xs"
-              fw={600}
-              className="erp-subtle-btn"
-              rightSection={<IconArrowRight size={14} />}
-              onClick={() => navigate('/accounts')}
-            >
-              Manage Accounts
-            </Button>
-          </Group>
-
-          {isLoadingLedgers ? (
-            <Center py={40}>
-              <Loader color="burgundy" size="sm" />
-            </Center>
-          ) : metrics.cashAndBankLedgers.length === 0 ? (
-            <Center py={40}>
-              <Text size="xs" c="dimmed">No Cash or Bank accounts configured.</Text>
-            </Center>
-          ) : (
-            <Table.ScrollContainer minWidth={450}>
-              <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
-                <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
-                  <Table.Tr>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Account Name</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Type</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>Current Balance</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {metrics.cashAndBankLedgers.map((l) => {
-                    const bal = Number(l.CurrentBalance || 0);
-                    const isDr = bal >= 0;
-                    const isCash = l.group_name === 'Cash-in-Hand';
-
-                    return (
-                      <Table.Tr key={l.LedgerId} style={{ cursor: 'pointer' }} onClick={() => navigate('/accounts')}>
-                        <Table.Td>
-                          <Group gap={8} wrap="nowrap">
-                            <ThemeIcon size={24} radius="sm" variant="light" color="burgundy" style={{ backgroundColor: '#fbf0f2' }}>
-                              {isCash ? <IconWallet size={13} color="#800020" /> : <IconBuildingBank size={13} color="#800020" />}
-                            </ThemeIcon>
-                            <Text fw={600} size="xs" c="#1e293b">
-                              {l.LedgerName}
-                            </Text>
-                          </Group>
-                        </Table.Td>
-                        <Table.Td>
-                          <Badge
-                            size="xs"
-                            variant="light"
-                            radius="sm"
-                            style={{
-                              backgroundColor: isCash ? '#fef2f2' : '#f0fdf4',
-                              color: isCash ? '#b91c1c' : '#15803d',
-                              fontWeight: 600,
-                            }}
-                          >
-                            {isCash ? 'Cash in Hand' : 'Bank Account'}
-                          </Badge>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          <Text size="xs" fw={700} c={isDr ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
-                            ₹{Math.abs(bal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
-                            <Text component="span" size="10px" c={isDr ? '#0284c7' : '#dc2626'} fw={600}>
-                              {isDr ? 'Dr' : 'Cr'}
-                            </Text>
-                          </Text>
-                        </Table.Td>
-                      </Table.Tr>
-                    );
-                  })}
-                </Table.Tbody>
-                <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #cbd5e1' }}>
-                  <Table.Tr>
-                    <Table.Td colSpan={2} style={{ padding: '12px 16px' }}>
-                      <Text size="sm" fw={700} c="#1e293b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
-                        Total Cash & Bank Balance:
-                      </Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', padding: '12px 16px' }}>
-                      <Text size="sm" fw={700} c={metrics.netLiquid >= 0 ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
-                        ₹{Math.abs(metrics.netLiquid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
-                        <Text component="span" size="xs" c={metrics.netLiquid >= 0 ? '#0284c7' : '#dc2626'} fw={700}>
-                          {metrics.netLiquid >= 0 ? 'Dr' : 'Cr'}
-                        </Text>
-                      </Text>
-                    </Table.Td>
-                  </Table.Tr>
-                </Table.Tfoot>
-              </Table>
-            </Table.ScrollContainer>
-          )}
-        </Paper>
-
-        {/* Right Column: Van Operations Hub */}
-        <Paper
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: '#e2e8f0',
-            overflow: 'hidden',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
-        >
-          <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
-            <Group gap="xs" align="center">
-              <IconTruck size={20} color="#800020" stroke={1.75} />
-              <div>
+      {/* 4. Accounts & Liquidity Overview Table */}
+      <Paper
+        radius="md"
+        withBorder
+        style={{
+          backgroundColor: '#ffffff',
+          borderColor: '#e2e8f0',
+          overflow: 'hidden',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+        }}
+      >
+        <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
+          <Group gap="xs" align="center">
+            <IconBuildingBank size={20} color="#800020" stroke={1.75} />
+            <div>
+              <Group gap={6} align="center">
                 <Text fw={700} size="sm" c="#1e293b">
-                  Van Operations Hub
+                  Cash &amp; Bank Accounts
                 </Text>
-                <Text size="xs" c="dimmed">
-                  Fleet status, route distribution & catalog
-                </Text>
-              </div>
-            </Group>
-            <Button
-              variant="subtle"
-              color="gray"
-              c="#800020"
-              size="xs"
-              fw={600}
-              className="erp-subtle-btn"
-              rightSection={<IconArrowRight size={14} />}
-              onClick={() => navigate('/allocations')}
-            >
-              View Allocations
-            </Button>
+                <Badge size="xs" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020' }}>
+                  {metrics.cashAndBankLedgers.length} Ledgers
+                </Badge>
+              </Group>
+              <Text size="xs" c="dimmed">
+                Real-time balances for Cash and Bank ledgers
+              </Text>
+            </div>
           </Group>
+          <Button
+            variant="subtle"
+            color="gray"
+            c="#800020"
+            size="xs"
+            fw={600}
+            className="erp-subtle-btn"
+            rightSection={<IconArrowRight size={14} />}
+            onClick={() => navigate('/accounts')}
+          >
+            Manage Accounts
+          </Button>
+        </Group>
 
-          <Box p="md">
-            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
-              {/* Drivers Card */}
-              <UnstyledButton
-                p="md"
-                onClick={() => navigate('/drivers')}
-                style={{
-                  borderRadius: '8px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  height: '100%',
-                  minHeight: 118,
-                  transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#cbd5e1';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.05)';
-                  e.currentTarget.style.backgroundColor = '#f8fafc';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#e2e8f0';
-                  e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.02)';
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.transform = 'none';
-                }}
-              >
-                <Group justify="space-between" align="center" mb={10}>
-                  <Box style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-                    <IconUser size={22} color="#800020" stroke={1.75} />
-                  </Box>
-                  <Badge
-                    size="sm"
-                    variant="light"
-                    color="burgundy"
-                    radius="sm"
-                    style={{
-                      backgroundColor: '#fbf0f2',
-                      color: '#800020',
-                      fontWeight: 700,
-                      fontSize: 11,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      height: 24,
-                    }}
-                  >
-                    {drivers.length} Drivers
-                  </Badge>
-                </Group>
-                <div>
-                  <Text size="sm" fw={600} c="#0f172a">
-                    Van Drivers
-                  </Text>
-                  <Text size="xs" c="#64748b" mt={3} style={{ minHeight: 34, lineHeight: 1.35 }}>
-                    Active driver roster & duty status
-                  </Text>
-                </div>
-              </UnstyledButton>
+        {isLoadingLedgers ? (
+          <Center py={40}>
+            <Loader color="burgundy" size="sm" />
+          </Center>
+        ) : metrics.cashAndBankLedgers.length === 0 ? (
+          <Center py={40}>
+            <Text size="xs" c="dimmed">No Cash or Bank accounts configured.</Text>
+          </Center>
+        ) : (
+          <Table.ScrollContainer minWidth={450}>
+            <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
+              <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
+                <Table.Tr>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Account Name</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Type</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>Current Balance</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {metrics.cashAndBankLedgers.map((l) => {
+                  const bal = Number(l.CurrentBalance || 0);
+                  const isDr = bal >= 0;
+                  const isCash = l.group_name === 'Cash-in-Hand';
 
-              {/* Vehicles Card */}
-              <UnstyledButton
-                p="md"
-                onClick={() => navigate('/vehicles')}
-                style={{
-                  borderRadius: '8px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  height: '100%',
-                  minHeight: 118,
-                  transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#cbd5e1';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.05)';
-                  e.currentTarget.style.backgroundColor = '#f8fafc';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#e2e8f0';
-                  e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.02)';
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.transform = 'none';
-                }}
-              >
-                <Group justify="space-between" align="center" mb={10}>
-                  <Box style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-                    <IconTruck size={22} color="#800020" stroke={1.75} />
-                  </Box>
-                  <Badge
-                    size="sm"
-                    variant="light"
-                    color="burgundy"
-                    radius="sm"
-                    style={{
-                      backgroundColor: '#fbf0f2',
-                      color: '#800020',
-                      fontWeight: 700,
-                      fontSize: 11,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      height: 24,
-                    }}
-                  >
-                    {vehicles.length} Vans
-                  </Badge>
-                </Group>
-                <div>
-                  <Text size="sm" fw={600} c="#0f172a">
-                    Distribution Fleet
-                  </Text>
-                  <Text size="xs" c="#64748b" mt={3} style={{ minHeight: 34, lineHeight: 1.35 }}>
-                    Delivery vans & warehouse fleet
-                  </Text>
-                </div>
-              </UnstyledButton>
-
-              {/* Routes Card */}
-              <UnstyledButton
-                p="md"
-                onClick={() => navigate('/routes')}
-                style={{
-                  borderRadius: '8px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  height: '100%',
-                  minHeight: 118,
-                  transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#cbd5e1';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.05)';
-                  e.currentTarget.style.backgroundColor = '#f8fafc';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#e2e8f0';
-                  e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.02)';
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.transform = 'none';
-                }}
-              >
-                <Group justify="space-between" align="center" mb={10}>
-                  <Box style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-                    <IconRoute size={22} color="#800020" stroke={1.75} />
-                  </Box>
-                  <Badge
-                    size="sm"
-                    variant="light"
-                    color="burgundy"
-                    radius="sm"
-                    style={{
-                      backgroundColor: '#fbf0f2',
-                      color: '#800020',
-                      fontWeight: 700,
-                      fontSize: 11,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      height: 24,
-                    }}
-                  >
-                    {routes.length} Routes
-                  </Badge>
-                </Group>
-                <div>
-                  <Text size="sm" fw={600} c="#0f172a">
-                    Delivery Routes
-                  </Text>
-                  <Text size="xs" c="#64748b" mt={3} style={{ minHeight: 34, lineHeight: 1.35 }}>
-                    Regional delivery sales territories
-                  </Text>
-                </div>
-              </UnstyledButton>
-
-              {/* Products Card */}
-              <UnstyledButton
-                p="md"
-                onClick={() => navigate('/products')}
-                style={{
-                  borderRadius: '8px',
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'space-between',
-                  height: '100%',
-                  minHeight: 118,
-                  transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#cbd5e1';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.05)';
-                  e.currentTarget.style.backgroundColor = '#f8fafc';
-                  e.currentTarget.style.transform = 'translateY(-1px)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = '#e2e8f0';
-                  e.currentTarget.style.boxShadow = '0 1px 2px rgba(0,0,0,0.02)';
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.transform = 'none';
-                }}
-              >
-                <Group justify="space-between" align="center" mb={10}>
-                  <Box style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
-                    <IconPackage size={22} color="#800020" stroke={1.75} />
-                  </Box>
-                  <Badge
-                    size="sm"
-                    variant="light"
-                    color="burgundy"
-                    radius="sm"
-                    style={{
-                      backgroundColor: '#fbf0f2',
-                      color: '#800020',
-                      fontWeight: 700,
-                      fontSize: 11,
-                      letterSpacing: '0.04em',
-                      textTransform: 'uppercase',
-                      height: 24,
-                    }}
-                  >
-                    {products.length} Items
-                  </Badge>
-                </Group>
-                <div>
-                  <Text size="sm" fw={600} c="#0f172a">
-                    Products Catalog
-                  </Text>
-                  <Text size="xs" c="#64748b" mt={3} style={{ minHeight: 34, lineHeight: 1.35 }}>
-                    LPG cylinders & gas accessories
-                  </Text>
-                </div>
-              </UnstyledButton>
-            </SimpleGrid>
-          </Box>
-        </Paper>
-      </SimpleGrid>
+                  return (
+                    <Table.Tr key={l.LedgerId} style={{ cursor: 'pointer' }} onClick={() => navigate('/accounts')}>
+                      <Table.Td>
+                        <Group gap={8} wrap="nowrap">
+                          <ThemeIcon size={24} radius="sm" variant="light" color="burgundy" style={{ backgroundColor: '#fbf0f2' }}>
+                            {isCash ? <IconWallet size={13} color="#800020" /> : <IconBuildingBank size={13} color="#800020" />}
+                          </ThemeIcon>
+                          <Text fw={600} size="xs" c="#1e293b">
+                            {l.LedgerName}
+                          </Text>
+                        </Group>
+                      </Table.Td>
+                      <Table.Td>
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          radius="sm"
+                          style={{
+                            backgroundColor: isCash ? '#fef2f2' : '#f0fdf4',
+                            color: isCash ? '#b91c1c' : '#15803d',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {isCash ? 'Cash in Hand' : 'Bank Account'}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Text size="xs" fw={700} c={isDr ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          ₹{Math.abs(bal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
+                          <Text component="span" size="10px" c={isDr ? '#0284c7' : '#dc2626'} fw={600}>
+                            {isDr ? 'Dr' : 'Cr'}
+                          </Text>
+                        </Text>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+              <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #cbd5e1' }}>
+                <Table.Tr>
+                  <Table.Td colSpan={2} style={{ padding: '12px 16px' }}>
+                    <Text size="sm" fw={700} c="#1e293b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                      Total Cash &amp; Bank Balance:
+                    </Text>
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: 'right', padding: '12px 16px' }}>
+                    <Text size="sm" fw={700} c={metrics.netLiquid >= 0 ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      ₹{Math.abs(metrics.netLiquid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
+                      <Text component="span" size="xs" c={metrics.netLiquid >= 0 ? '#0284c7' : '#dc2626'} fw={700}>
+                        {metrics.netLiquid >= 0 ? 'Dr' : 'Cr'}
+                      </Text>
+                    </Text>
+                  </Table.Td>
+                </Table.Tr>
+              </Table.Tfoot>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </Paper>
     </Stack>
   );
 };

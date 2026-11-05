@@ -1,3 +1,4 @@
+import '../widgets/app_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
@@ -1368,14 +1369,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       } else if (!hasValidAmount) {
                         msg = 'Please enter a valid bill amount';
                       }
-                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(msg),
-                          backgroundColor: const Color(0xFF800020),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
+                      AppToast.warning(context, msg);
                     }
                   },
             borderRadius: BorderRadius.circular(14),

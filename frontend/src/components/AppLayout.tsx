@@ -90,7 +90,9 @@ export const AppLayout: React.FC = () => {
     { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
   ];
 
-  const isVanOpsActive = vanOpsItems.some((item) => location.pathname === item.path);
+  const isVanOpsActive = vanOpsItems.some((item) =>
+    location.pathname === item.path || location.pathname.startsWith('/van-management')
+  );
 
   const masterItems = [
     { label: 'Category', path: '/categories', icon: IconCategory },
@@ -112,6 +114,8 @@ export const AppLayout: React.FC = () => {
     switch (location.pathname) {
       case '/':
         return { section: 'Overview', title: 'Dashboard' };
+      case '/van-management':
+        return { section: 'Van Management', title: 'Van Management Dashboard' };
       case '/drivers':
         return { section: 'Van Operations', title: 'Drivers' };
       case '/vehicles':
@@ -150,6 +154,9 @@ export const AppLayout: React.FC = () => {
       default:
         if (location.pathname.startsWith('/purchases/')) {
           return { section: 'Purchase', title: 'Edit Purchase' };
+        }
+        if (location.pathname.startsWith('/van-management/')) {
+          return { section: 'Van Management', title: 'Route Details' };
         }
         return { section: 'Van Sales', title: 'Operations' };
     }
@@ -536,7 +543,7 @@ export const AppLayout: React.FC = () => {
           />
         </Tooltip>
 
-        {/* Van Operations Group (Accordion in Expanded / Flyout in Collapsed) */}
+        {/* Van Management Group (Accordion in Expanded / Flyout in Collapsed) */}
         {effectiveCollapsed ? (
           <Menu
             position="right-start"

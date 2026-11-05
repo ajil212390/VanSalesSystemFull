@@ -24,9 +24,33 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    ApiService.init().then((_) {
+    _checkExistingSession();
+  }
+
+  Future<void> _checkExistingSession() async {
+    await ApiService.init();
+    final token = await ApiService.getToken();
+    final user = await ApiService.getSavedUser();
+    if (token != null && token.isNotEmpty && user != null && mounted) {
+      setState(() => _isLoading = true);
+      try {
+        final state = AppStateProvider.of(context);
+        final driverId = (user['driver_id'] ?? user['DriverId']) as int?;
+        await state.syncFromBackend(driverIdParam: driverId);
+        if (!mounted) return;
+
+        final role = user['role']?.toString().toLowerCase() ?? '';
+        final isAdminRole = role.contains('admin') || role.contains('manager');
+        Navigator.pushReplacement(
+          context,
+          SmoothPageRoute(page: isAdminRole ? const AdminScreen() : const HomeShell()),
+        );
+      } catch (_) {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    } else {
       if (mounted) setState(() {});
-    });
+    }
   }
 
   @override

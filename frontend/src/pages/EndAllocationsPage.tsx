@@ -64,6 +64,8 @@ interface EndRouteDriverItem {
   lines?: EndRouteDriverLineItem[];
   total_filled?: number;
   total_empty?: number;
+  cash_amount?: number;
+  bank_amount?: number;
 }
 
 export const EndAllocationsPage: React.FC = () => {
@@ -78,7 +80,7 @@ export const EndAllocationsPage: React.FC = () => {
     queryKey: ['end-route-drivers'],
     queryFn: async () => {
       const res = await apiClient.get('/end-route-drivers/');
-      return res.data;
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     },
   });
 
@@ -91,11 +93,16 @@ export const EndAllocationsPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['end-route-drivers'] });
+      queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['receipt-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['van-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
       setIsDetailOpen(false);
       setSelectedItem(null);
       notifications.show({
         title: 'Record Removed',
-        message: 'Shift settlement record deleted.',
+        message: 'Shift settlement record deleted and stock reversed.',
         color: 'burgundy',
       });
     },
@@ -115,9 +122,11 @@ export const EndAllocationsPage: React.FC = () => {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['end-route-drivers'] });
+      queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
       queryClient.invalidateQueries({ queryKey: ['receipt-notes'] });
       queryClient.invalidateQueries({ queryKey: ['van-stock'] });
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
       setIsDetailOpen(false);
       notifications.show({
         title: 'Settlement Approved',
@@ -189,8 +198,11 @@ export const EndAllocationsPage: React.FC = () => {
     const cashMatch = remarks.match(/cash.*?₹?\s*([\d,.]+)/i);
     const bankMatch = remarks.match(/(bank|upi).*?₹?\s*([\d,.]+)/i);
 
-    if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
-    if (bankMatch) bank = parseFloat(bankMatch[2].replace(/,/g, '')) || 0;
+    if (item.cash_amount != null && item.cash_amount > 0) cash = item.cash_amount;
+    else if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
+
+    if (item.bank_amount != null && item.bank_amount > 0) bank = item.bank_amount;
+    else if (bankMatch) bank = parseFloat(bankMatch[2].replace(/,/g, '')) || 0;
 
     if (cash === 0 && bank === 0) {
       // If ledger indicates Cash or Bank

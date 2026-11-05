@@ -76,7 +76,13 @@ export const PurchaseListPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
-      notifications.show({ title: 'Success', message: 'Purchase deleted.', color: 'green' });
+      queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['van-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
+      notifications.show({ title: 'Success', message: 'Purchase deleted and stock removed from godown.', color: 'green' });
     },
     onError: () => {
       notifications.show({ title: 'Error', message: 'Failed to delete purchase.', color: 'red' });

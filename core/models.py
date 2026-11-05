@@ -800,3 +800,63 @@ class EndRouteDriverLine(models.Model):
         return f"Line {self.EndRouteDriverLineId} - Prod {self.Product_id} (Full:{self.FilledQty}, Empty:{self.EmptyQty})"
 
 
+class RouteExpense(models.Model):
+    ExpenseId = models.BigAutoField(primary_key=True, db_column='ExpenseId')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+    RouteVehicleDriver = models.ForeignKey(
+        RouteVehicleDriver,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='RouteVehicleDriverId',
+        related_name='expenses'
+    )
+    Route = models.ForeignKey(
+        Route,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='RouteId',
+        related_name='expenses'
+    )
+    Driver = models.ForeignKey(
+        Driver,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='DriverId',
+        related_name='expenses'
+    )
+    Vehicle = models.ForeignKey(
+        Vehicle,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='VehicleId',
+        related_name='expenses'
+    )
+    Payment = models.ForeignKey(
+        Payment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='PaymentId',
+        related_name='route_expenses'
+    )
+    ExpenseDate = models.DateField(default=date.today, db_column='ExpenseDate')
+    Category = models.CharField(max_length=100, db_column='Category')
+    Amount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Amount')
+    PaymentMode = models.CharField(max_length=50, default='Cash', db_column='PaymentMode')
+    Notes = models.CharField(max_length=255, null=True, blank=True, db_column='Notes')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"RouteExpense"'
+        ordering = ['-CreatedAt', '-ExpenseId']
+
+    def __str__(self):
+        return f"Expense #{self.ExpenseId}: {self.Category} - ₹{self.Amount} ({self.PaymentMode})"
+
+
+

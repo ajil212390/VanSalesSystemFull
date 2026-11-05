@@ -550,7 +550,7 @@ export const DeliveryNotesPage: React.FC = () => {
                     {deliveryNotes.length}
                   </Text>
                   <Text size="xs" c="dimmed">
-                    Completed delivery notes
+                    {deliveryNotes.filter((d) => d.Status === 'LOADED').length} active • {deliveryNotes.filter((d) => d.Status === 'COMPLETED' || d.Status === 'SETTLED').length} settled
                   </Text>
                 </Stack>
                 <IconClipboardList size={26} color="#800020" stroke={1.5} />
@@ -663,15 +663,27 @@ export const DeliveryNotesPage: React.FC = () => {
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <Badge
-                          variant="outline"
-                          color="burgundy"
+                          variant="light"
+                          color={dn.Status === 'COMPLETED' || dn.Status === 'SETTLED' ? 'teal' : 'burgundy'}
                           size="sm"
                           radius="sm"
                           styles={{
                             root: {
-                              borderColor: '#800020',
-                              color: '#800020',
-                              fontWeight: 600,
+                              backgroundColor:
+                                dn.Status === 'COMPLETED' || dn.Status === 'SETTLED'
+                                  ? '#f0fdf4'
+                                  : '#fdf2f4',
+                              borderColor:
+                                dn.Status === 'COMPLETED' || dn.Status === 'SETTLED'
+                                  ? '#86efac'
+                                  : '#800020',
+                              borderWidth: 1,
+                              borderStyle: 'solid',
+                              color:
+                                dn.Status === 'COMPLETED' || dn.Status === 'SETTLED'
+                                  ? '#166534'
+                                  : '#800020',
+                              fontWeight: 700,
                               letterSpacing: '0.4px',
                               padding: '0 8px',
                               overflow: 'visible',
@@ -683,29 +695,60 @@ export const DeliveryNotesPage: React.FC = () => {
                             },
                           }}
                         >
-                          {dn.Status}
+                          {dn.Status === 'COMPLETED' ? 'COMPLETED' : dn.Status}
                         </Badge>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>
                         <Group gap={4} justify="center" wrap="nowrap">
-                          <Tooltip label="Edit Delivery Note" withArrow>
-                            <ActionIcon
-                              color="burgundy"
-                              variant="subtle"
-                              onClick={() => handleEdit(dn)}
-                            >
-                              <IconPencil size={16} />
-                            </ActionIcon>
-                          </Tooltip>
-                          <Tooltip label="Delete & Reverse Stock" withArrow>
-                            <ActionIcon
-                              color="red"
-                              variant="subtle"
-                              onClick={() => setDeleteTarget({ id: dn.DeliveryNoteId, no: dn.DeliveryNoteNo })}
-                            >
-                              <IconTrash size={16} />
-                            </ActionIcon>
-                          </Tooltip>
+                          {dn.Status === 'COMPLETED' || dn.Status === 'SETTLED' ? (
+                            <>
+                              <Tooltip label="Shift settled & cylinders unloaded to Godown — Note is finalized" withArrow>
+                                <Badge
+                                  size="xs"
+                                  variant="outline"
+                                  styles={{
+                                    root: {
+                                      borderColor: '#cbd5e1',
+                                      color: '#64748b',
+                                      fontWeight: 600,
+                                    },
+                                  }}
+                                >
+                                  Settled
+                                </Badge>
+                              </Tooltip>
+                              <Tooltip label="Delete & Reverse Stock" withArrow>
+                                <ActionIcon
+                                  color="red"
+                                  variant="subtle"
+                                  onClick={() => setDeleteTarget({ id: dn.DeliveryNoteId, no: dn.DeliveryNoteNo })}
+                                >
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </>
+                          ) : (
+                            <>
+                              <Tooltip label="Edit Delivery Note" withArrow>
+                                <ActionIcon
+                                  color="burgundy"
+                                  variant="subtle"
+                                  onClick={() => handleEdit(dn)}
+                                >
+                                  <IconPencil size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Delete & Reverse Stock" withArrow>
+                                <ActionIcon
+                                  color="red"
+                                  variant="subtle"
+                                  onClick={() => setDeleteTarget({ id: dn.DeliveryNoteId, no: dn.DeliveryNoteNo })}
+                                >
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </>
+                          )}
                         </Group>
                       </Table.Td>
                     </Table.Tr>

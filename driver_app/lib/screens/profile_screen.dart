@@ -4,6 +4,7 @@ import '../widgets/confirm_dialog.dart';
 import '../widgets/smooth_transitions.dart';
 import 'login_screen.dart';
 import '../providers/app_state.dart';
+import '../services/api_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -477,12 +478,15 @@ class ProfileScreen extends StatelessWidget {
       ),
     );
 
-    if (confirmed == true && context.mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        SmoothPageRoute(page: const LoginScreen()),
-        (route) => false,
-      );
+    if (confirmed == true) {
+      await ApiService.logout();
+      if (context.mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          SmoothPageRoute(page: const LoginScreen()),
+          (route) => false,
+        );
+      }
     }
   }
 }

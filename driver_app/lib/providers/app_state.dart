@@ -7,6 +7,8 @@ class CylinderType {
   final int? productId;
   final String weight;
   final double price;
+  final double gstPercentage;
+  final String hsnCode;
   int initialFilledStock;
   int filledStock;
   int emptyStock;
@@ -16,6 +18,8 @@ class CylinderType {
     required this.weight,
     required this.price,
     required this.filledStock,
+    this.gstPercentage = 5.0,
+    this.hsnCode = '271109',
     int? initialFilledStock,
     this.emptyStock = 0,
   }) : initialFilledStock = initialFilledStock ?? filledStock;
@@ -123,7 +127,7 @@ class DeliveryOrder {
 }
 
 class DriverExpense {
-  final String id;
+  String id;
   final String title;
   final double amount;
   final String paymentMethod; // 'Cash' or 'UPI'
@@ -524,6 +528,8 @@ class AppState extends ChangeNotifier {
                   ? s['AppProductName'].toString().trim()
                   : (s['ProductName'] ?? '').toString(),
               price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
+              gstPercentage: (s['GSTPercentage'] as num?)?.toDouble() ?? 5.0,
+              hsnCode: s['HSNCode']?.toString() ?? '271109',
               initialFilledStock: (s['AllocatedQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
               filledStock: (s['BalanceQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
               emptyStock: (s['EmptyQty'] as num?)?.toInt() ?? 0,
@@ -593,6 +599,25 @@ class AppState extends ChangeNotifier {
           } catch (e) {
             debugPrint('Failed to load driver sales: $e');
           }
+
+          // Fetch Driver's Expenses for Today from Backend
+          try {
+            final backendExpenses = await ApiService.getDriverExpenses(currentAllocationId!);
+            if (backendExpenses.isNotEmpty) {
+              expenses.clear();
+              for (final exp in backendExpenses) {
+                expenses.add(DriverExpense(
+                  id: (exp['id'] ?? exp['expense_id'] ?? '').toString(),
+                  title: (exp['category'] ?? exp['title'] ?? 'Expense').toString(),
+                  amount: (exp['amount'] as num?)?.toDouble() ?? 0.0,
+                  paymentMethod: (exp['payment_mode'] ?? exp['paymentMethod'] ?? 'Cash').toString(),
+                  time: (exp['time'] ?? '').toString(),
+                ));
+              }
+            }
+          } catch (e) {
+            debugPrint('Failed to load driver expenses: $e');
+          }
         }
       }
 
@@ -601,6 +626,23 @@ class AppState extends ChangeNotifier {
           final statusData = await ApiService.getShiftStatus(currentAllocationId!);
           if (statusData != null) {
             endShiftStatus = (statusData['status'] ?? 'ACTIVE').toString();
+            final bool isSettled = statusData['is_settled'] == true || endShiftStatus.toUpperCase() == 'SETTLED';
+            final bool waitingForAllocation = statusData['waiting_for_next_allocation'] == true;
+
+            if (isSettled && waitingForAllocation) {
+              orders.clear();
+              expenses.clear();
+              for (final c in cylinders) {
+                c.filledStock = 0;
+                c.emptyStock = 0;
+                c.initialFilledStock = 0;
+              }
+              for (final p in otherProducts) {
+                p.balanceStock = 0;
+                p.deliveredStock = 0;
+                p.initialStock = 0;
+              }
+            }
           }
         } catch (_) {}
       }
@@ -624,6 +666,8 @@ class AppState extends ChangeNotifier {
                 ? p['AppProductName'].toString().trim()
                 : (p['ProductName'] ?? ''),
             price: (p['SalesPrice'] as num?)?.toDouble() ?? 0.0,
+            gstPercentage: (p['GSTPercentage'] as num?)?.toDouble() ?? 5.0,
+            hsnCode: p['HSNCode']?.toString() ?? '271109',
             filledStock: 0,
             emptyStock: 0,
           )).toList();
@@ -856,6 +900,80 @@ class AppState extends ChangeNotifier {
   Future<void> cancelOrder(DeliveryOrder order) => deleteOrder(order);
 
   /// Update an existing order's typed bill amount and payment method
+  /// Update an existing order's items (cylinders & empties), amount, and payment method
+  Future<bool> updateOrderWithItems({
+    required String ticketId,
+    required double newAmount,
+    required String newPaymentMethod,
+    required List<DeliveryItem> updatedItems,
+  }) async {
+    final index = orders.indexWhere((o) => o.ticketId == ticketId);
+    if (index == -1) return false;
+
+    final oldOrder = orders[index];
+
+    // 1. Revert previous cylinder stock impact locally
+    for (final it in oldOrder.items) {
+      final cyl = cylinders.firstWhere(
+        (c) => c.productId == it.cylinder.productId || c.weight == it.cylinder.weight,
+        orElse: () => it.cylinder,
+      );
+      cyl.filledStock += it.deliveryQty;
+      cyl.emptyStock = (cyl.emptyStock - it.emptyReturnQty).clamp(0, 9999);
+    }
+
+    // 2. Apply new cylinder stock impact locally
+    for (final it in updatedItems) {
+      final cyl = cylinders.firstWhere(
+        (c) => c.productId == it.cylinder.productId || c.weight == it.cylinder.weight,
+        orElse: () => it.cylinder,
+      );
+      cyl.filledStock = (cyl.filledStock - it.deliveryQty).clamp(0, 9999);
+      cyl.emptyStock += it.emptyReturnQty;
+    }
+
+    final totalDeliv = updatedItems.fold<int>(0, (sum, it) => sum + it.deliveryQty);
+    final totalEmpty = updatedItems.fold<int>(0, (sum, it) => sum + it.emptyReturnQty);
+
+    orders[index] = DeliveryOrder(
+      ticketId: oldOrder.ticketId,
+      customer: oldOrder.customer,
+      items: updatedItems,
+      totalCylinders: totalDeliv,
+      totalEmpties: totalEmpty,
+      amount: newAmount,
+      paymentMethod: newPaymentMethod,
+      time: oldOrder.time,
+      status: oldOrder.status,
+      stopNumber: oldOrder.stopNumber,
+    );
+
+    lastSyncTime = DateTime.now();
+    notifyListeners();
+
+    // 3. Live sync to backend
+    try {
+      final backendItems = updatedItems.map((it) => {
+        'product_id': it.cylinder.productId,
+        'weight': it.cylinder.weight,
+        'qty': it.deliveryQty,
+        'empty_qty': it.emptyReturnQty,
+        'price': it.cylinder.price,
+      }).toList();
+
+      final res = await ApiService.updateSale(
+        ticketId: ticketId,
+        amountCollected: newAmount,
+        paymentMethod: newPaymentMethod,
+        items: backendItems,
+      );
+      return res['success'] == true;
+    } catch (e) {
+      debugPrint('Live backend order update error: $e');
+      return false;
+    }
+  }
+
   Future<bool> updateOrderAmount(String ticketId, double newAmount, {String? newPaymentMethod}) async {
     final index = orders.indexWhere((o) => o.ticketId == ticketId);
     if (index == -1) return false;
@@ -910,6 +1028,14 @@ class AppState extends ChangeNotifier {
       );
       if (res['success'] == true) {
         endShiftStatus = 'PENDING';
+        // Empty cylinders and unsold stock are now returned to Godown, not kept in vehicle
+        for (final cyl in cylinders) {
+          cyl.emptyStock = 0;
+          cyl.filledStock = 0;
+        }
+        for (final op in otherProducts) {
+          op.balanceStock = 0;
+        }
       }
       lastSyncTime = DateTime.now();
       notifyListeners();
@@ -986,22 +1112,42 @@ class AppState extends ChangeNotifier {
     final period = now.period == DayPeriod.am ? 'AM' : 'PM';
     final timeStr = '${hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} $period';
 
-    expenses.insert(
-      0,
-      DriverExpense(
-        id: 'EXP-${DateTime.now().millisecondsSinceEpoch}',
-        title: title,
+    final tempId = 'EXP-${DateTime.now().millisecondsSinceEpoch}';
+    final expItem = DriverExpense(
+      id: tempId,
+      title: title,
+      amount: amount,
+      paymentMethod: paymentMethod,
+      time: timeStr,
+    );
+    expenses.insert(0, expItem);
+    notifyListeners();
+
+    if (currentAllocationId != null) {
+      ApiService.createDriverExpense(
+        allocationId: currentAllocationId!,
+        category: title,
         amount: amount,
         paymentMethod: paymentMethod,
-        time: timeStr,
-      ),
-    );
-    notifyListeners();
+      ).then((res) {
+        if (res['success'] == true && res['id'] != null) {
+          expItem.id = res['id'].toString();
+          notifyListeners();
+        }
+      }).catchError((e) {
+        debugPrint('Failed to save expense to backend: $e');
+      });
+    }
   }
 
   void deleteExpense(String id) {
     expenses.removeWhere((e) => e.id == id);
     notifyListeners();
+
+    ApiService.deleteDriverExpense(id).catchError((e) {
+      debugPrint('Failed to delete expense from backend: $e');
+      return false;
+    });
   }
 
   double get cashIncome => orders

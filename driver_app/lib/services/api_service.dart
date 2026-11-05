@@ -336,7 +336,7 @@ class ApiService {
 
   /// Get shift status: GET /end-route-drivers/shift_status/?allocation_id=X
   static Future<Map<String, dynamic>?> getShiftStatus(int allocationId) async {
-    final uri = Uri.parse('/end-route-drivers/shift_status/?allocation_id=');
+    final uri = Uri.parse('$baseUrl/end-route-drivers/shift_status/?allocation_id=$allocationId');
     final res = await http.get(uri, headers: await _headers());
     if (res.statusCode == 200) {
       try {
@@ -356,5 +356,54 @@ class ApiService {
       if (ts != null) return DateTime.tryParse(ts);
     }
     return null;
+  }
+
+  /// 11. Fetch driver trip expenses: GET /delivery-notes/driver_expenses/?allocation_id=X
+  static Future<List<Map<String, dynamic>>> getDriverExpenses(int allocationId) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/driver_expenses/?allocation_id=$allocationId');
+    final res = await http.get(uri, headers: await _headers());
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      if (data is List) return List<Map<String, dynamic>>.from(data);
+    }
+    return [];
+  }
+
+  /// 12. Create driver trip expense: POST /delivery-notes/create_expense/
+  static Future<Map<String, dynamic>> createDriverExpense({
+    required int allocationId,
+    required String category,
+    required double amount,
+    required String paymentMethod,
+    String? notes,
+  }) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/create_expense/');
+    final res = await http.post(
+      uri,
+      headers: await _headers(),
+      body: jsonEncode({
+        'allocation_id': allocationId,
+        'category': category,
+        'amount': amount,
+        'payment_method': paymentMethod,
+        'notes': notes ?? '',
+      }),
+    );
+    try {
+      return jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      return {'success': false, 'message': 'Server error ${res.statusCode}'};
+    }
+  }
+
+  /// 13. Delete driver trip expense: POST /delivery-notes/delete_expense/
+  static Future<bool> deleteDriverExpense(dynamic expenseId) async {
+    final uri = Uri.parse('$baseUrl/delivery-notes/delete_expense/');
+    final res = await http.post(
+      uri,
+      headers: await _headers(),
+      body: jsonEncode({'expense_id': expenseId}),
+    );
+    return res.statusCode == 200;
   }
 }
