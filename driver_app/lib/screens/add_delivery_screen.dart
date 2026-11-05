@@ -851,7 +851,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     );
   }
 
-  // Stepper Pill Widget — large touch targets for fast driver UX
+  // Stepper Pill Widget matching user screenshot: [-  0  +]
   Widget _buildStepperPill({
     required int qty,
     required bool canDecrease,
@@ -863,18 +863,19 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final isSelected = qty > 0;
 
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
       decoration: BoxDecoration(
         color: isSelected ? Colors.white : const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isSelected ? activeColor : const Color(0xFFCBD5E1),
-          width: isSelected ? 1.8 : 1.2,
+          width: isSelected ? 1.5 : 1.2,
         ),
         boxShadow: isSelected
             ? [
                 BoxShadow(
-                  color: activeColor.withValues(alpha: 0.14),
-                  blurRadius: 6,
+                  color: activeColor.withValues(alpha: 0.12),
+                  blurRadius: 4,
                   offset: const Offset(0, 2),
                 ),
               ]
@@ -883,56 +884,48 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Minus button — big tap target
-          Material(
-            color: Colors.transparent,
-            borderRadius: const BorderRadius.horizontal(left: Radius.circular(13)),
-            child: InkWell(
-              onTap: canDecrease ? onDecrease : null,
-              borderRadius: const BorderRadius.horizontal(left: Radius.circular(13)),
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                child: Icon(
-                  Icons.remove_rounded,
-                  size: 20,
-                  color: canDecrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
-                ),
+          // Minus button
+          InkWell(
+            onTap: canDecrease ? onDecrease : null,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.remove_rounded,
+                size: 16,
+                color: canDecrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
               ),
             ),
           ),
 
-          // Count Text — bigger for readability
+          // Count Text
           Container(
-            width: 34,
+            width: 26,
             alignment: Alignment.center,
             child: Text(
               '$qty',
               style: GoogleFonts.inter(
-                fontSize: 17,
+                fontSize: 14,
                 fontWeight: FontWeight.w900,
                 color: isSelected ? activeColor : const Color(0xFF64748B),
               ),
             ),
           ),
 
-          // Plus button — big tap target
-          Material(
-            color: Colors.transparent,
-            borderRadius: const BorderRadius.horizontal(right: Radius.circular(13)),
-            child: InkWell(
-              onTap: canIncrease ? onIncrease : null,
-              borderRadius: const BorderRadius.horizontal(right: Radius.circular(13)),
-              child: Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                child: Icon(
-                  Icons.add_rounded,
-                  size: 20,
-                  color: canIncrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
-                ),
+          // Plus button
+          InkWell(
+            onTap: canIncrease ? onIncrease : null,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.add_rounded,
+                size: 16,
+                color: canIncrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
               ),
             ),
           ),
