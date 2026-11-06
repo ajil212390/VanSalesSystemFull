@@ -27,7 +27,6 @@ import {
   IconReceipt,
   IconTrash,
   IconWallet,
-  IconArrowUpRight,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -327,12 +326,9 @@ export const RouteDetailsPage: React.FC = () => {
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             {data.stock?.filled_quantity ?? 0} Cyl
           </Text>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed">
-              Full cylinders currently on vehicle
-            </Text>
-            <IconArrowUpRight size={15} color="#800020" />
-          </Group>
+          <Text size="xs" c="dimmed" mt="xs">
+            Full cylinders currently on vehicle
+          </Text>
         </Paper>
 
         {/* Empty Cylinders */}
@@ -351,17 +347,14 @@ export const RouteDetailsPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Empty Cylinders
             </Text>
-            <IconPackage size={20} color="#b45309" stroke={1.75} />
+            <IconPackage size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             {data.stock?.empty_quantity ?? 0} Cyl
           </Text>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed">
-              Collected &amp; in transit on van
-            </Text>
-            <IconArrowUpRight size={15} color="#b45309" />
-          </Group>
+          <Text size="xs" c="dimmed" mt="xs">
+            Collected &amp; in transit on van
+          </Text>
         </Paper>
 
         {/* Delivered Today */}
@@ -380,17 +373,14 @@ export const RouteDetailsPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Delivered Today
             </Text>
-            <IconTruck size={20} color="#15803d" stroke={1.75} />
+            <IconTruck size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#15803d', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             {data.stock?.delivered_quantity ?? 0} Cyl
           </Text>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed">
-              Delivered across customer routes
-            </Text>
-            <IconArrowUpRight size={15} color="#15803d" />
-          </Group>
+          <Text size="xs" c="dimmed" mt="xs">
+            Delivered across customer routes
+          </Text>
         </Paper>
 
         {/* Returns */}
@@ -409,17 +399,14 @@ export const RouteDetailsPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Customer Returns
             </Text>
-            <IconArrowBack size={20} color="#1d4ed8" stroke={1.75} />
+            <IconArrowBack size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             {data.stock?.return_quantity ?? 0} Cyl
           </Text>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed">
-              Empty cylinders taken back
-            </Text>
-            <IconArrowUpRight size={15} color="#1d4ed8" />
-          </Group>
+          <Text size="xs" c="dimmed" mt="xs">
+            Empty cylinders taken back
+          </Text>
         </Paper>
       </SimpleGrid>
 
@@ -443,7 +430,17 @@ export const RouteDetailsPage: React.FC = () => {
               Reconcile gross bill collections against driver trip expenses and net cash in hand
             </Text>
           </div>
-          <Badge size="sm" variant="light" color="teal" radius="sm">
+          <Badge
+            size="sm"
+            variant="light"
+            radius="sm"
+            style={{
+              backgroundColor: '#fdf2f4',
+              color: '#800020',
+              border: '1px solid #fce7ec',
+              fontWeight: 700,
+            }}
+          >
             Net Revenue: {fmtInr(netCollection)}
           </Badge>
         </Group>
@@ -458,7 +455,7 @@ export const RouteDetailsPage: React.FC = () => {
                 </Text>
                 <IconReceipt size={17} color="#800020" />
               </Group>
-              <Text fw={700} style={{ color: '#800020', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtInr(totalCollection)}
               </Text>
               <Text size="xs" c="dimmed" mt={4}>
@@ -472,9 +469,9 @@ export const RouteDetailsPage: React.FC = () => {
                 <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Net Cash In Hand
                 </Text>
-                <IconCash size={17} color="#15803d" />
+                <IconCash size={17} color="#800020" />
               </Group>
-              <Text fw={700} style={{ color: '#15803d', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtInr(netCash)}
               </Text>
               <Text size="xs" c="dimmed" mt={4}>
@@ -488,9 +485,9 @@ export const RouteDetailsPage: React.FC = () => {
                 <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Bank / UPI Revenue
                 </Text>
-                <IconBuildingBank size={17} color="#1d4ed8" />
+                <IconBuildingBank size={17} color="#800020" />
               </Group>
-              <Text fw={700} style={{ color: '#1d4ed8', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtInr(netBank)}
               </Text>
               <Text size="xs" c="dimmed" mt={4}>
@@ -504,9 +501,9 @@ export const RouteDetailsPage: React.FC = () => {
                 <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Trip Expenses
                 </Text>
-                <IconWallet size={17} color="#dc2626" />
+                <IconWallet size={17} color="#800020" />
               </Group>
-              <Text fw={700} style={{ color: totalExpense > 0 ? '#dc2626' : '#94a3b8', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtInr(totalExpense)}
               </Text>
               <Text size="xs" c="dimmed" mt={4}>
@@ -515,17 +512,17 @@ export const RouteDetailsPage: React.FC = () => {
             </Paper>
 
             {/* 5. Net Route Balance */}
-            <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }}>
+            <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#fafbfc', borderColor: '#e2e8f0' }}>
               <Group justify="space-between" align="center" mb={4}>
-                <Text size="xs" fw={700} c="#166534" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Total Net Balance
                 </Text>
-                <IconWallet size={17} color="#15803d" />
+                <IconWallet size={17} color="#800020" />
               </Group>
-              <Text fw={800} style={{ color: '#15803d', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
+              <Text fw={700} style={{ color: '#800020', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtInr(netCollection)}
               </Text>
-              <Text size="xs" c="#166534" mt={4}>
+              <Text size="xs" c="dimmed" mt={4}>
                 Total profit/net settlement
               </Text>
             </Paper>
@@ -605,10 +602,14 @@ export const RouteDetailsPage: React.FC = () => {
                     <Table.Td style={{ textAlign: 'center' }}>
                       <Badge
                         size="xs"
-                        variant="outline"
-                        color={exp.payment_mode === 'Cash' ? 'teal' : 'blue'}
+                        variant="light"
                         radius="sm"
-                        style={{ fontWeight: 600 }}
+                        style={{
+                          fontWeight: 700,
+                          backgroundColor: exp.payment_mode === 'Cash' ? '#fdf2f4' : '#f8fafc',
+                          color: exp.payment_mode === 'Cash' ? '#800020' : '#334155',
+                          border: `1px solid ${exp.payment_mode === 'Cash' ? '#fce7ec' : '#e2e8f0'}`,
+                        }}
                       >
                         {exp.payment_mode}
                       </Badge>
@@ -748,10 +749,15 @@ export const RouteDetailsPage: React.FC = () => {
                       <Table.Td style={{ textAlign: 'center' }}>
                         <Badge
                           size="xs"
-                          variant="outline"
-                          color={isCash ? 'teal' : 'blue'}
+                          variant="light"
                           radius="sm"
-                          style={{ fontWeight: 600, textTransform: 'capitalize' }}
+                          style={{
+                            fontWeight: 700,
+                            textTransform: 'capitalize',
+                            backgroundColor: isCash ? '#fdf2f4' : '#f8fafc',
+                            color: isCash ? '#800020' : '#334155',
+                            border: `1px solid ${isCash ? '#fce7ec' : '#e2e8f0'}`,
+                          }}
                         >
                           {paymentModeVal}
                         </Badge>

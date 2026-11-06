@@ -3577,7 +3577,12 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     except Exception:
                         p = None
                     p_name = line.ProductName or (p.ProductName if p else '')
-                    p_weight = (p.AppProductName if p and p.AppProductName else p_name)
+                    p_weight = p.AppProductName if (p and p.AppProductName) else ''
+                    if not p_weight and p_name:
+                        m_weight = re.search(r'(\d+(?:\.\d+)?\s*KG)', p_name, re.IGNORECASE)
+                        p_weight = m_weight.group(1).replace(' ', '').upper() if m_weight else p_name
+                    elif not p_weight:
+                        p_weight = p_name
                     items_data.append({
                         'productId': line.Product_id,
                         'productName': p_name,
@@ -3659,7 +3664,11 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 prod = m.Product
             except Exception:
                 prod = None
-            p_weight = (prod.AppProductName if prod and prod.AppProductName else (prod.ProductName if prod else ''))
+            p_weight = (prod.AppProductName if prod and prod.AppProductName else '')
+            if not p_weight:
+                p_full = (prod.ProductName if prod else '')
+                m_weight = re.search(r'(\d+(?:\.\d+)?\s*KG)', p_full, re.IGNORECASE)
+                p_weight = m_weight.group(1).replace(' ', '').upper() if m_weight else p_full
             cat_n = prod.Category.CategoryName.lower() if (prod and prod.Category) else ''
             p_n = prod.ProductName.lower() if prod else ''
             is_cylinder = ('cylinder' in cat_n) or ('cylinder' in p_n) or ('kg' in p_n) or ('lpg' in p_n)
@@ -5084,7 +5093,13 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
             dn.Status = 'COMPLETED'
             dn.save(update_fields=['Status'])
 
-            # 2. Update all Sales for this driver allocation and shift date to COMPLETED / APPROVED
+            # 2. Mark EndRouteDriver as SETTLED
+            EndRouteDriver.objects.filter(
+                Q(EndRouteDriverId=pk) | Q(RouteVehicleDriver_id=dn.RouteVehicleDriver_id, ShiftDate=shift_date),
+                CompanyId=company_id
+            ).update(Status='SETTLED')
+
+            # 3. Update all Sales for this driver allocation and shift date to COMPLETED / APPROVED
             sales_qs = Sales.objects.filter(
                 RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
                 SalesDate=shift_date,
@@ -5096,44 +5111,6 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 ApprovedAt=timezone.now()
             )
 
-            # 3. Customer FIFO Outstanding Bill Settlement
-            for sale in sales_qs.filter(CustomerLedger__isnull=False):
-                cust = sale.CustomerLedger
-                paid_amt = Decimal(str(sale.GrandTotal or 0))
-                if paid_amt > 0:
-                    # Previous unpaid debit sales for this customer (oldest first)
-                    prev_unpaid = Sales.objects.filter(
-                        CustomerLedger=cust,
-                        CompanyId=company_id
-                    ).exclude(SalesId=sale.SalesId).filter(
-                        Q(Status__in=['LIVE', 'COMPLETED']) & Q(BalanceAmount__gt=0)
-                    ).order_by('SalesDate', 'SalesId')
-
-                    rem = paid_amt
-                    for prev in prev_unpaid:
-                        p_bal = Decimal(str(prev.BalanceAmount or prev.GrandTotal))
-                        if rem >= p_bal:
-                            rem -= p_bal
-                            prev.BalanceAmount = Decimal('0.00')
-                            prev.PaidAmount = prev.GrandTotal
-                            prev.save(update_fields=['BalanceAmount', 'PaidAmount'])
-                        else:
-                            prev.BalanceAmount = p_bal - rem
-                            prev.PaidAmount = (prev.PaidAmount or 0) + rem
-                            prev.save(update_fields=['BalanceAmount', 'PaidAmount'])
-                            rem = Decimal('0.00')
-                            break
-
-                    # Remainder applies to today's sale
-                    s_grand = Decimal(str(sale.GrandTotal or 0))
-                    if rem >= s_grand:
-                        sale.PaidAmount = s_grand
-                        sale.BalanceAmount = Decimal('0.00')
-                    else:
-                        sale.PaidAmount = rem
-                        sale.BalanceAmount = s_grand - rem
-                    sale.save(update_fields=['PaidAmount', 'BalanceAmount'])
-
             # 4. Generate Official Double-Entry Accounting Voucher for Shift
             total_cash = sales_qs.filter(PaymentMethod__iexact='Cash').aggregate(s=Sum('GrandTotal'))['s'] or Decimal('0.00')
             total_bank = sales_qs.exclude(PaymentMethod__iexact='Cash').aggregate(s=Sum('GrandTotal'))['s'] or Decimal('0.00')
@@ -5144,16 +5121,20 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
             total_sgst = (total_tax - total_cgst).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
             if total_cash > 0 or total_bank > 0 or total_subtotal > 0:
-                vch = Voucher.objects.create(
+                vch, created = Voucher.objects.get_or_create(
                     VoucherNo=f"SHIFT-VCH-{dn.DeliveryNoteId}",
-                    VoucherDate=shift_date,
-                    VoucherType='SALES',
-                    ReferenceTable='DeliveryNote',
-                    ReferenceId=dn.DeliveryNoteId,
-                    CompanyId=company_id,
-                    Narration=f"Shift Settlement: {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else 'Van'} • {alloc.Driver.DriverName if alloc and alloc.Driver else 'Driver'}",
-                    IsCancelled=False
+                    defaults={
+                        'VoucherDate': shift_date,
+                        'VoucherType': 'SALES',
+                        'ReferenceTable': 'DeliveryNote',
+                        'ReferenceId': dn.DeliveryNoteId,
+                        'CompanyId': company_id,
+                        'Narration': f"Shift Settlement: {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else 'Van'} • {alloc.Driver.DriverName if alloc and alloc.Driver else 'Driver'}",
+                        'IsCancelled': False
+                    }
                 )
+                if not created:
+                    VoucherLine.objects.filter(Voucher=vch).delete()
                 line_no = 1
                 if total_cash > 0:
                     cash_led = Ledger.objects.filter(LedgerId=24).first() or Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first()

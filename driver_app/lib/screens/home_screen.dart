@@ -1,6 +1,7 @@
 import '../widgets/app_toast.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
 import '../widgets/app_theme.dart';
@@ -2984,190 +2985,262 @@ class _HomeScreenState extends State<HomeScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return Container(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.75,
-          ),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
+        return AnimatedBuilder(
+          animation: state,
+          builder: (context, _) {
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.75,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFEF2F2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.receipt_long_rounded, size: 18, color: Color(0xFF800020)),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        Row(
                           children: [
-                            Text(
-                              'Trip Expenses History',
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: _textPrimary,
+                            Container(
+                              padding: const EdgeInsets.all(7),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF2F2),
+                                borderRadius: BorderRadius.circular(8),
                               ),
+                              child: const Icon(Icons.receipt_long_rounded, size: 18, color: Color(0xFF800020)),
                             ),
-                            Text(
-                              'Total spent: \u20B9${state.totalExpense.toStringAsFixed(0)} \u2022 ${state.expenses.length} records',
-                              style: GoogleFonts.inter(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF64748B),
-                              ),
+                            const SizedBox(width: 10),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Trip Expenses History',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: _textPrimary,
+                                  ),
+                                ),
+                                Text(
+                                  'Total spent: \u20B9${state.totalExpense.toStringAsFixed(0)} \u2022 ${state.expenses.length} records',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
                       ],
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1, color: Color(0xFFF1F5F9)),
-
-              // Expenses List
-              if (state.expenses.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
-                  child: Column(
-                    children: [
-                      const Icon(Icons.receipt_outlined, size: 44, color: Color(0xFFCBD5E1)),
-                      const SizedBox(height: 10),
-                      Text(
-                        'No trip expenses logged yet',
-                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF64748B)),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Tap "+ Add Expense" to record fuel, toll, or food.',
-                        style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
-                      ),
-                    ],
                   ),
-                )
-              else
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    itemCount: state.expenses.length,
-                    separatorBuilder: (context, index) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                    itemBuilder: (context, index) {
-                      final exp = state.expenses[index];
-                      final isCash = exp.paymentMethod.toLowerCase() == 'cash';
-                      final displayMethod = isCash ? 'CASH' : 'BANK';
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Row(
-                          children: [
-                            // Payment Badge Icon
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: isCash ? const Color(0xFFFEF2F2) : const Color(0xFFF0F9FF),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(
-                                isCash ? Icons.money_rounded : Icons.account_balance_rounded,
-                                size: 18,
-                                color: isCash ? const Color(0xFF800020) : const Color(0xFF0284C7),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
+                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
 
-                            // Title and Method Pill
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    exp.title,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: _textPrimary,
-                                    ),
+                  // Expenses List
+                  if (state.expenses.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
+                      child: Column(
+                        children: [
+                          const Icon(Icons.receipt_outlined, size: 44, color: Color(0xFFCBD5E1)),
+                          const SizedBox(height: 10),
+                          Text(
+                            'No trip expenses logged yet',
+                            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF64748B)),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Tap "+ Add Expense" to record fuel, toll, or food.',
+                            style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        itemCount: state.expenses.length,
+                        separatorBuilder: (context, index) => const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                        itemBuilder: (context, index) {
+                          final exp = state.expenses[index];
+                          final isCash = exp.paymentMethod.toLowerCase() == 'cash';
+                          final displayMethod = isCash ? 'CASH' : 'BANK';
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Row(
+                              children: [
+                                // Payment Badge Icon
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: isCash ? const Color(0xFFFEF2F2) : const Color(0xFFF0F9FF),
+                                    borderRadius: BorderRadius.circular(8),
                                   ),
-                                  const SizedBox(height: 2),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                    decoration: BoxDecoration(
-                                      color: isCash ? const Color(0xFFFEF2F2) : const Color(0xFFF0F9FF),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      displayMethod,
-                                      style: TextStyle(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: isCash ? const Color(0xFF800020) : const Color(0xFF0284C7),
+                                  child: Icon(
+                                    isCash ? Icons.money_rounded : Icons.account_balance_rounded,
+                                    size: 18,
+                                    color: isCash ? const Color(0xFF800020) : const Color(0xFF0284C7),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+
+                                // Title and Method Pill
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        exp.title,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: _textPrimary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                        decoration: BoxDecoration(
+                                          color: isCash ? const Color(0xFFFEF2F2) : const Color(0xFFF0F9FF),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: Text(
+                                          displayMethod,
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: isCash ? const Color(0xFF800020) : const Color(0xFF0284C7),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                // Expense Amount
+                                Text(
+                                  '\u20B9${exp.amount.toStringAsFixed(0)}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                    color: _textPrimary,
+                                  ),
+                                ),
+
+                                // Delete Expense Action
+                                if (!state.isShiftLocked) ...[
+                                  const SizedBox(width: 10),
+                                  InkWell(
+                                    onTap: () async {
+                                      HapticFeedback.mediumImpact();
+                                      final confirm = await showDialog<bool>(
+                                        context: ctx,
+                                        builder: (dCtx) => AlertDialog(
+                                          backgroundColor: Colors.white,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                          title: Text(
+                                            'Delete Expense?',
+                                            style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16, color: _textPrimary),
+                                          ),
+                                          content: Text(
+                                            'Are you sure you want to delete "${exp.title}" (\u20B9${exp.amount.toStringAsFixed(0)})?\nThis will reverse the trip expense in accounts.',
+                                            style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF64748B)),
+                                          ),
+                                          actions: [
+                                            TextButton(
+                                              onPressed: () => Navigator.pop(dCtx, false),
+                                              child: Text(
+                                                'Cancel',
+                                                style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
+                                              ),
+                                            ),
+                                            ElevatedButton(
+                                              onPressed: () => Navigator.pop(dCtx, true),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: const Color(0xFFDC2626),
+                                                foregroundColor: Colors.white,
+                                                elevation: 0,
+                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                              ),
+                                              child: Text(
+                                                'Delete',
+                                                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                      if (confirm == true) {
+                                        state.deleteExpense(exp.id);
+                                        if (context.mounted) {
+                                          AppToast.success(context, 'Expense deleted');
+                                        }
+                                      }
+                                    },
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(7),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFEF2F2),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFFFECACA), width: 0.8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.delete_outline_rounded,
+                                        size: 16,
+                                        color: Color(0xFFDC2626),
                                       ),
                                     ),
                                   ),
                                 ],
-                              ),
+                              ],
                             ),
+                          );
+                        },
+                      ),
+                    ),
 
-                            // Expense Amount
-                            Text(
-                              '\u20B9${exp.amount.toStringAsFixed(0)}',
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                                color: _textPrimary,
-                              ),
-                            ),
-                          ],
+                  // Bottom Action to Add Expense
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _openAddExpenseModal(context, state);
+                        },
+                        icon: const Icon(Icons.add, size: 16),
+                        label: const Text('Add New Expense'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF800020),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          textStyle: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700),
                         ),
-                      );
-                    },
-                  ),
-                ),
-
-              // Bottom Action to Add Expense
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _openAddExpenseModal(context, state);
-                    },
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('Add New Expense'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF800020),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      textStyle: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );

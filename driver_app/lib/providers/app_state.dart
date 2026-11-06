@@ -562,9 +562,14 @@ class AppState extends ChangeNotifier {
               for (final s in backendSales) {
                 final cData = s['customer'] as Map<String, dynamic>? ?? {};
                 final itemsList = (s['items'] as List? ?? []).map((it) {
-                  final w = it['weight']?.toString() ?? '';
+                  var w = it['weight']?.toString().trim() ?? '';
+                  final kgMatch = RegExp(r'(\d+(?:\.\d+)?\s*KG)', caseSensitive: false).firstMatch(w);
+                  if (kgMatch != null) {
+                    w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
+                  }
                   final matchedCyl = cylinders.firstWhere(
-                    (c) => c.weight == w,
+                    (c) => c.weight.trim().toUpperCase() == w.toUpperCase() ||
+                           (w.isNotEmpty && c.weight.toUpperCase().contains(w.toUpperCase())),
                     orElse: () => CylinderType(
                       productId: it['productId'] as int?,
                       weight: w,

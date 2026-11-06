@@ -174,7 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Ensure your phone and computer are on the same Wi-Fi. Verify your PC IPv4 address.',
+                      '',
                       style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B)),
                     ),
                     const SizedBox(height: 14),

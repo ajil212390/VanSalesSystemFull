@@ -26,7 +26,6 @@ import {
   IconCylinder,
   IconReceipt,
   IconWallet,
-  IconArrowUpRight,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -198,12 +197,9 @@ export const VanManagementPage: React.FC = () => {
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             {data?.total_route_count ?? '—'}
           </Text>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed">
-              {liveCount} active on delivery duty
-            </Text>
-            <IconArrowUpRight size={15} color="#800020" />
-          </Group>
+          <Text size="xs" c="dimmed" mt="xs">
+            {liveCount} active on delivery duty
+          </Text>
         </Paper>
 
         {/* Card 2: Cylinders Delivered */}
@@ -227,12 +223,9 @@ export const VanManagementPage: React.FC = () => {
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             {totalDelivered} Cyl
           </Text>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed">
-              Customer cylinder drops today
-            </Text>
-            <IconArrowUpRight size={15} color="#800020" />
-          </Group>
+          <Text size="xs" c="dimmed" mt="xs">
+            Customer cylinder drops today
+          </Text>
         </Paper>
 
         {/* Card 3: Gross Collection */}
@@ -256,12 +249,9 @@ export const VanManagementPage: React.FC = () => {
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             {fmtInr(totalGrossCollection)}
           </Text>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed">
-              Trip Expenses: <strong style={{ color: '#dc2626' }}>{fmtInr(totalExpenses)}</strong>
-            </Text>
-            <IconArrowUpRight size={15} color="#800020" />
-          </Group>
+          <Text size="xs" c="dimmed" mt="xs">
+            Trip Expenses: {fmtInr(totalExpenses)}
+          </Text>
         </Paper>
 
         {/* Card 4: Net Collection */}
@@ -280,17 +270,14 @@ export const VanManagementPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Net Fleet Balance
             </Text>
-            <IconWallet size={20} color="#15803d" stroke={1.75} />
+            <IconWallet size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#15803d', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
             {fmtInr(totalNetBalance)}
           </Text>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed">
-              Net revenue in hand &amp; bank
-            </Text>
-            <IconArrowUpRight size={15} color="#15803d" />
-          </Group>
+          <Text size="xs" c="dimmed" mt="xs">
+            Net revenue in hand &amp; bank
+          </Text>
         </Paper>
       </SimpleGrid>
 
@@ -460,7 +447,7 @@ export const VanManagementPage: React.FC = () => {
                           size="sm"
                           fw={600}
                           style={{
-                            color: expAmt > 0 ? '#dc2626' : '#94a3b8',
+                            color: expAmt > 0 ? '#0f172a' : '#94a3b8',
                             fontVariantNumeric: 'tabular-nums',
                           }}
                         >
@@ -472,7 +459,7 @@ export const VanManagementPage: React.FC = () => {
                           size="sm"
                           fw={700}
                           style={{
-                            color: '#15803d',
+                            color: '#0f172a',
                             fontVariantNumeric: 'tabular-nums',
                           }}
                         >
