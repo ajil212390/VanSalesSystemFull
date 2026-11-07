@@ -962,16 +962,6 @@ class RouteVehicleDriverViewSet(viewsets.ModelViewSet):
             qs = qs.filter(IsActive=(is_active.lower() == 'true'))
         return qs
 
-    def perform_update(self, serializer):
-        sale = serializer.save()
-        if sale.Status == 'CANCELLED':
-            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
-        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
-            sync_sales_billwise_allocation(sale, None)
-
-    def perform_destroy(self, instance):
-        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
-        instance.delete()
 
     @action(detail=False, methods=['get'])
     def current(self, request):
@@ -1184,16 +1174,6 @@ class ProductPriceAuditViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(Product_id=product_id)
         return qs
 
-    def perform_update(self, serializer):
-        sale = serializer.save()
-        if sale.Status == 'CANCELLED':
-            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
-        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
-            sync_sales_billwise_allocation(sale, None)
-
-    def perform_destroy(self, instance):
-        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
-        instance.delete()
 
 class GroupViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -1265,16 +1245,6 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
         return qs
 
-    def perform_update(self, serializer):
-        sale = serializer.save()
-        if sale.Status == 'CANCELLED':
-            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
-        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
-            sync_sales_billwise_allocation(sale, None)
-
-    def perform_destroy(self, instance):
-        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
-        instance.delete()
 
     @action(detail=False, methods=['get'], url_path='suppliers', permission_classes=[AllowAny])
     def suppliers(self, request):
@@ -1639,18 +1609,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
         qs = Purchase.objects.select_related('SupplierLedger').prefetch_related('lines__Product', 'lines__Unit').all()
         if company_id:
             qs = qs.filter(CompanyId=company_id)
-        return qs
-
-    def perform_update(self, serializer):
-        sale = serializer.save()
-        if sale.Status == 'CANCELLED':
-            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
-        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
-            sync_sales_billwise_allocation(sale, None)
-
-    def perform_destroy(self, instance):
-        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
-        instance.delete().order_by('-PurchaseDate', '-PurchaseId')
+        return qs.order_by('-PurchaseDate', '-PurchaseId')
 
     def _get_system_ledger(self, company_id, group_id):
         ledger = Ledger.objects.filter(Group_id=group_id, CompanyId=company_id).first()
@@ -2404,18 +2363,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if company_id:
             # Filter by ledgers belonging to the active company
             qs = qs.filter(PartyLedger__CompanyId=company_id)
-        return qs
-
-    def perform_update(self, serializer):
-        sale = serializer.save()
-        if sale.Status == 'CANCELLED':
-            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
-        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
-            sync_sales_billwise_allocation(sale, None)
-
-    def perform_destroy(self, instance):
-        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
-        instance.delete().order_by('-PaymentId')
+        return qs.order_by('-PaymentId')
 
     @action(detail=False, methods=['get'], url_path='pending-bills')
     def pending_bills(self, request):
@@ -3281,18 +3229,7 @@ class LedgerLineViewSet(viewsets.ModelViewSet):
         if ledger_id:
             qs = qs.filter(Ledger_id=ledger_id)
 
-        return qs
-
-    def perform_update(self, serializer):
-        sale = serializer.save()
-        if sale.Status == 'CANCELLED':
-            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
-        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
-            sync_sales_billwise_allocation(sale, None)
-
-    def perform_destroy(self, instance):
-        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
-        instance.delete().order_by('BillDate', 'LedgerLineId')
+        return qs.order_by('BillDate', 'LedgerLineId')
 
     def perform_create(self, serializer):
         user = self.request.user
