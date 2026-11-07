@@ -44,6 +44,8 @@ import {
   IconCreditCard,
   IconChartBar,
   IconBell,
+  IconShoppingCart,
+  IconPackageImport,
 } from '@tabler/icons-react';
 
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
@@ -65,16 +67,16 @@ export const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { data: receiptNotes = [] } = useQuery<any[]>({
-    queryKey: ['receipt-notes'],
+  const { data: endRouteDrivers = [] } = useQuery<any[]>({
+    queryKey: ['end-route-drivers'],
     queryFn: async () => {
-      const res = await apiClient.get('/receipt-notes/');
-      return Array.isArray(res.data) ? res.data : [];
+      const res = await apiClient.get('/end-route-drivers/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     },
     refetchInterval: 15000,
   });
 
-  const pendingReceiptNotes = receiptNotes.filter((n: any) => n.status === 'pending');
+  const pendingEndRoutes = endRouteDrivers.filter((n: any) => n.Status?.toUpperCase() === 'PENDING');
 
   const handleLogout = () => {
     logout();
@@ -144,6 +146,10 @@ export const AppLayout: React.FC = () => {
         return { section: 'Payment', title: 'Payments' };
       case '/payments/new':
         return { section: 'Payment', title: 'New Payment' };
+      case '/receipts':
+        return { section: 'Receipt', title: 'Receipt Vouchers' };
+      case '/receipts/new':
+        return { section: 'Receipt', title: 'New Receipt' };
       case '/delivery-notes':
         return { section: 'Operations', title: 'Delivery Notes' };
       case '/receipt-notes':
@@ -154,6 +160,9 @@ export const AppLayout: React.FC = () => {
       default:
         if (location.pathname.startsWith('/purchases/')) {
           return { section: 'Purchase', title: 'Edit Purchase' };
+        }
+        if (location.pathname.startsWith('/receipts/')) {
+          return { section: 'Receipt', title: 'Receipt Details' };
         }
         if (location.pathname.startsWith('/van-management/')) {
           return { section: 'Van Management', title: 'Route Details' };
@@ -250,8 +259,8 @@ export const AppLayout: React.FC = () => {
                     offset={4}
                     position="top-end"
                     color="burgundy"
-                    label={pendingReceiptNotes.length > 0 ? String(pendingReceiptNotes.length) : undefined}
-                    disabled={pendingReceiptNotes.length === 0}
+                    label={pendingEndRoutes.length > 0 ? String(pendingEndRoutes.length) : undefined}
+                    disabled={pendingEndRoutes.length === 0}
                     withBorder
                     styles={{
                       indicator: {
@@ -280,32 +289,32 @@ export const AppLayout: React.FC = () => {
                 </Tooltip>
               </Menu.Target>
 
-              <Menu.Dropdown p="xs" style={{ borderColor: '#e2e8f0', backgroundColor: '#ffffff' }}>
+              <Menu.Dropdown p="xs" style={{ borderColor: '#e2e8f0', backgroundColor: '#ffffff', minWidth: 320 }}>
                 <Group justify="space-between" align="center" px="xs" py={6} style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <Group gap={6}>
-                    <IconReceipt size={16} color="#800020" />
+                    <IconClipboardCheck size={16} color="#800020" />
                     <Text size="xs" fw={700} style={{ color: '#0f172a' }}>
-                      Receipt Note Alerts
+                      End Route Alerts
                     </Text>
                   </Group>
                   <Badge size="xs" color="burgundy" variant="light" styles={{ root: { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 } }}>
-                    {pendingReceiptNotes.length} Pending
+                    {pendingEndRoutes.length} Pending
                   </Badge>
                 </Group>
 
                 <Box py={4}>
-                  {pendingReceiptNotes.length === 0 ? (
+                  {pendingEndRoutes.length === 0 ? (
                     <Box px="xs" py="md" style={{ textAlign: 'center' }}>
                       <Text size="xs" c="dimmed">
-                        No pending receipt notes at the gate.
+                        No pending driver shift returns at the warehouse gate.
                       </Text>
                     </Box>
                   ) : (
-                    pendingReceiptNotes.slice(0, 5).map((item: any) => (
+                    pendingEndRoutes.slice(0, 5).map((item: any) => (
                       <Menu.Item
-                        key={item.id}
+                        key={item.EndRouteDriverId}
                         component={Link}
-                        to="/receipt-notes"
+                        to="/end-allocations"
                         style={{
                           borderRadius: 6,
                           padding: '8px 10px',
@@ -318,18 +327,21 @@ export const AppLayout: React.FC = () => {
                           <Stack gap={2}>
                             <Group gap={6} align="center">
                               <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                                {item.noteNumber}
+                                ERD-{item.EndRouteDriverId}
                               </Text>
                               <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontSize: 10, height: 18, borderColor: '#e2e8f0', color: '#334155' } }}>
-                                {item.vehicleNumber}
+                                {item.vehicle_number}
                               </Badge>
                             </Group>
                             <Text size="11px" c="dimmed">
-                              {item.driverName} • {item.emptyCylindersTotal} Empties • ₹{(item.cashCollected + item.digitalCollected).toLocaleString('en-IN')}
+                              Driver: <strong style={{ color: '#334155' }}>{item.driver_name}</strong> • {item.total_filled || 0} Full, {item.total_empty || 0} Empties
+                            </Text>
+                            <Text size="10.5px" c="#800020" fw={600}>
+                              Total: ₹{(item.cash_amount + item.bank_amount).toLocaleString('en-IN', { minimumFractionDigits: 0 })} ({item.route_name})
                             </Text>
                           </Stack>
                           <Text size="10px" c="#94a3b8" fw={500}>
-                            {item.time || item.date}
+                            {item.ShiftDate}
                           </Text>
                         </Group>
                       </Menu.Item>
@@ -341,7 +353,7 @@ export const AppLayout: React.FC = () => {
 
                 <Menu.Item
                   component={Link}
-                  to="/receipt-notes"
+                  to="/end-allocations"
                   style={{
                     borderRadius: 6,
                     textAlign: 'center',
@@ -352,7 +364,7 @@ export const AppLayout: React.FC = () => {
                     marginTop: 4,
                   }}
                 >
-                  View All Receipt Notes &rarr;
+                  View All End Allocations &rarr;
                 </Menu.Item>
               </Menu.Dropdown>
             </Menu>
@@ -779,7 +791,7 @@ export const AppLayout: React.FC = () => {
             component={Link}
             to="/purchases"
             label="Purchase"
-            leftSection={<IconReceipt size={20} stroke={1.75} />}
+            leftSection={<IconShoppingCart size={20} stroke={1.75} />}
             active={location.pathname.startsWith('/purchases')}
             color="burgundy"
             variant="light"
@@ -866,6 +878,53 @@ export const AppLayout: React.FC = () => {
           />
         </Tooltip>
 
+        {/* Receipt NavLink */}
+        <Tooltip label="Receipt" position="right" withArrow disabled={!effectiveCollapsed}>
+          <NavLink
+            component={Link}
+            to="/receipts"
+            label="Receipt"
+            leftSection={<IconReceipt size={20} stroke={1.75} />}
+            active={location.pathname.startsWith('/receipts')}
+            color="burgundy"
+            variant="light"
+            mb={4}
+            onClick={() => opened && toggle()}
+            styles={{
+              root: {
+                borderRadius: '6px',
+                height: 40,
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+                padding: effectiveCollapsed ? '0' : '0 12px',
+                backgroundColor: location.pathname.startsWith('/receipts') ? '#fdf2f4' : 'transparent',
+                color: location.pathname.startsWith('/receipts') ? '#800020' : '#475569',
+                fontWeight: 600,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
+              },
+              section: {
+                marginRight: effectiveCollapsed ? 0 : 12,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+              body: {
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                opacity: effectiveCollapsed ? 0 : 1,
+                maxWidth: effectiveCollapsed ? 0 : 160,
+                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+              },
+            }}
+          />
+        </Tooltip>
+
         {/* Delivery Notes Link (Below Payment) */}
         <Tooltip label="Delivery Notes" position="right" withArrow disabled={!effectiveCollapsed}>
           <NavLink
@@ -919,7 +978,7 @@ export const AppLayout: React.FC = () => {
             component={Link}
             to="/receipt-notes"
             label="Receipt Notes"
-            leftSection={<IconReceipt size={20} stroke={1.75} />}
+            leftSection={<IconPackageImport size={20} stroke={1.75} />}
             active={location.pathname === '/receipt-notes'}
             color="burgundy"
             variant="light"

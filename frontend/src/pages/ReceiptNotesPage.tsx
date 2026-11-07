@@ -71,7 +71,7 @@ interface ReceiptNoteItem {
 export const ReceiptNotesPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'settled' | 'pending' | 'all'>('settled');
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
   const [selectedNote, setSelectedNote] = useState<ReceiptNoteItem | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -811,33 +811,20 @@ export const ReceiptNotesPage: React.FC = () => {
           </div>
 
           <Group gap="xs" align="center" wrap="wrap">
-            {/* Filter Toggle: Settled first, then Pending, then All */}
+            {/* Filter Toggle: Pending first, then Settled, then All */}
             <SegmentedControl
               value={statusFilter}
               onChange={(val) => setStatusFilter(val as any)}
+              color="burgundy"
               data={[
                 {
                   label: (
                     <span
                       style={{
-                        color: statusFilter === 'settled' ? '#800020' : '#475569',
-                        fontWeight: statusFilter === 'settled' ? 700 : 500,
+                        color: statusFilter === 'pending' ? '#ffffff' : '#64748b',
+                        fontWeight: statusFilter === 'pending' ? 700 : 600,
                         fontSize: 12,
-                        transition: 'color 150ms ease',
-                      }}
-                    >
-                      Settled ({settledCount})
-                    </span>
-                  ),
-                  value: 'settled',
-                },
-                {
-                  label: (
-                    <span
-                      style={{
-                        color: statusFilter === 'pending' ? '#800020' : '#475569',
-                        fontWeight: statusFilter === 'pending' ? 700 : 500,
-                        fontSize: 12,
+                        display: 'inline-block',
                         transition: 'color 150ms ease',
                       }}
                     >
@@ -850,9 +837,26 @@ export const ReceiptNotesPage: React.FC = () => {
                   label: (
                     <span
                       style={{
-                        color: statusFilter === 'all' ? '#800020' : '#475569',
-                        fontWeight: statusFilter === 'all' ? 700 : 500,
+                        color: statusFilter === 'settled' ? '#ffffff' : '#64748b',
+                        fontWeight: statusFilter === 'settled' ? 700 : 600,
                         fontSize: 12,
+                        display: 'inline-block',
+                        transition: 'color 150ms ease',
+                      }}
+                    >
+                      Settled ({settledCount})
+                    </span>
+                  ),
+                  value: 'settled',
+                },
+                {
+                  label: (
+                    <span
+                      style={{
+                        color: statusFilter === 'all' ? '#ffffff' : '#64748b',
+                        fontWeight: statusFilter === 'all' ? 700 : 600,
+                        fontSize: 12,
+                        display: 'inline-block',
                         transition: 'color 150ms ease',
                       }}
                     >
@@ -874,8 +878,8 @@ export const ReceiptNotesPage: React.FC = () => {
                   border: '1px solid #e2e8f0',
                 },
                 indicator: {
-                  backgroundColor: '#ffffff',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
+                  backgroundColor: '#800020',
+                  boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
                   borderRadius: 6,
                 },
                 label: {

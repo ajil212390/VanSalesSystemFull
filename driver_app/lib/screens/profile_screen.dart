@@ -12,102 +12,340 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = AppStateProvider.of(context);
-    final isPendingShift = state.endShiftStatus.toUpperCase() == 'PENDING';
+    final displayName = state.loggedInUsername.isNotEmpty
+        ? state.loggedInUsername
+        : (state.fullName.isNotEmpty ? state.fullName : 'Driver');
+    final initial = displayName.isNotEmpty ? displayName[0].toUpperCase() : 'D';
+
+    final vehicle = state.vehicleNumber.isNotEmpty ? state.vehicleNumber : 'Not Assigned';
+    final route = state.routeInfo.isNotEmpty ? state.routeInfo : 'Standard Route';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        backgroundColor: const Color(0xFFF1F5F9),
+        backgroundColor: const Color(0xFFF8FAFC),
         elevation: 0,
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
         centerTitle: false,
-        toolbarHeight: 52,
-        titleSpacing: Navigator.canPop(context) ? 0 : 20,
-        leading: Navigator.canPop(context)
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
-                onPressed: () => Navigator.pop(context),
-              )
-            : null,
+        toolbarHeight: 56,
+        titleSpacing: 20,
         title: Text(
           'Profile',
           style: GoogleFonts.inter(
             fontSize: 22,
             fontWeight: FontWeight.w800,
             color: const Color(0xFF0F172A),
-            letterSpacing: -0.5,
+            letterSpacing: -0.4,
           ),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 110),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1. UNIFIED EXECUTIVE USER & VEHICLE PROFILE CARD
-              _buildUnifiedUserCard(context, state),
-
-              // 2. END SHIFT REQUEST UPDATE CARD (Prominent in Burgundy)
-              if (isPendingShift) ...[
-                const SizedBox(height: 16),
-                _buildEndShiftPendingCard(context, state),
-              ],
-
-              const SizedBox(height: 20),
-
-              // 3. END SHIFT & LOGOUT ACTION (Clean Burgundy Accent)
+              // 1. DRIVER PROFILE CARD
               Container(
                 width: double.infinity,
-                height: 48,
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFF5C2CB)),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                   boxShadow: const [
                     BoxShadow(
-                      color: Color(0x0E0F172A),
+                      color: Color(0x060F172A),
                       blurRadius: 10,
                       offset: Offset(0, 3),
                     ),
-                    BoxShadow(
-                      color: Color(0x060F172A),
-                      blurRadius: 3,
-                      offset: Offset(0, 1),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    // Avatar Circle
+                    Container(
+                      width: 58,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFDF2F4),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFFCE7EC), width: 1.5),
+                      ),
+                      child: Center(
+                        child: Text(
+                          initial,
+                          style: GoogleFonts.inter(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w900,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+
+                    // Name, Role & Driver ID
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            displayName,
+                            style: GoogleFonts.inter(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                              letterSpacing: -0.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  'Driver',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF475569),
+                                  ),
+                                ),
+                              ),
+                              if (state.driverId.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                Text(
+                                  'ID: ${state.driverId}',
+                                  style: GoogleFonts.jetBrainsMono(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => _confirmLogout(context, state),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+              ),
+              const SizedBox(height: 16),
+
+              // 2. ASSIGNMENT DETAILS CARD (Vehicle & Route)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x060F172A),
+                      blurRadius: 10,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // Vehicle Row
+                    Row(
                       children: [
-                        const Icon(
-                          Icons.logout_rounded,
-                          size: 18,
-                          color: Color(0xFF800020),
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.local_shipping_outlined,
+                            size: 20,
+                            color: Color(0xFF475569),
+                          ),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'End Shift & Logout',
-                          style: GoogleFonts.inter(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF800020),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'VEHICLE',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF94A3B8),
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                vehicle,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    ),
+
+                    // Route Row
+                    Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.route_outlined,
+                            size: 20,
+                            color: Color(0xFF475569),
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'ASSIGNED ROUTE',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF94A3B8),
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                route,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 3. SYSTEM STATUS CARD
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x060F172A),
+                      blurRadius: 10,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF10B981),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'System Online & Synchronized',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF334155),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      'v1.0.4',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // 4. LOGOUT BUTTON (Prominent, cleanly visible, not hidden behind nav bar)
+              Container(
+                width: double.infinity,
+                height: 50,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x08800020),
+                      blurRadius: 12,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: OutlinedButton(
+                  onPressed: () => _confirmLogout(context, state),
+                  style: OutlinedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    side: const BorderSide(color: Color(0xFF800020), width: 1.5),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.logout_rounded, size: 19, color: Color(0xFF800020)),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Log Out',
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF800020),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-
-              const SizedBox(height: 90),
             ],
           ),
         ),
@@ -115,378 +353,27 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  // 1. UNIFIED USER & VEHICLE CARD (Strictly Burgundy & Slate Neutrals)
-  Widget _buildUnifiedUserCard(BuildContext context, AppState state) {
-    final displayName = state.loggedInUsername.isNotEmpty
-        ? state.loggedInUsername
-        : (state.fullName.isNotEmpty ? state.fullName : 'User');
-
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0E0F172A),
-            blurRadius: 16,
-            offset: Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Color(0x080F172A),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Top Half: User Profile Row
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                // Modern Unique Profile Icon
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF800020),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.person,
-                      size: 34,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-
-                // User Information
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              displayName,
-                              style: GoogleFonts.inter(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF0F172A),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(5),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Text(
-                              state.driverId.isNotEmpty ? state.driverId : 'USER',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF64748B),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (state.driverName.isNotEmpty &&
-                          state.driverName.toLowerCase() != displayName.toLowerCase()) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          'Driver: ${state.driverName}',
-                          style: GoogleFonts.inter(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF64748B),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 5),
-
-                      // Status Indicator in Burgundy
-                      Builder(builder: (context) {
-                        final status = state.endShiftStatus.toUpperCase();
-                        final String statusText;
-                        final String? statusSubtitle;
-
-                        if (status == 'PENDING') {
-                          statusText = 'End Shift Pending Verification';
-                          statusSubtitle = 'Awaiting Admin Approval from Web Portal';
-                        } else if (status == 'SETTLED' || status == 'APPROVED') {
-                          statusText = 'Shift Settled & Approved';
-                          statusSubtitle = 'Verified by Admin';
-                        } else {
-                          statusText = 'Shift Active \u2022 On Duty';
-                          statusSubtitle = null;
-                        }
-
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  width: 7,
-                                  height: 7,
-                                  decoration: const BoxDecoration(
-                                    color: Color(0xFF800020),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  statusText,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF800020),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (statusSubtitle != null) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                statusSubtitle,
-                                style: GoogleFonts.inter(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                            ],
-                          ],
-                        );
-                      }),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Divider
-          const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
-
-          // Bottom Half: Assigned Truck Row
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-            decoration: const BoxDecoration(
-              color: Color(0xFFFAFAFA),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(15),
-                bottomRight: Radius.circular(15),
-              ),
-            ),
-            child: Row(
-              children: [
-                const SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: Center(
-                    child: Icon(
-                      Icons.local_shipping_rounded,
-                      size: 22,
-                      color: Color(0xFF800020),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        state.vehicleNumber.isNotEmpty ? state.vehicleNumber : 'No Vehicle Assigned',
-                        style: GoogleFonts.inter(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${state.truckStock} Full Cylinders \u2022 ${state.totalEmptyStock} Empty Returns',
-                        style: GoogleFonts.inter(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // 2. END SHIFT PENDING CARD
-  Widget _buildEndShiftPendingCard(BuildContext context, AppState state) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFDF2F4),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFF5C2CB), width: 1.2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.schedule_rounded, size: 18, color: Color(0xFF800020)),
-              const SizedBox(width: 8),
-              Text(
-                'END SHIFT REQUEST SUBMITTED',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF800020),
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Your route returns & collections are queued for warehouse gate inspection and settlement verification by the Admin.',
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFF475569),
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'CASH IN HAND',
-                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '\u20B9${state.cashBalance.toStringAsFixed(0)}',
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
-                    ),
-                  ],
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'BANK / UPI',
-                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '\u20B9${state.bankBalance.toStringAsFixed(0)}',
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
-                    ),
-                  ],
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'EMPTIES',
-                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${state.totalClosingEmpty}',
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Logout confirmation modal in Burgundy
   Future<void> _confirmLogout(BuildContext context, AppState state) async {
     final confirmed = await showSuperGasConfirmDialog(
       context: context,
-      title: 'End Shift & Logout?',
-      message: 'Are you sure you want to logout? Shift returns and delivery records remain securely synchronized.',
+      title: 'Log Out?',
+      message: 'Are you sure you want to log out from this device?',
       confirmLabel: 'Logout',
       icon: Icons.logout_rounded,
       iconColor: const Color(0xFF800020),
       iconBgColor: const Color(0xFFFDF2F4),
       confirmButtonColor: const Color(0xFF800020),
-      extraContent: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              '${state.todayDeliveredCount} Delivered',
-              style: GoogleFonts.inter(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF0F172A),
-              ),
-            ),
-            Text(
-              '\u20B9${state.todayCollectedTotal.toStringAsFixed(0)} Collected',
-              style: GoogleFonts.inter(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF800020),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
 
     if (confirmed == true) {
+      await state.clearLocalCache();
       await ApiService.logout();
-      if (context.mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          SmoothPageRoute(page: const LoginScreen()),
-          (route) => false,
-        );
-      }
+      if (!context.mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        SmoothPageRoute(page: const LoginScreen()),
+        (route) => false,
+      );
     }
   }
 }

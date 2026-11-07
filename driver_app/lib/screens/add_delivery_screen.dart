@@ -1,5 +1,6 @@
 import '../widgets/app_toast.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
 import 'success_screen.dart';
@@ -15,7 +16,6 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   final _amountController = TextEditingController();
   final _searchController = TextEditingController();
   String _searchQuery = '';
-  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -42,15 +42,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     } else if (state.collectedAmount == 0 && state.totalBillAmount > 0) {
       state.setCollectedAmount(state.totalBillAmount);
     }
-    setState(() => _isSubmitting = true);
-    final ok = await state.completeDelivery();
-    if (!mounted) return;
-    setState(() => _isSubmitting = false);
-    if (ok) {
-      final lastOrder = state.orders.isNotEmpty ? state.orders.first : null;
-      state.syncFromBackend();
-      SuccessScreen.show(context, order: lastOrder);
-    }
+
+    // Launch modern half-screen animated submission & PDF preparation modal
+    SuccessScreen.processAndShow(context, state: state);
   }
 
   void _selectOrAddCustomCustomer(AppState state, String name) {
@@ -277,18 +271,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0E0F172A),
-            blurRadius: 16,
-            offset: Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Color(0x080F172A),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -354,7 +337,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       width: 38,
                       height: 38,
                       decoration: const BoxDecoration(
-                        color: Color(0xFFFEF2F2),
+                        color: Color(0xFFFDF2F4),
                         shape: BoxShape.circle,
                       ),
                       child: const Center(
@@ -396,9 +379,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFEF2F2),
+                          color: const Color(0xFFFDF2F4),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFFEE2E2)),
+                          border: Border.all(color: const Color(0xFFF5C2CB)),
                         ),
                         child: Text(
                           '\u20B9${c.outstanding.abs().toStringAsFixed(0)} ${c.outstanding > 0 ? "Dr" : "Cr"}',
@@ -506,14 +489,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                             letterSpacing: 0.5,
                           ),
                         ),
-                        Text(
-                          'Tap to select from dropdown',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF64748B),
-                          ),
-                        ),
+                     
                       ],
                     ),
                   ),
@@ -560,7 +536,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                                     width: 36,
                                     height: 36,
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFFEF2F2),
+                                      color: const Color(0xFFFDF2F4),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Center(
@@ -654,18 +630,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0E0F172A),
-            blurRadius: 16,
-            offset: Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Color(0x080F172A),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -692,7 +657,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
 
             // Table Column Headers: Weight (KG) | Filled | Empty
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
               decoration: BoxDecoration(
                 color: const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(8),
@@ -701,7 +666,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
               child: Row(
                 children: [
                   Expanded(
-                    flex: 3,
+                    flex: 5,
                     child: Text(
                       'Weight',
                       style: GoogleFonts.inter(
@@ -712,7 +677,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                     ),
                   ),
                   Expanded(
-                    flex: 4,
+                    flex: 7,
                     child: Text(
                       'Filled',
                       textAlign: TextAlign.center,
@@ -724,7 +689,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                     ),
                   ),
                   Expanded(
-                    flex: 4,
+                    flex: 7,
                     child: Text(
                       'Empty Return',
                       textAlign: TextAlign.center,
@@ -749,7 +714,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
               final hasStock = cyl.filledStock > 0;
 
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
                 decoration: const BoxDecoration(
                   border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
                 ),
@@ -758,7 +723,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   children: [
                     // Weight & Stock Column (Clean Minimal Design)
                     Expanded(
-                      flex: 3,
+                      flex: 5,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
@@ -801,7 +766,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
 
                     // Filled Delivery Stepper Pill [- QTY +]
                     Expanded(
-                      flex: 4,
+                      flex: 7,
                       child: Center(
                         child: _buildStepperPill(
                           qty: filledQty,
@@ -822,7 +787,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
 
                     // Empty Return Stepper Pill [- QTY +]
                     Expanded(
-                      flex: 4,
+                      flex: 7,
                       child: Center(
                         child: _buildStepperPill(
                           qty: emptyQty,
@@ -851,7 +816,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     );
   }
 
-  // Stepper Pill Widget matching user screenshot: [-  0  +]
+  // Stepper Pill Widget with compact, responsive touch-friendly targets
   Widget _buildStepperPill({
     required int qty,
     required bool canDecrease,
@@ -863,20 +828,20 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final isSelected = qty > 0;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
       decoration: BoxDecoration(
         color: isSelected ? Colors.white : const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
           color: isSelected ? activeColor : const Color(0xFFCBD5E1),
-          width: isSelected ? 1.5 : 1.2,
+          width: isSelected ? 1.5 : 1.0,
         ),
         boxShadow: isSelected
             ? [
                 BoxShadow(
-                  color: activeColor.withValues(alpha: 0.12),
+                  color: activeColor.withValues(alpha: 0.10),
                   blurRadius: 4,
-                  offset: const Offset(0, 2),
+                  offset: const Offset(0, 1.5),
                 ),
               ]
             : null,
@@ -885,47 +850,73 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Minus button
-          InkWell(
-            onTap: canDecrease ? onDecrease : null,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.remove_rounded,
-                size: 16,
-                color: canDecrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: canDecrease
+                  ? () {
+                      HapticFeedback.lightImpact();
+                      onDecrease();
+                    }
+                  : null,
+              borderRadius: BorderRadius.circular(7),
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: canDecrease ? const Color(0xFFF1F5F9) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.remove_rounded,
+                  size: 17,
+                  color: canDecrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
+                ),
               ),
             ),
           ),
 
           // Count Text
           Container(
-            width: 26,
+            width: 24,
             alignment: Alignment.center,
             child: Text(
               '$qty',
               style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w800,
                 color: isSelected ? activeColor : const Color(0xFF64748B),
               ),
             ),
           ),
 
           // Plus button
-          InkWell(
-            onTap: canIncrease ? onIncrease : null,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: 28,
-              height: 28,
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.add_rounded,
-                size: 16,
-                color: canIncrease ? const Color(0xFF0F172A) : const Color(0xFFCBD5E1),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: canIncrease
+                  ? () {
+                      HapticFeedback.lightImpact();
+                      onIncrease();
+                    }
+                  : null,
+              borderRadius: BorderRadius.circular(7),
+              child: Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: canIncrease
+                      ? (isSelected ? activeColor.withValues(alpha: 0.10) : const Color(0xFFF1F5F9))
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.add_rounded,
+                  size: 17,
+                  color: canIncrease ? (isSelected ? activeColor : const Color(0xFF0F172A)) : const Color(0xFFCBD5E1),
+                ),
               ),
             ),
           ),
@@ -946,18 +937,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0E0F172A),
-            blurRadius: 16,
-            offset: Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Color(0x080F172A),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -1118,18 +1098,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0E0F172A),
-            blurRadius: 16,
-            offset: Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Color(0x080F172A),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -1139,14 +1108,14 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             // Section Header
             Row(
               children: [
-                const Icon(Icons.payments_rounded, size: 16, color: Color(0xFF0284C7)),
+                const Icon(Icons.payments_rounded, size: 16, color: Color(0xFF800020)),
                 const SizedBox(width: 6),
                 Text(
                   'PAYMENT METHOD',
                   style: GoogleFonts.inter(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF0284C7),
+                    color: const Color(0xFF800020),
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -1169,7 +1138,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       margin: EdgeInsets.only(right: m['key'] != 'UPI' ? 10 : 0),
                       padding: const EdgeInsets.symmetric(vertical: 11),
                       decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC),
+                        color: isSelected ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
                           color: isSelected ? const Color(0xFF800020) : const Color(0xFFE2E8F0),
@@ -1221,18 +1190,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0E0F172A),
-            blurRadius: 16,
-            offset: Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Color(0x080F172A),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -1329,7 +1287,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       child: Container(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          gradient: canSubmit && !_isSubmitting
+          gradient: canSubmit
               ? const LinearGradient(
                   begin: Alignment.centerLeft,
                   end: Alignment.centerRight,
@@ -1340,82 +1298,47 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 )
               : null,
           color: canSubmit ? null : const Color(0xFFE2E8F0),
-          boxShadow: canSubmit && !_isSubmitting
-              ? const [
-                  BoxShadow(
-                    color: Color(0x30800020),
-                    blurRadius: 12,
-                    offset: Offset(0, 4),
-                  ),
-                ]
-              : null,
         ),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: _isSubmitting
-                ? null
-                : () {
-                    if (canSubmit) {
-                      _submitDelivery(state);
-                    } else {
-                      String msg = 'Please fill all required fields';
-                      if (state.selectedCustomer == null) {
-                        msg = 'Please select or enter customer name';
-                      } else if (state.totalCylinders == 0) {
-                        msg = 'Please select at least 1 cylinder to deliver';
-                      } else if (state.paymentMethod.isEmpty) {
-                        msg = 'Please select payment method (Cash / UPI)';
-                      } else if (!hasValidAmount) {
-                        msg = 'Please enter a valid bill amount';
-                      }
-                      AppToast.warning(context, msg);
-                    }
-                  },
+            onTap: () {
+              if (canSubmit) {
+                _submitDelivery(state);
+              } else {
+                String msg = 'Please fill all required fields';
+                if (state.selectedCustomer == null) {
+                  msg = 'Please select or enter customer name';
+                } else if (state.totalCylinders == 0) {
+                  msg = 'Please select at least 1 cylinder to deliver';
+                } else if (state.paymentMethod.isEmpty) {
+                  msg = 'Please select payment method (Cash / UPI)';
+                } else if (!hasValidAmount) {
+                  msg = 'Please enter a valid bill amount';
+                }
+                AppToast.warning(context, msg);
+              }
+            },
             borderRadius: BorderRadius.circular(14),
             child: Center(
-              child: _isSubmitting
-                  ? Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        ),
-                        SizedBox(width: 10),
-                        Text(
-                          'FINALIZING INVOICE...',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          buttonLabel,
-                          style: TextStyle(
-                            fontSize: canSubmit ? 14 : 12.5,
-                            fontWeight: FontWeight.w800,
-                            color: canSubmit ? Colors.white : const Color(0xFF94A3B8),
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        if (canSubmit) ...[
-                          const SizedBox(width: 8),
-                          const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.white),
-                        ],
-                      ],
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    buttonLabel,
+                    style: TextStyle(
+                      fontSize: canSubmit ? 14 : 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: canSubmit ? Colors.white : const Color(0xFF94A3B8),
+                      letterSpacing: 0.5,
                     ),
+                  ),
+                  if (canSubmit) ...[
+                    const SizedBox(width: 8),
+                    const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.white),
+                  ],
+                ],
+              ),
             ),
           ),
         ),

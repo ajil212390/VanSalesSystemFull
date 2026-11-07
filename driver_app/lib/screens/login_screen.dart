@@ -8,6 +8,8 @@ import '../widgets/smooth_transitions.dart';
 import '../services/api_service.dart';
 import '../providers/app_state.dart';
 
+import '../widgets/app_toast.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -30,14 +32,23 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _checkExistingSession() async {
     await ApiService.init();
     final token = await ApiService.getToken();
+    final refreshToken = await ApiService.getRefreshToken();
     final user = await ApiService.getSavedUser();
-    if (token != null && token.isNotEmpty && user != null && mounted) {
-      setState(() => _isLoading = true);
-      try {
+
+    if ((token != null && token.isNotEmpty) || (refreshToken != null && refreshToken.isNotEmpty)) {
+      if (user != null && mounted) {
         final state = AppStateProvider.of(context);
         final driverId = (user['driver_id'] ?? user['DriverId']) as int?;
-        await state.syncFromBackend(driverIdParam: driverId);
-        if (!mounted) return;
+
+        // Proactively refresh access token if possible so user never faces stale session
+        ApiService.refreshAccessToken().then((_) {
+          if (mounted) {
+            state.syncFromBackend(driverIdParam: driverId);
+          }
+        });
+
+        // Trigger synchronization without blocking transition
+        state.syncFromBackend(driverIdParam: driverId);
 
         final role = user['role']?.toString().toLowerCase() ?? '';
         final isAdminRole = role.contains('admin') || role.contains('manager');
@@ -45,12 +56,10 @@ class _LoginScreenState extends State<LoginScreen> {
           context,
           SmoothPageRoute(page: isAdminRole ? const AdminScreen() : const HomeShell()),
         );
-      } catch (_) {
-        if (mounted) setState(() => _isLoading = false);
+        return;
       }
-    } else {
-      if (mounted) setState(() {});
     }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -61,18 +70,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showFeedback(String message, {bool isError = true}) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
-        ),
-        backgroundColor: isError ? const Color(0xFF800020) : const Color(0xFF1E293B),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    if (isError) {
+      AppToast.error(context, message);
+    } else {
+      AppToast.success(context, message);
+    }
   }
 
   Future<void> _login() async {

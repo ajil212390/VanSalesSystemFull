@@ -11,7 +11,6 @@ import {
   Table,
   Loader,
   Center,
-  ThemeIcon,
   Box,
   TextInput,
   CloseButton,
@@ -27,7 +26,6 @@ import {
   IconArrowRight,
   IconArrowUpRight,
   IconRoute,
-  IconWallet,
   IconCalendar,
   IconSearch,
   IconChevronRight,
@@ -78,22 +76,34 @@ export const DashboardPage: React.FC = () => {
 
   const stockLocations = useMemo(() => {
     const godownProducts = stockProducts
-      .filter((product: any) => product.GodownQty > 0)
-      .map((product: any) => ({
-        ProductId: product.ProductId,
-        ProductName: product.ProductName,
-        ProductCode: product.ProductCode,
-        Qty: product.GodownQty,
-      }));
+      .filter((product: any) => {
+        const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
+        const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
+        return (product.GodownQty || 0) > 0 || emptyInGodown > 0;
+      })
+      .map((product: any) => {
+        const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
+        const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
+        const filled = product.GodownQty || 0;
+        return {
+          ProductId: product.ProductId,
+          ProductName: product.ProductName,
+          ProductCode: product.ProductCode,
+          filled: filled,
+          empty: isCyl ? emptyInGodown : 0,
+          Qty: filled + (isCyl ? emptyInGodown : 0),
+        };
+      });
 
-    const godownFilled = godownProducts.reduce((total: number, p: any) => total + p.Qty, 0);
-    const godownEmpty = 0;
+    const godownFilled = godownProducts.reduce((total: number, p: any) => total + (p.filled || 0), 0);
+    const godownEmpty = godownProducts.reduce((total: number, p: any) => total + (p.empty || 0), 0);
     const godown = {
       id: 'godown',
       name: 'Central Godown',
       type: 'godown',
       filledQuantity: godownFilled,
       emptyQuantity: godownEmpty,
+      emptyCylinders: godownEmpty,
       quantity: godownFilled + godownEmpty,
     };
 
@@ -176,7 +186,7 @@ export const DashboardPage: React.FC = () => {
   });
 
   // 3. Fetch Ledgers
-  const { data: ledgers = [], isLoading: isLoadingLedgers } = useQuery<any[]>({
+  const { data: ledgers = [] } = useQuery<any[]>({
     queryKey: ['ledgers'],
     queryFn: async () => {
       const res = await apiClient.get('/ledgers/');
@@ -1089,132 +1099,6 @@ export const DashboardPage: React.FC = () => {
           )}
         </Paper>
       </SimpleGrid>
-
-      {/* 4. Accounts & Liquidity Overview Table */}
-      <Paper
-        radius="md"
-        withBorder
-        style={{
-          backgroundColor: '#ffffff',
-          borderColor: '#e2e8f0',
-          overflow: 'hidden',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}
-      >
-        <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
-          <Group gap="xs" align="center">
-            <IconBuildingBank size={20} color="#800020" stroke={1.75} />
-            <div>
-              <Group gap={6} align="center">
-                <Text fw={700} size="sm" c="#1e293b">
-                  Cash &amp; Bank Accounts
-                </Text>
-                <Badge size="xs" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020' }}>
-                  {metrics.cashAndBankLedgers.length} Ledgers
-                </Badge>
-              </Group>
-              <Text size="xs" c="dimmed">
-                Real-time balances for Cash and Bank ledgers
-              </Text>
-            </div>
-          </Group>
-          <Button
-            variant="subtle"
-            color="gray"
-            c="#800020"
-            size="xs"
-            fw={600}
-            className="erp-subtle-btn"
-            rightSection={<IconArrowRight size={14} />}
-            onClick={() => navigate('/accounts')}
-          >
-            Manage Accounts
-          </Button>
-        </Group>
-
-        {isLoadingLedgers ? (
-          <Center py={40}>
-            <Loader color="burgundy" size="sm" />
-          </Center>
-        ) : metrics.cashAndBankLedgers.length === 0 ? (
-          <Center py={40}>
-            <Text size="xs" c="dimmed">No Cash or Bank accounts configured.</Text>
-          </Center>
-        ) : (
-          <Table.ScrollContainer minWidth={450}>
-            <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
-              <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
-                <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Account Name</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Type</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>Current Balance</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {metrics.cashAndBankLedgers.map((l) => {
-                  const bal = Number(l.CurrentBalance || 0);
-                  const isDr = bal >= 0;
-                  const isCash = l.group_name === 'Cash-in-Hand';
-
-                  return (
-                    <Table.Tr key={l.LedgerId} style={{ cursor: 'pointer' }} onClick={() => navigate('/accounts')}>
-                      <Table.Td>
-                        <Group gap={8} wrap="nowrap">
-                          <ThemeIcon size={24} radius="sm" variant="light" color="burgundy" style={{ backgroundColor: '#fbf0f2' }}>
-                            {isCash ? <IconWallet size={13} color="#800020" /> : <IconBuildingBank size={13} color="#800020" />}
-                          </ThemeIcon>
-                          <Text fw={600} size="xs" c="#1e293b">
-                            {l.LedgerName}
-                          </Text>
-                        </Group>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge
-                          size="xs"
-                          variant="light"
-                          radius="sm"
-                          style={{
-                            backgroundColor: isCash ? '#fef2f2' : '#f0fdf4',
-                            color: isCash ? '#b91c1c' : '#15803d',
-                            fontWeight: 600,
-                          }}
-                        >
-                          {isCash ? 'Cash in Hand' : 'Bank Account'}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="xs" fw={700} c={isDr ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
-                          ₹{Math.abs(bal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
-                          <Text component="span" size="10px" c={isDr ? '#0284c7' : '#dc2626'} fw={600}>
-                            {isDr ? 'Dr' : 'Cr'}
-                          </Text>
-                        </Text>
-                      </Table.Td>
-                    </Table.Tr>
-                  );
-                })}
-              </Table.Tbody>
-              <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #cbd5e1' }}>
-                <Table.Tr>
-                  <Table.Td colSpan={2} style={{ padding: '12px 16px' }}>
-                    <Text size="sm" fw={700} c="#1e293b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
-                      Total Cash &amp; Bank Balance:
-                    </Text>
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', padding: '12px 16px' }}>
-                    <Text size="sm" fw={700} c={metrics.netLiquid >= 0 ? '#0f172a' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
-                      ₹{Math.abs(metrics.netLiquid).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
-                      <Text component="span" size="xs" c={metrics.netLiquid >= 0 ? '#0284c7' : '#dc2626'} fw={700}>
-                        {metrics.netLiquid >= 0 ? 'Dr' : 'Cr'}
-                      </Text>
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              </Table.Tfoot>
-            </Table>
-          </Table.ScrollContainer>
-        )}
-      </Paper>
     </Stack>
   );
 };

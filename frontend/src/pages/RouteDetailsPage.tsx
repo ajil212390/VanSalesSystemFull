@@ -56,6 +56,7 @@ interface RecentSale {
   empty_returned?: number;
   empty_qty?: number;
   amount?: number;
+  paid_amount?: number;
   grand_total?: number;
   payment_mode?: string;
   payment_method?: string;
@@ -277,7 +278,9 @@ export const RouteDetailsPage: React.FC = () => {
                   &bull;
                 </Text>
                 <Text size="xs" c="dimmed">
-                  {data.sales_count} delivery invoice{data.sales_count !== 1 ? 's' : ''} recorded today
+                  {isLive
+                    ? `${data.sales_count} delivery invoice${data.sales_count !== 1 ? 's' : ''} recorded on this shift`
+                    : 'Shift Completed • Idle'}
                 </Text>
               </Group>
             </div>
@@ -324,7 +327,7 @@ export const RouteDetailsPage: React.FC = () => {
             <IconCylinder size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {data.stock?.filled_quantity ?? 0} Cyl
+            {data.stock?.filled_quantity ?? 0} Cyl.
           </Text>
           <Text size="xs" c="dimmed" mt="xs">
             Full cylinders currently on vehicle
@@ -350,7 +353,7 @@ export const RouteDetailsPage: React.FC = () => {
             <IconPackage size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {data.stock?.empty_quantity ?? 0} Cyl
+            {data.stock?.empty_quantity ?? 0} Cyl.
           </Text>
           <Text size="xs" c="dimmed" mt="xs">
             Collected &amp; in transit on van
@@ -376,7 +379,7 @@ export const RouteDetailsPage: React.FC = () => {
             <IconTruck size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {data.stock?.delivered_quantity ?? 0} Cyl
+            {data.stock?.delivered_quantity ?? 0} Cyl.
           </Text>
           <Text size="xs" c="dimmed" mt="xs">
             Delivered across customer routes
@@ -402,7 +405,7 @@ export const RouteDetailsPage: React.FC = () => {
             <IconArrowBack size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {data.stock?.return_quantity ?? 0} Cyl
+            {data.stock?.return_quantity ?? 0} Cyl.
           </Text>
           <Text size="xs" c="dimmed" mt="xs">
             Empty cylinders taken back
@@ -576,7 +579,7 @@ export const RouteDetailsPage: React.FC = () => {
                     PAID VIA
                   </Table.Th>
                   <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>
-                    AMOUNT
+                    AMOUNT (COLLECTED)
                   </Table.Th>
                   <Table.Th style={{ width: 44 }} />
                 </Table.Tr>
@@ -692,10 +695,13 @@ export const RouteDetailsPage: React.FC = () => {
                     EMPTY RET.
                   </Table.Th>
                   <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>
-                    AMOUNT
+                    AMOUNT (COLLECTED)
                   </Table.Th>
                   <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center' }}>
                     PAYMENT MODE
+                  </Table.Th>
+                  <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center' }}>
+                    INVOICE PDF
                   </Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -708,7 +714,10 @@ export const RouteDetailsPage: React.FC = () => {
                     (sale.sale_id ? `#${sale.sale_id}` : sale.sales_id ? `#${sale.sales_id}` : `#${idx + 1}`);
 
                   const customerName = sale.customer || sale.customer_name || 'Walk-in Customer';
-                  const amountVal = sale.amount ?? sale.grand_total ?? 0;
+                  const amountVal = (sale.paid_amount !== undefined && sale.paid_amount !== null)
+                    ? Number(sale.paid_amount)
+                    : Number(sale.amount ?? sale.grand_total ?? 0);
+                  const grandTotalVal = Number(sale.grand_total ?? 0);
                   const deliveredQty = sale.delivered_qty ?? 0;
                   const emptyReturned = sale.empty_returned ?? sale.empty_qty ?? 0;
                   const paymentModeVal = sale.payment_mode || sale.payment_method || 'Cash';
@@ -745,6 +754,11 @@ export const RouteDetailsPage: React.FC = () => {
                         <Text size="sm" fw={700} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           {fmtInr(amountVal)}
                         </Text>
+                        {grandTotalVal > 0 && Math.abs(grandTotalVal - amountVal) > 0.01 && (
+                          <Text size="10px" c="dimmed">
+                            Bill: {fmtInr(grandTotalVal)}
+                          </Text>
+                        )}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>
                         <Badge
@@ -761,6 +775,22 @@ export const RouteDetailsPage: React.FC = () => {
                         >
                           {paymentModeVal}
                         </Badge>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'center' }}>
+                        <ActionIcon
+                          variant="subtle"
+                          color="red"
+                          size="sm"
+                          radius="sm"
+                          title="View / Print Tax Invoice PDF"
+                          onClick={() => {
+                            const baseUrl = apiClient.defaults.baseURL?.replace(/\/api\/v1\/?$/, '') || '';
+                            const cleanTicket = billNo.replace(/^#/, '');
+                            window.open(`${baseUrl}/api/v1/sales/invoice-pdf/?ticket_id=${encodeURIComponent(cleanTicket)}`, '_blank');
+                          }}
+                        >
+                          <IconReceipt size={16} />
+                        </ActionIcon>
                       </Table.Td>
                     </Table.Tr>
                   );

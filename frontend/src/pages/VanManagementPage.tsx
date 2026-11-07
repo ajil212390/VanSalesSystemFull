@@ -35,9 +35,11 @@ import { apiClient } from '../api/client';
 interface RouteEntry {
   route_id: number;
   route_name: string;
-  vehicle_number: string;
-  driver_name: string;
-  status: 'live' | 'idle';
+  vehicle_number?: string;
+  driver_name?: string;
+  vehicle?: { vehicle_number: string };
+  driver?: { name: string };
+  status: 'live' | 'idle' | 'settled' | 'pending_approval' | string;
   stock: {
     filled_quantity: number;
     empty_quantity: number;
@@ -221,7 +223,7 @@ export const VanManagementPage: React.FC = () => {
             <IconCylinder size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {totalDelivered} Cyl
+            {totalDelivered} Cyl.
           </Text>
           <Text size="xs" c="dimmed" mt="xs">
             Customer cylinder drops today
@@ -389,42 +391,50 @@ export const VanManagementPage: React.FC = () => {
                         </Group>
                       </Table.Td>
                       <Table.Td>
-                        {route.vehicle_number && route.vehicle_number !== 'Not Assigned' ? (
-                          <Group gap={5}>
-                            <IconTruck size={14} color="#64748b" />
-                            <Text size="sm" fw={600} style={{ color: '#334155' }}>
-                              {route.vehicle_number}
+                        {(() => {
+                          const vNum = route.vehicle_number || (route as any).vehicle?.vehicle_number;
+                          const isGodown = !vNum || vNum === 'Not Assigned' || vNum.toLowerCase().includes('godown');
+                          return !isGodown ? (
+                            <Group gap={5}>
+                              <IconTruck size={14} color="#64748b" />
+                              <Text size="sm" fw={600} style={{ color: '#334155' }}>
+                                {vNum}
+                              </Text>
+                            </Group>
+                          ) : (
+                            <Text size="sm" c="dimmed">
+                              —
                             </Text>
-                          </Group>
-                        ) : (
-                          <Text size="sm" c="dimmed">
-                            —
-                          </Text>
-                        )}
+                          );
+                        })()}
                       </Table.Td>
                       <Table.Td>
-                        {route.driver_name && route.driver_name !== 'Not Assigned' ? (
-                          <Group gap={5}>
-                            <IconUser size={14} color="#64748b" />
-                            <Text size="sm" style={{ color: '#334155' }}>
-                              {route.driver_name}
+                        {(() => {
+                          const dName = route.driver_name || (route as any).driver?.name;
+                          const isGodown = !dName || dName === 'Not Assigned' || dName.toLowerCase().includes('godown');
+                          return !isGodown ? (
+                            <Group gap={5}>
+                              <IconUser size={14} color="#64748b" />
+                              <Text size="sm" style={{ color: '#334155' }}>
+                                {dName}
+                              </Text>
+                            </Group>
+                          ) : (
+                            <Text size="sm" c="dimmed">
+                              —
                             </Text>
-                          </Group>
-                        ) : (
-                          <Text size="sm" c="dimmed">
-                            —
-                          </Text>
-                        )}
+                          );
+                        })()}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>
                         <Badge
                           size="xs"
                           variant="dot"
-                          color={isLive ? 'teal' : 'gray'}
+                          color={isLive ? 'teal' : route.status === 'settled' ? 'blue' : route.status === 'pending_approval' ? 'yellow' : 'gray'}
                           radius="sm"
                           style={{ fontWeight: 600 }}
                         >
-                          {isLive ? 'Live' : 'Idle'}
+                          {isLive ? 'Live' : route.status === 'settled' ? 'Settled' : route.status === 'pending_approval' ? 'Pending' : 'Idle'}
                         </Badge>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>

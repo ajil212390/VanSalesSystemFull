@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -85,7 +86,8 @@ class DeliveryItem {
 }
 
 class DeliveryOrder {
-  final String ticketId;
+  String ticketId;
+  int? salesId;
   final Customer customer;
   final List<DeliveryItem> items;
   final int totalCylinders;
@@ -98,6 +100,7 @@ class DeliveryOrder {
 
   DeliveryOrder({
     required this.ticketId,
+    this.salesId,
     required this.customer,
     required this.items,
     required this.totalCylinders,
@@ -236,6 +239,56 @@ class DepotVehicle {
 }
 
 class AppState extends ChangeNotifier {
+  Future<void> _loadStateCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      vehicleNumber = prefs.getString('cached_vehicle_number') ?? vehicleNumber;
+      routeInfo = prefs.getString('cached_route_info') ?? routeInfo;
+      driverName = prefs.getString('cached_driver_name') ?? driverName;
+      fullName = prefs.getString('cached_full_name') ?? fullName;
+      currentAllocationId = prefs.getInt('cached_allocation_id') ?? currentAllocationId;
+
+      final rawCyl = prefs.getString('cached_cylinders_json');
+      if (rawCyl != null && rawCyl.isNotEmpty && cylinders.isEmpty) {
+        final list = jsonDecode(rawCyl) as List;
+        cylinders = list.map((item) => CylinderType(
+          productId: item['productId'] as int?,
+          weight: item['weight']?.toString() ?? '',
+          price: (item['price'] as num?)?.toDouble() ?? 0.0,
+          initialFilledStock: (item['initialFilledStock'] as num?)?.toInt() ?? 0,
+          filledStock: (item['filledStock'] as num?)?.toInt() ?? 0,
+          emptyStock: (item['emptyStock'] as num?)?.toInt() ?? 0,
+        )).toList();
+        _initDeliveryItems();
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _persistStateCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_vehicle_number', vehicleNumber);
+      await prefs.setString('cached_route_info', routeInfo);
+      await prefs.setString('cached_driver_name', driverName);
+      await prefs.setString('cached_full_name', fullName);
+      if (currentAllocationId != null) {
+        await prefs.setInt('cached_allocation_id', currentAllocationId!);
+      }
+      if (cylinders.isNotEmpty) {
+        final cylList = cylinders.map((c) => {
+          'productId': c.productId,
+          'weight': c.weight,
+          'price': c.price,
+          'initialFilledStock': c.initialFilledStock,
+          'filledStock': c.filledStock,
+          'emptyStock': c.emptyStock,
+        }).toList();
+        await prefs.setString('cached_cylinders_json', jsonEncode(cylList));
+      }
+    } catch (_) {}
+  }
+
   // Theme info
   bool isDarkMode = false;
 
@@ -325,6 +378,7 @@ class AppState extends ChangeNotifier {
   AppState() {
     _initDeliveryItems();
     loadCachedAllocation();
+    _loadStateCache();
   }
 
   void _initDeliveryItems({bool forceReset = false}) {
@@ -535,6 +589,7 @@ class AppState extends ChangeNotifier {
               emptyStock: (s['EmptyQty'] as num?)?.toInt() ?? 0,
             )).toList();
             _initDeliveryItems();
+            _persistStateCache();
 
             // Load Other Products allocated to this vehicle
             otherProducts = otherItems
@@ -557,49 +612,71 @@ class AppState extends ChangeNotifier {
         if (currentAllocationId != null) {
           try {
             final backendSales = await ApiService.getDriverSales(currentAllocationId!);
-            if (backendSales.isNotEmpty) {
-              orders.clear();
-              for (final s in backendSales) {
-                final cData = s['customer'] as Map<String, dynamic>? ?? {};
-                final itemsList = (s['items'] as List? ?? []).map((it) {
-                  var w = it['weight']?.toString().trim() ?? '';
-                  final kgMatch = RegExp(r'(\d+(?:\.\d+)?\s*KG)', caseSensitive: false).firstMatch(w);
-                  if (kgMatch != null) {
-                    w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
-                  }
-                  final matchedCyl = cylinders.firstWhere(
-                    (c) => c.weight.trim().toUpperCase() == w.toUpperCase() ||
-                           (w.isNotEmpty && c.weight.toUpperCase().contains(w.toUpperCase())),
-                    orElse: () => CylinderType(
-                      productId: it['productId'] as int?,
-                      weight: w,
-                      price: (it['rate'] as num?)?.toDouble() ?? 0.0,
-                      filledStock: 0,
-                    ),
-                  );
-                  return DeliveryItem(
-                    cylinder: matchedCyl,
-                    deliveryQty: (it['deliveryQty'] as num?)?.toInt() ?? 0,
-                    emptyReturnQty: (it['emptyReturnQty'] as num?)?.toInt() ?? 0,
-                  );
-                }).toList();
-
-                orders.add(DeliveryOrder(
-                  ticketId: s['ticketId'] ?? 'DT-ORD',
-                  customer: Customer(
-                    ledgerId: cData['ledgerId'] as int?,
-                    name: cData['name'] ?? 'Customer',
-                    phone: '',
+            orders.clear(); // Always clear previous list before populating
+            for (final s in backendSales) {
+              final cData = s['customer'] as Map<String, dynamic>? ?? {};
+              final itemsList = (s['items'] as List? ?? []).map((it) {
+                var w = it['weight']?.toString().trim() ?? '';
+                final kgMatch = RegExp(r'(\d+(?:\.\d+)?\s*KG)', caseSensitive: false).firstMatch(w);
+                if (kgMatch != null) {
+                  w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
+                }
+                final matchedCyl = cylinders.firstWhere(
+                  (c) => c.weight.trim().toUpperCase() == w.toUpperCase() ||
+                         (w.isNotEmpty && c.weight.toUpperCase().contains(w.toUpperCase())),
+                  orElse: () => CylinderType(
+                    productId: it['productId'] as int?,
+                    weight: w,
+                    price: (it['rate'] as num?)?.toDouble() ?? 0.0,
+                    filledStock: 0,
                   ),
-                  items: itemsList,
-                  totalCylinders: (s['totalCylinders'] as num?)?.toInt() ?? 0,
-                  totalEmpties: (s['totalEmpties'] as num?)?.toInt() ?? 0,
-                  amount: (s['amount'] as num?)?.toDouble() ?? 0.0,
-                  paymentMethod: s['paymentMethod'] ?? 'Cash',
-                  time: s['time'] ?? '10:00 AM',
-                  status: s['status'] ?? 'Delivered',
-                ));
+                );
+                return DeliveryItem(
+                  cylinder: matchedCyl,
+                  deliveryQty: (it['deliveryQty'] as num?)?.toInt() ?? 0,
+                  emptyReturnQty: (it['emptyReturnQty'] as num?)?.toInt() ?? 0,
+                );
+              }).toList();
+
+              final cLedgerId = cData['ledgerId'] as int?;
+              final cName = cData['name'] ?? 'Customer';
+              final cPhoneRaw = (cData['phone'] ?? '').toString().trim();
+
+              Customer matchedCust;
+              try {
+                matchedCust = customers.firstWhere(
+                  (c) => (cLedgerId != null && c.ledgerId == cLedgerId) ||
+                         (c.name.trim().toLowerCase() == cName.toString().trim().toLowerCase()),
+                );
+              } catch (_) {
+                matchedCust = Customer(
+                  ledgerId: cLedgerId,
+                  name: cName,
+                  phone: cPhoneRaw,
+                );
               }
+              final resolvedPhone = cPhoneRaw.isNotEmpty ? cPhoneRaw : matchedCust.phone;
+
+              orders.add(DeliveryOrder(
+                ticketId: s['ticketId'] ?? 'DT-ORD',
+                salesId: s['salesId'] as int?,
+                customer: Customer(
+                  ledgerId: cLedgerId,
+                  name: cName,
+                  phone: resolvedPhone,
+                  address: matchedCust.address,
+                  type: matchedCust.type,
+                ),
+                items: itemsList,
+                totalCylinders: (s['totalCylinders'] as num?)?.toInt() ?? 0,
+                totalEmpties: (s['totalEmpties'] as num?)?.toInt() ?? 0,
+                amount: (s['paidAmount'] != null && (s['paidAmount'] as num) > 0)
+                    ? (s['paidAmount'] as num).toDouble()
+                    : ((s['amount'] as num?)?.toDouble() ?? 0.0),
+                paymentMethod: s['paymentMethod'] ?? 'Cash',
+                time: s['time'] ?? '10:00 AM',
+                status: s['status'] ?? 'Delivered',
+              ));
             }
           } catch (e) {
             debugPrint('Failed to load driver sales: $e');
@@ -608,22 +685,30 @@ class AppState extends ChangeNotifier {
           // Fetch Driver's Expenses for Today from Backend
           try {
             final backendExpenses = await ApiService.getDriverExpenses(currentAllocationId!);
-            if (backendExpenses.isNotEmpty) {
-              expenses.clear();
-              for (final exp in backendExpenses) {
-                expenses.add(DriverExpense(
-                  id: (exp['id'] ?? exp['expense_id'] ?? '').toString(),
-                  title: (exp['category'] ?? exp['title'] ?? 'Expense').toString(),
-                  amount: (exp['amount'] as num?)?.toDouble() ?? 0.0,
-                  paymentMethod: (exp['payment_mode'] ?? exp['paymentMethod'] ?? 'Cash').toString(),
-                  time: (exp['time'] ?? '').toString(),
-                ));
-              }
+            expenses.clear(); // Always clear previous list before populating
+            for (final exp in backendExpenses) {
+              expenses.add(DriverExpense(
+                id: (exp['id'] ?? exp['expense_id'] ?? '').toString(),
+                title: (exp['category'] ?? exp['title'] ?? 'Expense').toString(),
+                amount: (exp['amount'] as num?)?.toDouble() ?? 0.0,
+                paymentMethod: (exp['payment_mode'] ?? exp['paymentMethod'] ?? 'Cash').toString(),
+                time: (exp['time'] ?? '').toString(),
+              ));
             }
           } catch (e) {
             debugPrint('Failed to load driver expenses: $e');
           }
         }
+      } else {
+        // Driver has no active vehicle allocation
+        currentAllocationId = null;
+        vehicleNumber = '';
+        routeInfo = '';
+        orders.clear();
+        expenses.clear();
+        cylinders.clear();
+        otherProducts.clear();
+        _initDeliveryItems();
       }
 
       if (currentAllocationId != null) {
@@ -634,7 +719,7 @@ class AppState extends ChangeNotifier {
             final bool isSettled = statusData['is_settled'] == true || endShiftStatus.toUpperCase() == 'SETTLED';
             final bool waitingForAllocation = statusData['waiting_for_next_allocation'] == true;
 
-            if (isSettled && waitingForAllocation) {
+            if (isSettled || waitingForAllocation) {
               orders.clear();
               expenses.clear();
               for (final c in cylinders) {
@@ -762,8 +847,9 @@ class AppState extends ChangeNotifier {
   }
 
   String _generateTicketId() {
-    _orderCounter++;
-    return 'DT-${88490 + _orderCounter}';
+    final now = DateTime.now();
+    final randomSuffix = (10000 + (now.microsecondsSinceEpoch % 90000)).toString();
+    return 'DT-$randomSuffix';
   }
 
   Future<bool> completeDelivery() async {
@@ -782,26 +868,24 @@ class AppState extends ChangeNotifier {
 
     final ticketId = _generateTicketId();
 
-    orders.insert(
-      0,
-      DeliveryOrder(
-        ticketId: ticketId,
-        customer: selectedCustomer!,
-        items: activeItems
-            .map((i) => DeliveryItem(
-                  cylinder: i.cylinder,
-                  deliveryQty: i.deliveryQty,
-                  emptyReturnQty: i.emptyReturnQty,
-                ))
-            .toList(),
-        totalCylinders: totalCylinders,
-        totalEmpties: totalEmpties,
-        amount: collectedAmount,
-        paymentMethod: paymentMethod,
-        time: timeStr,
-        stopNumber: _stopCounter,
-      ),
+    final newOrder = DeliveryOrder(
+      ticketId: ticketId,
+      customer: selectedCustomer!,
+      items: activeItems
+          .map((i) => DeliveryItem(
+                cylinder: i.cylinder,
+                deliveryQty: i.deliveryQty,
+                emptyReturnQty: i.emptyReturnQty,
+              ))
+          .toList(),
+      totalCylinders: totalCylinders,
+      totalEmpties: totalEmpties,
+      amount: collectedAmount,
+      paymentMethod: paymentMethod,
+      time: timeStr,
+      stopNumber: _stopCounter,
     );
+    orders.insert(0, newOrder);
 
     // Update stock locally
     for (final item in deliveryItems) {
@@ -863,8 +947,19 @@ class AppState extends ChangeNotifier {
           items: allBackendItems,
           paymentMethod: paymentMethod,
           amountCollected: collectedAmount,
+          ticketId: ticketId,
         );
         if (res['success'] == true) {
+          final returnedTicket = res['ticket_id']?.toString();
+          if (returnedTicket != null && returnedTicket.isNotEmpty) {
+            newOrder.ticketId = returnedTicket;
+          }
+          final sid = res['sales_id'];
+          if (sid is int) {
+            newOrder.salesId = sid;
+          } else if (sid != null) {
+            newOrder.salesId = int.tryParse(sid.toString());
+          }
           lastSyncTime = DateTime.now();
           notifyListeners();
         }
@@ -894,9 +989,11 @@ class AppState extends ChangeNotifier {
     lastSyncTime = DateTime.now();
     notifyListeners();
 
-    // Synchronize deletion to backend to reverse StockMovement
+    // Synchronize deletion to backend to reverse StockMovement and cancel Sales record
     try {
-      await ApiService.cancelSaleByTicket(order.ticketId);
+      await ApiService.cancelSaleByTicket(order.ticketId, salesId: order.salesId);
+      // Immediately refresh from backend to ensure 100% authoritative stock and sales sync
+      await syncFromBackend();
     } catch (e) {
       debugPrint('Live backend order cancel error: $e');
     }
@@ -1155,29 +1252,31 @@ class AppState extends ChangeNotifier {
     });
   }
 
-  double get cashIncome => orders
+  bool get isSettledShift => endShiftStatus.toUpperCase() == 'SETTLED';
+
+  double get cashIncome => isSettledShift ? 0.0 : orders
       .where((o) => o.paymentMethod.toLowerCase() == 'cash')
       .fold(0.0, (sum, o) => sum + o.amount);
 
-  double get upiIncome => orders
+  double get upiIncome => isSettledShift ? 0.0 : orders
       .where((o) => o.paymentMethod.toLowerCase().contains('upi') || o.paymentMethod.toLowerCase().contains('bank'))
       .fold(0.0, (sum, o) => sum + o.amount);
 
   double get totalIncome => cashIncome + upiIncome;
 
-  double get cashExpense => expenses
+  double get cashExpense => isSettledShift ? 0.0 : expenses
       .where((e) => e.paymentMethod.toLowerCase() == 'cash')
       .fold(0.0, (sum, e) => sum + e.amount);
 
-  double get upiExpense => expenses
+  double get upiExpense => isSettledShift ? 0.0 : expenses
       .where((e) => e.paymentMethod.toLowerCase().contains('upi') || e.paymentMethod.toLowerCase().contains('bank'))
       .fold(0.0, (sum, e) => sum + e.amount);
 
   double get totalExpense => cashExpense + upiExpense;
 
-  double get cashBalance => cashIncome - cashExpense;
-  double get upiBalance => upiIncome - upiExpense;
-  double get netBalance => totalIncome - totalExpense;
+  double get cashBalance => isSettledShift ? 0.0 : (cashIncome - cashExpense);
+  double get upiBalance => isSettledShift ? 0.0 : (upiIncome - upiExpense);
+  double get netBalance => isSettledShift ? 0.0 : (totalIncome - totalExpense);
 
   // Aliases for Bank
   double get bankIncome => upiIncome;

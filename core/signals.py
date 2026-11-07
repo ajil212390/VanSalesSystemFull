@@ -2,7 +2,7 @@ import logging
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.db.models import Q
-from core.models import Purchase, PurchaseLine, DeliveryNote, EndRouteDriver, Sales, StockMovement, Voucher
+from core.models import Purchase, PurchaseLine, DeliveryNote, Sales, StockMovement, Voucher
 
 logger = logging.getLogger(__name__)
 
@@ -71,22 +71,6 @@ def handle_delivery_note_deleted(sender, instance, **kwargs):
     except Exception as e:
         logger.error(f"Error in handle_delivery_note_deleted for DeliveryNote {getattr(instance, 'DeliveryNoteId', None)}: {e}")
 
-
-@receiver(post_delete, sender=EndRouteDriver)
-def handle_end_route_driver_deleted(sender, instance, **kwargs):
-    """
-    When an EndRouteDriver shift record is deleted/rejected:
-    Reverses any shift unload stock movements (both full and empty returns to godown).
-    """
-    try:
-        erd_id = instance.EndRouteDriverId
-        deleted_sm, _ = StockMovement.objects.filter(
-            ReferenceId=erd_id,
-            TransactionType__in=['VAN_UNLOAD_EMPTY', 'GODOWN_RETURN_EMPTY', 'VAN_UNLOAD_FULL', 'GODOWN_RETURN_FULL']
-        ).delete()
-        logger.info(f"Deleted {deleted_sm} StockMovement records for EndRouteDriver #{erd_id}.")
-    except Exception as e:
-        logger.error(f"Error in handle_end_route_driver_deleted for EndRouteDriver {getattr(instance, 'EndRouteDriverId', None)}: {e}")
 
 
 @receiver(post_delete, sender=Sales)

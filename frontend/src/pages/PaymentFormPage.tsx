@@ -168,6 +168,8 @@ export const PaymentFormPage: React.FC = () => {
   }, [bankAndCashLedgers]);
 
 
+
+
   // Selected Bank/Cash ledger object
   const selectedAccountLedger = useMemo(() => {
     return bankAndCashLedgers.find((l) => String(l.LedgerId) === bankOrCashLedgerId) || null;
@@ -553,20 +555,6 @@ export const PaymentFormPage: React.FC = () => {
       }
     }
 
-    // 2. Check Sundry Creditor / Debtor bill allocation requirement
-    for (const r of validRows) {
-      const ledger = ledgers.find((l) => String(l.LedgerId) === String(r.ledgerId));
-      if (isSundryCreditorOrDebtor(ledger)) {
-        const sumAlloc = r.allocations.reduce((s, a) => s + (Number(a.AllocatedAmount) || 0), 0);
-        if (sumAlloc <= 0 || r.allocations.length === 0) {
-          return {
-            canSave: false,
-            reason: `Please allocate bills for ${ledger?.LedgerName || 'Sundry Creditor / Debtor'} before saving.`,
-          };
-        }
-      }
-    }
-
     return { canSave: true, reason: '' };
   }, [bankOrCashLedgerId, rows, ledgers]);
 
@@ -602,6 +590,7 @@ export const PaymentFormPage: React.FC = () => {
         Narration: notes.trim() || '',
         PaymentLedgerId: Number(bankOrCashLedgerId),
         PaymentMode: autoPaymentMode,
+        voucher_type: 'PAYMENT',
         lines: [
           {
             LineNo: 1,
@@ -676,7 +665,7 @@ export const PaymentFormPage: React.FC = () => {
             <IconArrowLeft size={18} />
           </ActionIcon>
           <Title order={3} style={{ color: '#800020', fontWeight: 700, fontSize: 18 }}>
-            {isEditing ? 'Edit Payment' : 'Payment Voucher'}
+            {isEditing ? 'Edit Payment Voucher' : 'Payment Voucher'}
           </Title>
         </Group>
       </Group>
@@ -684,7 +673,7 @@ export const PaymentFormPage: React.FC = () => {
       {/* 2. Top Card: Voucher Header (Payment No, Date, Account [Bank/Cash], Mode) */}
       <Paper p={8} radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
         <Group wrap="wrap" gap={8} align="flex-start">
-          {/* Payment Number */}
+          {/* Voucher Number */}
           <div style={{ flex: '1 1 120px', minWidth: 110 }}>
             <Text size="xs" fw={600} c="#334155" mb={2}>
               Payment No
@@ -1034,7 +1023,7 @@ export const PaymentFormPage: React.FC = () => {
                     }}
                     title={!saveValidation.canSave ? saveValidation.reason : undefined}
                   >
-                    {isEditing ? 'Update Payment' : 'Save & Post Voucher'}
+                    {isEditing ? 'Update Payment Voucher' : 'Post Payment Voucher'}
                   </Button>
                 </Group>
               </Group>

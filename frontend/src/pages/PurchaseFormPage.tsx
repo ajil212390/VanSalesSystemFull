@@ -43,7 +43,9 @@ interface LedgerOption {
   PhoneNumber?: string | null;
   MobileNumber?: string | null;
   Group?: number | { GroupId?: number; GroupName?: string };
+  group_id?: number | null;
   group_name?: string;
+  GroupName?: string;
 }
 
 interface ProductOption {
@@ -200,9 +202,9 @@ export const PurchaseFormPage: React.FC = () => {
   });
 
   const { data: ledgers = [] } = useQuery<LedgerOption[]>({
-    queryKey: ['ledgers'],
+    queryKey: ['supplier-ledgers'],
     queryFn: async () => {
-      const res = await apiClient.get('/ledgers/');
+      const res = await apiClient.get('/ledgers/suppliers/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
   });
@@ -273,18 +275,36 @@ export const PurchaseFormPage: React.FC = () => {
     setItems((prev) => prev.map((line) => recalc(line, isIntraState)));
   }, [isIntraState]);
 
-  // Party Selection: ONLY Bank, Cash, Sundry Debtors, and Sundry Creditors allowed
-  const ALLOWED_PARTY_GROUPS = [16, 17, 21, 24, 25];
+  // Party Selection: ONLY Bank, Cash, and Sundry Creditors allowed (Sundry Debtors strictly excluded!)
+  const ALLOWED_PARTY_GROUPS = [16, 17, 24, 25]; // 16: Cash-in-Hand, 17: Bank Accounts, 24: Sundry Creditors, 25: Bank OD A/c
 
   const ledgerOptions = useMemo(() => {
     return ledgers
       .filter((l) => {
-        const gId = typeof l.Group === 'number' ? l.Group : (l.Group as any)?.GroupId;
+        const gId = typeof l.Group === 'number' ? l.Group : ((l.Group as any)?.GroupId ?? l.group_id);
+        const gName = (
+          l.GroupName ||
+          l.group_name ||
+          (typeof l.Group === 'object' ? (l.Group as any)?.GroupName : '') ||
+          ''
+        ).toLowerCase();
+
+        // Strictly exclude any Sundry Debtors / Customers
+        if (Number(gId) === 21 || gName.includes('debtor') || gName.includes('customer')) {
+          return false;
+        }
+
+        // Allow Sundry Creditors, Cash-in-Hand, Bank Accounts, Bank OD A/c
         if (gId && ALLOWED_PARTY_GROUPS.includes(Number(gId))) return true;
-        const gName = (l.group_name || (typeof l.Group === 'object' ? (l.Group as any)?.GroupName : '') || '').toLowerCase();
-        return gName.includes('cash') || gName.includes('bank') || gName.includes('creditor') || gName.includes('debtor');
+        if (gName.includes('cash') || gName.includes('bank') || gName.includes('creditor')) return true;
+
+        // Backend endpoint /api/ledgers/suppliers/ is already pre-filtered strictly for valid parties
+        return true;
       })
-      .map((l) => ({ value: String(l.LedgerId), label: l.LedgerName }));
+      .map((l) => ({
+        value: String(l.LedgerId),
+        label: l.GroupName ? `${l.LedgerName} (${l.GroupName})` : l.LedgerName,
+      }));
   }, [ledgers]);
 
   const productOptions = useMemo(
@@ -550,13 +570,26 @@ export const PurchaseFormPage: React.FC = () => {
       notifications.show({ title: 'Validation', message: 'Please select a Party / Supplier above.', color: 'red' });
       return;
     }
+    if (selectedSupplier) {
+      const gId = typeof selectedSupplier.Group === 'number' ? selectedSupplier.Group : ((selectedSupplier.Group as any)?.GroupId ?? selectedSupplier.group_id);
+      const gName = (
+        selectedSupplier.GroupName ||
+        selectedSupplier.group_name ||
+        (typeof selectedSupplier.Group === 'object' ? (selectedSupplier.Group as any)?.GroupName : '') ||
+        ''
+      ).toLowerCase();
+      if (Number(gId) === 21 || gName.includes('debtor') || gName.includes('customer')) {
+        notifications.show({ title: 'Validation', message: 'Sundry Debtors cannot be selected as a supplier for Purchase Invoices. Please select a Sundry Creditor, Bank, or Cash ledger.', color: 'red' });
+        return;
+      }
+    }
     const validLines = items.filter((i) => Boolean(i.ProductId));
     if (validLines.length === 0) {
       notifications.show({ title: 'Validation', message: 'Please select at least one product.', color: 'red' });
       return;
     }
     saveMutation.mutate();
-  }, [selectedLedgerId, items, saveMutation]);
+  }, [selectedLedgerId, selectedSupplier, items, saveMutation]);
 
   useEffect(() => {
     const handleGlobalKeyDown = (e: KeyboardEvent) => {

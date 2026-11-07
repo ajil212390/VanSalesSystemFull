@@ -24,6 +24,8 @@ import { PurchaseListPage } from './pages/PurchaseListPage';
 import { PurchaseFormPage } from './pages/PurchaseFormPage';
 import { PaymentListPage } from './pages/PaymentListPage';
 import { PaymentFormPage } from './pages/PaymentFormPage';
+import { ReceiptListPage } from './pages/ReceiptListPage';
+import { ReceiptFormPage } from './pages/ReceiptFormPage';
 import { DeliveryNotesPage } from './pages/DeliveryNotesPage';
 import { ReceiptNotesPage } from './pages/ReceiptNotesPage';
 import { StockAnalysisPage } from './pages/StockAnalysisPage';
@@ -141,6 +143,10 @@ export const App: React.FC = () => {
               <Route path="/payments" element={<PaymentListPage />} />
               <Route path="/payments/new" element={<PaymentFormPage />} />
               <Route path="/payments/:id/edit" element={<PaymentFormPage />} />
+              <Route path="/receipts" element={<ReceiptListPage />} />
+              <Route path="/receipts/new" element={<ReceiptFormPage />} />
+              <Route path="/receipts/:id" element={<ReceiptFormPage />} />
+              <Route path="/receipts/:id/edit" element={<ReceiptFormPage />} />
               <Route path="/delivery-notes" element={<DeliveryNotesPage />} />
               <Route path="/receipt-notes" element={<ReceiptNotesPage />} />
               <Route path="/stock-analysis" element={<StockAnalysisPage />} />

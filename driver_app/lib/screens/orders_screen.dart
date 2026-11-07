@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
+import '../services/invoice_helper.dart';
 import '../widgets/app_toast.dart';
 
 class OrdersScreen extends StatefulWidget {
@@ -65,8 +66,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }).toList();
     }
 
-    final double totalRevenue = state.orders.fold(0.0, (sum, o) => sum + o.amount);
-
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: () {
@@ -80,110 +79,66 @@ class _OrdersScreenState extends State<OrdersScreen> {
           scrolledUnderElevation: 0,
           automaticallyImplyLeading: false,
           centerTitle: false,
-          toolbarHeight: 64,
+          toolbarHeight: 56,
           titleSpacing: 16,
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'Sales',
-                style: GoogleFonts.inter(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF0F172A),
-                  letterSpacing: -0.4,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                "Today • ${state.orders.length} Deliveries • ₹${totalRevenue.toStringAsFixed(0)}",
-                style: GoogleFonts.inter(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF64748B),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            // Live Sync Pill
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4.5),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6.5,
-                        height: 6.5,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF800020),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        state.lastSyncTime != null
-                            ? '${state.lastSyncTime!.hour.toString().padLeft(2, '0')}:${state.lastSyncTime!.minute.toString().padLeft(2, '0')}'
-                            : 'Live',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF334155),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+          title: Text(
+            'Sales',
+            style: GoogleFonts.inter(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF0F172A),
+              letterSpacing: -0.4,
             ),
-          ],
+          ),
         ),
-        body: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Shift Locked Notice if driver already submitted End Shift
-              if (state.isShiftLocked)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFFECACA)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.lock_outline_rounded, size: 16, color: Color(0xFFDC2626)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Shift End submitted. Sales are locked awaiting Godown settlement verification.',
-                          style: GoogleFonts.inter(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF991B1B),
+        body: RefreshIndicator(
+          color: const Color(0xFF800020),
+          backgroundColor: Colors.white,
+          onRefresh: () async {
+            await state.syncFromBackend();
+          },
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Shift Locked Notice if driver already submitted End Shift
+                if (state.isShiftLocked)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF2F4),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFF5C2CB)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.lock_outline_rounded, size: 16, color: Color(0xFF800020)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Shift End submitted. Sales are locked awaiting Godown settlement verification.',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF800020),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
 
-              // 1. SEARCH BAR JUST BELOW SALES HEADER
-              _buildSearchBar(),
+                // TOP: TODAY'S SALES SUMMARY CARD
+                _buildTodaySalesSummaryCard(state),
+
+                // 1. SEARCH BAR JUST BELOW SUMMARY CARD
+                _buildSearchBar(),
 
               const SizedBox(height: 12),
 
@@ -212,8 +167,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   // ================= 1. SEARCH BAR =================
   Widget _buildSearchBar() {
@@ -345,6 +301,166 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
 
+  // ================= TOP SUMMARY: TODAY'S SALES OVERVIEW CARD =================
+  Widget _buildTodaySalesSummaryCard(AppState state) {
+    final double totalRevenue = state.orders.fold(0.0, (sum, o) => sum + o.amount);
+    final double cashTotal = state.orders
+        .where((o) => o.paymentMethod.toLowerCase() == 'cash')
+        .fold(0.0, (sum, o) => sum + o.amount);
+    final double upiTotal = totalRevenue - cashTotal;
+    final int totalDeliveredCyls = state.orders.fold(0, (sum, o) => sum + o.totalCylinders);
+    final int totalReturnedEmpties = state.orders.fold(0, (sum, o) => sum + o.totalEmpties);
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x060F172A),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "Today's Sales",
+                style: GoogleFonts.inter(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  "${state.orders.length} DELIVERIES",
+                  style: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF475569),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                "₹${totalRevenue.toStringAsFixed(0)}",
+                style: GoogleFonts.inter(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF0F172A),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  "$totalDeliveredCyls Cyls delivered • $totalReturnedEmpties returned",
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF64748B),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF800020),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      "Cash: ",
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                    Text(
+                      "₹${cashTotal.toStringAsFixed(0)}",
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF0284C7),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      "UPI / Bank: ",
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                    Text(
+                      "₹${upiTotal.toStringAsFixed(0)}",
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   String _shortName(String weight) {
     final w = weight.trim();
     if (w.isEmpty) return 'Item';
@@ -370,316 +486,305 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final returnItems = order.items.where((it) => it.emptyReturnQty > 0).toList();
     final hasEmpties = order.totalEmpties > 0;
     final isExpanded = _expandedOrders.contains(order.ticketId);
-    final hasItems = deliveredItems.isNotEmpty || returnItems.isNotEmpty;
 
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x060F172A),
-            blurRadius: 8,
-            offset: Offset(0, 2),
-          ),
-        ],
+        border: Border.all(
+          color: isExpanded ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0),
+          width: 1.0,
+        ),
+        boxShadow: isExpanded
+            ? const [
+                BoxShadow(
+                  color: Color(0x0C0F172A),
+                  blurRadius: 10,
+                  offset: Offset(0, 3),
+                ),
+              ]
+            : const [
+                BoxShadow(
+                  color: Color(0x060F172A),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ---- Main card content (always visible) ----
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Top Row: Avatar Initial + Customer Name + Amount & Payment Badge
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    // Avatar circle
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFDF2F4),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFFCE7EC), width: 0.8),
-                      ),
-                      child: Center(
-                        child: Text(
-                          initial,
-                          style: GoogleFonts.inter(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF800020),
-                          ),
+          // ---- Main card content (Tappable to expand/collapse) ----
+          InkWell(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              setState(() {
+                if (isExpanded) {
+                  _expandedOrders.remove(order.ticketId);
+                } else {
+                  _expandedOrders.add(order.ticketId);
+                }
+              });
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Row 1: Avatar + Customer Name + Amount & Payment Badge
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Avatar circle
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFDF2F4),
+                          borderRadius: BorderRadius.circular(9),
+                          border: Border.all(color: const Color(0xFFFCE7EC), width: 0.8),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-
-                    // Customer Details
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            order.customer.name,
+                        child: Center(
+                          child: Text(
+                            initial,
                             style: GoogleFonts.inter(
                               fontSize: 14.5,
                               fontWeight: FontWeight.w800,
+                              color: const Color(0xFF800020),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+
+                      // Customer Details
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              order.customer.name,
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 1.5),
+                            Row(
+                              children: [
+                                Text(
+                                  order.ticketId,
+                                  style: GoogleFonts.jetBrainsMono(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  '• ${order.time}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                    color: const Color(0xFF94A3B8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Total Amount & Payment Badge
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '₹${order.amount.toStringAsFixed(0)}',
+                            style: GoogleFonts.inter(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
                               color: const Color(0xFF0F172A),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Text(
-                                order.ticketId,
-                                style: GoogleFonts.jetBrainsMono(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF64748B),
-                                ),
+                          const SizedBox(height: 2.5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: isCash ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: isCash ? const Color(0xFFFCE7EC) : const Color(0xFFE2E8F0),
                               ),
-                              const SizedBox(width: 6),
+                            ),
+                            child: Text(
+                              isCash ? 'CASH' : 'UPI / BANK',
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: isCash ? const Color(0xFF800020) : const Color(0xFF334155),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  // Row 2: Summary chips + View Details toggle
+                  Row(
+                    children: [
+                      if (order.totalCylinders > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFDF2F4),
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(color: const Color(0xFFFCE7EC)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.propane_tank_rounded, size: 11.5, color: Color(0xFF800020)),
+                              const SizedBox(width: 4),
                               Text(
-                                '• ${order.time}',
+                                '${order.totalCylinders} Delivered',
                                 style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF94A3B8),
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF800020),
                                 ),
                               ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-
-                    // Total Amount & Payment Badge
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '₹${order.amount.toStringAsFixed(0)}',
-                          style: GoogleFonts.inter(
-                            fontSize: 16.5,
-                            fontWeight: FontWeight.w900,
-                            color: const Color(0xFF0F172A),
-                          ),
                         ),
-                        const SizedBox(height: 3),
+
+                      if (hasEmpties) ...[
+                        const SizedBox(width: 6),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
                           decoration: BoxDecoration(
-                            color: isCash ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9),
+                            color: const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(5),
-                            border: Border.all(
-                              color: isCash ? const Color(0xFFFCE7EC) : const Color(0xFFE2E8F0),
-                            ),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
                           ),
-                          child: Text(
-                            isCash ? 'CASH' : 'UPI / BANK',
-                            style: GoogleFonts.inter(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w800,
-                              color: isCash ? const Color(0xFF800020) : const Color(0xFF334155),
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.autorenew_rounded, size: 11.5, color: Color(0xFF64748B)),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${order.totalEmpties} Return',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
-                    ),
-                  ],
-                ),
 
-                const SizedBox(height: 10),
+                      const Spacer(),
 
-                // ---- Summary chips + Action Buttons row ----
-                Row(
-                  children: [
-                    // Wrap summary chips so they never overflow horizontally
-                    Expanded(
-                      child: Wrap(
-                        spacing: 6,
-                        runSpacing: 4,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          if (order.totalCylinders > 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFDF2F4),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFFCE7EC)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.propane_tank_rounded, size: 12, color: Color(0xFF800020)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${order.totalCylinders} Delivered',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF800020),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                          if (hasEmpties)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: const Color(0xFFE2E8F0)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.autorenew_rounded, size: 12, color: Color(0xFF64748B)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${order.totalEmpties} Return',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF475569),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(width: 8),
-
-                    // Edit & Delete Action Icons (clean subtle action icons without background box)
-                    if (!state.isShiftLocked) ...[
-                      InkResponse(
-                        onTap: () => _showEditOrderModal(context, state, order),
-                        radius: 16,
-                        child: const Padding(
-                          padding: EdgeInsets.all(5),
-                          child: Icon(Icons.edit_outlined, size: 16, color: Color(0xFF64748B)),
+                      // View Details / Collapse Pill
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: const Color(0xFFE2E8F0),
+                            width: 0.8,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      InkResponse(
-                        onTap: () => _showDeleteOrderModal(context, state, order),
-                        radius: 16,
-                        child: const Padding(
-                          padding: EdgeInsets.all(5),
-                          child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFF94A3B8)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              isExpanded ? 'Hide' : 'Details',
+                              style: GoogleFonts.inter(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF475569),
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            AnimatedRotation(
+                              turns: isExpanded ? 0.5 : 0.0,
+                              duration: const Duration(milliseconds: 280),
+                              curve: Curves.fastOutSlowIn,
+                              child: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                size: 14,
+                                color: Color(0xFF475569),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
 
-          // ---- Collapsible Products Dropdown ----
-          if (hasItems)
-            InkWell(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                setState(() {
-                  if (isExpanded) {
-                    _expandedOrders.remove(order.ticketId);
-                  } else {
-                    _expandedOrders.add(order.ticketId);
-                  }
-                });
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFAF9FB),
-                  border: Border(
-                    top: BorderSide(color: const Color(0xFFE2E8F0).withValues(alpha: 0.7)),
-                  ),
-                  borderRadius: BorderRadius.vertical(
-                    bottom: isExpanded ? Radius.zero : const Radius.circular(14),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                      size: 16,
-                      color: const Color(0xFF800020),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isExpanded ? 'Hide Items' : 'View Items (${deliveredItems.length + returnItems.length})',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF800020),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-          // ---- Expanded items list ----
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: Container(
+          // ---- Expanded Drawer: Products Breakdown + Actions Row ----
+          AnimatedSize(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.fastOutSlowIn,
+            alignment: Alignment.topCenter,
+            clipBehavior: Clip.antiAlias,
+            child: isExpanded
+                ? Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
               decoration: BoxDecoration(
                 color: const Color(0xFFFAF9FB),
+                border: Border(
+                  top: BorderSide(color: const Color(0xFFE2E8F0).withValues(alpha: 0.8)),
+                ),
                 borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (deliveredItems.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4, bottom: 6),
-                      child: Text(
-                        'SOLD PRODUCTS',
-                        style: GoogleFonts.inter(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF94A3B8),
-                          letterSpacing: 0.5,
-                        ),
+                    Text(
+                      'DELIVERED CYLINDERS',
+                      style: GoogleFonts.inter(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF94A3B8),
+                        letterSpacing: 0.5,
                       ),
                     ),
+                    const SizedBox(height: 4),
                     ...deliveredItems.map((it) => Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Row(
                         children: [
                           Container(
-                            width: 24,
-                            height: 24,
+                            width: 22,
+                            height: 22,
                             decoration: BoxDecoration(
                               color: const Color(0xFFFDF2F4),
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(5),
                             ),
                             child: const Center(
-                              child: Icon(Icons.propane_tank_rounded, size: 13, color: Color(0xFF800020)),
+                              child: Icon(Icons.propane_tank_rounded, size: 12, color: Color(0xFF800020)),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 7),
                           Text(
                             '${it.deliveryQty}×',
                             style: GoogleFonts.inter(
@@ -710,35 +815,35 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ),
                     )),
                   ],
+
                   if (returnItems.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6, bottom: 6),
-                      child: Text(
-                        'RETURNS',
-                        style: GoogleFonts.inter(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF94A3B8),
-                          letterSpacing: 0.5,
-                        ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'EMPTY RETURNS',
+                      style: GoogleFonts.inter(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF94A3B8),
+                        letterSpacing: 0.5,
                       ),
                     ),
+                    const SizedBox(height: 4),
                     ...returnItems.map((it) => Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Row(
                         children: [
                           Container(
-                            width: 24,
-                            height: 24,
+                            width: 22,
+                            height: 22,
                             decoration: BoxDecoration(
                               color: const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(5),
                             ),
                             child: const Center(
-                              child: Icon(Icons.autorenew_rounded, size: 13, color: Color(0xFF64748B)),
+                              child: Icon(Icons.autorenew_rounded, size: 12, color: Color(0xFF64748B)),
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 7),
                           Text(
                             '${it.emptyReturnQty}×',
                             style: GoogleFonts.inter(
@@ -760,11 +865,161 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ),
                     )),
                   ],
+
+                  const SizedBox(height: 10),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 10),
+
+                  // ---- ACTION BUTTONS ROW INSIDE COLLAPSIBLE DRAWER ----
+                  Row(
+                    children: [
+                      // WhatsApp Share Button
+                      Expanded(
+                        child: InkWell(
+                          onTap: () {
+                            String phone = order.customer.phone.trim();
+                            if (phone.isEmpty) {
+                              try {
+                                final matched = state.customers.firstWhere(
+                                  (c) => (order.customer.ledgerId != null && c.ledgerId == order.customer.ledgerId) ||
+                                         (c.name.trim().toLowerCase() == order.customer.name.trim().toLowerCase()),
+                                );
+                                phone = matched.phone.trim();
+                              } catch (_) {}
+                            }
+                            InvoiceHelper.sharePdfToWhatsApp(
+                              context: context,
+                              ticketId: order.ticketId,
+                              customerName: order.customer.name,
+                              customerPhone: phone,
+                              salesId: order.salesId,
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFF800020), width: 1.2),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.asset(
+                                  'assets/images/whatsapp_logo.png',
+                                  width: 16,
+                                  height: 16,
+                                  errorBuilder: (context, error, stackTrace) => const Icon(
+                                    Icons.chat_bubble_outline_rounded,
+                                    size: 15,
+                                    color: Color(0xFF800020),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'WhatsApp',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF800020),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // View PDF Button
+                      InkWell(
+                        onTap: () => InvoiceHelper.openPdf(context, order.ticketId, salesId: order.salesId),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          height: 36,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFCBD5E1), width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.picture_as_pdf_outlined, size: 15, color: Color(0xFF475569)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'PDF',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      if (!state.isShiftLocked) ...[
+                        const SizedBox(width: 8),
+                        // Edit Amount Button
+                        InkWell(
+                          onTap: () => _showEditOrderModal(context, state, order),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFCBD5E1), width: 1),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF475569)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Edit',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF475569),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Delete Button
+                        InkWell(
+                          onTap: () => _showDeleteOrderModal(context, state, order),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            height: 36,
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFFCA5A5), width: 1),
+                            ),
+                            child: const Center(
+                              child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFDC2626)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
-            ),
-            crossFadeState: isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 200),
+            )
+          : const SizedBox(width: double.infinity, height: 0),
           ),
         ],
       ),

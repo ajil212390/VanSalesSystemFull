@@ -454,6 +454,7 @@ class Sales(models.Model):
     SubTotal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='SubTotal')
     TaxAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TaxAmount')
     GrandTotal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='GrandTotal')
+    PaidAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='PaidAmount')
     RoundOff = models.DecimalField(max_digits=10, decimal_places=2, default=0, null=True, blank=True, db_column='RoundOff')
     TotalDeliveredQty = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TotalDeliveredQty')
     TotalEmptyQty = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TotalEmptyQty')
@@ -737,67 +738,6 @@ class ReceiptNoteLine(models.Model):
         managed = False
         db_table = '"ReceiptNoteLine"'
         ordering = ['ReceiptNoteLineId']
-
-
-class EndRouteDriver(models.Model):
-    EndRouteDriverId = models.BigAutoField(primary_key=True, db_column='EndRouteDriverId')
-    ShiftDate = models.DateField(default=date.today, db_column='ShiftDate')
-    RouteVehicleDriver = models.ForeignKey(
-        RouteVehicleDriver,
-        on_delete=models.PROTECT,
-        db_column='RouteVehicleDriverId',
-        related_name='end_route_records'
-    )
-    Ledger = models.ForeignKey(
-        Ledger,
-        on_delete=models.PROTECT,
-        db_column='LedgerId',
-        related_name='end_route_driver_ledgers'
-    )
-    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
-    Remarks = models.CharField(max_length=250, null=True, blank=True, db_column='Remarks')
-    Status = models.CharField(max_length=20, default='PENDING', db_column='Status')
-    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
-
-    class Meta:
-        managed = False
-        db_table = '"EndRouteDriver"'
-        ordering = ['-ShiftDate', '-EndRouteDriverId']
-
-    def __str__(self):
-        return f"EndRoute {self.EndRouteDriverId} - {self.RouteVehicleDriver} ({self.Ledger.LedgerName})"
-
-
-class EndRouteDriverLine(models.Model):
-    EndRouteDriverLineId = models.BigAutoField(primary_key=True, db_column='EndRouteDriverLineId')
-    EndRouteDriver = models.ForeignKey(
-        EndRouteDriver,
-        on_delete=models.CASCADE,
-        db_column='EndRouteDriverId',
-        related_name='lines'
-    )
-    Product = models.ForeignKey(
-        Product,
-        on_delete=models.PROTECT,
-        db_column='ProductId'
-    )
-    Unit = models.ForeignKey(
-        Unit,
-        on_delete=models.PROTECT,
-        db_column='UnitId'
-    )
-    FilledQty = models.IntegerField(default=0, db_column='FilledQty')
-    EmptyQty = models.IntegerField(default=0, db_column='EmptyQty')
-    Rate = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Rate')
-    Amount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='Amount')
-
-    class Meta:
-        managed = False
-        db_table = '"EndRouteDriverLine"'
-        ordering = ['EndRouteDriverLineId']
-
-    def __str__(self):
-        return f"Line {self.EndRouteDriverLineId} - Prod {self.Product_id} (Full:{self.FilledQty}, Empty:{self.EmptyQty})"
 
 
 class RouteExpense(models.Model):

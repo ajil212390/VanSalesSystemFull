@@ -116,16 +116,16 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFFBEB),
+                          color: const Color(0xFFFDF2F4),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFFDE68A)),
+                          border: Border.all(color: const Color(0xFFF5C2CB)),
                         ),
                         child: Text(
                           '$_totalEmptyCount selected',
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
-                            color: Color(0xFFB45309),
+                            color: Color(0xFF800020),
                           ),
                         ),
                       ),
@@ -146,7 +146,7 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: isSelected ? const Color(0xFFD97706) : const Color(0xFFE2E8F0),
+                        color: isSelected ? const Color(0xFF800020) : const Color(0xFFE2E8F0),
                         width: isSelected ? 1.5 : 1.0,
                       ),
                       boxShadow: const [
@@ -165,12 +165,12 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                           height: 44,
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? const Color(0xFFFEF3C7)
+                                ? const Color(0xFFFDF2F4)
                                 : const Color(0xFFF8FAFC),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: isSelected
-                                  ? const Color(0xFFFDE68A)
+                                  ? const Color(0xFFF5C2CB)
                                   : const Color(0xFFE2E8F0),
                             ),
                           ),
@@ -178,7 +178,7 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                             Icons.propane_tank_outlined,
                             size: 22,
                             color: isSelected
-                                ? const Color(0xFFD97706)
+                                ? const Color(0xFF800020)
                                 : const Color(0xFF64748B),
                           ),
                         ),
@@ -259,7 +259,7 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                                     fontSize: 15,
                                     fontWeight: FontWeight.w900,
                                     color: count > 0
-                                        ? const Color(0xFFD97706)
+                                        ? const Color(0xFF800020)
                                         : const Color(0xFF94A3B8),
                                   ),
                                 ),
@@ -318,7 +318,7 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                           style: const TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w800,
-                            color: Color(0xFFD97706),
+                            color: Color(0xFF800020),
                           ),
                           textAlign: TextAlign.right,
                           maxLines: 1,
@@ -500,13 +500,13 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
               width: 76,
               height: 76,
               decoration: const BoxDecoration(
-                color: Color(0xFFFFFBEB),
+                color: Color(0xFFFDF2F4),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.assignment_return_rounded,
                 size: 40,
-                color: Color(0xFFD97706),
+                color: Color(0xFF800020),
               ),
             ),
             const SizedBox(height: 18),
@@ -586,7 +586,7 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                               const Icon(
                                 Icons.propane_tank_outlined,
                                 size: 14,
-                                color: Color(0xFFD97706),
+                                color: Color(0xFF800020),
                               ),
                               const SizedBox(width: 6),
                               Text(
@@ -602,16 +602,16 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFFFBEB),
+                              color: const Color(0xFFFDF2F4),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFFDE68A)),
+                              border: Border.all(color: const Color(0xFFF5C2CB)),
                             ),
                             child: Text(
                               '${item.value} empty',
                               style: const TextStyle(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w800,
-                                color: Color(0xFFB45309),
+                                color: Color(0xFF800020),
                               ),
                             ),
                           ),

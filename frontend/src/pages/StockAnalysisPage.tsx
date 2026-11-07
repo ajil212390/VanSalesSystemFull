@@ -18,6 +18,9 @@ import {
   Grid,
   ActionIcon,
   SegmentedControl,
+  Modal,
+  Select,
+  NumberInput,
 } from '@mantine/core';
 import {
   IconBuildingFactory2,
@@ -29,9 +32,12 @@ import {
   IconArrowUpRight,
   IconArrowLeft,
   IconChevronRight,
+  IconPlus,
+  IconCheck,
 } from '@tabler/icons-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 interface VanProduct {
   ProductId: number;
@@ -41,7 +47,8 @@ interface VanProduct {
   SalesPrice: number;
 }
 interface AllocatedVan {
-  RouteVehicleDriverId: number;
+  RouteVehicleDriverId?: number | null;
+  VehicleId?: number;
   VehicleNumber: string;
   RouteName: string;
   DriverName: string;
@@ -73,6 +80,8 @@ interface ProductStockItem {
   PurchasePrice: number;
   Rate: number;
   GodownQty: number;
+  GodownFilledQty?: number;
+  GodownEmptyQty?: number;
   AllocatedQty: number;
   FilledQty?: number;
   EmptyQty?: number;
@@ -183,6 +192,7 @@ interface StockAnalysisResponse {
     last_sync_time?: string;
   };
   products: ProductStockItem[];
+  all_vans?: AllocatedVan[];
   active_vans: AllocatedVan[];
   idle_vans: AllocatedVan[];
   recent_notes: RecentDispatchNote[];
@@ -203,6 +213,63 @@ export const StockAnalysisPage: React.FC = () => {
   const [allocationSearch, setAllocationSearch] = useState<string>('');
   const [storedProductSearch, setStoredProductSearch] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'cylinders' | 'other'>('all');
+  const queryClient = useQueryClient();
+
+  // Add Godown Stock / Opening Stock Modal State
+  const [addStockModalOpened, setAddStockModalOpened] = useState(false);
+  const [selectedStockProdId, setSelectedStockProdId] = useState<string | null>(null);
+  const [filledStockInput, setFilledStockInput] = useState<number | ''>('');
+  const [emptyStockInput, setEmptyStockInput] = useState<number | ''>('');
+  const [stockRemarks, setStockRemarks] = useState('Initial Godown Opening Stock');
+  const [isSubmittingStock, setIsSubmittingStock] = useState(false);
+
+  const handleSaveGodownStock = async () => {
+    if (!selectedStockProdId) {
+      notifications.show({ title: 'Validation', message: 'Please select a product/cylinder.', color: 'red' });
+      return;
+    }
+    const fQty = Number(filledStockInput) || 0;
+    const eQty = Number(emptyStockInput) || 0;
+    if (fQty <= 0 && eQty <= 0) {
+      notifications.show({ title: 'Validation', message: 'Please enter at least a filled or empty quantity.', color: 'red' });
+      return;
+    }
+
+    try {
+      setIsSubmittingStock(true);
+      const res = await apiClient.post('/delivery-notes/add-godown-stock/', {
+        product_id: Number(selectedStockProdId),
+        filled_quantity: fQty,
+        empty_quantity: eQty,
+        remarks: stockRemarks,
+      });
+
+      notifications.show({
+        title: 'Stock Added to Godown',
+        message: res.data?.message || 'Successfully deposited stock to Central Godown.',
+        color: 'green',
+        icon: <IconCheck size={16} />,
+      });
+
+      setAddStockModalOpened(false);
+      setSelectedStockProdId(null);
+      setFilledStockInput('');
+      setEmptyStockInput('');
+      setStockRemarks('Initial Godown Opening Stock');
+
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      refetch();
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error',
+        message: err?.response?.data?.detail || 'Failed to add godown stock.',
+        color: 'red',
+      });
+    } finally {
+      setIsSubmittingStock(false);
+    }
+  };
   const {
     data,
     isLoading,
@@ -237,19 +304,25 @@ export const StockAnalysisPage: React.FC = () => {
   }, [products, productSearch]);
   const inventoryLocations = useMemo<StockLocation[]>(() => {
     const godownProducts: StockLocationProduct[] = products
-      .filter((product) => product.GodownQty > 0)
+      .filter((product) => {
+        const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
+        const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every(v => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
+        return (product.GodownQty || 0) > 0 || emptyInGodown > 0;
+      })
       .map((product) => {
         const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
+        const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every(v => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
+        const filled = product.GodownQty || 0;
         return {
           ProductId: product.ProductId,
           ProductName: product.ProductName,
           ProductCode: product.ProductCode,
           UnitName: isCyl ? 'Cyl' : (product.UnitName || 'Nos'),
-          Qty: product.GodownQty,
-          AllocatedQty: product.GodownQty,
+          Qty: filled + (isCyl ? emptyInGodown : 0),
+          AllocatedQty: filled,
           DeliveredQty: 0,
-          BalanceQty: product.GodownQty,
-          EmptyQty: 0,
+          BalanceQty: filled,
+          EmptyQty: isCyl ? emptyInGodown : 0,
           IsCylinder: isCyl,
         };
       })
@@ -261,8 +334,8 @@ export const StockAnalysisPage: React.FC = () => {
         return (a.ProductName || '').localeCompare(b.ProductName || '');
       });
 
-    const godownFilled = godownProducts.reduce((total, product) => total + product.Qty, 0);
-    const godownEmpty = 0;
+    const godownFilled = godownProducts.reduce((total, product) => total + (product.BalanceQty || 0), 0);
+    const godownEmpty = godownProducts.reduce((total, product) => total + (product.EmptyQty || 0), 0);
     const godown: StockLocation = {
       id: 'godown',
       name: 'Central Godown',
@@ -270,20 +343,36 @@ export const StockAnalysisPage: React.FC = () => {
       type: 'godown',
       filledQuantity: godownFilled,
       emptyQuantity: godownEmpty,
+      emptyCylinders: godownEmpty,
       quantity: godownFilled + godownEmpty,
       products: godownProducts,
     };
 
-    const activeVansList: StockLocation[] = (data?.active_vans || []).map((van: any) => {
+    const vansSource = (data?.all_vans && data.all_vans.length > 0)
+      ? data.all_vans
+      : [...(data?.active_vans || []), ...(data?.idle_vans || [])];
+
+    // Ensure uniqueness by RouteVehicleDriverId or VehicleNumber
+    const seenKeys = new Set<string>();
+    const uniqueVans: any[] = [];
+    for (const v of vansSource) {
+      const key = String(v.RouteVehicleDriverId || v.VehicleNumber || v.VehicleId);
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        uniqueVans.push(v);
+      }
+    }
+
+    const allVansList: StockLocation[] = uniqueVans.map((van: any) => {
       const vanFilled = (van.BalanceCylinders ?? van.TotalCylinders ?? 0) + (van.OtherProductsBalance ?? 0);
       const vanEmpty = van.EmptyCylinders ?? 0;
       return {
-        id: `vehicle-${van.RouteVehicleDriverId}`,
+        id: `vehicle-${van.RouteVehicleDriverId || van.VehicleNumber}`,
         name: van.VehicleNumber || 'Delivery Van',
-        description: [van.RouteName, van.DriverName].filter(Boolean).join(' - '),
+        description: [van.RouteName, van.DriverName].filter(Boolean).join(' - ') || 'Delivery Vehicle',
         type: 'vehicle' as const,
-        driverName: van.DriverName,
-        routeName: van.RouteName,
+        driverName: van.DriverName || 'Unassigned',
+        routeName: van.RouteName || 'Unassigned',
         filledQuantity: vanFilled,
         emptyQuantity: vanEmpty,
         quantity: vanFilled + vanEmpty,
@@ -310,8 +399,8 @@ export const StockAnalysisPage: React.FC = () => {
       };
     });
 
-    return [godown, ...activeVansList];
-  }, [products, data?.active_vans]);
+    return [godown, ...allVansList];
+  }, [products, data?.active_vans, data?.idle_vans, data?.all_vans]);
 
   const filteredLocations = useMemo(() => {
     const q = locationSearch.toLowerCase().trim();
@@ -386,8 +475,15 @@ export const StockAnalysisPage: React.FC = () => {
     const altTotal = selectedProduct.AltQty ?? ((selectedProduct.TotalQty || 0) * (selectedProduct.UnitConversion || 1));
     const altUnit = selectedProduct.AltUnitName || 'KG';
     const totalQty = selectedProduct.TotalQty || 0;
+    const isCyl = selectedProduct.IsCylinder !== false && (selectedProduct.IsCylinder === true || /cylinder|lpg|kg/i.test(selectedProduct.ProductName || ''));
 
-    const isGodownMatch = selectedProduct.GodownQty > 0 && (
+    const godownEmptyForSelected = selectedProduct.GodownEmptyQty ?? (
+      isCyl && (!selectedProduct.Vans || selectedProduct.Vans.every((v) => (v.EmptyQty || 0) === 0))
+        ? (selectedProduct.EmptyQty || 0)
+        : 0
+    );
+
+    const isGodownMatch = ((selectedProduct.GodownQty || 0) > 0 || godownEmptyForSelected > 0) && (
       !allocationSearch.trim() ||
       'central godown'.includes(allocationSearch.toLowerCase().trim()) ||
       'main storage godown'.includes(allocationSearch.toLowerCase().trim()) ||
@@ -405,9 +501,8 @@ export const StockAnalysisPage: React.FC = () => {
     });
 
     const filteredAllocationsCount = (isGodownMatch ? 1 : 0) + filteredVans.length;
-    const isCyl = selectedProduct.IsCylinder !== false && (selectedProduct.IsCylinder === true || /cylinder|lpg|kg/i.test(selectedProduct.ProductName || ''));
-    const totalFilledAlloc = (isGodownMatch ? selectedProduct.GodownQty : 0) + filteredVans.reduce((sum, v) => sum + (v.BalanceQty ?? v.Qty), 0);
-    const totalEmptyAlloc = filteredVans.reduce((sum, v) => sum + (v.EmptyQty ?? 0), 0);
+    const totalFilledAlloc = (isGodownMatch ? (selectedProduct.GodownQty || 0) : 0) + filteredVans.reduce((sum, v) => sum + (v.BalanceQty ?? v.Qty), 0);
+    const totalEmptyAlloc = (isGodownMatch ? godownEmptyForSelected : 0) + filteredVans.reduce((sum, v) => sum + (v.EmptyQty ?? 0), 0);
     const filteredAllocationsTotalQty = totalFilledAlloc + totalEmptyAlloc;
 
     return (
@@ -578,13 +673,13 @@ export const StockAnalysisPage: React.FC = () => {
                       <Text size="sm" c="dimmed">Main Storage Godown</Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                      {selectedProduct.GodownQty}
+                      {selectedProduct.GodownQty || 0}
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
-                      {isCyl ? 0 : '—'}
+                      {isCyl ? godownEmptyForSelected : '—'}
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
-                      {selectedProduct.GodownQty}
+                      {(selectedProduct.GodownQty || 0) + (isCyl ? godownEmptyForSelected : 0)}
                     </Table.Td>
                   </Table.Tr>
                 )}
@@ -793,7 +888,7 @@ export const StockAnalysisPage: React.FC = () => {
                 Empty Cylinders
               </Text>
               <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
-                {selectedLocation.emptyCylinders ?? 0}
+                {selectedLocation.emptyCylinders ?? selectedLocation.emptyQuantity ?? 0}
               </Text>
               <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
                 Empties collected
@@ -843,7 +938,7 @@ export const StockAnalysisPage: React.FC = () => {
                 Empty Cylinders
               </Text>
               <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
-                {selectedLocation.emptyCylinders ?? 0}
+                {selectedLocation.emptyCylinders ?? selectedLocation.emptyQuantity ?? 0}
               </Text>
               <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
                 Empties awaiting refill
@@ -1232,6 +1327,16 @@ export const StockAnalysisPage: React.FC = () => {
               </Text>
             </Group>
           </Badge>
+          <Button
+            variant="filled"
+            color="burgundy"
+            size="sm"
+            leftSection={<IconPlus size={15} />}
+            onClick={() => setAddStockModalOpened(true)}
+            style={{ fontWeight: 600 }}
+          >
+            Add Godown Stock
+          </Button>
           <Button
             variant="default"
             size="sm"
@@ -1779,6 +1884,86 @@ export const StockAnalysisPage: React.FC = () => {
           </Paper>
         </Grid.Col>
       </Grid>
+
+      {/* Add Godown Opening Stock Modal */}
+      <Modal
+        opened={addStockModalOpened}
+        onClose={() => {
+          setAddStockModalOpened(false);
+          setSelectedStockProdId(null);
+          setFilledStockInput('');
+          setEmptyStockInput('');
+          setStockRemarks('Initial Godown Opening Stock');
+        }}
+        title={
+          <Group gap="xs">
+            <IconBuildingFactory2 size={18} color="#800020" />
+            <Text fw={700} style={{ color: '#0f172a', fontSize: 16 }}>
+              Add Godown Inventory (Opening Stock)
+            </Text>
+          </Group>
+        }
+        radius="md"
+        centered
+      >
+        <Stack gap="md" mt="xs">
+          <Text size="xs" c="dimmed">
+            Directly deposit filled cylinders or empties into <b>Central Godown</b> without needing a purchase invoice.
+          </Text>
+
+          <Select
+            label="Product / Cylinder"
+            placeholder="Select product..."
+            data={products.map((p) => ({
+              value: String(p.ProductId),
+              label: `${p.ProductName} (${p.ProductCode || 'Cyl'})`,
+            }))}
+            value={selectedStockProdId}
+            onChange={setSelectedStockProdId}
+            searchable
+            required
+          />
+
+          <NumberInput
+            label="Filled Quantity (Full Stock)"
+            placeholder="0"
+            min={0}
+            value={filledStockInput}
+            onChange={(val) => setFilledStockInput(val === '' ? '' : Number(val))}
+            description="Number of filled cylinders ready in warehouse"
+          />
+
+          <NumberInput
+            label="Empty Cylinders Quantity"
+            placeholder="0"
+            min={0}
+            value={emptyStockInput}
+            onChange={(val) => setEmptyStockInput(val === '' ? '' : Number(val))}
+            description="Number of empty cylinders on hand in godown"
+          />
+
+          <TextInput
+            label="Remarks / Reference"
+            placeholder="e.g. Initial Opening Stock"
+            value={stockRemarks}
+            onChange={(e) => setStockRemarks(e.currentTarget.value)}
+          />
+
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={() => setAddStockModalOpened(false)}>
+              Cancel
+            </Button>
+            <Button
+              color="burgundy"
+              loading={isSubmittingStock}
+              onClick={handleSaveGodownStock}
+              leftSection={<IconCheck size={16} />}
+            >
+              Deposit to Godown
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 };

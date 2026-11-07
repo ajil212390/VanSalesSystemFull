@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
 
+import '../widgets/app_toast.dart';
+
 class StockScreen extends StatelessWidget {
   const StockScreen({super.key});
 
@@ -61,11 +63,10 @@ class StockScreen extends StatelessWidget {
                           icon: const Icon(Icons.refresh_rounded, size: 20, color: Color(0xFF800020)),
                           tooltip: 'Sync Delivery Note & Stock',
                           onPressed: () async {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Syncing latest van stock & delivery note...'),
-                                duration: Duration(milliseconds: 1000),
-                              ),
+                            AppToast.info(
+                              context,
+                              'Syncing latest van stock & delivery note...',
+                              duration: const Duration(milliseconds: 1200),
                             );
                             await state.syncFromBackend();
                           },

@@ -19,6 +19,7 @@ import {
   Tooltip,
   Loader,
   Center,
+  Modal,
 } from '@mantine/core';
 import {
   IconSearch,
@@ -31,6 +32,7 @@ import {
   IconClock,
   IconCreditCard,
   IconReceipt,
+  IconAlertTriangle,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -42,6 +44,8 @@ interface EndRouteDriverLineItem {
   product_name: string;
   Unit: number;
   unit_name: string;
+  LoadedQty?: number;
+  DeliveredQty?: number;
   FilledQty: number;
   EmptyQty: number;
   Rate: string | number;
@@ -62,10 +66,16 @@ interface EndRouteDriverItem {
   Status: 'PENDING' | 'SETTLED' | string;
   CreatedAt: string;
   lines?: EndRouteDriverLineItem[];
+  total_loaded?: number;
+  total_delivered?: number;
   total_filled?: number;
+  total_unsold?: number;
   total_empty?: number;
   cash_amount?: number;
   bank_amount?: number;
+  gross_amount?: number;
+  trip_expenses?: number;
+  net_balance?: number;
 }
 
 export const EndAllocationsPage: React.FC = () => {
@@ -74,6 +84,7 @@ export const EndAllocationsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
   const [selectedItem, setSelectedItem] = useState<EndRouteDriverItem | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [deleteConfirmItem, setDeleteConfirmItem] = useState<EndRouteDriverItem | null>(null);
 
   // Fetch EndRouteDriver data from backend
   const { data: endRouteDrivers = [], isLoading, isRefetching, refetch } = useQuery<EndRouteDriverItem[]>({
@@ -438,8 +449,8 @@ export const EndAllocationsPage: React.FC = () => {
                     radius="sm"
                     variant="filled"
                     style={{
-                      backgroundColor: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#f1f5f9' : '#fef3c7',
-                      color: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#334155' : '#b45309',
+                      backgroundColor: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#f1f5f9' : '#fdf2f4',
+                      color: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#334155' : '#800020',
                       fontWeight: 700,
                     }}
                   >
@@ -461,31 +472,48 @@ export const EndAllocationsPage: React.FC = () => {
             </Group>
 
             <Stack gap="md">
-              {/* Route Collections Box */}
+              {/* Financial Reconcilation Cards (Matching Van Management) */}
               <Box
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(2, 1fr)',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
                   backgroundColor: '#f8fafc',
                   borderRadius: 8,
                   border: '1px solid #e2e8f0',
                   overflow: 'hidden',
                 }}
               >
-                <Box style={{ padding: '10px 16px', borderRight: '1px solid #e2e8f0' }}>
+                <Box style={{ padding: '12px 16px', borderRight: '1px solid #e2e8f0' }}>
                   <Text size="10.5px" fw={700} c="#64748b" tt="uppercase">
-                    Cash Collected
+                    GROSS COLLECTION
                   </Text>
                   <Text fw={700} size="md" c="#0f172a" mt={2}>
-                    ₹{modalAmounts.cash.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ₹{(selectedItem.gross_amount ?? (modalAmounts.cash + modalAmounts.bank)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text size="10px" c="#64748b" mt={2}>
+                    Cash: ₹{modalAmounts.cash.toLocaleString('en-IN', { minimumFractionDigits: 0 })} • Bank: ₹{modalAmounts.bank.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
                   </Text>
                 </Box>
-                <Box style={{ padding: '10px 16px' }}>
+                <Box style={{ padding: '12px 16px', borderRight: '1px solid #e2e8f0' }}>
                   <Text size="10.5px" fw={700} c="#64748b" tt="uppercase">
-                    Digital / UPI Collected
+                    TRIP EXPENSES
                   </Text>
-                  <Text fw={700} size="md" c="#0f172a" mt={2}>
-                    ₹{modalAmounts.bank.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <Text fw={700} size="md" c="#800020" mt={2}>
+                    ₹{(selectedItem.trip_expenses ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text size="10px" c="#64748b" mt={2}>
+                    Fuel, tolls & driver allowances
+                  </Text>
+                </Box>
+                <Box style={{ padding: '12px 16px' }}>
+                  <Text size="10.5px" fw={700} c="#64748b" tt="uppercase">
+                    NET SETTLEMENT BALANCE
+                  </Text>
+                  <Text fw={700} size="md" c="#800020" mt={2}>
+                    ₹{(selectedItem.net_balance ?? (modalAmounts.cash + modalAmounts.bank - (selectedItem.trip_expenses ?? 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text size="10px" c="#64748b" mt={2}>
+                    Net cash & bank revenue in hand
                   </Text>
                 </Box>
               </Box>
@@ -503,14 +531,20 @@ export const EndAllocationsPage: React.FC = () => {
               <Stack gap="xs">
                 <Group justify="space-between" align="center">
                   <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    RETURNED STOCKS & CYLINDERS
+                    VAN STOCK RECONCILIATION & GODOWN RETURNS
                   </Text>
                   <Group gap="xs">
+                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#0f172a', color: '#0f172a', fontWeight: 700 }}>
+                      LOADED: {selectedItem.total_loaded ?? modalLines.reduce((s, l) => s + (l.LoadedQty ?? 0), 0)}
+                    </Badge>
+                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#64748b', color: '#64748b', fontWeight: 700 }}>
+                      DELIVERED: {selectedItem.total_delivered ?? modalLines.reduce((s, l) => s + (l.DeliveredQty ?? 0), 0)}
+                    </Badge>
                     <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#0f172a', color: '#0f172a', fontWeight: 700 }}>
                       UNSOLD FULL: {modalTotalFilled}
                     </Badge>
                     <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#800020', color: '#800020', fontWeight: 700 }}>
-                      EMPTIES: {modalTotalEmpty}
+                      EMPTIES RETURNED: {modalTotalEmpty}
                     </Badge>
                   </Group>
                 </Group>
@@ -528,8 +562,10 @@ export const EndAllocationsPage: React.FC = () => {
                         <Table.Tr>
                           <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>PRODUCT</Table.Th>
                           <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>UNIT</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>FILLED QTY</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>EMPTY QTY</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>LOADED</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>DELIVERED</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>UNSOLD (TO GODOWN)</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textAlign: 'right' }}>EMPTIES (TO GODOWN)</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
@@ -537,11 +573,30 @@ export const EndAllocationsPage: React.FC = () => {
                           <Table.Tr key={line.EndRouteDriverLineId}>
                             <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{line.product_name}</Table.Td>
                             <Table.Td style={{ fontSize: 12, color: '#64748b' }}>{line.unit_name || 'Nos'}</Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{line.LoadedQty ?? '-'}</Table.Td>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5, color: '#64748b' }}>{line.DeliveredQty ?? '-'}</Table.Td>
                             <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a' }}>{line.FilledQty}</Table.Td>
                             <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#800020' }}>{line.EmptyQty}</Table.Td>
                           </Table.Tr>
                         ))}
                       </Table.Tbody>
+                      <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                        <Table.Tr>
+                          <Table.Td colSpan={2} style={{ fontWeight: 700, fontSize: 12, color: '#0f172a' }}>TOTALS</Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
+                            {modalLines.reduce((s, l) => s + (l.LoadedQty ?? 0), 0)}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#64748b' }}>
+                            {modalLines.reduce((s, l) => s + (l.DeliveredQty ?? 0), 0)}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
+                            {modalTotalFilled}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#800020' }}>
+                            {modalTotalEmpty}
+                          </Table.Td>
+                        </Table.Tr>
+                      </Table.Tfoot>
                     </Table>
                   </Paper>
                 )}
@@ -549,6 +604,16 @@ export const EndAllocationsPage: React.FC = () => {
 
               {/* Action Buttons */}
               <Group justify="flex-end" gap="sm">
+                <Button
+                  variant="subtle"
+                  color="red"
+                  radius="sm"
+                  size="sm"
+                  leftSection={<IconTrash size={15} />}
+                  onClick={() => setDeleteConfirmItem(selectedItem)}
+                >
+                  Delete Record
+                </Button>
                 <Button
                   variant="default"
                   radius="sm"
@@ -632,27 +697,71 @@ export const EndAllocationsPage: React.FC = () => {
               size="xs"
               value={statusFilter}
               onChange={(val) => setStatusFilter(val as any)}
+              color="burgundy"
               data={[
-                { label: `Pending (${pendingCount})`, value: 'pending' },
-                { label: `Settled (${settledCount})`, value: 'settled' },
-                { label: `All (${endRouteDrivers.length})`, value: 'all' },
+                {
+                  label: (
+                    <span
+                      style={{
+                        color: statusFilter === 'pending' ? '#ffffff' : '#64748b',
+                        fontWeight: statusFilter === 'pending' ? 700 : 600,
+                        fontSize: 12,
+                        display: 'inline-block',
+                        transition: 'color 150ms ease',
+                      }}
+                    >
+                      Pending ({pendingCount})
+                    </span>
+                  ),
+                  value: 'pending',
+                },
+                {
+                  label: (
+                    <span
+                      style={{
+                        color: statusFilter === 'settled' ? '#ffffff' : '#64748b',
+                        fontWeight: statusFilter === 'settled' ? 700 : 600,
+                        fontSize: 12,
+                        display: 'inline-block',
+                        transition: 'color 150ms ease',
+                      }}
+                    >
+                      Settled ({settledCount})
+                    </span>
+                  ),
+                  value: 'settled',
+                },
+                {
+                  label: (
+                    <span
+                      style={{
+                        color: statusFilter === 'all' ? '#ffffff' : '#64748b',
+                        fontWeight: statusFilter === 'all' ? 700 : 600,
+                        fontSize: 12,
+                        display: 'inline-block',
+                        transition: 'color 150ms ease',
+                      }}
+                    >
+                      All ({endRouteDrivers.length})
+                    </span>
+                  ),
+                  value: 'all',
+                },
               ]}
               styles={{
                 root: {
-                  backgroundColor: '#f8fafc',
+                  backgroundColor: '#f1f5f9',
                   border: '1px solid #e2e8f0',
+                  padding: 3,
+                  borderRadius: 8,
                 },
                 indicator: {
-                  backgroundColor: '#ffffff',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+                  backgroundColor: '#800020',
+                  boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
+                  borderRadius: 6,
                 },
                 label: {
-                  fontWeight: 600,
-                  fontSize: 12,
-                  color: '#475569',
-                  '&[dataActive]': {
-                    color: '#800020',
-                  },
+                  padding: '4px 12px',
                 },
               }}
             />
@@ -812,8 +921,8 @@ export const EndAllocationsPage: React.FC = () => {
                           radius="sm"
                           variant="filled"
                           style={{
-                            backgroundColor: isSettled ? '#f1f5f9' : '#fef3c7',
-                            color: isSettled ? '#334155' : '#b45309',
+                            backgroundColor: isSettled ? '#f1f5f9' : '#fdf2f4',
+                            color: isSettled ? '#334155' : '#800020',
                             fontWeight: 700,
                             letterSpacing: '0.4px',
                           }}
@@ -844,9 +953,7 @@ export const EndAllocationsPage: React.FC = () => {
                               color="red"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (window.confirm(`Delete settlement ERD-${item.EndRouteDriverId}?`)) {
-                                  deleteMutation.mutate(item.EndRouteDriverId);
-                                }
+                                setDeleteConfirmItem(item);
                               }}
                             >
                               <IconTrash size={15} />
@@ -863,6 +970,66 @@ export const EndAllocationsPage: React.FC = () => {
         )}
       </Paper>
 
+      {/* Modern, Clean Delete Settlement Confirmation Modal */}
+      <Modal
+        opened={!!deleteConfirmItem}
+        onClose={() => setDeleteConfirmItem(null)}
+        title={
+          <Group gap="xs">
+            <IconAlertTriangle size={20} color="#dc2626" />
+            <Text fw={700} style={{ color: '#0f172a', fontSize: 16 }}>
+              Delete Shift Settlement Record?
+            </Text>
+          </Group>
+        }
+        centered
+        radius="md"
+        styles={{
+          header: { borderBottom: '1px solid #f1f5f9', paddingBottom: 12 },
+          body: { paddingTop: 16 },
+        }}
+      >
+        {deleteConfirmItem && (
+          <Stack gap="md">
+            <Text size="sm" c="#475569" style={{ lineHeight: 1.5 }}>
+              Are you sure you want to delete settlement record{' '}
+              <strong style={{ color: '#800020' }}>ERD-{deleteConfirmItem.EndRouteDriverId}</strong> for driver{' '}
+              <strong style={{ color: '#0f172a' }}>{deleteConfirmItem.driver_name}</strong> ({deleteConfirmItem.vehicle_number})?
+            </Text>
+
+            <Paper p="xs" radius="sm" style={{ backgroundColor: '#fdf2f4', border: '1px solid #f5c2cb' }}>
+              <Text size="xs" c="#800020" fw={600}>
+                ⚠️ This will reverse empty and filled cylinder unloads back to the vehicle, and restore the driver&apos;s shift to active state.
+              </Text>
+            </Paper>
+
+            <Group justify="flex-end" gap="sm" mt="xs">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setDeleteConfirmItem(null)}
+                style={{ borderColor: '#cbd5e1', color: '#475569' }}
+              >
+                Cancel
+              </Button>
+              <Button
+                color="red"
+                size="sm"
+                loading={deleteMutation.isPending}
+                onClick={() => {
+                  deleteMutation.mutate(deleteConfirmItem.EndRouteDriverId, {
+                    onSettled: () => setDeleteConfirmItem(null),
+                  });
+                }}
+                leftSection={<IconTrash size={15} />}
+                style={{ backgroundColor: '#dc2626' }}
+              >
+                Delete Settlement
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
 
     </Stack>
   );

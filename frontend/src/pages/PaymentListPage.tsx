@@ -12,6 +12,7 @@ import {
   TextInput,
   CloseButton,
   ActionIcon,
+  Badge,
 } from '@mantine/core';
 import {
   IconPlus,
@@ -42,6 +43,7 @@ interface PaymentItem {
   Amount: number | string;
   Narration?: string;
   CreatedAt?: string;
+  voucher_type?: string;
   lines?: PaymentLineItem[];
 }
 
@@ -61,9 +63,10 @@ export const PaymentListPage: React.FC = () => {
   });
 
   const filteredPayments = useMemo(() => {
+    const paymentsOnly = payments.filter((p) => p.voucher_type !== 'RECEIPT');
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return payments;
-    return payments.filter(
+    if (!q) return paymentsOnly;
+    return paymentsOnly.filter(
       (p) =>
         String(p.PaymentId).includes(q) ||
         (p.party_name && p.party_name.toLowerCase().includes(q)) ||
@@ -142,9 +145,10 @@ export const PaymentListPage: React.FC = () => {
             <Table verticalSpacing="sm" horizontalSpacing="sm" highlightOnHover>
               <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 120 }}>Payment No</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 125, whiteSpace: 'nowrap' }}>Date</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 200, minWidth: 180 }}>Party (Supplier)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, minWidth: 100 }}>Voucher No</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 100, minWidth: 90 }}>Type</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 120, minWidth: 110, whiteSpace: 'nowrap' }}>Date</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 200, minWidth: 180 }}>Party Name</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140, minWidth: 120 }}>Account</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 140 }}>Narration</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140, minWidth: 120, textAlign: 'right' }}>Total (₹)</Table.Th>
@@ -157,18 +161,29 @@ export const PaymentListPage: React.FC = () => {
                   const dateStr = item.CreatedAt
                     ? new Date(item.CreatedAt).toISOString().split('T')[0]
                     : '—';
+                  const isReceipt = item.voucher_type === 'RECEIPT';
 
                   return (
                     <Table.Tr key={item.PaymentId}>
                       <Table.Td style={{ whiteSpace: 'nowrap' }}>
                         <Group gap={6} wrap="nowrap">
-                          <IconReceipt size={16} color="#800020" style={{ flexShrink: 0 }} />
+                          <IconReceipt size={16} color={isReceipt ? '#0d9488' : '#800020'} style={{ flexShrink: 0 }} />
                           <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
                             {String(item.PaymentId).padStart(3, '0')}
                           </Text>
                         </Group>
                       </Table.Td>
-                      <Table.Td style={{ whiteSpace: 'nowrap', minWidth: 125, width: 130 }}>
+                      <Table.Td>
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          color={isReceipt ? 'teal' : 'burgundy'}
+                          styles={{ root: { fontWeight: 600, textTransform: 'uppercase' } }}
+                        >
+                          {isReceipt ? 'Receipt' : 'Payment'}
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td style={{ whiteSpace: 'nowrap', minWidth: 110, width: 120 }}>
                         <Text size="sm" c="#475569" style={{ whiteSpace: 'nowrap', wordBreak: 'keep-all', display: 'inline-block' }}>
                           {dateStr}
                         </Text>

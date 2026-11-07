@@ -1,4 +1,5 @@
 import '../widgets/app_toast.dart';
+import '../widgets/confirm_dialog.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -838,10 +839,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   '\u20B9${state.totalIncome.toStringAsFixed(0)}',
                   style: GoogleFonts.inter(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
                     color: _textPrimary,
-                    letterSpacing: -0.4,
+                    letterSpacing: -0.5,
                   ),
                 ),
 
@@ -1017,10 +1018,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Text(
                   '\u20B9${state.totalExpense.toStringAsFixed(0)}',
                   style: GoogleFonts.inter(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
                     color: const Color(0xFF800020),
-                    letterSpacing: -0.4,
+                    letterSpacing: -0.5,
                   ),
                 ),
               ),
@@ -1268,7 +1269,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   '\u20B9${state.netBalance.toStringAsFixed(0)}',
                   style: GoogleFonts.inter(
                     fontSize: 26,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w900,
                     color: _textPrimary,
                     letterSpacing: -0.5,
                   ),
@@ -1422,9 +1423,9 @@ class _HomeScreenState extends State<HomeScreen> {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: const Color(0xFFFEF3C7),
+          color: const Color(0xFFFDF2F4),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFFDE68A)),
+          border: Border.all(color: const Color(0xFFF5C2CB), width: 1.2),
         ),
         child: Row(
           children: [
@@ -1432,10 +1433,10 @@ class _HomeScreenState extends State<HomeScreen> {
               width: 36,
               height: 36,
               decoration: const BoxDecoration(
-                color: Color(0xFFFDE68A),
+                color: Color(0xFFF5C2CB),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.hourglass_top_rounded, color: Color(0xFFB45309), size: 20),
+              child: const Icon(Icons.schedule_rounded, color: Color(0xFF800020), size: 20),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1447,7 +1448,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: GoogleFonts.inter(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w800,
-                      color: const Color(0xFFB45309),
+                      color: const Color(0xFF800020),
                       letterSpacing: 0.3,
                     ),
                   ),
@@ -1457,7 +1458,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       fontWeight: FontWeight.w500,
-                      color: const Color(0xFF92400E),
+                      color: const Color(0xFF475569),
                     ),
                   ),
                 ],
@@ -1547,59 +1548,164 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(
-            'Edit Amount for ${order.customer.name}',
-            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800),
+          contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFDF2F4),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.edit_note_rounded, color: Color(0xFF800020), size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Edit Collection Amount',
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                    ),
+                    Text(
+                      order.customer.name,
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w500, color: const Color(0xFF64748B)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Ticket: ${order.ticketId}', style: GoogleFonts.jetBrainsMono(fontSize: 11, color: const Color(0xFF64748B))),
-              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Ticket ID', style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B))),
+                    Text(order.ticketId, style: GoogleFonts.jetBrainsMono(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF334155))),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'COLLECTED AMOUNT (\u20B9)',
+                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF475569), letterSpacing: 0.4),
+              ),
+              const SizedBox(height: 6),
               TextField(
                 controller: amountController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                autofocus: true,
+                cursorColor: const Color(0xFF800020),
+                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
                 decoration: InputDecoration(
-                  labelText: 'Collected Amount (\u20B9)',
+                  prefixText: '\u20B9 ',
+                  prefixStyle: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF800020)),
                   filled: true,
                   fillColor: const Color(0xFFF8FAFC),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5)),
                 ),
               ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 6,
+              const SizedBox(height: 16),
+              Text(
+                'PAYMENT METHOD',
+                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF475569), letterSpacing: 0.4),
+              ),
+              const SizedBox(height: 6),
+              Row(
                 children: ['Cash', 'UPI', 'Credit'].map((m) {
                   final sel = selectedMethod.toLowerCase() == m.toLowerCase();
-                  return ChoiceChip(
-                    label: Text(m, style: GoogleFonts.inter(fontSize: 11)),
-                    selected: sel,
-                    onSelected: (val) {
-                      if (val) setDialogState(() => selectedMethod = m);
-                    },
-                    selectedColor: const Color(0xFF800020),
+                  return Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: InkWell(
+                        onTap: () => setDialogState(() => selectedMethod = m),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          height: 38,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: sel ? const Color(0xFF800020) : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: sel ? const Color(0xFF800020) : const Color(0xFFCBD5E1),
+                              width: 1.2,
+                            ),
+                          ),
+                          child: Text(
+                            m,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: sel ? FontWeight.w800 : FontWeight.w600,
+                              color: sel ? Colors.white : const Color(0xFF334155),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   );
                 }).toList(),
               ),
             ],
           ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final amt = double.tryParse(amountController.text.trim()) ?? order.amount;
-                await state.updateOrderAmount(order.ticketId, amt, newPaymentMethod: selectedMethod);
-                onUpdated();
-                if (ctx.mounted) Navigator.pop(ctx);
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF800020), foregroundColor: Colors.white),
-              child: const Text('Update'),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: const BorderSide(color: Color(0xFFCBD5E1)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final amt = double.tryParse(amountController.text.trim()) ?? order.amount;
+                      await state.updateOrderAmount(order.ticketId, amt, newPaymentMethod: selectedMethod);
+                      onUpdated();
+                      if (ctx.mounted) Navigator.pop(ctx);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF800020),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      'Update',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -3147,42 +3253,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                   InkWell(
                                     onTap: () async {
                                       HapticFeedback.mediumImpact();
-                                      final confirm = await showDialog<bool>(
+                                      final confirm = await showSuperGasConfirmDialog(
                                         context: ctx,
-                                        builder: (dCtx) => AlertDialog(
-                                          backgroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                          title: Text(
-                                            'Delete Expense?',
-                                            style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16, color: _textPrimary),
-                                          ),
-                                          content: Text(
-                                            'Are you sure you want to delete "${exp.title}" (\u20B9${exp.amount.toStringAsFixed(0)})?\nThis will reverse the trip expense in accounts.',
-                                            style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF64748B)),
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () => Navigator.pop(dCtx, false),
-                                              child: Text(
-                                                'Cancel',
-                                                style: GoogleFonts.inter(fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
-                                              ),
-                                            ),
-                                            ElevatedButton(
-                                              onPressed: () => Navigator.pop(dCtx, true),
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: const Color(0xFFDC2626),
-                                                foregroundColor: Colors.white,
-                                                elevation: 0,
-                                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                              ),
-                                              child: Text(
-                                                'Delete',
-                                                style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                        title: 'Delete Expense?',
+                                        message: 'Are you sure you want to delete "${exp.title}" (\u20B9${exp.amount.toStringAsFixed(0)})?\nThis will reverse the trip expense in accounts.',
+                                        confirmLabel: 'Delete Expense',
+                                        cancelLabel: 'Cancel',
+                                        icon: Icons.delete_outline_rounded,
+                                        iconColor: const Color(0xFF800020),
+                                        iconBgColor: const Color(0xFFFDF2F4),
+                                        confirmButtonColor: const Color(0xFF800020),
                                       );
                                       if (confirm == true) {
                                         state.deleteExpense(exp.id);
@@ -3461,9 +3541,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         onPressed: () {
                           final amt = double.tryParse(amountCtrl.text.trim()) ?? 0;
                           if (amt <= 0) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Please enter a valid amount')),
-                            );
+                            AppToast.warning(context, 'Please enter a valid amount');
                             return;
                           }
 
@@ -3479,13 +3557,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
                           Navigator.pop(ctx);
 
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Expense of \u20B9${amt.toStringAsFixed(0)} logged via $selectedMode.'),
-                              backgroundColor: const Color(0xFF0F172A),
-                              behavior: SnackBarBehavior.floating,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
+                          AppToast.success(
+                            context,
+                            'Expense of \u20B9${amt.toStringAsFixed(0)} logged via $selectedMode.',
                           );
                         },
                         style: ElevatedButton.styleFrom(
@@ -3549,14 +3623,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 50,
                     height: 50,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
+                      color: const Color(0xFFFDF2F4),
                       shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFFBBF7D0), width: 1.5),
+                      border: Border.all(color: const Color(0xFFF5C2CB), width: 1.5),
                     ),
                     child: const Center(
                       child: Icon(
                         Icons.check_circle_rounded,
-                        color: Color(0xFF16A34A),
+                        color: Color(0xFF800020),
                         size: 28,
                       ),
                     ),
@@ -3619,7 +3693,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 style: GoogleFonts.inter(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w800,
-                                  color: const Color(0xFFB45309),
+                                  color: const Color(0xFF800020),
                                 ),
                               ),
                             ),
