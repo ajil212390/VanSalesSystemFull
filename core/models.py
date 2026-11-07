@@ -616,7 +616,9 @@ class BillwiseAllocation(models.Model):
     BillwiseAllocationId = models.BigAutoField(primary_key=True, db_column='BillwiseAllocationId')
     PaymentLine = models.ForeignKey(PaymentLine, on_delete=models.CASCADE, null=True, blank=True, db_column='PaymentLineId', related_name='allocations')
     ReceiptLineId = models.BigIntegerField(null=True, blank=True, db_column='ReceiptLineId')
-    BillType = models.CharField(max_length=50, db_column='BillType')  # 'PURCHASE'
+    ReferenceTable = models.CharField(max_length=50, null=True, blank=True, db_column='ReferenceTable')
+    ReferenceId = models.BigIntegerField(null=True, blank=True, db_column='ReferenceId')
+    BillType = models.CharField(max_length=50, db_column='BillType')  # 'PURCHASE', 'SALES', 'OPENING'
     BillReference = models.CharField(max_length=100, null=True, blank=True, db_column='BillReference')  # InvoiceNo or PurchaseNo
     BillDate = models.DateField(null=True, blank=True, db_column='BillDate')
     DueDate = models.DateField(null=True, blank=True, db_column='DueDate')

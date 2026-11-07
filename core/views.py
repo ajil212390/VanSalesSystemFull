@@ -962,6 +962,17 @@ class RouteVehicleDriverViewSet(viewsets.ModelViewSet):
             qs = qs.filter(IsActive=(is_active.lower() == 'true'))
         return qs
 
+    def perform_update(self, serializer):
+        sale = serializer.save()
+        if sale.Status == 'CANCELLED':
+            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
+            sync_sales_billwise_allocation(sale, None)
+
+    def perform_destroy(self, instance):
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
+        instance.delete()
+
     @action(detail=False, methods=['get'])
     def current(self, request):
         """
@@ -1173,6 +1184,17 @@ class ProductPriceAuditViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(Product_id=product_id)
         return qs
 
+    def perform_update(self, serializer):
+        sale = serializer.save()
+        if sale.Status == 'CANCELLED':
+            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
+            sync_sales_billwise_allocation(sale, None)
+
+    def perform_destroy(self, instance):
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
+        instance.delete()
+
 class GroupViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Read-only list of chart of accounts groups (e.g. Sundry Debtors, Bank Accounts, etc.)
@@ -1242,6 +1264,17 @@ class LedgerViewSet(viewsets.ModelViewSet):
             ).exclude(Q(Group_id=21) | Q(Group__GroupName__icontains='debtor') | Q(Group__GroupName__icontains='customer'))
 
         return qs
+
+    def perform_update(self, serializer):
+        sale = serializer.save()
+        if sale.Status == 'CANCELLED':
+            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
+            sync_sales_billwise_allocation(sale, None)
+
+    def perform_destroy(self, instance):
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
+        instance.delete()
 
     @action(detail=False, methods=['get'], url_path='suppliers', permission_classes=[AllowAny])
     def suppliers(self, request):
@@ -1606,7 +1639,18 @@ class PurchaseViewSet(viewsets.ModelViewSet):
         qs = Purchase.objects.select_related('SupplierLedger').prefetch_related('lines__Product', 'lines__Unit').all()
         if company_id:
             qs = qs.filter(CompanyId=company_id)
-        return qs.order_by('-PurchaseDate', '-PurchaseId')
+        return qs
+
+    def perform_update(self, serializer):
+        sale = serializer.save()
+        if sale.Status == 'CANCELLED':
+            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
+            sync_sales_billwise_allocation(sale, None)
+
+    def perform_destroy(self, instance):
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
+        instance.delete().order_by('-PurchaseDate', '-PurchaseId')
 
     def _get_system_ledger(self, company_id, group_id):
         ledger = Ledger.objects.filter(Group_id=group_id, CompanyId=company_id).first()
@@ -2222,6 +2266,122 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             sync_ledger_balances(*affected_ledger_ids)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+def sync_sales_billwise_allocation(sale, voucher_line=None):
+    """
+    Synchronizes BillwiseAllocation records for a sales transaction.
+    When a customer pays on a sale (PaidAmount > 0):
+      1. Allocates against the sale invoice itself (BillType='SALES', BillReference=sale.SalesNo)
+         for min(sale.PaidAmount, sale.GrandTotal).
+      2. If customer paid excess (sale.PaidAmount > sale.GrandTotal),
+         allocates the excess towards OPENING balance (BillType='OPENING', BillReference='OPENING').
+      3. Sets ReferenceTable='Sales' and ReferenceId=sale.SalesId.
+      4. Sets ReceiptLineId to the customer's credit VoucherLine if provided.
+    """
+    if not sale or sale.Status == 'CANCELLED':
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+        return
+
+    paid_amt = Decimal(str(sale.PaidAmount or 0))
+    if paid_amt <= Decimal('0.00') or not sale.CustomerLedger:
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+        return
+
+    company_id = sale.CompanyId or 1
+    gross_bill = Decimal(str(sale.GrandTotal or 0))
+    bill_alloc_amt = min(paid_amt, gross_bill)
+    excess_amt = max(Decimal('0.00'), paid_amt - gross_bill)
+    receipt_vl_id = voucher_line.VoucherLineId if voucher_line else None
+
+    # Safely synchronize sequence for BillwiseAllocation
+    try:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT COALESCE(MAX("BillwiseAllocationId"), 0) FROM "BillwiseAllocation"')
+            m = cursor.fetchone()[0]
+            if m > 0:
+                cursor.execute(f'SELECT setval(\'"BillwiseAllocation_BillwiseAllocationId_seq"\', {m}, true);')
+            else:
+                cursor.execute('SELECT setval(\'"BillwiseAllocation_BillwiseAllocationId_seq"\', 1, false);')
+    except Exception:
+        pass
+
+    # 1. Allocation against the sale invoice itself
+    if bill_alloc_amt > 0:
+        sale_alloc = BillwiseAllocation.objects.filter(
+            CompanyId=company_id,
+            ReferenceTable='Sales',
+            ReferenceId=sale.SalesId,
+            BillType='SALES',
+        ).first()
+
+        if sale_alloc:
+            sale_alloc.BillReference = sale.SalesNo
+            sale_alloc.BillDate = sale.SalesDate
+            sale_alloc.AllocatedAmount = bill_alloc_amt
+            if receipt_vl_id:
+                sale_alloc.ReceiptLineId = receipt_vl_id
+            sale_alloc.save()
+        else:
+            BillwiseAllocation.objects.create(
+                PaymentLine=None,
+                ReceiptLineId=receipt_vl_id,
+                ReferenceTable='Sales',
+                ReferenceId=sale.SalesId,
+                BillType='SALES',
+                BillReference=sale.SalesNo,
+                BillDate=sale.SalesDate,
+                DueDate=None,
+                AllocationType='Against Reference',
+                AllocatedAmount=bill_alloc_amt,
+                CompanyId=company_id,
+            )
+    else:
+        BillwiseAllocation.objects.filter(
+            CompanyId=company_id,
+            ReferenceTable='Sales',
+            ReferenceId=sale.SalesId,
+            BillType='SALES',
+        ).delete()
+
+    # 2. Allocation for excess payment against opening balance
+    if excess_amt > 0:
+        excess_alloc = BillwiseAllocation.objects.filter(
+            CompanyId=company_id,
+            ReferenceTable='Sales',
+            ReferenceId=sale.SalesId,
+            BillType='OPENING',
+        ).first()
+
+        if excess_alloc:
+            excess_alloc.BillReference = 'OPENING'
+            excess_alloc.BillDate = sale.SalesDate
+            excess_alloc.AllocatedAmount = excess_amt
+            if receipt_vl_id:
+                excess_alloc.ReceiptLineId = receipt_vl_id
+            excess_alloc.save()
+        else:
+            BillwiseAllocation.objects.create(
+                PaymentLine=None,
+                ReceiptLineId=receipt_vl_id,
+                ReferenceTable='Sales',
+                ReferenceId=sale.SalesId,
+                BillType='OPENING',
+                BillReference='OPENING',
+                BillDate=sale.SalesDate,
+                DueDate=None,
+                AllocationType='Against Reference',
+                AllocatedAmount=excess_amt,
+                CompanyId=company_id,
+            )
+    else:
+        BillwiseAllocation.objects.filter(
+            CompanyId=company_id,
+            ReferenceTable='Sales',
+            ReferenceId=sale.SalesId,
+            BillType='OPENING',
+        ).delete()
+
+
 class PaymentViewSet(viewsets.ModelViewSet):
     """
     CRUD for Payments with Bill-Wise Allocations & Double-Entry Accounting Vouchers.
@@ -2244,7 +2404,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
         if company_id:
             # Filter by ledgers belonging to the active company
             qs = qs.filter(PartyLedger__CompanyId=company_id)
-        return qs.order_by('-PaymentId')
+        return qs
+
+    def perform_update(self, serializer):
+        sale = serializer.save()
+        if sale.Status == 'CANCELLED':
+            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
+            sync_sales_billwise_allocation(sale, None)
+
+    def perform_destroy(self, instance):
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
+        instance.delete().order_by('-PaymentId')
 
     @action(detail=False, methods=['get'], url_path='pending-bills')
     def pending_bills(self, request):
@@ -2270,132 +2441,278 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
         results = []
 
-        def get_payment_history_and_allocated(bill_ref):
-            alloc_qs = BillwiseAllocation.objects.filter(BillReference=bill_ref, PaymentLine__Payment__PartyLedger_id=party_id)
-            if exclude_payment_id:
-                alloc_qs = alloc_qs.exclude(PaymentLine__Payment_id=exclude_payment_id)
-            allocated = alloc_qs.aggregate(total=Sum('AllocatedAmount'))['total'] or Decimal('0.00')
+        g_name = (party.Group.GroupName or '').lower() if party.Group else ''
+        is_debtor = (party.Group_id == 21 or 'debtor' in g_name or 'customer' in g_name)
 
-            history = []
-            for a in alloc_qs.select_related('PaymentLine__Payment', 'PaymentLine__Ledger').order_by('CreatedAt', 'BillwiseAllocationId'):
-                pmt = a.PaymentLine.Payment if a.PaymentLine else None
-                acct = a.PaymentLine.Ledger.LedgerName if a.PaymentLine and a.PaymentLine.Ledger else 'Cash'
-                mode = a.PaymentLine.PaymentMode if a.PaymentLine else 'Cash'
-                pmt_id = str(pmt.PaymentId).zfill(3) if pmt else '-'
-                date_str = pmt.CreatedAt.strftime('%Y-%m-%d') if pmt and pmt.CreatedAt else (a.CreatedAt.strftime('%Y-%m-%d') if a.CreatedAt else '-')
-                history.append({
-                    'PaymentId': pmt.PaymentId if pmt else None,
-                    'PaymentNo': pmt_id,
-                    'Date': date_str,
-                    'Account': acct,
-                    'Mode': mode,
-                    'Amount': float(a.AllocatedAmount),
-                })
-            return allocated, history
+        # Calculate actual ledger balance directly from voucher lines + opening balance
+        v_agg = VoucherLine.objects.filter(Ledger_id=party_id, Voucher__IsCancelled=False).aggregate(
+            tot_dr=Sum('DebitAmount'),
+            tot_cr=Sum('CreditAmount')
+        )
+        tot_dr = v_agg['tot_dr'] or Decimal('0.00')
+        tot_cr = v_agg['tot_cr'] or Decimal('0.00')
+        op = party.OpeningBalance or Decimal('0.00')
+        op_type = (party.OpeningBalanceType or ('DR' if is_debtor else 'CR')).upper()
+        op_net = op if op_type == 'DR' else -op
+        current_bal = op_net + tot_dr - tot_cr
+
+        # If debtor has 0 or advance balance, no pending bills exist
+        if is_debtor and current_bal <= Decimal('0.00'):
+            return Response([], status=status.HTTP_200_OK)
+        # If creditor has 0 or debit balance, no pending bills exist
+        if not is_debtor and current_bal >= Decimal('0.00'):
+            return Response([], status=status.HTTP_200_OK)
+
+        bills = []
 
         # 1. Detailed Opening Bills from LedgerLine
+        detailed_sum = Decimal('0.00')
         ledger_lines = LedgerLine.objects.filter(Ledger_id=party_id)
         if company_id:
             ledger_lines = ledger_lines.filter(CompanyId=company_id)
         ledger_lines = ledger_lines.order_by('BillDate', 'LedgerLineId')
-
-        detailed_sum = Decimal('0.00')
         for ll in ledger_lines:
-            bill_ref = ll.BillNo
-            total_bill = Decimal(str(ll.Amount or 0))
-            detailed_sum += total_bill
+            amt = Decimal(str(ll.Amount or 0))
+            detailed_sum += amt
+            bills.append({
+                'PurchaseId': 0,
+                'SalesId': 0,
+                'BillReference': ll.BillNo,
+                'InvoiceNo': ll.BillNo,
+                'BillDate': str(ll.BillDate),
+                'BillAmount': amt,
+                'BillType': 'OPENING',
+            })
 
-            allocated, history = get_payment_history_and_allocated(bill_ref)
-            pending_balance = total_bill - Decimal(str(allocated))
-
-            if pending_balance > Decimal('0.00'):
-                results.append({
-                    'PurchaseId': 0,
-                    'BillReference': bill_ref,
-                    'InvoiceNo': bill_ref,
-                    'BillDate': str(ll.BillDate),
-                    'BillAmount': float(total_bill),
-                    'PaidAmount': float(allocated),
-                    'PendingAmount': float(pending_balance),
-                    'PaymentHistory': history,
-                    'BillType': 'OPENING',
-                })
-
-        # 2. Lumpsum / Residual Opening Balance from Ledger
-        ob_total = Decimal(str(party.OpeningBalance or 0))
-        unbilled_ob = ob_total - detailed_sum
+        # 2. Residual Opening Balance from Ledger
+        unbilled_ob = op - detailed_sum
         if unbilled_ob > Decimal('0.00'):
-            bill_ref = 'OPENING'
-            allocated, history = get_payment_history_and_allocated(bill_ref)
-            pending_balance = unbilled_ob - Decimal(str(allocated))
+            b_date = party.CreatedAt.strftime('%Y-%m-%d') if party.CreatedAt else '2024-01-01'
+            bills.append({
+                'PurchaseId': 0,
+                'SalesId': 0,
+                'BillReference': 'OPENING',
+                'InvoiceNo': 'Opening Balance',
+                'BillDate': b_date,
+                'BillAmount': unbilled_ob,
+                'BillType': 'OPENING',
+            })
 
-            if pending_balance > Decimal('0.00'):
-                bill_date = party.CreatedAt.strftime('%Y-%m-%d') if party.CreatedAt else '2024-01-01'
-                results.append({
-                    'PurchaseId': 0,
-                    'BillReference': bill_ref,
-                    'InvoiceNo': 'Opening Balance',
-                    'BillDate': bill_date,
-                    'BillAmount': float(unbilled_ob),
-                    'PaidAmount': float(allocated),
-                    'PendingAmount': float(pending_balance),
-                    'PaymentHistory': history,
-                    'BillType': 'OPENING',
-                })
-
-        # 3. Regular Purchases
-        purchases = Purchase.objects.filter(SupplierLedger_id=party_id)
-        if company_id:
-            purchases = purchases.filter(CompanyId=company_id)
-        purchases = purchases.order_by('PurchaseDate', 'PurchaseId')
-
-        for p in purchases:
-            bill_ref = p.PurchaseNo or str(p.PurchaseId)
-            total_bill = Decimal(str(p.GrandTotal or 0))
-
-            allocated, history = get_payment_history_and_allocated(bill_ref)
-            pending_balance = total_bill - Decimal(str(allocated))
-
-            if pending_balance > Decimal('0.00'):
-                results.append({
+        # 3. Regular Purchases (for creditors)
+        if not is_debtor:
+            purchases = Purchase.objects.filter(SupplierLedger_id=party_id)
+            if company_id:
+                purchases = purchases.filter(CompanyId=company_id)
+            for p in purchases.order_by('PurchaseDate', 'PurchaseId'):
+                amt = Decimal(str(p.GrandTotal or 0))
+                bills.append({
                     'PurchaseId': p.PurchaseId,
-                    'BillReference': bill_ref,
+                    'SalesId': 0,
+                    'BillReference': p.PurchaseNo or str(p.PurchaseId),
                     'InvoiceNo': p.InvoiceNo or '-',
                     'BillDate': str(p.InvoiceDate or p.PurchaseDate),
-                    'BillAmount': float(total_bill),
-                    'PaidAmount': float(allocated),
-                    'PendingAmount': float(pending_balance),
-                    'PaymentHistory': history,
+                    'BillAmount': amt,
                     'BillType': 'PURCHASE',
                 })
 
-        # 4. Regular Sales (Customer Invoices)
-        sales = Sales.objects.filter(CustomerLedger_id=party_id).exclude(Status='CANCELLED')
-        if company_id:
-            sales = sales.filter(CompanyId=company_id)
-        sales = sales.order_by('SalesDate', 'SalesId')
-
-        for s in sales:
-            bill_ref = s.SalesNo or s.InvoiceNo or str(s.SalesId)
-            total_bill = Decimal(str(s.GrandTotal or 0))
-            instant_paid = Decimal(str(s.PaidAmount or 0))
-
-            allocated, history = get_payment_history_and_allocated(bill_ref)
-            total_paid = instant_paid + Decimal(str(allocated))
-            pending_balance = total_bill - total_paid
-
-            if pending_balance > Decimal('0.00'):
-                results.append({
+        # 4. Regular Sales (for debtors)
+        if is_debtor:
+            sales = Sales.objects.filter(CustomerLedger_id=party_id).exclude(Status='CANCELLED')
+            if company_id:
+                sales = sales.filter(CompanyId=company_id)
+            for s in sales.order_by('SalesDate', 'SalesId'):
+                amt = Decimal(str(s.GrandTotal or 0))
+                bills.append({
                     'PurchaseId': s.SalesId,
                     'SalesId': s.SalesId,
-                    'BillReference': bill_ref,
+                    'BillReference': s.SalesNo or s.InvoiceNo or str(s.SalesId),
                     'InvoiceNo': s.InvoiceNo or s.SalesNo or '-',
                     'BillDate': str(s.SalesDate),
-                    'BillAmount': float(total_bill),
-                    'PaidAmount': float(total_paid),
-                    'PendingAmount': float(pending_balance),
-                    'PaymentHistory': history,
+                    'BillAmount': amt,
                     'BillType': 'SALES',
+                })
+
+        # Collect all payments / allocations from BillwiseAllocation and VoucherLines
+        explicit_allocs = {}
+        alloc_qs = BillwiseAllocation.objects.filter(CompanyId=company_id)
+        if is_debtor:
+            alloc_qs = alloc_qs.filter(
+                Q(PaymentLine__Payment__PartyLedger_id=party_id) |
+                Q(ReceiptLineId__isnull=False, ReceiptLineId__in=VoucherLine.objects.filter(Ledger_id=party_id).values_list('VoucherLineId', flat=True)) |
+                Q(ReferenceTable='Sales', ReferenceId__in=Sales.objects.filter(CustomerLedger_id=party_id).values_list('SalesId', flat=True))
+            )
+        else:
+            alloc_qs = alloc_qs.filter(PaymentLine__Payment__PartyLedger_id=party_id)
+        if exclude_payment_id:
+            alloc_qs = alloc_qs.exclude(PaymentLine__Payment_id=exclude_payment_id)
+
+        for a in alloc_qs.select_related('PaymentLine__Payment', 'PaymentLine__Ledger'):
+            b_ref = a.BillReference
+            if b_ref not in explicit_allocs:
+                explicit_allocs[b_ref] = []
+            pmt = a.PaymentLine.Payment if a.PaymentLine else None
+            acct = a.PaymentLine.Ledger.LedgerName if a.PaymentLine and a.PaymentLine.Ledger else 'Cash'
+            mode = a.PaymentLine.PaymentMode if a.PaymentLine else 'Cash'
+            pmt_id = str(pmt.PaymentId).zfill(3) if pmt else '-'
+            date_str = pmt.CreatedAt.strftime('%Y-%m-%d') if pmt and pmt.CreatedAt else (a.CreatedAt.strftime('%Y-%m-%d') if a.CreatedAt else '-')
+
+            if not pmt and a.ReceiptLineId:
+                vl = VoucherLine.objects.filter(VoucherLineId=a.ReceiptLineId).select_related('Voucher', 'Ledger').first()
+                if vl and vl.Voucher:
+                    pmt_id = vl.Voucher.VoucherNo
+                    date_str = vl.Voucher.VoucherDate.strftime('%Y-%m-%d') if vl.Voucher.VoucherDate else date_str
+                    debit_line = vl.Voucher.lines.filter(DebitAmount__gt=0).exclude(Ledger_id=party_id).select_related('Ledger').first()
+                    if debit_line and debit_line.Ledger:
+                        acct = debit_line.Ledger.LedgerName
+                        mode = 'Cash' if 'cash' in acct.lower() else 'Bank'
+            elif not pmt and a.ReferenceTable == 'Sales':
+                pmt_id = f"SALE-{a.BillReference}"
+                date_str = a.BillDate.strftime('%Y-%m-%d') if a.BillDate else date_str
+
+            explicit_allocs[b_ref].append({
+                'PaymentId': pmt.PaymentId if pmt else None,
+                'PaymentNo': pmt_id,
+                'Date': date_str,
+                'Account': acct,
+                'Mode': mode,
+                'Amount': Decimal(str(a.AllocatedAmount)),
+            })
+
+        # Next: Collect VoucherLines that settled sales or made general collections
+        sale_settled_credits = {}
+        unallocated_pool = []
+
+        party_vl_qs = VoucherLine.objects.filter(
+            Ledger_id=party_id,
+            Voucher__IsCancelled=False
+        ).select_related('Voucher').order_by('Voucher__VoucherDate', 'VoucherLineId')
+
+        for vl in party_vl_qs:
+            v = vl.Voucher
+            pay_amt = vl.CreditAmount if is_debtor else vl.DebitAmount
+            if pay_amt <= Decimal('0.00'):
+                continue
+
+            counter_line = (
+                v.lines.exclude(Ledger_id=party_id).filter(DebitAmount__gt=0).select_related('Ledger').first()
+                if is_debtor else
+                v.lines.exclude(Ledger_id=party_id).filter(CreditAmount__gt=0).select_related('Ledger').first()
+            )
+            acct_name = counter_line.Ledger.LedgerName if counter_line and counter_line.Ledger else 'Cash'
+            pm_mode = 'Cash' if 'cash' in acct_name.lower() else ('Bank' if 'bank' in acct_name.lower() or 'upi' in acct_name.lower() else 'Direct')
+
+            # Check if this voucher line is tied to a specific Sales invoice
+            if is_debtor and v.ReferenceTable == 'Sales' and v.ReferenceId:
+                if BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=v.ReferenceId).exists():
+                    continue
+                sale = Sales.objects.filter(SalesId=v.ReferenceId).first()
+                if sale:
+                    b_ref = sale.SalesNo or sale.InvoiceNo or str(sale.SalesId)
+                    bill_total = Decimal(str(sale.GrandTotal or 0))
+                    bill_cover = min(pay_amt, bill_total)
+                    if b_ref not in sale_settled_credits:
+                        sale_settled_credits[b_ref] = []
+                    sale_settled_credits[b_ref].append({
+                        'PaymentNo': v.VoucherNo,
+                        'Date': str(v.VoucherDate),
+                        'Account': acct_name,
+                        'Mode': pm_mode,
+                        'Amount': bill_cover,
+                    })
+                    excess = pay_amt - bill_cover
+                    if excess > Decimal('0.00'):
+                        unallocated_pool.append({
+                            'PaymentNo': v.VoucherNo,
+                            'Date': str(v.VoucherDate),
+                            'Account': acct_name,
+                            'Mode': pm_mode,
+                            'RemainingAmount': excess,
+                        })
+                    continue
+
+            # If it's a Payment with BillwiseAllocation, explicit_allocs already handles it
+            if v.ReferenceTable == 'Payment' and v.ReferenceId:
+                if BillwiseAllocation.objects.filter(PaymentLine__Payment_id=v.ReferenceId).exists():
+                    continue
+
+            unallocated_pool.append({
+                'PaymentNo': v.VoucherNo,
+                'Date': str(v.VoucherDate),
+                'Account': acct_name,
+                'Mode': pm_mode,
+                'RemainingAmount': pay_amt,
+            })
+
+        # Calculate paid amount and pending balance for each bill chronologically
+        bills.sort(key=lambda x: str(x.get('BillDate') or ''))
+
+        for b in bills:
+            b_ref = b['BillReference']
+            total_bill = b['BillAmount']
+            paid_so_far = Decimal('0.00')
+            history = []
+
+            # 1. Apply explicit allocations
+            if b_ref in explicit_allocs:
+                for item in explicit_allocs[b_ref]:
+                    paid_so_far += item['Amount']
+                    history.append({
+                        'PaymentId': item.get('PaymentId'),
+                        'PaymentNo': item.get('PaymentNo'),
+                        'Date': item.get('Date'),
+                        'Account': item.get('Account'),
+                        'Mode': item.get('Mode'),
+                        'Amount': float(item.get('Amount')),
+                    })
+
+            # 2. Apply sale-settled credits
+            if b_ref in sale_settled_credits:
+                for item in sale_settled_credits[b_ref]:
+                    paid_so_far += item['Amount']
+                    history.append({
+                        'PaymentId': None,
+                        'PaymentNo': item['PaymentNo'],
+                        'Date': item['Date'],
+                        'Account': item['Account'],
+                        'Mode': item['Mode'],
+                        'Amount': float(item['Amount']),
+                    })
+
+            # 3. Apply FIFO unallocated pool from vouchers
+            if paid_so_far < total_bill:
+                needed = total_bill - paid_so_far
+                for pool_item in unallocated_pool:
+                    avail = pool_item['RemainingAmount']
+                    if avail <= Decimal('0.00'):
+                        continue
+                    alloc_from_pool = min(needed, avail)
+                    paid_so_far += alloc_from_pool
+                    pool_item['RemainingAmount'] -= alloc_from_pool
+                    needed -= alloc_from_pool
+                    history.append({
+                        'PaymentId': None,
+                        'PaymentNo': pool_item['PaymentNo'],
+                        'Date': pool_item['Date'],
+                        'Account': pool_item['Account'],
+                        'Mode': pool_item['Mode'],
+                        'Amount': float(alloc_from_pool),
+                    })
+                    if needed <= Decimal('0.00'):
+                        break
+
+            pending = total_bill - paid_so_far
+            if pending > Decimal('0.00'):
+                results.append({
+                    'PurchaseId': b.get('PurchaseId', 0),
+                    'SalesId': b.get('SalesId', 0),
+                    'BillReference': b_ref,
+                    'InvoiceNo': b.get('InvoiceNo', b_ref),
+                    'BillDate': b.get('BillDate'),
+                    'BillAmount': float(total_bill),
+                    'PaidAmount': float(paid_so_far),
+                    'PendingAmount': float(pending),
+                    'PaymentHistory': history,
+                    'BillType': b.get('BillType', 'SALES' if is_debtor else 'PURCHASE'),
                 })
 
         # Sort all bills chronologically (Oldest first) to enable seamless FIFO
@@ -2518,6 +2835,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     or any(a.get('BillType') == 'SALES' for a in allocations_data)
                 )
 
+            alloc_instances = []
             for alloc in allocations_data:
                 alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
                 if alloc_amt > 0:
@@ -2531,8 +2849,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         else:
                             b_type = 'PURCHASE'
 
-                    BillwiseAllocation.objects.create(
+                    ba = BillwiseAllocation.objects.create(
                         PaymentLine=primary_line,
+                        ReceiptLineId=None,
+                        ReferenceTable='Receipt' if is_customer_receipt else 'Payment',
+                        ReferenceId=payment.PaymentId,
                         BillType=b_type,
                         BillReference=b_ref,
                         BillDate=alloc.get('BillDate') or None,
@@ -2541,11 +2862,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         AllocatedAmount=alloc_amt,
                         CompanyId=company_id,
                     )
+                    alloc_instances.append((ba, b_type, b_ref, alloc_amt))
+
+            # Build narrative string detailing allocated bills
+            alloc_narr_parts = []
+            for _, b_type, b_ref, b_amt in alloc_instances:
+                alloc_narr_parts.append(f"Agst Ref: {b_ref} (₹{b_amt:,.2f})")
+            alloc_summary = f" [{', '.join(alloc_narr_parts)}]" if alloc_narr_parts else ""
 
             # 4. Generate Accounting Voucher
             vch_type = 'RECEIPT' if is_customer_receipt else 'PAYMENT'
             vch_prefix = 'REC' if is_customer_receipt else 'PAY'
-            action_desc = f"Receipt #{payment.PaymentId} from {payment.PartyLedger.LedgerName}" if is_customer_receipt else f"Payment #{payment.PaymentId} to {payment.PartyLedger.LedgerName}"
+            action_desc = f"Receipt #{payment.PaymentId} from {payment.PartyLedger.LedgerName}{alloc_summary}" if is_customer_receipt else f"Payment #{payment.PaymentId} to {payment.PartyLedger.LedgerName}{alloc_summary}"
 
             vch_no = f"{vch_prefix}-VCH-{payment.PaymentId}"
             v_seq = 1
@@ -2559,6 +2887,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 sv.lines.all().delete()
             stale_vchs.delete()
 
+            voucher_narration = data.get('Narration') or action_desc
+            if alloc_summary and alloc_summary not in voucher_narration:
+                voucher_narration = f"{voucher_narration}{alloc_summary}"
+
             voucher = Voucher.objects.create(
                 VoucherNo=vch_no,
                 VoucherDate=payment.CreatedAt.date(),
@@ -2566,7 +2898,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 ReferenceTable='Payment',
                 ReferenceId=payment.PaymentId,
                 CompanyId=company_id,
-                Narration=data.get('Narration') or action_desc,
+                Narration=voucher_narration,
                 IsCancelled=False,
             )
 
@@ -2583,14 +2915,30 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         Narration=f"{p_line.PaymentMode} receipt from {payment.PartyLedger.LedgerName}",
                     )
                 # Credit Customer Ledger (Debtor asset decreases / cleared)
-                VoucherLine.objects.create(
+                cust_vl = VoucherLine.objects.create(
                     Voucher=voucher,
                     LineNo=len(created_lines) + 1,
                     Ledger_id=party_id,
                     DebitAmount=Decimal('0.00'),
                     CreditAmount=amount,
-                    Narration=f"Collection from {payment.PartyLedger.LedgerName}",
+                    Narration=f"Collection from {payment.PartyLedger.LedgerName}{alloc_summary}",
                 )
+
+                # Wire customer VoucherLine to BillwiseAllocation and sync Sales.PaidAmount
+                for ba, b_type, b_ref, alloc_amt in alloc_instances:
+                    ba.ReceiptLineId = cust_vl.VoucherLineId
+                    ba.save(update_fields=['ReceiptLineId'])
+
+                    if b_type == 'SALES' or b_ref:
+                        matched_sale = Sales.objects.filter(
+                            CompanyId=company_id, CustomerLedger_id=party_id
+                        ).filter(
+                            Q(SalesNo=b_ref) | Q(InvoiceNo=b_ref)
+                        ).first()
+                        if matched_sale:
+                            curr_paid = matched_sale.PaidAmount or Decimal('0.00')
+                            matched_sale.PaidAmount = min(matched_sale.GrandTotal, curr_paid + alloc_amt)
+                            matched_sale.save(update_fields=['PaidAmount'])
             else:
                 # Vendor / Expense Payment:
                 # Debit Supplier / Expense
@@ -2600,7 +2948,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     Ledger_id=party_id,
                     DebitAmount=amount,
                     CreditAmount=Decimal('0.00'),
-                    Narration=f"Payment to {payment.PartyLedger.LedgerName}",
+                    Narration=f"Payment to {payment.PartyLedger.LedgerName}{alloc_summary}",
                 )
                 # Credit Cash / Bank
                 for idx, p_line in enumerate(created_lines):
@@ -2659,13 +3007,21 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 instance.Narration = data.get('Narration') or ''
             instance.save()
 
-            # Clean old dependent vouchers & allocations & lines
+            # Clean old dependent vouchers & allocations & lines, restoring any allocated Sales PaidAmount
             vouchers = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=instance.PaymentId)
             for v in vouchers:
                 v.lines.all().delete()
             vouchers.delete()
 
             for line in instance.lines.all():
+                for alloc in line.allocations.all():
+                    if alloc.BillType == 'SALES' or alloc.BillReference:
+                        s = Sales.objects.filter(CompanyId=instance.CompanyId or company_id).filter(
+                            Q(SalesNo=alloc.BillReference) | Q(InvoiceNo=alloc.BillReference)
+                        ).first()
+                        if s:
+                            s.PaidAmount = max(Decimal('0.00'), (s.PaidAmount or Decimal('0.00')) - alloc.AllocatedAmount)
+                            s.save(update_fields=['PaidAmount'])
                 line.allocations.all().delete()
             instance.lines.all().delete()
 
@@ -2727,6 +3083,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     or any(a.get('BillType') == 'SALES' for a in allocations_data)
                 )
 
+            alloc_instances = []
             for alloc in allocations_data:
                 alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
                 if alloc_amt > 0:
@@ -2740,8 +3097,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         else:
                             b_type = 'PURCHASE'
 
-                    BillwiseAllocation.objects.create(
+                    ba = BillwiseAllocation.objects.create(
                         PaymentLine=primary_line,
+                        ReceiptLineId=None,
+                        ReferenceTable='Receipt' if is_customer_receipt else 'Payment',
+                        ReferenceId=instance.PaymentId,
                         BillType=b_type,
                         BillReference=b_ref,
                         BillDate=alloc.get('BillDate') or None,
@@ -2750,17 +3110,28 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         AllocatedAmount=alloc_amt,
                         CompanyId=company_id,
                     )
+                    alloc_instances.append((ba, b_type, b_ref, alloc_amt))
+
+            # Build narrative string detailing allocated bills
+            alloc_narr_parts = []
+            for _, b_type, b_ref, b_amt in alloc_instances:
+                alloc_narr_parts.append(f"Agst Ref: {b_ref} (₹{b_amt:,.2f})")
+            alloc_summary = f" [{', '.join(alloc_narr_parts)}]" if alloc_narr_parts else ""
 
             # Recreate Accounting Voucher
             vch_type = 'RECEIPT' if is_customer_receipt else 'PAYMENT'
             vch_prefix = 'REC' if is_customer_receipt else 'PAY'
-            action_desc = f"Receipt #{instance.PaymentId} from {instance.PartyLedger.LedgerName}" if is_customer_receipt else f"Payment #{instance.PaymentId} to {instance.PartyLedger.LedgerName}"
+            action_desc = f"Receipt #{instance.PaymentId} from {instance.PartyLedger.LedgerName}{alloc_summary}" if is_customer_receipt else f"Payment #{instance.PaymentId} to {instance.PartyLedger.LedgerName}{alloc_summary}"
 
             vch_no = f"{vch_prefix}-VCH-{instance.PaymentId}"
             v_seq = 1
             while Voucher.objects.filter(CompanyId=company_id, VoucherType=vch_type, VoucherNo=vch_no).exclude(ReferenceTable='Payment', ReferenceId=instance.PaymentId).exists():
                 vch_no = f"{vch_prefix}-VCH-{instance.PaymentId}-{v_seq}"
                 v_seq += 1
+
+            voucher_narration = data.get('Narration') or action_desc
+            if alloc_summary and alloc_summary not in voucher_narration:
+                voucher_narration = f"{voucher_narration}{alloc_summary}"
 
             voucher = Voucher.objects.create(
                 VoucherNo=vch_no,
@@ -2769,7 +3140,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 ReferenceTable='Payment',
                 ReferenceId=instance.PaymentId,
                 CompanyId=company_id,
-                Narration=data.get('Narration') or action_desc,
+                Narration=voucher_narration,
                 IsCancelled=False,
             )
 
@@ -2786,14 +3157,30 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         Narration=f"{p_line.PaymentMode} receipt from {instance.PartyLedger.LedgerName}",
                     )
                 # Credit Customer Ledger (Debtor asset decreases / cleared)
-                VoucherLine.objects.create(
+                cust_vl = VoucherLine.objects.create(
                     Voucher=voucher,
                     LineNo=len(created_lines) + 1,
                     Ledger_id=party_id,
                     DebitAmount=Decimal('0.00'),
                     CreditAmount=amount,
-                    Narration=f"Collection from {instance.PartyLedger.LedgerName}",
+                    Narration=f"Collection from {instance.PartyLedger.LedgerName}{alloc_summary}",
                 )
+
+                # Wire customer VoucherLine to BillwiseAllocation and sync Sales.PaidAmount
+                for ba, b_type, b_ref, alloc_amt in alloc_instances:
+                    ba.ReceiptLineId = cust_vl.VoucherLineId
+                    ba.save(update_fields=['ReceiptLineId'])
+
+                    if b_type == 'SALES' or b_ref:
+                        matched_sale = Sales.objects.filter(
+                            CompanyId=company_id, CustomerLedger_id=party_id
+                        ).filter(
+                            Q(SalesNo=b_ref) | Q(InvoiceNo=b_ref)
+                        ).first()
+                        if matched_sale:
+                            curr_paid = matched_sale.PaidAmount or Decimal('0.00')
+                            matched_sale.PaidAmount = min(matched_sale.GrandTotal, curr_paid + alloc_amt)
+                            matched_sale.save(update_fields=['PaidAmount'])
             else:
                 # Vendor / Expense Payment:
                 # Debit Supplier
@@ -2803,7 +3190,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     Ledger_id=party_id,
                     DebitAmount=amount,
                     CreditAmount=Decimal('0.00'),
-                    Narration=f"Payment to {instance.PartyLedger.LedgerName}",
+                    Narration=f"Payment to {instance.PartyLedger.LedgerName}{alloc_summary}",
                 )
                 # Credit Cash/Bank
                 for idx, p_line in enumerate(created_lines):
@@ -2835,8 +3222,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 v.lines.all().delete()
             vouchers.delete()
 
-            # Delete billwise allocations
+            # Delete billwise allocations and restore Sales.PaidAmount
             for line in instance.lines.all():
+                for alloc in line.allocations.all():
+                    if alloc.BillType == 'SALES' or alloc.BillReference:
+                        s = Sales.objects.filter(CompanyId=instance.CompanyId or 1).filter(
+                            Q(SalesNo=alloc.BillReference) | Q(InvoiceNo=alloc.BillReference)
+                        ).first()
+                        if s:
+                            s.PaidAmount = max(Decimal('0.00'), (s.PaidAmount or Decimal('0.00')) - alloc.AllocatedAmount)
+                            s.save(update_fields=['PaidAmount'])
                 line.allocations.all().delete()
 
             # Delete lines & payment
@@ -2886,7 +3281,18 @@ class LedgerLineViewSet(viewsets.ModelViewSet):
         if ledger_id:
             qs = qs.filter(Ledger_id=ledger_id)
 
-        return qs.order_by('BillDate', 'LedgerLineId')
+        return qs
+
+    def perform_update(self, serializer):
+        sale = serializer.save()
+        if sale.Status == 'CANCELLED':
+            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
+            sync_sales_billwise_allocation(sale, None)
+
+    def perform_destroy(self, instance):
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
+        instance.delete().order_by('BillDate', 'LedgerLineId')
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -3783,17 +4189,18 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         if not lines_data:
             return Response({'detail': 'Please add at least one cylinder or item to load.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if this van allocation has already been loaded for this date (excluding current note)
-        already_loaded = DeliveryNote.objects.filter(
-            CompanyId=company_id,
-            RouteVehicleDriver_id=allocation_id,
-            DeliveryDate=delivery_date
-        ).exclude(DeliveryNoteId=instance.DeliveryNoteId).exists()
-        if already_loaded:
-            return Response(
-                {'detail': 'This vehicle/van has already been loaded for the selected date.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # If changing allocation to another vehicle/van, ensure the target does not have an active LOADED note
+        if allocation_id != instance.RouteVehicleDriver_id:
+            target_already_active = DeliveryNote.objects.filter(
+                CompanyId=company_id,
+                RouteVehicleDriver_id=allocation_id,
+                Status='LOADED'
+            ).exclude(DeliveryNoteId=instance.DeliveryNoteId).exists()
+            if target_already_active:
+                return Response(
+                    {'detail': 'The target vehicle/van already has an active loaded shift. End or settle that shift first.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         with transaction.atomic():
             # 1. Delete old stock movements and lines
@@ -4085,6 +4492,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             sale.Status = 'LIVE'
             sale.save(update_fields=['Status'])
 
+            # Wire billwise allocation for customer payment
+            if sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
+                sync_sales_billwise_allocation(sale, None)
+
         now_time = datetime.now().strftime("%I:%M %p")
         return Response({
             'success': True,
@@ -4109,23 +4520,36 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
         company_id = getattr(request.user, 'CompanyId', 1) or 1
 
-        # Check active Delivery Note: Only sales performed under the CURRENT active LOADED note belong to this shift.
+        # Check active or latest Delivery Note for this shift
         active_dn = DeliveryNote.objects.filter(
             CompanyId=company_id,
             RouteVehicleDriver_id=allocation_id,
-            Status='LOADED'
+            Status__in=['LOADED', 'PENDING_APPROVAL', 'COMPLETED']
         ).order_by('-DeliveryNoteId').first()
 
-        if not active_dn:
-            # If no active loaded shift, van has no active deliveries
-            return Response([])
-
-        # Query first-class Sales records strictly created during this active delivery note
+        # Query first-class Sales records created during this active shift or today
         sales_qs = Sales.objects.filter(
             CompanyId=company_id,
-            RouteVehicleDriver_id=allocation_id,
-            CreatedAt__gte=active_dn.CreatedAt
-        ).exclude(Status='CANCELLED').select_related('CustomerLedger').prefetch_related('lines__Product').order_by('-SalesId')
+            RouteVehicleDriver_id=allocation_id
+        ).exclude(Status='CANCELLED')
+
+        if active_dn and active_dn.CreatedAt:
+            sales_qs = sales_qs.filter(CreatedAt__gte=active_dn.CreatedAt)
+        else:
+            sales_qs = sales_qs.filter(SalesDate=date.today())
+
+        sales_qs = sales_qs.select_related('CustomerLedger').prefetch_related('lines__Product').order_by('-SalesId')
+
+        # Fallback to any sales recorded for this driver today if active DN shift filter yields none
+        if not sales_qs.exists():
+            sales_qs = Sales.objects.filter(
+                CompanyId=company_id,
+                RouteVehicleDriver_id=allocation_id,
+                SalesDate=date.today()
+            ).exclude(Status='CANCELLED').select_related('CustomerLedger').prefetch_related('lines__Product').order_by('-SalesId')
+
+        if not sales_qs.exists() and not active_dn:
+            return Response([])
 
         if sales_qs.exists():
             results = []
@@ -5757,104 +6181,112 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
             )
 
             # 3. Empty the van completely: Transfer ALL remaining unsold filled cylinders & customer empty returns to Central Godown (RouteVehicleDriverId=1)
-            allocated_prod_ids = set(
-                StockMovement.objects.filter(
-                    CompanyId=company_id,
-                    RouteVehicleDriverId=alloc.RouteVehicleDriverId
-                ).values_list('Product_id', flat=True)
-            )
-            for dnl in dn.lines.all():
-                if dnl.Product_id:
-                    allocated_prod_ids.add(dnl.Product_id)
+            # Safeguard: If this shift was already unloaded (e.g. by end_shift), do not duplicate GODOWN_RETURN_FULL / GODOWN_RETURN_EMPTY
+            already_unloaded = StockMovement.objects.filter(
+                CompanyId=company_id,
+                ReferenceId=dn.DeliveryNoteId,
+                TransactionType__in=['VAN_UNLOAD_FULL', 'GODOWN_RETURN_FULL']
+            ).exists()
 
-            # Find the starting StockMovementId for this specific shift to avoid aggregating past shifts
-            first_dn_sm = StockMovement.objects.filter(
-                RouteVehicleDriverId=alloc.RouteVehicleDriverId,
-                TransactionType='DELIVERY_NOTE',
-                ReferenceId=dn.DeliveryNoteId
-            ).order_by('StockMovementId').first()
-
-            for p_id in allocated_prod_ids:
-                if not p_id:
-                    continue
-                prod = Product.objects.filter(ProductId=p_id).first()
-                if not prod:
-                    continue
-
-                v_movs = StockMovement.objects.filter(
-                    CompanyId=company_id,
-                    Product=prod,
-                    RouteVehicleDriverId=alloc.RouteVehicleDriverId
+            if not already_unloaded:
+                allocated_prod_ids = set(
+                    StockMovement.objects.filter(
+                        CompanyId=company_id,
+                        RouteVehicleDriverId=alloc.RouteVehicleDriverId
+                    ).values_list('Product_id', flat=True)
                 )
-                if first_dn_sm:
-                    v_movs = v_movs.filter(StockMovementId__gte=first_dn_sm.StockMovementId)
+                for dnl in dn.lines.all():
+                    if dnl.Product_id:
+                        allocated_prod_ids.add(dnl.Product_id)
 
-                dn_in = v_movs.filter(TransactionType='DELIVERY_NOTE').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
-                sale_out = v_movs.filter(TransactionType='VAN_SALE').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
-                unload_full = v_movs.filter(TransactionType='VAN_UNLOAD_FULL').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
-                bal_full = max(Decimal('0.00'), dn_in - sale_out - unload_full)
+                # Find the starting StockMovementId for this specific shift to avoid aggregating past shifts
+                first_dn_sm = StockMovement.objects.filter(
+                    RouteVehicleDriverId=alloc.RouteVehicleDriverId,
+                    TransactionType='DELIVERY_NOTE',
+                    ReferenceId=dn.DeliveryNoteId
+                ).order_by('StockMovementId').first()
 
-                empty_in = v_movs.filter(TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
-                empty_out = v_movs.filter(TransactionType='VAN_UNLOAD_EMPTY').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
-                bal_empty = max(Decimal('0.00'), empty_in - empty_out)
+                for p_id in allocated_prod_ids:
+                    if not p_id:
+                        continue
+                    prod = Product.objects.filter(ProductId=p_id).first()
+                    if not prod:
+                        continue
 
-                # Return remaining unsold full cylinders to Godown (RouteVehicleDriverId=1)
-                if bal_full > 0:
-                    StockMovement.objects.create(
+                    v_movs = StockMovement.objects.filter(
                         CompanyId=company_id,
                         Product=prod,
-                        Unit_id=prod.Unit_id or 1,
-                        RouteVehicleDriverId=alloc.RouteVehicleDriverId,
-                        TransactionType='VAN_UNLOAD_FULL',
-                        ReferenceId=dn.DeliveryNoteId,
-                        TransactionNo=f"ERD-{dn.DeliveryNoteId}",
-                        TransactionDate=shift_date,
-                        InQty=Decimal('0.00'),
-                        OutQty=bal_full,
-                        Narration=f"Shift Return Unsold Full from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
+                        RouteVehicleDriverId=alloc.RouteVehicleDriverId
                     )
-                    StockMovement.objects.create(
-                        CompanyId=company_id,
-                        Product=prod,
-                        Unit_id=prod.Unit_id or 1,
-                        RouteVehicleDriverId=1,
-                        TransactionType='GODOWN_RETURN_FULL',
-                        ReferenceId=dn.DeliveryNoteId,
-                        TransactionNo=f"ERD-{dn.DeliveryNoteId}",
-                        TransactionDate=shift_date,
-                        InQty=bal_full,
-                        OutQty=Decimal('0.00'),
-                        Narration=f"Shift Return Full to Godown from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
-                    )
+                    if first_dn_sm:
+                        v_movs = v_movs.filter(StockMovementId__gte=first_dn_sm.StockMovementId)
 
-                # Return empty cylinders collected from customers to Godown (RouteVehicleDriverId=1)
-                if bal_empty > 0:
-                    StockMovement.objects.create(
-                        CompanyId=company_id,
-                        Product=prod,
-                        Unit_id=prod.Unit_id or 1,
-                        RouteVehicleDriverId=alloc.RouteVehicleDriverId,
-                        TransactionType='VAN_UNLOAD_EMPTY',
-                        ReferenceId=dn.DeliveryNoteId,
-                        TransactionNo=f"ERD-{dn.DeliveryNoteId}",
-                        TransactionDate=shift_date,
-                        InQty=Decimal('0.00'),
-                        OutQty=bal_empty,
-                        Narration=f"Shift Return Empty from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
-                    )
-                    StockMovement.objects.create(
-                        CompanyId=company_id,
-                        Product=prod,
-                        Unit_id=prod.Unit_id or 1,
-                        RouteVehicleDriverId=1,
-                        TransactionType='GODOWN_RETURN_EMPTY',
-                        ReferenceId=dn.DeliveryNoteId,
-                        TransactionNo=f"ERD-{dn.DeliveryNoteId}",
-                        TransactionDate=shift_date,
-                        InQty=bal_empty,
-                        OutQty=Decimal('0.00'),
-                        Narration=f"Shift Return Empty to Godown from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
-                    )
+                    dn_in = v_movs.filter(TransactionType='DELIVERY_NOTE').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+                    sale_out = v_movs.filter(TransactionType='VAN_SALE').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+                    unload_full = v_movs.filter(TransactionType='VAN_UNLOAD_FULL').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+                    bal_full = max(Decimal('0.00'), dn_in - sale_out - unload_full)
+
+                    empty_in = v_movs.filter(TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+                    empty_out = v_movs.filter(TransactionType='VAN_UNLOAD_EMPTY').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+                    bal_empty = max(Decimal('0.00'), empty_in - empty_out)
+
+                    # Return remaining unsold full cylinders to Godown (RouteVehicleDriverId=1)
+                    if bal_full > 0:
+                        StockMovement.objects.create(
+                            CompanyId=company_id,
+                            Product=prod,
+                            Unit_id=prod.Unit_id or 1,
+                            RouteVehicleDriverId=alloc.RouteVehicleDriverId,
+                            TransactionType='VAN_UNLOAD_FULL',
+                            ReferenceId=dn.DeliveryNoteId,
+                            TransactionNo=f"ERD-{dn.DeliveryNoteId}",
+                            TransactionDate=shift_date,
+                            InQty=Decimal('0.00'),
+                            OutQty=bal_full,
+                            Narration=f"Shift Return Unsold Full from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
+                        )
+                        StockMovement.objects.create(
+                            CompanyId=company_id,
+                            Product=prod,
+                            Unit_id=prod.Unit_id or 1,
+                            RouteVehicleDriverId=1,
+                            TransactionType='GODOWN_RETURN_FULL',
+                            ReferenceId=dn.DeliveryNoteId,
+                            TransactionNo=f"ERD-{dn.DeliveryNoteId}",
+                            TransactionDate=shift_date,
+                            InQty=bal_full,
+                            OutQty=Decimal('0.00'),
+                            Narration=f"Shift Return Full to Godown from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
+                        )
+
+                    # Return empty cylinders collected from customers to Godown (RouteVehicleDriverId=1)
+                    if bal_empty > 0:
+                        StockMovement.objects.create(
+                            CompanyId=company_id,
+                            Product=prod,
+                            Unit_id=prod.Unit_id or 1,
+                            RouteVehicleDriverId=alloc.RouteVehicleDriverId,
+                            TransactionType='VAN_UNLOAD_EMPTY',
+                            ReferenceId=dn.DeliveryNoteId,
+                            TransactionNo=f"ERD-{dn.DeliveryNoteId}",
+                            TransactionDate=shift_date,
+                            InQty=Decimal('0.00'),
+                            OutQty=bal_empty,
+                            Narration=f"Shift Return Empty from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
+                        )
+                        StockMovement.objects.create(
+                            CompanyId=company_id,
+                            Product=prod,
+                            Unit_id=prod.Unit_id or 1,
+                            RouteVehicleDriverId=1,
+                            TransactionType='GODOWN_RETURN_EMPTY',
+                            ReferenceId=dn.DeliveryNoteId,
+                            TransactionNo=f"ERD-{dn.DeliveryNoteId}",
+                            TransactionDate=shift_date,
+                            InQty=bal_empty,
+                            OutQty=Decimal('0.00'),
+                            Narration=f"Shift Return Empty to Godown from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
+                        )
 
             # 5. Generate Double-Entry Accounting Vouchers for Shift & Customer Accounts
             affected_ledgers = {24, 56, 20, 22, 23, 35}
@@ -5962,12 +6394,13 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                             Narration=f"Payment for {sale.SalesNo} ({pm})"
                         )
                         line_no += 1
-                        VoucherLine.objects.create(
+                        cust_vl = VoucherLine.objects.create(
                             Voucher=vch, LineNo=line_no, Ledger=cust,
                             DebitAmount=Decimal('0.00'), CreditAmount=paid_amt,
                             Narration=f"Payment Received ({pm})"
                         )
                         line_no += 1
+                        sync_sales_billwise_allocation(sale, cust_vl)
                 else:
                     # Walk-in cash/bank sale
                     amt = paid_amt if paid_amt > 0 else gross_bill
@@ -6092,6 +6525,17 @@ class SalesViewSet(viewsets.ModelViewSet):
             qs = qs.filter(Status__iexact=st)
 
         return qs
+
+    def perform_update(self, serializer):
+        sale = serializer.save()
+        if sale.Status == 'CANCELLED':
+            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+        elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
+            sync_sales_billwise_allocation(sale, None)
+
+    def perform_destroy(self, instance):
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
+        instance.delete()
 
     @action(detail=False, methods=['get'], url_path='invoice-pdf', permission_classes=[AllowAny])
     def invoice_pdf(self, request):

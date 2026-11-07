@@ -785,6 +785,7 @@ class BillwiseAllocationSerializer(serializers.ModelSerializer):
         model = BillwiseAllocation
         fields = [
             'BillwiseAllocationId', 'PaymentLine', 'ReceiptLineId',
+            'ReferenceTable', 'ReferenceId',
             'BillType', 'BillReference', 'BillDate', 'DueDate',
             'AllocationType', 'AllocatedAmount', 'CompanyId', 'CreatedAt'
         ]

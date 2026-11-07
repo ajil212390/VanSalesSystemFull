@@ -12,7 +12,7 @@ class OrdersScreen extends StatefulWidget {
   State<OrdersScreen> createState() => _OrdersScreenState();
 }
 
-class _OrdersScreenState extends State<OrdersScreen> {
+class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver {
   int _activeFilterIndex = 0; // 0: All, 1: Cash, 2: UPI / Bank
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
@@ -22,13 +22,33 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _searchFocusNode.addListener(() {
       if (mounted) setState(() {});
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final state = AppStateProvider.of(context);
+      if (state.orders.isEmpty) {
+        state.syncFromBackend();
+      }
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!mounted) return;
+      final appState = AppStateProvider.of(context);
+      if (appState.orders.isEmpty) {
+        appState.syncFromBackend();
+      }
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -935,7 +955,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
                       // View PDF Button
                       InkWell(
-                        onTap: () => InvoiceHelper.openPdf(context, order.ticketId, salesId: order.salesId),
+                        onTap: () async {
+                          await InvoiceHelper.openPdf(context, order.ticketId, salesId: order.salesId);
+                          if (!context.mounted) return;
+                          final s = AppStateProvider.of(context);
+                          if (s.orders.isEmpty) {
+                            await s.syncFromBackend();
+                          }
+                        },
                         borderRadius: BorderRadius.circular(8),
                         child: Container(
                           height: 36,
