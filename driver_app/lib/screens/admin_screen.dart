@@ -65,9 +65,9 @@ class _AdminScreenState extends State<AdminScreen> {
       message: 'Are you sure you want to end your administrative session?',
       confirmLabel: 'Sign Out',
       icon: Icons.logout_rounded,
-      iconColor: const Color(0xFFDC2626),
-      iconBgColor: const Color(0xFFFEF2F2),
-      confirmButtonColor: const Color(0xFFDC2626),
+      iconColor: const Color(0xFF800020),
+      iconBgColor: const Color(0xFFFDF2F4),
+      confirmButtonColor: const Color(0xFF800020),
     );
 
     if (confirmed == true && context.mounted) {
@@ -105,9 +105,9 @@ class _AdminScreenState extends State<AdminScreen> {
                   message: 'Are you sure you want to exit the application?',
                   confirmLabel: 'Exit',
                   icon: Icons.power_settings_new_rounded,
-                  iconColor: const Color(0xFFDC2626),
-                  iconBgColor: const Color(0xFFFEF2F2),
-                  confirmButtonColor: const Color(0xFFDC2626),
+                  iconColor: const Color(0xFF800020),
+                  iconBgColor: const Color(0xFFFDF2F4),
+                  confirmButtonColor: const Color(0xFF800020),
                 );
                 if (exit == true && context.mounted) {
                   SystemNavigator.pop();
@@ -217,7 +217,7 @@ class _AdminScreenState extends State<AdminScreen> {
     required int index,
   }) {
     final isSelected = _currentIndex == index;
-    const activeColor = Color(0xFFDC2626);
+    const activeColor = Color(0xFF800020);
     const inactiveColor = Color(0xFF64748B);
 
     return Expanded(
@@ -292,7 +292,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     const Icon(
                       Icons.logout_rounded,
                       size: 16,
-                      color: Color(0xFFDC2626),
+                      color: Color(0xFF800020),
                     ),
                     const SizedBox(width: 5),
                     Text(
@@ -300,7 +300,7 @@ class _AdminScreenState extends State<AdminScreen> {
                       style: GoogleFonts.inter(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
-                        color: const Color(0xFFDC2626),
+                        color: const Color(0xFF800020),
                       ),
                     ),
                   ],
@@ -374,14 +374,14 @@ class _AdminScreenState extends State<AdminScreen> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF991B1B), Color(0xFFDC2626)],
+                colors: [Color(0xFF5A0016), Color(0xFF800020)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(18),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x1CDC2626),
+                  color: Color(0x1C800020),
                   blurRadius: 10,
                   offset: Offset(0, 3),
                 ),
@@ -434,7 +434,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   onPressed: () => setState(() => _currentIndex = 1),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFFDC2626),
+                    foregroundColor: const Color(0xFF800020),
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     shape: RoundedRectangleBorder(
@@ -505,7 +505,7 @@ class _AdminScreenState extends State<AdminScreen> {
                         const Icon(
                           Icons.local_shipping_rounded,
                           size: 20,
-                          color: Color(0xFFDC2626),
+                          color: Color(0xFF800020),
                         ),
                         const SizedBox(width: 10),
                         Expanded(
@@ -565,7 +565,7 @@ class _AdminScreenState extends State<AdminScreen> {
                               style: GoogleFonts.inter(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w700,
-                                color: const Color(0xFFDC2626),
+                                color: const Color(0xFF800020),
                               ),
                             ),
                             const SizedBox(width: 4),
@@ -574,7 +574,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                   ? Icons.keyboard_arrow_up_rounded
                                   : Icons.keyboard_arrow_down_rounded,
                               size: 18,
-                              color: const Color(0xFFDC2626),
+                              color: const Color(0xFF800020),
                             ),
                           ],
                         ),
@@ -630,7 +630,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   letterSpacing: 0.5,
                 ),
               ),
-              Icon(icon, size: 18, color: const Color(0xFFDC2626)),
+              Icon(icon, size: 18, color: const Color(0xFF800020)),
             ],
           ),
           const SizedBox(height: 4),
@@ -662,14 +662,14 @@ class _AdminScreenState extends State<AdminScreen> {
           // Subheading / Header Badge
           Row(
             children: [
-              const Icon(Icons.swap_horiz_rounded, size: 20, color: Color(0xFFDC2626)),
+              const Icon(Icons.swap_horiz_rounded, size: 20, color: Color(0xFF800020)),
               const SizedBox(width: 8),
               Text(
                 'ALLOCATE VEHICLE & STOCK',
                 style: GoogleFonts.inter(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
-                  color: const Color(0xFFDC2626),
+                  color: const Color(0xFF800020),
                   letterSpacing: 0.5,
                 ),
               ),
@@ -705,7 +705,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.local_shipping_rounded, size: 17, color: Color(0xFFDC2626)),
+                        const Icon(Icons.local_shipping_rounded, size: 17, color: Color(0xFF800020)),
                         const SizedBox(width: 6),
                         Text(
                           '1. SELECT VEHICLE',
@@ -725,14 +725,14 @@ class _AdminScreenState extends State<AdminScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         child: Row(
                           children: [
-                            const Icon(Icons.add_circle_outline_rounded, size: 14, color: Color(0xFFDC2626)),
+                            const Icon(Icons.add_circle_outline_rounded, size: 14, color: Color(0xFF800020)),
                             const SizedBox(width: 4),
                             Text(
                               '+ Add Vehicle',
                               style: GoogleFonts.inter(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w700,
-                                color: const Color(0xFFDC2626),
+                                color: const Color(0xFF800020),
                               ),
                             ),
                           ],
@@ -836,7 +836,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.person_rounded, size: 17, color: Color(0xFFDC2626)),
+                        const Icon(Icons.person_rounded, size: 17, color: Color(0xFF800020)),
                         const SizedBox(width: 6),
                         Text(
                           '2. SELECT DRIVER',
@@ -856,14 +856,14 @@ class _AdminScreenState extends State<AdminScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                         child: Row(
                           children: [
-                            const Icon(Icons.person_add_alt_1_outlined, size: 14, color: Color(0xFFDC2626)),
+                            const Icon(Icons.person_add_alt_1_outlined, size: 14, color: Color(0xFF800020)),
                             const SizedBox(width: 4),
                             Text(
                               '+ Add Driver',
                               style: GoogleFonts.inter(
                                 fontSize: 11.5,
                                 fontWeight: FontWeight.w700,
-                                color: const Color(0xFFDC2626),
+                                color: const Color(0xFF800020),
                               ),
                             ),
                           ],
@@ -940,7 +940,7 @@ class _AdminScreenState extends State<AdminScreen> {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.propane_tank_rounded, size: 17, color: Color(0xFFDC2626)),
+                    const Icon(Icons.propane_tank_rounded, size: 17, color: Color(0xFF800020)),
                     const SizedBox(width: 6),
                     Text(
                       '3. ALLOCATE CYLINDERS',
@@ -983,7 +983,7 @@ class _AdminScreenState extends State<AdminScreen> {
                           style: GoogleFonts.inter(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w800,
-                            color: const Color(0xFFDC2626),
+                            color: const Color(0xFF800020),
                           ),
                         ),
                       ),
@@ -1057,14 +1057,14 @@ class _AdminScreenState extends State<AdminScreen> {
             height: 50,
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF991B1B), Color(0xFFDC2626)],
+                colors: [Color(0xFF5A0016), Color(0xFF800020)],
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
               ),
               borderRadius: BorderRadius.circular(14),
               boxShadow: const [
                 BoxShadow(
-                  color: Color(0x28DC2626),
+                  color: Color(0x28800020),
                   blurRadius: 10,
                   offset: Offset(0, 3),
                 ),
@@ -1180,15 +1180,15 @@ class _AdminScreenState extends State<AdminScreen> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
+                      color: const Color(0xFFFDF2F4),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFFEE2E2)),
+                      border: Border.all(color: const Color(0xFFF5C2CB)),
                     ),
                     child: const Center(
                       child: Icon(
                         Icons.check_circle_rounded,
                         size: 22,
-                        color: Color(0xFFDC2626),
+                        color: Color(0xFF800020),
                       ),
                     ),
                   ),
@@ -1243,7 +1243,7 @@ class _AdminScreenState extends State<AdminScreen> {
                       style: GoogleFonts.inter(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        color: const Color(0xFFDC2626),
+                        color: const Color(0xFF800020),
                       ),
                     ),
                   ],
@@ -1256,7 +1256,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(ctx),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFDC2626),
+                    backgroundColor: const Color(0xFF800020),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
@@ -1353,7 +1353,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.5),
+                    borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5),
                   ),
                 ),
               ),
@@ -1372,7 +1372,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFDC2626),
+                    backgroundColor: const Color(0xFF800020),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1458,7 +1458,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.5),
+                    borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5),
                   ),
                 ),
               ),
@@ -1488,7 +1488,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.5),
+                    borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5),
                   ),
                 ),
               ),
@@ -1517,7 +1517,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.5),
+                    borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5),
                   ),
                 ),
               ),
@@ -1538,7 +1538,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     }
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFDC2626),
+                    backgroundColor: const Color(0xFF800020),
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -1742,7 +1742,7 @@ class _AdminScreenState extends State<AdminScreen> {
                           const Icon(
                             Icons.person_rounded,
                             size: 22,
-                            color: Color(0xFFDC2626),
+                            color: Color(0xFF800020),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -1870,20 +1870,20 @@ class _AdminScreenState extends State<AdminScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFEF2F2),
+                                color: const Color(0xFFFDF2F4),
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFFEE2E2)),
+                                border: Border.all(color: const Color(0xFFF5C2CB)),
                               ),
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
                                   Row(
                                     children: [
-                                      const Icon(Icons.receipt_long_rounded, size: 15, color: Color(0xFFDC2626)),
+                                      const Icon(Icons.receipt_long_rounded, size: 15, color: Color(0xFF800020)),
                                       const SizedBox(width: 6),
                                       Text(
                                         'Expenses & Fuel (${expenses.length})',
-                                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w700, color: const Color(0xFFDC2626)),
+                                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w700, color: const Color(0xFF800020)),
                                       ),
                                     ],
                                   ),
@@ -1891,13 +1891,13 @@ class _AdminScreenState extends State<AdminScreen> {
                                     children: [
                                       Text(
                                         '-\u20B9${totalExp.toStringAsFixed(0)}',
-                                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: const Color(0xFFDC2626)),
+                                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
                                       ),
                                       const SizedBox(width: 4),
                                       Icon(
                                         isExpenseExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                                         size: 16,
-                                        color: const Color(0xFFDC2626),
+                                        color: const Color(0xFF800020),
                                       ),
                                     ],
                                   ),
@@ -1935,7 +1935,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                       ),
                                       Text(
                                         '-\u20B9${e.amount.toStringAsFixed(0)}',
-                                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFFDC2626)),
+                                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF800020)),
                                       ),
                                     ],
                                   ),
@@ -2006,7 +2006,7 @@ class _AdminScreenState extends State<AdminScreen> {
                         label: 'Stock',
                         value: '${state.totalWarehouseFilled}',
                         icon: Icons.store_rounded,
-                        color: const Color(0xFFDC2626),
+                        color: const Color(0xFF800020),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -2158,7 +2158,7 @@ class _AdminScreenState extends State<AdminScreen> {
                           const Icon(
                             Icons.local_shipping_rounded,
                             size: 20,
-                            color: Color(0xFFDC2626),
+                            color: Color(0xFF800020),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -2193,7 +2193,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                 style: GoogleFonts.inter(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w800,
-                                  color: const Color(0xFFDC2626),
+                                  color: const Color(0xFF800020),
                                 ),
                               ),
                               Text(
@@ -2254,7 +2254,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                     style: GoogleFonts.inter(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w800,
-                                      color: const Color(0xFFDC2626),
+                                      color: const Color(0xFF800020),
                                     ),
                                   ),
                                 ),
@@ -2303,7 +2303,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                       style: GoogleFonts.inter(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w800,
-                                        color: const Color(0xFFDC2626),
+                                        color: const Color(0xFF800020),
                                       ),
                                     ),
                                   ),

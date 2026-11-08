@@ -24,6 +24,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       if (mounted) {
         final state = AppStateProvider.of(context);
         state.fetchCustomers();
+        if (state.paymentMethod.isEmpty) {
+          state.setPaymentMethod('Cash');
+        }
       }
     });
   }
@@ -78,6 +81,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppStateProvider.of(context);
+    if (state.paymentMethod.isEmpty) {
+      state.paymentMethod = 'Cash';
+    }
 
     final enteredAmount = double.tryParse(_amountController.text.replaceAll(',', '').trim()) ?? 0;
     final effectiveAmount = enteredAmount > 0
@@ -1203,7 +1209,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 const Icon(Icons.currency_rupee_rounded, size: 16, color: Color(0xFF0F172A)),
                 const SizedBox(width: 6),
                 Text(
-                  'BILL AMOUNT',
+                  'PAID AMOUNT',
                   style: GoogleFonts.inter(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w800,

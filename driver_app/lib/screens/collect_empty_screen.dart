@@ -348,7 +348,7 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
                           }
                         : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFDC2626),
+                      backgroundColor: const Color(0xFF800020),
                       foregroundColor: Colors.white,
                       disabledBackgroundColor: const Color(0xFFE2E8F0),
                       disabledForegroundColor: const Color(0xFF94A3B8),
@@ -631,7 +631,7 @@ class _CollectEmptyScreenState extends State<CollectEmptyScreen> {
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFDC2626),
+                  backgroundColor: const Color(0xFF800020),
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   elevation: 0,

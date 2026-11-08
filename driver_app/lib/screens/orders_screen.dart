@@ -1036,7 +1036,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                               border: Border.all(color: const Color(0xFFFCA5A5), width: 1),
                             ),
                             child: const Center(
-                              child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFFDC2626)),
+                              child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFF800020)),
                             ),
                           ),
                         ),
@@ -1775,7 +1775,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                               }
                             },
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFDC2626),
+                        backgroundColor: const Color(0xFF800020),
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         elevation: 0,

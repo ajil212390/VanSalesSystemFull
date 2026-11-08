@@ -9,9 +9,9 @@ Future<bool?> showSuperGasConfirmDialog({
   required String confirmLabel,
   String cancelLabel = 'Cancel',
   IconData icon = Icons.logout_rounded,
-  Color iconColor = const Color(0xFFDC2626),
-  Color iconBgColor = const Color(0xFFFEF2F2),
-  Color confirmButtonColor = const Color(0xFFDC2626),
+  Color iconColor = const Color(0xFF800020),
+  Color iconBgColor = const Color(0xFFFDF2F4),
+  Color confirmButtonColor = const Color(0xFF800020),
   Widget? extraContent,
 }) {
   return showGeneralDialog<bool>(
@@ -64,7 +64,7 @@ Future<bool?> showSuperGasConfirmDialog({
                   decoration: BoxDecoration(
                     color: iconBgColor,
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFFFEE2E2)),
+                    border: Border.all(color: const Color(0xFFF5C2CB)),
                   ),
                   child: Center(
                     child: Icon(icon, color: iconColor, size: 22),

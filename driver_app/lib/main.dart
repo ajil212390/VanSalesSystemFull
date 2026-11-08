@@ -29,7 +29,7 @@ class _SuperGasAppState extends State<SuperGasApp> {
         return AppStateProvider(
           state: appState,
           child: MaterialApp(
-            title: 'SUPERGAS',
+            title: 'Future Gas',
             debugShowCheckedModeBanner: false,
             theme: ThemeData(
               useMaterial3: true,

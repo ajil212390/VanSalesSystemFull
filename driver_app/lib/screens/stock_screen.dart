@@ -298,14 +298,14 @@ class StockScreen extends StatelessWidget {
                               width: 44,
                               height: 44,
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFEF2F2),
+                                color: const Color(0xFFFDF2F4),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: const Color(0xFFFEE2E2)),
+                                border: Border.all(color: const Color(0xFFF5C2CB)),
                               ),
                               child: const Icon(
                                 Icons.propane_tank_rounded,
                                 size: 24,
-                                color: Color(0xFFDC2626),
+                                color: Color(0xFF800020),
                               ),
                             ),
                             const SizedBox(width: 12),

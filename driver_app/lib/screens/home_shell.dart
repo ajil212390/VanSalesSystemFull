@@ -64,13 +64,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         }
         final shouldExit = await showSuperGasConfirmDialog(
           context: context,
-          title: 'Exit SuperGas?',
+          title: 'Exit Future Gas?',
           message: 'Are you sure you want to exit the app? Your active route and shift progress remain securely synchronized.',
           confirmLabel: 'Exit App',
           icon: Icons.power_settings_new_rounded,
-          iconColor: const Color(0xFFE11D48),
-          iconBgColor: const Color(0xFFFFE4E6),
-          confirmButtonColor: const Color(0xFFE11D48),
+          iconColor: const Color(0xFF800020),
+          iconBgColor: const Color(0xFFFDF2F4),
+          confirmButtonColor: const Color(0xFF800020),
         );
         if (shouldExit == true && context.mounted) {
           SystemNavigator.pop();

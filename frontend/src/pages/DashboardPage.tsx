@@ -1323,7 +1323,7 @@ export const DashboardPage: React.FC = () => {
                         Total
                       </Text>
                     </Table.Td>
-                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
                       ₹{metrics.totalPurchases.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Table.Td>
                   </Table.Tr>
@@ -1579,7 +1579,7 @@ export const DashboardPage: React.FC = () => {
                         Total
                       </Text>
                     </Table.Td>
-                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
                       ₹{metrics.totalPayments.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Table.Td>
                   </Table.Tr>

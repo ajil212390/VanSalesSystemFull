@@ -372,7 +372,7 @@ class AppState extends ChangeNotifier {
   Customer? selectedCustomer;
   late List<DeliveryItem> deliveryItems;
   Map<String, int> otherDeliveryQty = {};
-  String paymentMethod = '';
+  String paymentMethod = 'Cash';
   double collectedAmount = 0;
 
   AppState() {
@@ -1201,7 +1201,7 @@ class AppState extends ChangeNotifier {
 
   void resetDelivery() {
     selectedCustomer = null;
-    paymentMethod = '';
+    paymentMethod = 'Cash';
     collectedAmount = 0;
     otherDeliveryQty.clear();
     _initDeliveryItems(forceReset: true);

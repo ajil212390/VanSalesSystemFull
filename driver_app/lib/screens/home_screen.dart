@@ -3275,14 +3275,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                     child: Container(
                                       padding: const EdgeInsets.all(7),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFFEF2F2),
+                                        color: const Color(0xFFFDF2F4),
                                         borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(color: const Color(0xFFFECACA), width: 0.8),
+                                        border: Border.all(color: const Color(0xFFF5C2CB), width: 0.8),
                                       ),
                                       child: const Icon(
                                         Icons.delete_outline_rounded,
                                         size: 16,
-                                        color: Color(0xFFDC2626),
+                                        color: Color(0xFF800020),
                                       ),
                                     ),
                                   ),
