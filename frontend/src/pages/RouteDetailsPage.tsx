@@ -535,7 +535,7 @@ export const RouteDetailsPage: React.FC = () => {
                         <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           {p.DeliveredQty}
                         </Table.Td>
-                        <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
                           {p.BalanceQty}
                         </Table.Td>
                         <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: p.IsCylinder ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
@@ -580,7 +580,7 @@ export const RouteDetailsPage: React.FC = () => {
                       <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                         {prodDelivTotal}
                       </Table.Td>
-                      <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                      <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
                         {prodBalTotal}
                       </Table.Td>
                       <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#475569', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>

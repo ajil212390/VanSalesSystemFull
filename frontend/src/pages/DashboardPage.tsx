@@ -1277,7 +1277,7 @@ export const DashboardPage: React.FC = () => {
                             </Text>
                           </Table.Td>
                           <Table.Td style={{ textAlign: 'right', paddingRight: 16 }}>
-                            <Text size="xs" fw={700} c="#800020" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                            <Text size="xs" fw={700} c="#000000" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               ₹{Number(p.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </Text>
                           </Table.Td>
@@ -1323,7 +1323,7 @@ export const DashboardPage: React.FC = () => {
                         Total
                       </Text>
                     </Table.Td>
-                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
                       ₹{metrics.totalPurchases.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Table.Td>
                   </Table.Tr>
@@ -1532,7 +1532,7 @@ export const DashboardPage: React.FC = () => {
                               </Text>
                             </Table.Td>
                             <Table.Td style={{ textAlign: 'right', paddingRight: 16 }}>
-                              <Text size="xs" fw={700} c="#800020" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                              <Text size="xs" fw={700} c="#000000" style={{ fontVariantNumeric: 'tabular-nums' }}>
                                 ₹{Number(p.Amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </Text>
                             </Table.Td>
@@ -1579,7 +1579,7 @@ export const DashboardPage: React.FC = () => {
                         Total
                       </Text>
                     </Table.Td>
-                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
                       ₹{metrics.totalPayments.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Table.Td>
                   </Table.Tr>

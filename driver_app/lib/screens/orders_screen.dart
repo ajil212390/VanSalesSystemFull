@@ -29,9 +29,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final state = AppStateProvider.of(context);
-      if (state.orders.isEmpty) {
-        state.syncFromBackend();
-      }
+      state.syncFromBackend();
     });
   }
 
@@ -40,9 +38,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
     if (state == AppLifecycleState.resumed) {
       if (!mounted) return;
       final appState = AppStateProvider.of(context);
-      if (appState.orders.isEmpty) {
-        appState.syncFromBackend();
-      }
+      appState.syncFromBackend();
     }
   }
 

@@ -246,7 +246,7 @@ export const PurchaseListPage: React.FC = () => {
                     </Table.Td>
 
                     <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="sm" fw={700} c="#800020">
+                      <Text size="sm" fw={700} c="#000000">
                         ₹{Number(item.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </Text>
                     </Table.Td>

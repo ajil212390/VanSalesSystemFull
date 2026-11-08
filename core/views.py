@@ -4473,35 +4473,30 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
         company_id = getattr(request.user, 'CompanyId', 1) or 1
 
-        # Check active or latest Delivery Note for this shift
+        # Check active Delivery Note for this shift
         active_dn = DeliveryNote.objects.filter(
             CompanyId=company_id,
             RouteVehicleDriver_id=allocation_id,
-            Status__in=['LOADED', 'PENDING_APPROVAL', 'COMPLETED']
+            Status__in=['LOADED', 'PENDING_APPROVAL']
         ).order_by('-DeliveryNoteId').first()
 
-        # Query first-class Sales records created during this active shift or today
+        if not active_dn:
+            # Shift is settled or no active delivery note allocated yet -> driver has 0 active sales
+            return Response([])
+
+        # Query first-class Sales records created strictly during this shift
         sales_qs = Sales.objects.filter(
             CompanyId=company_id,
-            RouteVehicleDriver_id=allocation_id
+            RouteVehicleDriver_id=allocation_id,
+            CreatedAt__gte=active_dn.CreatedAt
         ).exclude(Status='CANCELLED')
 
-        if active_dn and active_dn.CreatedAt:
-            sales_qs = sales_qs.filter(CreatedAt__gte=active_dn.CreatedAt)
-        else:
-            sales_qs = sales_qs.filter(SalesDate=date.today())
+        if active_dn.Status == 'LOADED':
+            sales_qs = sales_qs.exclude(Status='COMPLETED')
 
         sales_qs = sales_qs.select_related('CustomerLedger').prefetch_related('lines__Product').order_by('-SalesId')
 
-        # Fallback to any sales recorded for this driver today if active DN shift filter yields none
         if not sales_qs.exists():
-            sales_qs = Sales.objects.filter(
-                CompanyId=company_id,
-                RouteVehicleDriver_id=allocation_id,
-                SalesDate=date.today()
-            ).exclude(Status='CANCELLED').select_related('CustomerLedger').prefetch_related('lines__Product').order_by('-SalesId')
-
-        if not sales_qs.exists() and not active_dn:
             return Response([])
 
         if sales_qs.exists():
@@ -5911,12 +5906,25 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 if not p_id:
                     continue
                 if p_id not in prod_map:
+                    unit_name = 'Cyls'
+                    try:
+                        if dnl.Unit_id and dnl.Unit:
+                            unit_name = dnl.Unit.UnitName
+                    except Exception:
+                        pass
+                    if unit_name == 'Cyls' and p:
+                        try:
+                            if p.Unit_id and p.Unit:
+                                unit_name = p.Unit.UnitName
+                        except Exception:
+                            pass
+
                     prod_map[p_id] = {
                         'EndRouteDriverLineId': dnl.DeliveryNoteLineId,
                         'Product': p_id,
                         'product_name': p.ProductName if p else 'Cylinder',
                         'Unit': dnl.Unit_id or (p.Unit_id if p else 1),
-                        'unit_name': dnl.Unit.UnitName if dnl.Unit else (p.Unit.UnitName if p and p.Unit else 'Cyls'),
+                        'unit_name': unit_name,
                         'LoadedQty': 0,
                         'DeliveredQty': 0,
                         'FilledQty': 0,
@@ -5934,12 +5942,25 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 if not p_id:
                     continue
                 if p_id not in prod_map:
+                    unit_name = 'Cyls'
+                    try:
+                        if l.Unit_id and l.Unit:
+                            unit_name = l.Unit.UnitName
+                    except Exception:
+                        pass
+                    if unit_name == 'Cyls' and p:
+                        try:
+                            if p.Unit_id and p.Unit:
+                                unit_name = p.Unit.UnitName
+                        except Exception:
+                            pass
+
                     prod_map[p_id] = {
                         'EndRouteDriverLineId': l.SalesLineId,
                         'Product': p_id,
                         'product_name': p.ProductName if p else (l.ProductName or 'Cylinder'),
                         'Unit': l.Unit_id or (p.Unit_id if p else 1),
-                        'unit_name': l.Unit.UnitName if l.Unit else (p.Unit.UnitName if p and p.Unit else 'Cyls'),
+                        'unit_name': unit_name,
                         'LoadedQty': 0,
                         'DeliveredQty': 0,
                         'FilledQty': 0,
@@ -6015,11 +6036,25 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 ).delete()
 
                 # 3. Revert Sales status back to LIVE
-                sales_qs = Sales.objects.filter(
+                next_dn = DeliveryNote.objects.filter(
+                    CompanyId=company_id,
                     RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
-                    SalesDate=dn.DeliveryDate,
-                    CompanyId=company_id
+                    DeliveryNoteId__gt=dn.DeliveryNoteId
+                ).order_by('DeliveryNoteId').first()
+
+                sales_qs = Sales.objects.filter(
+                    CompanyId=company_id,
+                    RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
+                    CreatedAt__gte=dn.CreatedAt
                 ).exclude(Status='CANCELLED')
+                if next_dn and next_dn.CreatedAt:
+                    sales_qs = sales_qs.filter(CreatedAt__lt=next_dn.CreatedAt)
+
+                if not sales_qs.exists():
+                    sales_qs = Sales.objects.filter(
+                        RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
+                        CompanyId=company_id
+                    ).filter(Q(SalesDate=dn.DeliveryDate) | Q(Status='PENDING_APPROVAL')).exclude(Status='CANCELLED')
                 affected_ledgers = {24, 56, 20, 22, 23, 35}
                 for s in sales_qs:
                     if s.CustomerLedger_id:
@@ -6081,12 +6116,28 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
             dn.Status = 'COMPLETED'
             dn.save(update_fields=['Status'])
 
-            # 2. Update all Sales for this driver allocation and shift date to COMPLETED / APPROVED
-            sales_qs = Sales.objects.filter(
+            # 2. Update all Sales for this driver allocation and shift to COMPLETED / APPROVED
+            next_dn = DeliveryNote.objects.filter(
+                CompanyId=company_id,
                 RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
-                SalesDate=shift_date,
-                CompanyId=company_id
+                DeliveryNoteId__gt=dn.DeliveryNoteId
+            ).order_by('DeliveryNoteId').first()
+
+            sales_qs = Sales.objects.filter(
+                CompanyId=company_id,
+                RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
+                CreatedAt__gte=dn.CreatedAt
             ).exclude(Status='CANCELLED')
+            if next_dn and next_dn.CreatedAt:
+                sales_qs = sales_qs.filter(CreatedAt__lt=next_dn.CreatedAt)
+
+            if not sales_qs.exists():
+                sales_qs = Sales.objects.filter(
+                    RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
+                    CompanyId=company_id,
+                    Status='PENDING_APPROVAL'
+                )
+
             sales_qs.update(
                 Status='COMPLETED',
                 ApprovedBy=request.user if request.user.is_authenticated else None,
@@ -6461,8 +6512,8 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
         elif driver_id:
             dn_qs = dn_qs.filter(RouteVehicleDriver__DriverId=driver_id)
 
-        latest_dn = dn_qs.order_by('-DeliveryDate', '-DeliveryNoteId').first()
-        if latest_dn and latest_dn.DeliveryDate == date.today():
+        latest_dn = dn_qs.order_by('-DeliveryNoteId').first()
+        if latest_dn:
             is_settled = (latest_dn.Status == 'COMPLETED')
             is_pending = (latest_dn.Status == 'PENDING_APPROVAL')
             has_ended = is_settled or is_pending

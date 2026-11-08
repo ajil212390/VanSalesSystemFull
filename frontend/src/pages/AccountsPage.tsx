@@ -1112,7 +1112,7 @@ export const AccountsPage: React.FC = () => {
                   <Text size="11px" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
                     Net Current Balance
                   </Text>
-                  <Text size="md" fw={700} c={financialTotals.totalCurrent >= 0 ? '#800020' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  <Text size="md" fw={700} c={financialTotals.totalCurrent >= 0 ? '#000000' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
                     ₹{Math.abs(financialTotals.totalCurrent).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
                     <Text component="span" size="xs" c={financialTotals.totalCurrent >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
                       {financialTotals.totalCurrent >= 0 ? 'Dr' : 'Cr'}

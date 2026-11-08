@@ -191,6 +191,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             onTapOverride();
           } else {
             setState(() => _currentIndex = index);
+            AppStateProvider.of(context).syncFromBackend();
           }
         },
         splashColor: Colors.transparent,

@@ -686,7 +686,7 @@ export const StockAnalysisPage: React.FC = () => {
                     <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
                       {isCyl ? godownEmptyForSelected : '—'}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
                       {(selectedProduct.GodownQty || 0) + (isCyl ? godownEmptyForSelected : 0)}
                     </Table.Td>
                   </Table.Tr>
@@ -719,7 +719,7 @@ export const StockAnalysisPage: React.FC = () => {
                       <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
                         {isCyl ? empty : '—'}
                       </Table.Td>
-                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
                         {total}
                       </Table.Td>
                     </Table.Tr>
@@ -748,7 +748,7 @@ export const StockAnalysisPage: React.FC = () => {
                   <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
                     {totalEmptyAlloc}
                   </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#000000', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
                     {filteredAllocationsTotalQty}
                   </Table.Td>
                 </Table.Tr>
@@ -1221,7 +1221,7 @@ export const StockAnalysisPage: React.FC = () => {
                           <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
                             {isCyl ? empty : '—'}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
                             {total}
                           </Table.Td>
                         </Table.Tr>
@@ -1275,7 +1275,7 @@ export const StockAnalysisPage: React.FC = () => {
                     <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
                       {totalEmpty}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#000000', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
                       {totalBalance + totalEmpty}
                     </Table.Td>
                   </Table.Tr>

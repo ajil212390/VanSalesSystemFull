@@ -238,7 +238,7 @@ export const ReceiptListPage: React.FC = () => {
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text fw={700} size="sm" c="#800020">
+                        <Text fw={700} size="sm" c="#000000">
                           ₹{Number(item.Amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </Text>
                       </Table.Td>

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
@@ -239,53 +238,17 @@ class DepotVehicle {
 }
 
 class AppState extends ChangeNotifier {
-  Future<void> _loadStateCache() async {
+  /// Strictly purge any legacy local cache keys from SharedPreferences.
+  /// All business data is fetched live from backend DB.
+  Future<void> _cleanStaleCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      vehicleNumber = prefs.getString('cached_vehicle_number') ?? vehicleNumber;
-      routeInfo = prefs.getString('cached_route_info') ?? routeInfo;
-      driverName = prefs.getString('cached_driver_name') ?? driverName;
-      fullName = prefs.getString('cached_full_name') ?? fullName;
-      currentAllocationId = prefs.getInt('cached_allocation_id') ?? currentAllocationId;
-
-      final rawCyl = prefs.getString('cached_cylinders_json');
-      if (rawCyl != null && rawCyl.isNotEmpty && cylinders.isEmpty) {
-        final list = jsonDecode(rawCyl) as List;
-        cylinders = list.map((item) => CylinderType(
-          productId: item['productId'] as int?,
-          weight: item['weight']?.toString() ?? '',
-          price: (item['price'] as num?)?.toDouble() ?? 0.0,
-          initialFilledStock: (item['initialFilledStock'] as num?)?.toInt() ?? 0,
-          filledStock: (item['filledStock'] as num?)?.toInt() ?? 0,
-          emptyStock: (item['emptyStock'] as num?)?.toInt() ?? 0,
-        )).toList();
-        _initDeliveryItems();
-        notifyListeners();
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _persistStateCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('cached_vehicle_number', vehicleNumber);
-      await prefs.setString('cached_route_info', routeInfo);
-      await prefs.setString('cached_driver_name', driverName);
-      await prefs.setString('cached_full_name', fullName);
-      if (currentAllocationId != null) {
-        await prefs.setInt('cached_allocation_id', currentAllocationId!);
-      }
-      if (cylinders.isNotEmpty) {
-        final cylList = cylinders.map((c) => {
-          'productId': c.productId,
-          'weight': c.weight,
-          'price': c.price,
-          'initialFilledStock': c.initialFilledStock,
-          'filledStock': c.filledStock,
-          'emptyStock': c.emptyStock,
-        }).toList();
-        await prefs.setString('cached_cylinders_json', jsonEncode(cylList));
-      }
+      await prefs.remove('cached_vehicle_number');
+      await prefs.remove('cached_route_info');
+      await prefs.remove('cached_driver_name');
+      await prefs.remove('cached_full_name');
+      await prefs.remove('cached_allocation_id');
+      await prefs.remove('cached_cylinders_json');
     } catch (_) {}
   }
 
@@ -377,8 +340,7 @@ class AppState extends ChangeNotifier {
 
   AppState() {
     _initDeliveryItems();
-    loadCachedAllocation();
-    _loadStateCache();
+    _cleanStaleCache();
   }
 
   void _initDeliveryItems({bool forceReset = false}) {
@@ -409,45 +371,6 @@ class AppState extends ChangeNotifier {
     }).toList();
   }
 
-  Future<void> loadCachedAllocation() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final cachedVehicle = prefs.getString('cached_vehicle_number');
-      final cachedRoute = prefs.getString('cached_route_info');
-      final cachedDriver = prefs.getString('cached_driver_name');
-      final cachedAllocId = prefs.getInt('cached_allocation_id');
-
-      // Reject any stale mock vehicle
-      if (cachedVehicle == 'KL 77 3803') {
-        await prefs.remove('cached_vehicle_number');
-      } else if (cachedVehicle != null && cachedVehicle.isNotEmpty) {
-        vehicleNumber = cachedVehicle;
-      }
-
-      if (cachedRoute != null && cachedRoute.contains('Kecheri')) {
-        await prefs.remove('cached_route_info');
-      } else if (cachedRoute != null && cachedRoute.isNotEmpty) {
-        routeInfo = cachedRoute;
-      }
-
-      if (cachedDriver != null && cachedDriver.isNotEmpty) {
-        driverName = cachedDriver;
-      }
-      if (cachedAllocId != null) {
-        currentAllocationId = cachedAllocId;
-      }
-      final savedUser = await ApiService.getSavedUser();
-      if (savedUser != null) {
-        final uname = savedUser['username']?.toString().trim();
-        if (uname != null && uname.isNotEmpty) {
-          loggedInUsername = uname;
-        }
-      }
-      notifyListeners();
-    } catch (_) {}
-  }
-
-  /// Wipe all local device cache and reset state completely to start 100% fresh
   /// Fetch Sundry Debtors from backend DB and populate customers list
   Future<void> fetchCustomers() async {
     try {
@@ -504,18 +427,6 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _persistAllocationCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('cached_vehicle_number', vehicleNumber);
-      await prefs.setString('cached_route_info', routeInfo);
-      await prefs.setString('cached_driver_name', driverName);
-      if (currentAllocationId != null) {
-        await prefs.setInt('cached_allocation_id', currentAllocationId!);
-      }
-    } catch (_) {}
-  }
-
   Future<void> syncFromBackend({int? driverIdParam}) async {
     isLoadingFromBackend = true;
     notifyListeners();
@@ -555,8 +466,6 @@ class AppState extends ChangeNotifier {
           driverName = dName.toString().trim();
         }
 
-        _persistAllocationCache();
-
         if (currentAllocationId != null) {
           final vanStock = await ApiService.getVanStock(currentAllocationId!);
           if (vanStock.isNotEmpty) {
@@ -589,7 +498,6 @@ class AppState extends ChangeNotifier {
               emptyStock: (s['EmptyQty'] as num?)?.toInt() ?? 0,
             )).toList();
             _initDeliveryItems();
-            _persistStateCache();
 
             // Load Other Products allocated to this vehicle
             otherProducts = otherItems
@@ -612,76 +520,74 @@ class AppState extends ChangeNotifier {
         if (currentAllocationId != null) {
           try {
             final backendSales = await ApiService.getDriverSales(currentAllocationId!);
-            if (backendSales.isNotEmpty || orders.isEmpty) {
-              final newOrders = <DeliveryOrder>[];
-              for (final s in backendSales) {
-                final cData = s['customer'] as Map<String, dynamic>? ?? {};
-                final itemsList = (s['items'] as List? ?? []).map((it) {
-                  var w = it['weight']?.toString().trim() ?? '';
-                  final kgMatch = RegExp(r'(\d+(?:\.\d+)?\s*KG)', caseSensitive: false).firstMatch(w);
-                  if (kgMatch != null) {
-                    w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
-                  }
-                  final matchedCyl = cylinders.firstWhere(
-                    (c) => c.weight.trim().toUpperCase() == w.toUpperCase() ||
-                           (w.isNotEmpty && c.weight.toUpperCase().contains(w.toUpperCase())),
-                    orElse: () => CylinderType(
-                      productId: it['productId'] as int?,
-                      weight: w,
-                      price: (it['rate'] as num?)?.toDouble() ?? 0.0,
-                      filledStock: 0,
-                    ),
-                  );
-                  return DeliveryItem(
-                    cylinder: matchedCyl,
-                    deliveryQty: (it['deliveryQty'] as num?)?.toInt() ?? 0,
-                    emptyReturnQty: (it['emptyReturnQty'] as num?)?.toInt() ?? 0,
-                  );
-                }).toList();
-
-                final cLedgerId = cData['ledgerId'] as int?;
-                final cName = cData['name'] ?? 'Customer';
-                final cPhoneRaw = (cData['phone'] ?? '').toString().trim();
-
-                Customer matchedCust;
-                try {
-                  matchedCust = customers.firstWhere(
-                    (c) => (cLedgerId != null && c.ledgerId == cLedgerId) ||
-                           (c.name.trim().toLowerCase() == cName.toString().trim().toLowerCase()),
-                  );
-                } catch (_) {
-                  matchedCust = Customer(
-                    ledgerId: cLedgerId,
-                    name: cName,
-                    phone: cPhoneRaw,
-                  );
+            final newOrders = <DeliveryOrder>[];
+            for (final s in backendSales) {
+              final cData = s['customer'] as Map<String, dynamic>? ?? {};
+              final itemsList = (s['items'] as List? ?? []).map((it) {
+                var w = it['weight']?.toString().trim() ?? '';
+                final kgMatch = RegExp(r'(\d+(?:\.\d+)?\s*KG)', caseSensitive: false).firstMatch(w);
+                if (kgMatch != null) {
+                  w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
                 }
-                final resolvedPhone = cPhoneRaw.isNotEmpty ? cPhoneRaw : matchedCust.phone;
-
-                newOrders.add(DeliveryOrder(
-                  ticketId: s['ticketId'] ?? 'DT-ORD',
-                  salesId: s['salesId'] as int?,
-                  customer: Customer(
-                    ledgerId: cLedgerId,
-                    name: cName,
-                    phone: resolvedPhone,
-                    address: matchedCust.address,
-                    type: matchedCust.type,
+                final matchedCyl = cylinders.firstWhere(
+                  (c) => c.weight.trim().toUpperCase() == w.toUpperCase() ||
+                         (w.isNotEmpty && c.weight.toUpperCase().contains(w.toUpperCase())),
+                  orElse: () => CylinderType(
+                    productId: it['productId'] as int?,
+                    weight: w,
+                    price: (it['rate'] as num?)?.toDouble() ?? 0.0,
+                    filledStock: 0,
                   ),
-                  items: itemsList,
-                  totalCylinders: (s['totalCylinders'] as num?)?.toInt() ?? 0,
-                  totalEmpties: (s['totalEmpties'] as num?)?.toInt() ?? 0,
-                  amount: (s['paidAmount'] != null && (s['paidAmount'] as num) > 0)
-                      ? (s['paidAmount'] as num).toDouble()
-                      : ((s['amount'] as num?)?.toDouble() ?? 0.0),
-                  paymentMethod: s['paymentMethod'] ?? 'Cash',
-                  time: s['time'] ?? '10:00 AM',
-                  status: s['status'] ?? 'Delivered',
-                ));
+                );
+                return DeliveryItem(
+                  cylinder: matchedCyl,
+                  deliveryQty: (it['deliveryQty'] as num?)?.toInt() ?? 0,
+                  emptyReturnQty: (it['emptyReturnQty'] as num?)?.toInt() ?? 0,
+                );
+              }).toList();
+
+              final cLedgerId = cData['ledgerId'] as int?;
+              final cName = cData['name'] ?? 'Customer';
+              final cPhoneRaw = (cData['phone'] ?? '').toString().trim();
+
+              Customer matchedCust;
+              try {
+                matchedCust = customers.firstWhere(
+                  (c) => (cLedgerId != null && c.ledgerId == cLedgerId) ||
+                         (c.name.trim().toLowerCase() == cName.toString().trim().toLowerCase()),
+                );
+              } catch (_) {
+                matchedCust = Customer(
+                  ledgerId: cLedgerId,
+                  name: cName,
+                  phone: cPhoneRaw,
+                );
               }
-              orders.clear();
-              orders.addAll(newOrders);
+              final resolvedPhone = cPhoneRaw.isNotEmpty ? cPhoneRaw : matchedCust.phone;
+
+              newOrders.add(DeliveryOrder(
+                ticketId: s['ticketId'] ?? 'DT-ORD',
+                salesId: s['salesId'] as int?,
+                customer: Customer(
+                  ledgerId: cLedgerId,
+                  name: cName,
+                  phone: resolvedPhone,
+                  address: matchedCust.address,
+                  type: matchedCust.type,
+                ),
+                items: itemsList,
+                totalCylinders: (s['totalCylinders'] as num?)?.toInt() ?? 0,
+                totalEmpties: (s['totalEmpties'] as num?)?.toInt() ?? 0,
+                amount: (s['paidAmount'] != null && (s['paidAmount'] as num) > 0)
+                    ? (s['paidAmount'] as num).toDouble()
+                    : ((s['amount'] as num?)?.toDouble() ?? 0.0),
+                paymentMethod: s['paymentMethod'] ?? 'Cash',
+                time: s['time'] ?? '10:00 AM',
+                status: s['status'] ?? 'Delivered',
+              ));
             }
+            orders.clear();
+            orders.addAll(newOrders);
           } catch (e) {
             debugPrint('Failed to load driver sales: $e');
           }
@@ -703,8 +609,8 @@ class AppState extends ChangeNotifier {
             debugPrint('Failed to load driver expenses: $e');
           }
         }
-      } else {
-        // Driver has no active vehicle allocation
+      } else if (currentAllocationId == null) {
+        // Driver has no active vehicle allocation on initial login
         currentAllocationId = null;
         vehicleNumber = '';
         routeInfo = '';
@@ -724,7 +630,10 @@ class AppState extends ChangeNotifier {
             final bool waitingForAllocation = statusData['waiting_for_next_allocation'] == true;
 
             if (isSettled || waitingForAllocation) {
-              // Reset van onboard inventory to 0 for end-of-shift, but retain today's recorded orders for driver review
+              // Shift is settled & approved: wipe all sales, expenses, and inventory from driver's device
+              orders.clear();
+              expenses.clear();
+              collectedAmount = 0.0;
               for (final c in cylinders) {
                 c.filledStock = 0;
                 c.emptyStock = 0;

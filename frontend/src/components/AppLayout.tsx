@@ -571,20 +571,28 @@ export const AppLayout: React.FC = () => {
           >
             <Menu.Target>
               <Box style={{ width: '100%', display: 'flex', justifyContent: 'center' }} mb={4}>
-                <ActionIcon
-                  size={40}
-                  variant="light"
+                <Indicator
+                  disabled={pendingEndRoutes.length === 0}
                   color="burgundy"
-                  style={{
-                    borderRadius: '6px',
-                    backgroundColor: isVanOpsActive ? '#fdf2f4' : 'transparent',
-                    color: isVanOpsActive ? '#800020' : '#475569',
-                    width: '100%',
-                    height: 40,
-                  }}
+                  size={8}
+                  offset={4}
+                  styles={{ indicator: { backgroundColor: '#800020' } }}
                 >
-                  <IconTruckDelivery size={20} stroke={1.75} />
-                </ActionIcon>
+                  <ActionIcon
+                    size={40}
+                    variant="light"
+                    color="burgundy"
+                    style={{
+                      borderRadius: '6px',
+                      backgroundColor: isVanOpsActive ? '#fdf2f4' : 'transparent',
+                      color: isVanOpsActive ? '#800020' : '#475569',
+                      width: '100%',
+                      height: 40,
+                    }}
+                  >
+                    <IconTruckDelivery size={20} stroke={1.75} />
+                  </ActionIcon>
+                </Indicator>
               </Box>
             </Menu.Target>
             <Menu.Dropdown p="xs" style={{ minWidth: 190, borderColor: '#e2e8f0', backgroundColor: '#ffffff' }}>
@@ -594,12 +602,26 @@ export const AppLayout: React.FC = () => {
               {vanOpsItems.map((sub) => {
                 const SubIcon = sub.icon;
                 const isSubActive = location.pathname === sub.path;
+                const isEndAlloc = sub.path === '/end-allocations';
+                const hasPending = isEndAlloc && pendingEndRoutes.length > 0;
                 return (
                   <Menu.Item
                     key={sub.path}
                     component={Link}
                     to={sub.path}
                     leftSection={<SubIcon size={18} stroke={1.75} />}
+                    rightSection={
+                      hasPending ? (
+                        <Box
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            backgroundColor: '#800020',
+                          }}
+                        />
+                      ) : null
+                    }
                     style={{
                       borderRadius: '6px',
                       fontWeight: isSubActive ? 600 : 500,
@@ -625,6 +647,19 @@ export const AppLayout: React.FC = () => {
             variant="light"
             childrenOffset={12}
             mb={4}
+            rightSection={
+              !vanOpsOpened && pendingEndRoutes.length > 0 ? (
+                <Box
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: '50%',
+                    backgroundColor: '#800020',
+                    marginRight: 6,
+                  }}
+                />
+              ) : undefined
+            }
             styles={{
               root: {
                 borderRadius: '6px',
@@ -643,6 +678,8 @@ export const AppLayout: React.FC = () => {
             {vanOpsItems.map((sub) => {
               const SubIcon = sub.icon;
               const isSubActive = location.pathname === sub.path;
+              const isEndAlloc = sub.path === '/end-allocations';
+              const hasPending = isEndAlloc && pendingEndRoutes.length > 0;
               return (
                 <NavLink
                   key={sub.path}
@@ -650,6 +687,19 @@ export const AppLayout: React.FC = () => {
                   to={sub.path}
                   label={sub.label}
                   leftSection={<SubIcon size={18} stroke={1.75} />}
+                  rightSection={
+                    hasPending ? (
+                      <Box
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: '50%',
+                          backgroundColor: '#800020',
+                          boxShadow: '0 0 0 2px #ffffff, 0 0 4px rgba(128, 0, 32, 0.4)',
+                        }}
+                      />
+                    ) : null
+                  }
                   active={isSubActive}
                   color="burgundy"
                   variant="light"
