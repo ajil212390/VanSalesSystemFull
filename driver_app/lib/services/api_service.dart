@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // Default to computer's Wi-Fi LAN IP or active devtunnel so connected phones can reach backend
-  static String baseUrl = 'https://1hf8qsvp-8000.inc1.devtunnels.ms/api/v1';
+  static String baseUrl = 'https://z0v56js5-8000.inc1.devtunnels.ms/api/v1';
 
   static const String _tokenKey = 'auth_token';
   static const String _refreshTokenKey = 'auth_refresh_token';
@@ -20,7 +20,7 @@ class ApiService {
     if (savedUrl != null && savedUrl.isNotEmpty) {
       if (savedUrl.contains('192.168.1.33') || savedUrl.contains('//api/v1')) {
         // Automatically migrate stale IP / double slash
-        baseUrl = 'https://1hf8qsvp-8000.inc1.devtunnels.ms/api/v1';
+        baseUrl = 'https://z0v56js5-8000.inc1.devtunnels.ms/api/v1';
         await prefs.setString(_customUrlKey, baseUrl);
       } else {
         baseUrl = savedUrl.replaceAll(RegExp(r'/+$'), '');

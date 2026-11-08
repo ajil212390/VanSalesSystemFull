@@ -1834,61 +1834,228 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
+                                  // Top 3-metric overview: Collection, Expense, Balance
                                   Row(
                                     children: [
+                                      // 1. Total Collection
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'DELIVERIES',
-                                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                              'COLLECTION',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                                color: const Color(0xFF64748B),
+                                                letterSpacing: 0.3,
+                                              ),
                                             ),
                                             const SizedBox(height: 2),
+                                            Text(
+                                              '\u20B9${state.totalIncome.toStringAsFixed(0)}',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                                color: const Color(0xFF0F172A),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 1),
                                             Text(
                                               '${state.orders.length} Drops',
-                                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                              style: GoogleFonts.inter(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: const Color(0xFF64748B),
+                                              ),
                                             ),
                                           ],
                                         ),
                                       ),
-                                      Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
-                                      const SizedBox(width: 10),
+                                      Container(width: 1, height: 36, color: const Color(0xFFE2E8F0)),
+                                      const SizedBox(width: 8),
+
+                                      // 2. Expenses
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'CASH IN HAND',
-                                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                              'EXPENSES',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                                color: const Color(0xFF64748B),
+                                                letterSpacing: 0.3,
+                                              ),
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              '\u20B9${state.cashBalance.toStringAsFixed(0)}',
-                                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
+                                              '\u20B9${state.totalExpense.toStringAsFixed(0)}',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w800,
+                                                color: const Color(0xFF0F172A),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 1),
+                                            Text(
+                                              '${state.expenses.length} Records',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: const Color(0xFF64748B),
+                                              ),
                                             ),
                                           ],
                                         ),
                                       ),
-                                      Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
-                                      const SizedBox(width: 10),
+                                      Container(width: 1, height: 36, color: const Color(0xFFE2E8F0)),
+                                      const SizedBox(width: 8),
+
+                                      // 3. Net Balance
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
-                                              'BANK / UPI',
-                                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: const Color(0xFF64748B)),
+                                              'NET BALANCE',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w800,
+                                                color: const Color(0xFF800020),
+                                                letterSpacing: 0.3,
+                                              ),
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              '\u20B9${state.bankBalance.toStringAsFixed(0)}',
-                                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                              '\u20B9${state.netBalance.toStringAsFixed(0)}',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 15.5,
+                                                fontWeight: FontWeight.w900,
+                                                color: const Color(0xFF800020),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 1),
+                                            Text(
+                                              'Settlement',
+                                              style: GoogleFonts.inter(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: const Color(0xFF64748B),
+                                              ),
                                             ),
                                           ],
                                         ),
                                       ),
                                     ],
+                                  ),
+
+                                  const SizedBox(height: 10),
+                                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                                  const SizedBox(height: 8),
+
+                                  // Balance Breakdown: Cash in Hand & Bank / UPI
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        // Cash in Hand
+                                        Expanded(
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.all(4),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFFDF2F4),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: const Icon(
+                                                  Icons.payments_rounded,
+                                                  size: 13,
+                                                  color: Color(0xFF800020),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      'CASH IN HAND',
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: const Color(0xFF64748B),
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      '\u20B9${state.cashBalance.toStringAsFixed(0)}',
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: const Color(0xFF800020),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Container(width: 1, height: 24, color: const Color(0xFFE2E8F0)),
+                                        const SizedBox(width: 10),
+
+                                        // Bank / UPI Net
+                                        Expanded(
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                padding: const EdgeInsets.all(4),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFF1F5F9),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: const Icon(
+                                                  Icons.account_balance_rounded,
+                                                  size: 13,
+                                                  color: Color(0xFF0F172A),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      'BANK / UPI',
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 9,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: const Color(0xFF64748B),
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      '\u20B9${state.bankBalance.toStringAsFixed(0)}',
+                                                      style: GoogleFonts.inter(
+                                                        fontSize: 13,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: const Color(0xFF0F172A),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                   const SizedBox(height: 8),
                                   Row(
