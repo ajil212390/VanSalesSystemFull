@@ -90,6 +90,7 @@ export const AppLayout: React.FC = () => {
     { label: 'Add User', path: '/users', icon: IconUsers },
     { label: 'Allocations', path: '/allocations', icon: IconArrowsJoin2 },
     { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
+    { label: 'Van Management', path: '/van-management', icon: IconTruckDelivery },
   ];
 
   const isVanOpsActive = vanOpsItems.some((item) =>
@@ -117,7 +118,7 @@ export const AppLayout: React.FC = () => {
       case '/':
         return { section: 'Overview', title: 'Dashboard' };
       case '/van-management':
-        return { section: 'Van Management', title: 'Van Management Dashboard' };
+        return { section: 'Van Operations', title: 'Van Management' };
       case '/drivers':
         return { section: 'Van Operations', title: 'Drivers' };
       case '/vehicles':

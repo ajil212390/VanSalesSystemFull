@@ -435,14 +435,6 @@ export const StockAnalysisPage: React.FC = () => {
     return filteredProducts.reduce((sum, p) => sum + (Number(p.EmptyQty) || 0), 0);
   }, [filteredProducts]);
 
-  const totalProductQuantity = useMemo(() => {
-    return filteredProducts.reduce((sum, p) => {
-      const filled = Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0;
-      const empty = Number(p.EmptyQty) || 0;
-      return sum + (Number(p.TotalStockQty) || (filled + empty) || (Number(p.TotalQty) || 0));
-    }, 0);
-  }, [filteredProducts]);
-
   const totalLocationFilled = useMemo(() => {
     return filteredLocations.reduce((sum, l) => sum + (Number(l.filledQuantity) || 0), 0);
   }, [filteredLocations]);
@@ -451,9 +443,25 @@ export const StockAnalysisPage: React.FC = () => {
     return filteredLocations.reduce((sum, l) => sum + (Number(l.emptyQuantity) || 0), 0);
   }, [filteredLocations]);
 
-  const totalLocationQuantity = useMemo(() => {
-    return filteredLocations.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0);
-  }, [filteredLocations]);
+  // Balanced table rows calculation:
+  // Whichever table has more items, take that count + 1 extra line (breathing space),
+  // ensuring both tables have identical row counts and perfectly aligned Total footers.
+  const targetTableRows = useMemo(() => {
+    const pCount = filteredProducts.length;
+    const lCount = filteredLocations.length;
+    const maxCount = Math.max(pCount, lCount);
+    return maxCount > 0 ? maxCount + 1 : 0;
+  }, [filteredProducts.length, filteredLocations.length]);
+
+  const productSpacerCount = useMemo(() => {
+    if (filteredProducts.length === 0) return 0;
+    return Math.max(0, targetTableRows - filteredProducts.length);
+  }, [targetTableRows, filteredProducts.length]);
+
+  const locationSpacerCount = useMemo(() => {
+    if (filteredLocations.length === 0) return 0;
+    return Math.max(0, targetTableRows - filteredLocations.length);
+  }, [targetTableRows, filteredLocations.length]);
 
   const summary = data?.summary || {
     total_system_cylinders: 0,
@@ -1587,7 +1595,7 @@ export const StockAnalysisPage: React.FC = () => {
             ) : (
               <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 <ScrollArea
-                  h={320}
+                  mah={480}
                   scrollbars="y"
                   scrollbarSize={5}
                   type="hover"
@@ -1598,10 +1606,9 @@ export const StockAnalysisPage: React.FC = () => {
                 >
                   <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
-                      <col style={{ width: 60 }} />
+                      <col style={{ width: 75 }} />
                       <col />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
                       <col style={{ width: 95 }} />
                     </colgroup>
                     <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
@@ -1615,11 +1622,8 @@ export const StockAnalysisPage: React.FC = () => {
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
                           FILLED
                         </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
-                          EMPTY
-                        </Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
-                          TOTAL
+                          EMPTY
                         </Table.Th>
                       </Table.Tr>
                     </Table.Thead>
@@ -1628,7 +1632,6 @@ export const StockAnalysisPage: React.FC = () => {
                         const isCyl = product.IsCylinder !== false;
                         const filled = product.FilledQty ?? (product.GodownQty + (product.AllocatedQty || 0));
                         const empty = product.EmptyQty ?? 0;
-                        const total = product.TotalStockQty ?? (filled + empty);
                         return (
                           <Table.Tr
                             key={product.ProductId}
@@ -1657,47 +1660,44 @@ export const StockAnalysisPage: React.FC = () => {
                             <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                               {filled}
                             </Table.Td>
-                            <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                               {isCyl ? empty : '—'}
-                            </Table.Td>
-                            <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                              {total}
                             </Table.Td>
                           </Table.Tr>
                         );
                       })}
+                      {Array.from({ length: productSpacerCount }).map((_, idx) => (
+                        <Table.Tr key={`prod-spacer-${idx}`} style={{ height: 44, borderBottom: '1px solid #f1f5f9', pointerEvents: 'none' }}>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                        </Table.Tr>
+                      ))}
                     </Table.Tbody>
-                  </Table>
-                </ScrollArea>
-
-                {/* Locked TOTAL Footer */}
-                <Box style={{ marginTop: 'auto', backgroundColor: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
-                  <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
-                    <colgroup>
-                      <col style={{ width: 60 }} />
-                      <col />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 95 }} />
-                    </colgroup>
-                    <Table.Tbody>
-                      <Table.Tr style={{ border: 'none', height: 44 }}>
-                        <Table.Td colSpan={2} style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <Table.Tfoot
+                      style={{
+                        position: 'sticky',
+                        bottom: 0,
+                        backgroundColor: '#ffffff',
+                        zIndex: 1,
+                        borderTop: '2px solid #e2e8f0',
+                      }}
+                    >
+                      <Table.Tr style={{ height: 44 }}>
+                        <Table.Td colSpan={2} style={{ fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Total
                         </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           {totalProductFilled}
                         </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                           {totalProductEmpty}
                         </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                          {totalProductQuantity}
-                        </Table.Td>
                       </Table.Tr>
-                    </Table.Tbody>
+                    </Table.Tfoot>
                   </Table>
-                </Box>
+                </ScrollArea>
               </Box>
             )}
           </Paper>
@@ -1779,7 +1779,7 @@ export const StockAnalysisPage: React.FC = () => {
             ) : (
               <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 <ScrollArea
-                  h={320}
+                  mah={480}
                   scrollbars="y"
                   scrollbarSize={5}
                   type="hover"
@@ -1791,9 +1791,8 @@ export const StockAnalysisPage: React.FC = () => {
                   <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
                       <col />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 95 }} />
+                      <col style={{ width: 105 }} />
+                      <col style={{ width: 105 }} />
                     </colgroup>
                     <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
                       <Table.Tr>
@@ -1803,11 +1802,8 @@ export const StockAnalysisPage: React.FC = () => {
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
                           FILLED
                         </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
-                          EMPTY
-                        </Table.Th>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
-                          TOTAL
+                          EMPTY
                         </Table.Th>
                       </Table.Tr>
                     </Table.Thead>
@@ -1840,45 +1836,42 @@ export const StockAnalysisPage: React.FC = () => {
                           <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                             {location.filledQuantity ?? location.quantity}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                             {location.emptyQuantity ?? 0}
-                          </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                            {location.quantity}
                           </Table.Td>
                         </Table.Tr>
                       ))}
+                      {Array.from({ length: locationSpacerCount }).map((_, idx) => (
+                        <Table.Tr key={`loc-spacer-${idx}`} style={{ height: 44, borderBottom: '1px solid #f1f5f9', pointerEvents: 'none' }}>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                        </Table.Tr>
+                      ))}
                     </Table.Tbody>
-                  </Table>
-                </ScrollArea>
-
-                {/* Locked TOTAL Footer */}
-                <Box style={{ marginTop: 'auto', backgroundColor: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
-                  <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
-                    <colgroup>
-                      <col />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 95 }} />
-                    </colgroup>
-                    <Table.Tbody>
-                      <Table.Tr style={{ border: 'none', height: 44 }}>
-                        <Table.Td style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <Table.Tfoot
+                      style={{
+                        position: 'sticky',
+                        bottom: 0,
+                        backgroundColor: '#ffffff',
+                        zIndex: 1,
+                        borderTop: '2px solid #e2e8f0',
+                      }}
+                    >
+                      <Table.Tr style={{ height: 44 }}>
+                        <Table.Td style={{ fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Total
                         </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           {totalLocationFilled}
                         </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                           {totalLocationEmpty}
                         </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                          {totalLocationQuantity}
-                        </Table.Td>
                       </Table.Tr>
-                    </Table.Tbody>
+                    </Table.Tfoot>
                   </Table>
-                </Box>
+                </ScrollArea>
               </Box>
             )}
           </Paper>

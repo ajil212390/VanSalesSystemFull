@@ -16,20 +16,26 @@ import {
   CloseButton,
   ScrollArea,
   Grid,
+  ActionIcon,
+  Collapse,
+  Tooltip,
 } from '@mantine/core';
 import {
   IconReceipt,
   IconCreditCard,
-  IconBuildingBank,
   IconTruck,
   IconPlus,
   IconArrowRight,
   IconArrowUpRight,
-  IconRoute,
   IconCalendar,
   IconSearch,
   IconChevronRight,
   IconBuildingFactory2,
+  IconWallet,
+  IconTruckDelivery,
+  IconPackage,
+  IconChevronDown,
+  IconChevronUp,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -43,6 +49,29 @@ export const DashboardPage: React.FC = () => {
   // Stock inventory search states
   const [productSearch, setProductSearch] = useState<string>('');
   const [locationSearch, setLocationSearch] = useState<string>('');
+
+  // Executive synchronized row collapse states with localStorage persistence
+  const [isStockRowOpen, setIsStockRowOpen] = useState(() => {
+    const s = localStorage.getItem('dash_stock_row_open');
+    return s !== null ? s === 'true' : true;
+  });
+  const [isCommercialRowOpen, setIsCommercialRowOpen] = useState(() => {
+    const s = localStorage.getItem('dash_comm_row_open');
+    return s !== null ? s === 'true' : true;
+  });
+
+  const toggleStockRow = () => {
+    setIsStockRowOpen((prev) => {
+      localStorage.setItem('dash_stock_row_open', String(!prev));
+      return !prev;
+    });
+  };
+  const toggleCommercialRow = () => {
+    setIsCommercialRowOpen((prev) => {
+      localStorage.setItem('dash_comm_row_open', String(!prev));
+      return !prev;
+    });
+  };
 
   // Live Stock Analysis Query (5s refresh)
   const { data: stockAnalysis, isLoading: isLoadingStock } = useQuery<any>({
@@ -137,14 +166,6 @@ export const DashboardPage: React.FC = () => {
     return filteredStockProducts.reduce((sum: number, p: any) => sum + (Number(p.EmptyQty) || 0), 0);
   }, [filteredStockProducts]);
 
-  const totalProductQuantity = useMemo(() => {
-    return filteredStockProducts.reduce((sum: number, p: any) => {
-      const filled = Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0;
-      const empty = Number(p.EmptyQty) || 0;
-      return sum + (Number(p.TotalStockQty) || (filled + empty) || (Number(p.TotalQty) || 0));
-    }, 0);
-  }, [filteredStockProducts]);
-
   const totalLocationFilled = useMemo(() => {
     return filteredStockLocations.reduce((sum: number, l: any) => sum + (Number(l.filledQuantity) || 0), 0);
   }, [filteredStockLocations]);
@@ -153,9 +174,23 @@ export const DashboardPage: React.FC = () => {
     return filteredStockLocations.reduce((sum: number, l: any) => sum + (Number(l.emptyQuantity) || 0), 0);
   }, [filteredStockLocations]);
 
-  const totalLocationQuantity = useMemo(() => {
-    return filteredStockLocations.reduce((sum: number, l: any) => sum + (Number(l.quantity) || 0), 0);
-  }, [filteredStockLocations]);
+  // Synchronized row height matching Stock Analysis (max items + 1 spacer row)
+  const targetStockRows = useMemo(() => {
+    const pCount = filteredStockProducts.length;
+    const lCount = filteredStockLocations.length;
+    const maxCount = Math.max(pCount, lCount);
+    return maxCount > 0 ? maxCount + 1 : 0;
+  }, [filteredStockProducts.length, filteredStockLocations.length]);
+
+  const productSpacerCount = useMemo(() => {
+    if (filteredStockProducts.length === 0) return 0;
+    return Math.max(0, targetStockRows - filteredStockProducts.length);
+  }, [targetStockRows, filteredStockProducts.length]);
+
+  const locationSpacerCount = useMemo(() => {
+    if (filteredStockLocations.length === 0) return 0;
+    return Math.max(0, targetStockRows - filteredStockLocations.length);
+  }, [targetStockRows, filteredStockLocations.length]);
 
   // Current Date Display
   const todayFormatted = useMemo(() => {
@@ -234,8 +269,24 @@ export const DashboardPage: React.FC = () => {
     };
   }, [purchases, payments, ledgers]);
 
-  const recentPurchases = useMemo(() => purchases.slice(0, 5), [purchases]);
-  const recentPayments = useMemo(() => payments.slice(0, 5), [payments]);
+  const balancePayable = metrics.totalPurchases - metrics.totalPayments;
+
+  const activeRoutesCount = useMemo(() => {
+    return routes.filter(
+      (r: any) =>
+        r.IsActive &&
+        r.RouteId !== 1 &&
+        !r.RouteName?.toLowerCase().includes('godown')
+    ).length;
+  }, [routes]);
+
+  const recentPurchases = useMemo(() => purchases.slice(0, 10), [purchases]);
+  const recentPayments = useMemo(() => payments.slice(0, 10), [payments]);
+
+  // Fixed 5-row height rule for commercial section (Recent Purchases & Payments)
+  const commercialTargetRows = 5;
+  const purchasesSpacerCount = Math.max(0, commercialTargetRows - recentPurchases.length);
+  const paymentsSpacerCount = Math.max(0, commercialTargetRows - recentPayments.length);
 
   return (
     <Stack gap="md" style={{ width: '100%' }}>
@@ -367,7 +418,7 @@ export const DashboardPage: React.FC = () => {
           </Group>
         </Paper>
 
-        {/* Card 2: Total Payouts */}
+        {/* Card 2: Total Payments */}
         <Paper
           p="md"
           radius="md"
@@ -393,7 +444,7 @@ export const DashboardPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Total Payouts
+              Total Payments
             </Text>
             <IconCreditCard size={20} color="#800020" stroke={1.75} />
           </Group>
@@ -402,18 +453,18 @@ export const DashboardPage: React.FC = () => {
           </Text>
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
-              {metrics.paymentsCount} Payment{metrics.paymentsCount !== 1 ? 's' : ''} settled
+              {metrics.paymentsCount} Payment voucher{metrics.paymentsCount !== 1 ? 's' : ''} recorded
             </Text>
             <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
           </Group>
         </Paper>
 
-        {/* Card 3: Cash & Bank Balance */}
+        {/* Card 3: Balance Payable (Outstanding to Suppliers) */}
         <Paper
           p="md"
           radius="md"
           withBorder
-          onClick={() => navigate('/accounts')}
+          onClick={() => navigate('/purchases')}
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
@@ -434,27 +485,27 @@ export const DashboardPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Cash & Bank Balance
+              Balance Payable
             </Text>
-            <IconBuildingBank size={20} color="#800020" stroke={1.75} />
+            <IconWallet size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text
             fw={700}
             style={{
-              color: metrics.netLiquid >= 0 ? '#0f172a' : '#b91c1c',
+              color: balancePayable > 0 ? '#b91c1c' : '#0f172a',
               fontSize: '24px',
               fontVariantNumeric: 'tabular-nums',
               letterSpacing: '-0.02em',
             }}
           >
-            ₹{Math.abs(metrics.netLiquid).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-            <Text component="span" size="sm" c={metrics.netLiquid >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
-              {metrics.netLiquid >= 0 ? 'Dr' : 'Cr'}
+            ₹{Math.abs(balancePayable).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+            <Text component="span" size="sm" c={balancePayable > 0 ? '#dc2626' : '#16a34a'} fw={600}>
+              {balancePayable >= 0 ? 'Cr' : 'Dr'}
             </Text>
           </Text>
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap" gap="xs">
             <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              Cash: ₹{Number(metrics.totalCash).toLocaleString('en-IN')} &bull; Bank: ₹{Number(metrics.totalBank).toLocaleString('en-IN')}
+              Outstanding supplier liability
             </Text>
             <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
           </Group>
@@ -488,21 +539,21 @@ export const DashboardPage: React.FC = () => {
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Van Management
             </Text>
-            <IconRoute size={20} color="#800020" stroke={1.75} />
+            <IconTruckDelivery size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-            {routes.length} Active Route{routes.length !== 1 ? 's' : ''}
+            {activeRoutesCount} Active Route{activeRoutesCount !== 1 ? 's' : ''}
           </Text>
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
-              View live fleet &amp; route operations
+              Live delivery fleet &amp; route operations
             </Text>
             <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
           </Group>
         </Paper>
       </SimpleGrid>
 
-      {/* 3. Side-by-Side Dual Inventory Cards (Live Real-Time Stock) */}
+      {/* 3. Live Real-Time Stock & Inventory Overview */}
       <Grid gap="md" align="stretch">
         {/* Table 1: Inventory by Product */}
         <Grid.Col span={{ base: 12, lg: 6 }}>
@@ -517,70 +568,150 @@ export const DashboardPage: React.FC = () => {
               backgroundColor: '#ffffff',
               borderColor: '#e2e8f0',
               boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+              transition: 'all 200ms ease',
             }}
           >
-            <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
-              <div>
-                <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
+            <Group
+              justify="space-between"
+              align="center"
+              p="sm"
+              px="md"
+              style={{
+                borderBottom: isStockRowOpen ? '1px solid #f1f5f9' : 'none',
+                cursor: 'pointer',
+                userSelect: 'none',
+                backgroundColor: '#ffffff',
+                transition: 'background-color 150ms ease',
+              }}
+              onClick={toggleStockRow}
+            >
+              <Group gap="xs" align="center">
+                <IconPackage size={18} color="#800020" stroke={1.75} />
+                <Text fw={700} style={{ color: '#0f172a', fontSize: 15, letterSpacing: '-0.01em' }}>
                   Inventory by Product
                 </Text>
-              </div>
-              <Group gap="xs" align="center">
-                <TextInput
-                  placeholder="Search products..."
-                  size="xs"
-                  radius="md"
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.currentTarget.value)}
-                  leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
-                  rightSection={productSearch ? <CloseButton size="xs" onClick={() => setProductSearch('')} /> : null}
-                  style={{ width: 175 }}
-                  styles={{
-                    input: {
-                      height: 32,
-                      minHeight: 32,
-                      fontSize: 12,
-                      borderColor: '#e2e8f0',
-                      backgroundColor: '#ffffff',
-                      '&:focus': { borderColor: '#800020' },
-                    },
-                  }}
-                />
                 <Badge
-                  variant="outline"
+                  variant="light"
                   color="burgundy"
                   size="sm"
-                  radius="xl"
+                  radius="sm"
                   styles={{
                     root: {
-                      borderColor: '#800020',
+                      backgroundColor: '#fdf2f4',
                       color: '#800020',
-                      backgroundColor: '#ffffff',
-                      fontWeight: 600,
-                      letterSpacing: '0.4px',
-                      padding: '0 8px',
-                      height: 22,
+                      fontWeight: 700,
                     },
                   }}
                 >
-                  {filteredStockProducts.length} Products
+                  {filteredStockProducts.length}
                 </Badge>
               </Group>
+
+              <Group gap="sm" align="center" onClick={(e) => e.stopPropagation()}>
+                <Box
+                  style={{
+                    maxWidth: isStockRowOpen ? 180 : 0,
+                    opacity: isStockRowOpen ? 1 : 0,
+                    overflow: 'hidden',
+                    transition: 'all 280ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    pointerEvents: isStockRowOpen ? 'auto' : 'none',
+                  }}
+                >
+                  <TextInput
+                    placeholder="Search products..."
+                    size="xs"
+                    radius="md"
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.currentTarget.value)}
+                    leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
+                    rightSection={productSearch ? <CloseButton size="xs" onClick={() => setProductSearch('')} /> : null}
+                    style={{ width: 180 }}
+                    styles={{
+                      input: {
+                        height: 28,
+                        minHeight: 28,
+                        fontSize: 12,
+                        borderColor: '#e2e8f0',
+                        backgroundColor: '#ffffff',
+                        '&:focus': { borderColor: '#800020' },
+                      },
+                    }}
+                  />
+                </Box>
+                <Tooltip label={isStockRowOpen ? 'Collapse inventory row' : 'Expand inventory row'} withArrow position="top">
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    color="gray"
+                    style={{
+                      color: '#800020',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      transition: 'transform 200ms ease',
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleStockRow();
+                    }}
+                  >
+                    {isStockRowOpen ? <IconChevronUp size={20} stroke={2} /> : <IconChevronDown size={20} stroke={2} />}
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
             </Group>
-            {isLoadingStock ? (
-              <Center p="xl" style={{ flex: 1 }}>
-                <Loader color="burgundy" />
-              </Center>
-            ) : filteredStockProducts.length === 0 ? (
-              <Center p="xl" style={{ flex: 1 }}>
-                <Text c="dimmed" size="sm">
-                  No products found matching query.
-                </Text>
-              </Center>
-            ) : (
-              <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                <ScrollArea
-                  h={320}
+
+            {/* Permanent Column Headers Row */}
+            <Table
+              verticalSpacing="xs"
+              horizontalSpacing="md"
+              style={{ tableLayout: 'fixed', width: '100%' }}
+            >
+              <colgroup>
+                <col style={{ width: 75 }} />
+                <col />
+                <col style={{ width: 95 }} />
+                <col style={{ width: 95 }} />
+              </colgroup>
+              <Table.Thead style={{ backgroundColor: '#ffffff' }}>
+                <Table.Tr style={{ height: 38, borderBottom: '1px solid #f1f5f9' }}>
+                  {isStockRowOpen ? (
+                    <>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        CODE
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        PRODUCT
+                      </Table.Th>
+                    </>
+                  ) : (
+                    <Table.Th colSpan={2} style={{ color: '#64748b', fontWeight: 500, fontSize: 12 }}>
+                      {filteredStockProducts.length} items catalogued
+                    </Table.Th>
+                  )}
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                    FILLED
+                  </Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
+                    EMPTY
+                  </Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+            </Table>
+
+            <Collapse expanded={isStockRowOpen} transitionDuration={300} transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)">
+              {isLoadingStock ? (
+                <Center p="xl" style={{ minHeight: 180 }}>
+                  <Loader color="burgundy" size="sm" />
+                </Center>
+              ) : filteredStockProducts.length === 0 ? (
+                <Center p="xl" style={{ minHeight: 120 }}>
+                  <Text c="dimmed" size="sm">
+                    No products found matching query.
+                  </Text>
+                </Center>
+              ) : (
+                <ScrollArea.Autosize
+                  mah={480}
                   scrollbars="y"
                   scrollbarSize={5}
                   type="hover"
@@ -589,39 +720,18 @@ export const DashboardPage: React.FC = () => {
                     scrollbar: { backgroundColor: 'transparent' },
                   }}
                 >
-                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
-                      <col style={{ width: 60 }} />
+                      <col style={{ width: 75 }} />
                       <col />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 85 }} />
+                      <col style={{ width: 95 }} />
                       <col style={{ width: 95 }} />
                     </colgroup>
-                    <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
-                      <Table.Tr>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                          CODE
-                        </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                          PRODUCT
-                        </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
-                          FILLED
-                        </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
-                          EMPTY
-                        </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
-                          TOTAL
-                        </Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
                     <Table.Tbody>
                       {filteredStockProducts.map((product: any) => {
                         const isCyl = product.IsCylinder !== false;
                         const filled = product.FilledQty ?? (product.GodownQty + (product.AllocatedQty || 0));
                         const empty = product.EmptyQty ?? 0;
-                        const total = product.TotalStockQty ?? (filled + empty);
                         return (
                           <Table.Tr
                             key={product.ProductId}
@@ -650,49 +760,59 @@ export const DashboardPage: React.FC = () => {
                             <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                               {filled}
                             </Table.Td>
-                            <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                               {isCyl ? empty : '—'}
-                            </Table.Td>
-                            <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                              {total}
                             </Table.Td>
                           </Table.Tr>
                         );
                       })}
+                      {Array.from({ length: productSpacerCount }).map((_, idx) => (
+                        <Table.Tr key={`prod-spacer-${idx}`} style={{ height: 44, borderBottom: '1px solid #f1f5f9', pointerEvents: 'none' }}>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                        </Table.Tr>
+                      ))}
                     </Table.Tbody>
                   </Table>
-                </ScrollArea>
+                </ScrollArea.Autosize>
+              )}
+            </Collapse>
 
-                {/* Locked TOTAL Footer */}
-                <Box style={{ marginTop: 'auto', backgroundColor: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
-                  <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
-                    <colgroup>
-                      <col style={{ width: 60 }} />
-                      <col />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 95 }} />
-                    </colgroup>
-                    <Table.Tbody>
-                      <Table.Tr style={{ border: 'none', height: 44 }}>
-                        <Table.Td colSpan={2} style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Total
-                        </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                          {totalProductFilled}
-                        </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
-                          {totalProductEmpty}
-                        </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                          {totalProductQuantity}
-                        </Table.Td>
-                      </Table.Tr>
-                    </Table.Tbody>
-                  </Table>
-                </Box>
-              </Box>
-            )}
+            {/* Gliding Totals Footer */}
+            <Box
+              style={{
+                backgroundColor: '#ffffff',
+                borderTop: isStockRowOpen ? '2px solid #f1f5f9' : 'none',
+                cursor: !isStockRowOpen ? 'pointer' : 'default',
+              }}
+              onClick={!isStockRowOpen ? toggleStockRow : undefined}
+            >
+              <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
+                <colgroup>
+                  <col style={{ width: 75 }} />
+                  <col />
+                  <col style={{ width: 95 }} />
+                  <col style={{ width: 95 }} />
+                </colgroup>
+                <Table.Tbody>
+                  <Table.Tr style={{ border: 'none', height: 42 }}>
+                    <Table.Td colSpan={2} style={{ border: 'none' }}>
+                      <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Total
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                      {totalProductFilled}
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#475569', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
+                      {totalProductEmpty}
+                    </Table.Td>
+                  </Table.Tr>
+                </Table.Tbody>
+              </Table>
+            </Box>
           </Paper>
         </Grid.Col>
 
@@ -709,70 +829,138 @@ export const DashboardPage: React.FC = () => {
               backgroundColor: '#ffffff',
               borderColor: '#e2e8f0',
               boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+              transition: 'all 200ms ease',
             }}
           >
-            <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
-              <div>
-                <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
+            <Group
+              justify="space-between"
+              align="center"
+              p="sm"
+              px="md"
+              style={{
+                borderBottom: isStockRowOpen ? '1px solid #f1f5f9' : 'none',
+                cursor: 'pointer',
+                userSelect: 'none',
+                backgroundColor: '#ffffff',
+                transition: 'background-color 150ms ease',
+              }}
+              onClick={toggleStockRow}
+            >
+              <Group gap="xs" align="center">
+                <IconBuildingFactory2 size={18} color="#800020" stroke={1.75} />
+                <Text fw={700} style={{ color: '#0f172a', fontSize: 15, letterSpacing: '-0.01em' }}>
                   Inventory by Location
                 </Text>
-              </div>
-              <Group gap="xs" align="center">
-                <TextInput
-                  placeholder="Search locations..."
-                  size="xs"
-                  radius="md"
-                  value={locationSearch}
-                  onChange={(e) => setLocationSearch(e.currentTarget.value)}
-                  leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
-                  rightSection={locationSearch ? <CloseButton size="xs" onClick={() => setLocationSearch('')} /> : null}
-                  style={{ width: 175 }}
-                  styles={{
-                    input: {
-                      height: 32,
-                      minHeight: 32,
-                      fontSize: 12,
-                      borderColor: '#e2e8f0',
-                      backgroundColor: '#ffffff',
-                      '&:focus': { borderColor: '#800020' },
-                    },
-                  }}
-                />
                 <Badge
-                  variant="outline"
+                  variant="light"
                   color="burgundy"
                   size="sm"
-                  radius="xl"
+                  radius="sm"
                   styles={{
                     root: {
-                      borderColor: '#800020',
+                      backgroundColor: '#fdf2f4',
                       color: '#800020',
-                      backgroundColor: '#ffffff',
-                      fontWeight: 600,
-                      letterSpacing: '0.4px',
-                      padding: '0 8px',
-                      height: 22,
+                      fontWeight: 700,
                     },
                   }}
                 >
-                  {filteredStockLocations.length} Locations
+                  {filteredStockLocations.length}
                 </Badge>
               </Group>
+
+              <Group gap="sm" align="center" onClick={(e) => e.stopPropagation()}>
+                <Box
+                  style={{
+                    maxWidth: isStockRowOpen ? 180 : 0,
+                    opacity: isStockRowOpen ? 1 : 0,
+                    overflow: 'hidden',
+                    transition: 'all 280ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    pointerEvents: isStockRowOpen ? 'auto' : 'none',
+                  }}
+                >
+                  <TextInput
+                    placeholder="Search locations..."
+                    size="xs"
+                    radius="md"
+                    value={locationSearch}
+                    onChange={(e) => setLocationSearch(e.currentTarget.value)}
+                    leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
+                    rightSection={locationSearch ? <CloseButton size="xs" onClick={() => setLocationSearch('')} /> : null}
+                    style={{ width: 180 }}
+                    styles={{
+                      input: {
+                        height: 28,
+                        minHeight: 28,
+                        fontSize: 12,
+                        borderColor: '#e2e8f0',
+                        backgroundColor: '#ffffff',
+                        '&:focus': { borderColor: '#800020' },
+                      },
+                    }}
+                  />
+                </Box>
+                <Tooltip label={isStockRowOpen ? 'Collapse inventory row' : 'Expand inventory row'} withArrow position="top">
+                  <ActionIcon
+                    variant="subtle"
+                    size="sm"
+                    color="gray"
+                    style={{
+                      color: '#800020',
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      transition: 'transform 200ms ease',
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleStockRow();
+                    }}
+                  >
+                    {isStockRowOpen ? <IconChevronUp size={20} stroke={2} /> : <IconChevronDown size={20} stroke={2} />}
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
             </Group>
-            {isLoadingStock ? (
-              <Center p="xl" style={{ flex: 1 }}>
-                <Loader color="burgundy" />
-              </Center>
-            ) : filteredStockLocations.length === 0 ? (
-              <Center p="xl" style={{ flex: 1 }}>
-                <Text c="dimmed" size="sm">
-                  No stock locations found matching query.
-                </Text>
-              </Center>
-            ) : (
-              <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                <ScrollArea
-                  h={320}
+
+            {/* Permanent Column Headers Row */}
+            <Table
+              verticalSpacing="xs"
+              horizontalSpacing="md"
+              style={{ tableLayout: 'fixed', width: '100%' }}
+            >
+              <colgroup>
+                <col />
+                <col style={{ width: 105 }} />
+                <col style={{ width: 105 }} />
+              </colgroup>
+              <Table.Thead style={{ backgroundColor: '#ffffff' }}>
+                <Table.Tr style={{ height: 38, borderBottom: '1px solid #f1f5f9' }}>
+                  <Table.Th style={{ color: isStockRowOpen ? '#800020' : '#64748b', fontWeight: isStockRowOpen ? 600 : 500, fontSize: isStockRowOpen ? 11 : 12, textTransform: isStockRowOpen ? 'uppercase' : 'none', letterSpacing: isStockRowOpen ? '0.4px' : 'normal' }}>
+                    {isStockRowOpen ? 'LOCATION' : `${filteredStockLocations.length} ACTIVE HUBS`}
+                  </Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
+                    FILLED
+                  </Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
+                    EMPTY
+                  </Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+            </Table>
+
+            <Collapse expanded={isStockRowOpen} transitionDuration={300} transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)">
+              {isLoadingStock ? (
+                <Center p="xl" style={{ minHeight: 180 }}>
+                  <Loader color="burgundy" size="sm" />
+                </Center>
+              ) : filteredStockLocations.length === 0 ? (
+                <Center p="xl" style={{ minHeight: 120 }}>
+                  <Text c="dimmed" size="sm">
+                    No stock locations found matching query.
+                  </Text>
+                </Center>
+              ) : (
+                <ScrollArea.Autosize
+                  mah={480}
                   scrollbars="y"
                   scrollbarSize={5}
                   type="hover"
@@ -781,29 +969,12 @@ export const DashboardPage: React.FC = () => {
                     scrollbar: { backgroundColor: 'transparent' },
                   }}
                 >
-                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
                       <col />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 95 }} />
+                      <col style={{ width: 105 }} />
+                      <col style={{ width: 105 }} />
                     </colgroup>
-                    <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
-                      <Table.Tr>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                          LOCATION
-                        </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
-                          FILLED
-                        </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>
-                          EMPTY
-                        </Table.Th>
-                        <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 20 }}>
-                          TOTAL
-                        </Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
                     <Table.Tbody>
                       {filteredStockLocations.map((location: any) => (
                         <Table.Tr
@@ -833,51 +1004,59 @@ export const DashboardPage: React.FC = () => {
                           <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                             {location.filledQuantity ?? location.quantity}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                             {location.emptyQuantity ?? 0}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                            {location.quantity}
-                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                      {Array.from({ length: locationSpacerCount }).map((_, idx) => (
+                        <Table.Tr key={`loc-spacer-${idx}`} style={{ height: 44, borderBottom: '1px solid #f1f5f9', pointerEvents: 'none' }}>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
                         </Table.Tr>
                       ))}
                     </Table.Tbody>
                   </Table>
-                </ScrollArea>
+                </ScrollArea.Autosize>
+              )}
+            </Collapse>
 
-                {/* Locked TOTAL Footer */}
-                <Box style={{ marginTop: 'auto', backgroundColor: '#ffffff', borderTop: '1px solid #f1f5f9' }}>
-                  <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
-                    <colgroup>
-                      <col />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 85 }} />
-                      <col style={{ width: 95 }} />
-                    </colgroup>
-                    <Table.Tbody>
-                      <Table.Tr style={{ border: 'none', height: 44 }}>
-                        <Table.Td style={{ border: 'none', fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Total
-                        </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                          {totalLocationFilled}
-                        </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
-                          {totalLocationEmpty}
-                        </Table.Td>
-                        <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                          {totalLocationQuantity}
-                        </Table.Td>
-                      </Table.Tr>
-                    </Table.Tbody>
-                  </Table>
-                </Box>
-              </Box>
-            )}
+            {/* Gliding Totals Footer */}
+            <Box
+              style={{
+                backgroundColor: '#ffffff',
+                borderTop: isStockRowOpen ? '2px solid #f1f5f9' : 'none',
+                cursor: !isStockRowOpen ? 'pointer' : 'default',
+              }}
+              onClick={!isStockRowOpen ? toggleStockRow : undefined}
+            >
+              <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
+                <colgroup>
+                  <col />
+                  <col style={{ width: 105 }} />
+                  <col style={{ width: 105 }} />
+                </colgroup>
+                <Table.Tbody>
+                  <Table.Tr style={{ border: 'none', height: 42 }}>
+                    <Table.Td style={{ border: 'none' }}>
+                      <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Total
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                      {totalLocationFilled}
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#475569', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
+                      {totalLocationEmpty}
+                    </Table.Td>
+                  </Table.Tr>
+                </Table.Tbody>
+              </Table>
+            </Box>
           </Paper>
         </Grid.Col>
       </Grid>
-
       {/* 4. Middle Grid: Recent Purchases & Recent Payments */}
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
         {/* Recent Purchases Card */}
@@ -889,99 +1068,230 @@ export const DashboardPage: React.FC = () => {
             borderColor: '#e2e8f0',
             overflow: 'hidden',
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+            transition: 'all 200ms ease',
           }}
         >
-          <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
+          <Group
+            justify="space-between"
+            align="center"
+            p="sm"
+            px="md"
+            style={{
+              borderBottom: isCommercialRowOpen ? '1px solid #f1f5f9' : 'none',
+              cursor: 'pointer',
+              userSelect: 'none',
+              backgroundColor: '#ffffff',
+              transition: 'background-color 150ms ease',
+            }}
+            onClick={toggleCommercialRow}
+          >
             <Group gap="xs" align="center">
-              <IconReceipt size={20} color="#800020" stroke={1.75} />
-              <div>
-                <Group gap={6} align="center">
-                  <Text fw={700} size="sm" c="#1e293b">
-                    Recent Purchases
-                  </Text>
-                  <Badge size="xs" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020' }}>
-                    {purchases.length} total
-                  </Badge>
-                </Group>
-                <Text size="xs" c="dimmed">
-                  Latest supplier goods & tax invoices
-                </Text>
-              </div>
+              <IconReceipt size={18} color="#800020" stroke={1.75} />
+              <Text fw={700} style={{ color: '#0f172a', fontSize: 15, letterSpacing: '-0.01em' }}>
+                Recent Purchases
+              </Text>
+              <Badge
+                variant="light"
+                color="burgundy"
+                size="sm"
+                radius="sm"
+                styles={{
+                  root: {
+                    backgroundColor: '#fdf2f4',
+                    color: '#800020',
+                    fontWeight: 700,
+                  },
+                }}
+              >
+                {purchases.length}
+              </Badge>
             </Group>
-            <Button
-              variant="subtle"
-              color="gray"
-              c="#800020"
-              size="xs"
-              fw={600}
-              className="erp-subtle-btn"
-              rightSection={<IconArrowRight size={14} />}
-              onClick={() => navigate('/purchases')}
-            >
-              View All
-            </Button>
+
+            <Group gap="sm" align="center" onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="subtle"
+                color="gray"
+                c="#800020"
+                size="xs"
+                fw={600}
+                className="erp-subtle-btn"
+                rightSection={<IconArrowRight size={14} />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate('/purchases');
+                }}
+              >
+                View All
+              </Button>
+              <Tooltip label={isCommercialRowOpen ? 'Collapse commercial row' : 'Expand commercial row'} withArrow position="top">
+                <ActionIcon
+                  variant="subtle"
+                  size="sm"
+                  color="gray"
+                  style={{
+                    color: '#800020',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    transition: 'transform 200ms ease',
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCommercialRow();
+                  }}
+                >
+                  {isCommercialRowOpen ? <IconChevronUp size={20} stroke={2} /> : <IconChevronDown size={20} stroke={2} />}
+                </ActionIcon>
+              </Tooltip>
+            </Group>
           </Group>
 
-          {isLoadingPurchases ? (
-            <Center py={40}>
-              <Loader color="burgundy" size="sm" />
-            </Center>
-          ) : recentPurchases.length === 0 ? (
-            <Center py={40}>
-              <Text size="xs" c="dimmed">No purchases recorded yet.</Text>
-            </Center>
-          ) : (
+          {/* Permanent Column Headers Row */}
+          <Table.ScrollContainer minWidth={450}>
+            <Table
+              verticalSpacing="xs"
+              horizontalSpacing="md"
+              style={{ tableLayout: 'fixed', width: '100%' }}
+            >
+              <colgroup>
+                <col style={{ width: 110 }} />
+                <col style={{ width: 100 }} />
+                <col />
+                <col style={{ width: 130 }} />
+              </colgroup>
+              <Table.Thead style={{ backgroundColor: '#ffffff' }}>
+                <Table.Tr style={{ height: 38, borderBottom: '1px solid #f1f5f9' }}>
+                  {isCommercialRowOpen ? (
+                    <>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        PURCHASE NO
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        DATE
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        SUPPLIER
+                      </Table.Th>
+                    </>
+                  ) : (
+                    <Table.Th colSpan={3} style={{ color: '#64748b', fontWeight: 500, fontSize: 12 }}>
+                      {purchases.length} invoices recorded
+                    </Table.Th>
+                  )}
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 16 }}>
+                    {isCommercialRowOpen ? 'TOTAL (₹)' : 'TOTAL BILLED'}
+                  </Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+            </Table>
+          </Table.ScrollContainer>
+
+          <Collapse expanded={isCommercialRowOpen} transitionDuration={300} transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)">
+            {isLoadingPurchases ? (
+              <Center py={40}>
+                <Loader color="burgundy" size="sm" />
+              </Center>
+            ) : recentPurchases.length === 0 ? (
+              <Center py={40}>
+                <Stack align="center" gap={6}>
+                  <IconReceipt size={30} color="#cbd5e1" stroke={1.5} />
+                  <Text size="xs" c="#64748b" fw={600}>No purchases recorded yet</Text>
+                </Stack>
+              </Center>
+            ) : (
+              <Table.ScrollContainer minWidth={450}>
+                <ScrollArea.Autosize mah={220} scrollbars="y" type="hover">
+                  <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <colgroup>
+                      <col style={{ width: 110 }} />
+                      <col style={{ width: 100 }} />
+                      <col />
+                      <col style={{ width: 130 }} />
+                    </colgroup>
+                    <Table.Tbody>
+                      {recentPurchases.map((p) => (
+                        <Table.Tr key={p.PurchaseId} style={{ cursor: 'pointer', height: 44 }} onClick={() => navigate('/purchases')}>
+                          <Table.Td>
+                            <Badge
+                              variant="outline"
+                              color="gray"
+                              size="sm"
+                              radius="xs"
+                              style={{
+                                fontFamily: 'monospace',
+                                fontWeight: 600,
+                                color: '#1e293b',
+                                borderColor: '#e2e8f0',
+                                backgroundColor: '#f8fafc',
+                              }}
+                            >
+                              #{p.PurchaseNo || String(p.PurchaseId).padStart(3, '0')}
+                            </Badge>
+                          </Table.Td>
+                          <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                            <Text size="xs" c="#475569" style={{ whiteSpace: 'nowrap', wordBreak: 'keep-all' }}>
+                              {p.PurchaseDate}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="xs" fw={600} c="#1e293b" lineClamp={1}>
+                              {p.supplier_name || `Supplier #${p.SupplierLedgerId}`}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right', paddingRight: 16 }}>
+                            <Text size="xs" fw={700} c="#800020" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{Number(p.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                      {/* Fixed 5-row spacer rows matching the 5-row rule */}
+                      {Array.from({ length: purchasesSpacerCount }).map((_, idx) => (
+                        <Table.Tr key={`purch-spacer-${idx}`} style={{ height: 44, borderBottom: '1px solid #f1f5f9', pointerEvents: 'none' }}>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea.Autosize>
+              </Table.ScrollContainer>
+            )}
+          </Collapse>
+
+          {/* Gliding Totals Footer */}
+          <Box
+            style={{
+              backgroundColor: '#ffffff',
+              borderTop: isCommercialRowOpen ? '2px solid #f1f5f9' : 'none',
+              cursor: !isCommercialRowOpen ? 'pointer' : 'default',
+            }}
+            onClick={!isCommercialRowOpen ? toggleCommercialRow : undefined}
+          >
             <Table.ScrollContainer minWidth={450}>
-              <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
-                <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
-                  <Table.Tr>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Purchase No</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Date</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Supplier</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>Total (₹)</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
+              <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
+                <colgroup>
+                  <col style={{ width: 110 }} />
+                  <col style={{ width: 100 }} />
+                  <col />
+                  <col style={{ width: 130 }} />
+                </colgroup>
                 <Table.Tbody>
-                  {recentPurchases.map((p) => (
-                    <Table.Tr key={p.PurchaseId} style={{ cursor: 'pointer' }} onClick={() => navigate('/purchases')}>
-                      <Table.Td>
-                        <Badge
-                          variant="outline"
-                          color="gray"
-                          size="sm"
-                          radius="xs"
-                          style={{
-                            fontFamily: 'monospace',
-                            fontWeight: 600,
-                            color: '#1e293b',
-                            borderColor: '#e2e8f0',
-                            backgroundColor: '#f8fafc',
-                          }}
-                        >
-                          #{p.PurchaseNo || String(p.PurchaseId).padStart(3, '0')}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                        <Text size="xs" c="#475569" style={{ whiteSpace: 'nowrap', wordBreak: 'keep-all' }}>
-                          {p.PurchaseDate}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="xs" fw={600} c="#1e293b">
-                          {p.supplier_name || `Supplier #${p.SupplierLedgerId}`}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="xs" fw={700} c="#800020" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                          ₹{Number(p.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </Text>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
+                  <Table.Tr style={{ border: 'none', height: 42 }}>
+                    <Table.Td colSpan={3} style={{ border: 'none' }}>
+                      <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Total
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
+                      ₹{metrics.totalPurchases.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Table.Td>
+                  </Table.Tr>
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-          )}
+          </Box>
         </Paper>
 
         {/* Recent Payments Card */}
@@ -993,110 +1303,234 @@ export const DashboardPage: React.FC = () => {
             borderColor: '#e2e8f0',
             overflow: 'hidden',
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+            transition: 'all 200ms ease',
           }}
         >
-          <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
+          <Group
+            justify="space-between"
+            align="center"
+            p="sm"
+            px="md"
+            style={{
+              borderBottom: isCommercialRowOpen ? '1px solid #f1f5f9' : 'none',
+              cursor: 'pointer',
+              userSelect: 'none',
+              backgroundColor: '#ffffff',
+              transition: 'background-color 150ms ease',
+            }}
+            onClick={toggleCommercialRow}
+          >
             <Group gap="xs" align="center">
-              <IconCreditCard size={20} color="#800020" stroke={1.75} />
-              <div>
-                <Group gap={6} align="center">
-                  <Text fw={700} size="sm" c="#1e293b">
-                    Recent Payments
-                  </Text>
-                  <Badge size="xs" variant="light" color="burgundy" radius="sm" style={{ backgroundColor: '#fbf0f2', color: '#800020' }}>
-                    {payments.length} total
-                  </Badge>
-                </Group>
-                <Text size="xs" c="dimmed">
-                  Latest cash and bank settlements
-                </Text>
-              </div>
+              <IconCreditCard size={18} color="#800020" stroke={1.75} />
+              <Text fw={700} style={{ color: '#0f172a', fontSize: 15, letterSpacing: '-0.01em' }}>
+                Recent Payments
+              </Text>
+              <Badge
+                variant="light"
+                color="burgundy"
+                size="sm"
+                radius="sm"
+                styles={{
+                  root: {
+                    backgroundColor: '#fdf2f4',
+                    color: '#800020',
+                    fontWeight: 700,
+                  },
+                }}
+              >
+                {payments.length}
+              </Badge>
             </Group>
-            <Button
-              variant="subtle"
-              color="gray"
-              c="#800020"
-              size="xs"
-              fw={600}
-              className="erp-subtle-btn"
-              rightSection={<IconArrowRight size={14} />}
-              onClick={() => navigate('/payments')}
-            >
-              View All
-            </Button>
+
+            <Group gap="sm" align="center" onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="subtle"
+                color="gray"
+                c="#800020"
+                size="xs"
+                fw={600}
+                className="erp-subtle-btn"
+                rightSection={<IconArrowRight size={14} />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate('/payments');
+                }}
+              >
+                View All
+              </Button>
+              <Tooltip label={isCommercialRowOpen ? 'Collapse commercial row' : 'Expand commercial row'} withArrow position="top">
+                <ActionIcon
+                  variant="subtle"
+                  size="sm"
+                  color="gray"
+                  style={{
+                    color: '#800020',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    transition: 'transform 200ms ease',
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCommercialRow();
+                  }}
+                >
+                  {isCommercialRowOpen ? <IconChevronUp size={20} stroke={2} /> : <IconChevronDown size={20} stroke={2} />}
+                </ActionIcon>
+              </Tooltip>
+            </Group>
           </Group>
 
-          {isLoadingPayments ? (
-            <Center py={40}>
-              <Loader color="burgundy" size="sm" />
-            </Center>
-          ) : recentPayments.length === 0 ? (
-            <Center py={40}>
-              <Text size="xs" c="dimmed">No payments recorded yet.</Text>
-            </Center>
-          ) : (
-            <Table.ScrollContainer minWidth={450}>
-              <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
-                <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
-                  <Table.Tr>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Payment No</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Date</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Party</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>Account</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right' }}>Amount (₹)</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {recentPayments.map((p) => {
-                    const firstLine = p.lines && p.lines.length > 0 ? p.lines[0] : null;
-                    const dateStr = p.CreatedAt ? new Date(p.CreatedAt).toISOString().split('T')[0] : '—';
+          {/* Permanent Column Headers Row */}
+          <Table.ScrollContainer minWidth={450}>
+            <Table
+              verticalSpacing="xs"
+              horizontalSpacing="md"
+              style={{ tableLayout: 'fixed', width: '100%' }}
+            >
+              <colgroup>
+                <col style={{ width: 110 }} />
+                <col style={{ width: 100 }} />
+                <col />
+                <col style={{ width: 130 }} />
+              </colgroup>
+              <Table.Thead style={{ backgroundColor: '#ffffff' }}>
+                <Table.Tr style={{ height: 38, borderBottom: '1px solid #f1f5f9' }}>
+                  {isCommercialRowOpen ? (
+                    <>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        PAYMENT NO
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        DATE
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                        PARTY
+                      </Table.Th>
+                    </>
+                  ) : (
+                    <Table.Th colSpan={3} style={{ color: '#64748b', fontWeight: 500, fontSize: 12 }}>
+                      {payments.length} vouchers recorded
+                    </Table.Th>
+                  )}
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', paddingRight: 16 }}>
+                    {isCommercialRowOpen ? 'AMOUNT (₹)' : 'TOTAL PAID'}
+                  </Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+            </Table>
+          </Table.ScrollContainer>
 
-                    return (
-                      <Table.Tr key={p.PaymentId} style={{ cursor: 'pointer' }} onClick={() => navigate('/payments')}>
-                        <Table.Td>
-                          <Badge
-                            variant="outline"
-                            color="gray"
-                            size="sm"
-                            radius="xs"
-                            style={{
-                              fontFamily: 'monospace',
-                              fontWeight: 600,
-                              color: '#1e293b',
-                              borderColor: '#e2e8f0',
-                              backgroundColor: '#f8fafc',
-                            }}
-                          >
-                            #{String(p.PaymentId).padStart(3, '0')}
-                          </Badge>
-                        </Table.Td>
-                        <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                          <Text size="xs" c="#475569" style={{ whiteSpace: 'nowrap', wordBreak: 'keep-all' }}>
-                            {dateStr}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="xs" fw={600} c="#1e293b">
-                            {p.party_name || `Ledger #${p.PartyLedgerId}`}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Text size="xs" fw={500} c="#334155">
-                            {firstLine?.ledger_name || '—'}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          <Text size="xs" fw={700} c="#800020" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                            ₹{Number(p.Amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </Text>
-                        </Table.Td>
-                      </Table.Tr>
-                    );
-                  })}
+          <Collapse expanded={isCommercialRowOpen} transitionDuration={300} transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)">
+            {isLoadingPayments ? (
+              <Center style={{ height: 220 }}>
+                <Loader color="burgundy" size="sm" />
+              </Center>
+            ) : recentPayments.length === 0 ? (
+              <Center style={{ height: 220 }}>
+                <Stack align="center" gap={6}>
+                  <IconWallet size={30} color="#cbd5e1" stroke={1.5} />
+                  <Text size="xs" c="#64748b" fw={600}>No payments recorded yet</Text>
+                  <Text size="11px" c="dimmed">Settlement vouchers will appear here</Text>
+                </Stack>
+              </Center>
+            ) : (
+              <Table.ScrollContainer minWidth={450}>
+                <ScrollArea.Autosize mah={220} scrollbars="y" type="hover">
+                  <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <colgroup>
+                      <col style={{ width: 110 }} />
+                      <col style={{ width: 100 }} />
+                      <col />
+                      <col style={{ width: 130 }} />
+                    </colgroup>
+                    <Table.Tbody>
+                      {recentPayments.map((p) => {
+                        const dateStr = p.CreatedAt ? new Date(p.CreatedAt).toISOString().split('T')[0] : '—';
+                        return (
+                          <Table.Tr key={p.PaymentId} style={{ cursor: 'pointer', height: 44 }} onClick={() => navigate('/payments')}>
+                            <Table.Td>
+                              <Badge
+                                variant="outline"
+                                color="gray"
+                                size="sm"
+                                radius="xs"
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontWeight: 600,
+                                  color: '#1e293b',
+                                  borderColor: '#e2e8f0',
+                                  backgroundColor: '#f8fafc',
+                                }}
+                              >
+                                #{String(p.PaymentId).padStart(3, '0')}
+                              </Badge>
+                            </Table.Td>
+                            <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                              <Text size="xs" c="#475569" style={{ whiteSpace: 'nowrap', wordBreak: 'keep-all' }}>
+                                {dateStr}
+                              </Text>
+                            </Table.Td>
+                            <Table.Td>
+                              <Text size="xs" fw={600} c="#1e293b" lineClamp={1}>
+                                {p.party_name || `Ledger #${p.PartyLedgerId}`}
+                              </Text>
+                            </Table.Td>
+                            <Table.Td style={{ textAlign: 'right', paddingRight: 16 }}>
+                              <Text size="xs" fw={700} c="#800020" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                                ₹{Number(p.Amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                            </Table.Td>
+                          </Table.Tr>
+                        );
+                      })}
+                      {/* Fixed 5-row spacer rows matching the 5-row rule */}
+                      {Array.from({ length: paymentsSpacerCount }).map((_, idx) => (
+                        <Table.Tr key={`pay-spacer-${idx}`} style={{ height: 44, borderBottom: '1px solid #f1f5f9', pointerEvents: 'none' }}>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                </ScrollArea.Autosize>
+              </Table.ScrollContainer>
+            )}
+          </Collapse>
+
+          {/* Gliding Totals Footer */}
+          <Box
+            style={{
+              backgroundColor: '#ffffff',
+              borderTop: isCommercialRowOpen ? '2px solid #f1f5f9' : 'none',
+              cursor: !isCommercialRowOpen ? 'pointer' : 'default',
+            }}
+            onClick={!isCommercialRowOpen ? toggleCommercialRow : undefined}
+          >
+            <Table.ScrollContainer minWidth={450}>
+              <Table verticalSpacing="sm" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
+                <colgroup>
+                  <col style={{ width: 110 }} />
+                  <col style={{ width: 100 }} />
+                  <col />
+                  <col style={{ width: 130 }} />
+                </colgroup>
+                <Table.Tbody>
+                  <Table.Tr style={{ border: 'none', height: 42 }}>
+                    <Table.Td colSpan={3} style={{ border: 'none' }}>
+                      <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Total
+                      </Text>
+                    </Table.Td>
+                    <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 16 }}>
+                      ₹{metrics.totalPayments.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Table.Td>
+                  </Table.Tr>
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-          )}
+          </Box>
         </Paper>
       </SimpleGrid>
     </Stack>

@@ -13,20 +13,21 @@ import {
   Center,
   Box,
   ActionIcon,
+  Collapse,
+  Tooltip,
 } from '@mantine/core';
 import {
   IconArrowLeft,
   IconTruck,
   IconRefresh,
   IconUser,
-  IconCylinder,
   IconCash,
   IconBuildingBank,
-  IconPackage,
-  IconArrowBack,
   IconReceipt,
   IconTrash,
   IconWallet,
+  IconChevronDown,
+  IconChevronUp,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -75,6 +76,19 @@ interface RouteExpenseItem {
   source?: string;
 }
 
+interface ProductDetail {
+  ProductId: number;
+  ProductName: string;
+  ProductCode: string;
+  CategoryName?: string;
+  IsCylinder?: boolean;
+  AllocatedQty: number;
+  DeliveredQty: number;
+  BalanceQty: number;
+  EmptyQty: number;
+  Qty: number;
+}
+
 interface RouteDetails {
   route_id: number;
   route_name: string;
@@ -87,7 +101,13 @@ interface RouteDetails {
     empty_quantity: number;
     delivered_quantity: number;
     return_quantity: number;
+    allocated_cylinders?: number;
+    delivered_cylinders?: number;
+    balance_van_stock?: number;
+    empty_cylinders?: number;
+    other_products?: number;
   };
+  products?: ProductDetail[];
   collection: {
     total_collection: number;
     cash_collection: number;
@@ -129,6 +149,7 @@ export const RouteDetailsPage: React.FC = () => {
   const queryClient = useQueryClient();
 
   const [manualRefresh, setManualRefresh] = useState(0);
+  const [isInventoryOpen, setIsInventoryOpen] = useState(false);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<RouteDetails>({
     queryKey: ['route-live-details', routeId, manualRefresh],
@@ -214,7 +235,6 @@ export const RouteDetailsPage: React.FC = () => {
 
   const netCollection = totalCollection - totalExpense;
   const netCash = cashCollection - cashExpense;
-  const netBank = bankCollection - bankExpense;
 
   return (
     <Stack gap="md" style={{ width: '100%' }}>
@@ -306,112 +326,262 @@ export const RouteDetailsPage: React.FC = () => {
         </Group>
       </Paper>
 
-      {/* ── 2. Stock KPI Cards (Clean SaaS Design System) ── */}
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
-        {/* Filled Stock */}
-        <Paper
-          p="md"
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          <Group justify="space-between" align="center" mb="xs">
-            <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Filled Van Stock
-            </Text>
-            <IconCylinder size={20} color="#800020" stroke={1.75} />
-          </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {data.stock?.filled_quantity ?? 0} Cyl.
+      {/* ── 2. Vehicle Stock Breakdown (Matching Stock Analysis System) ── */}
+      <SimpleGrid cols={{ base: 2, sm: 3, md: 5 }} spacing="sm">
+        {/* Allocated Cylinders */}
+        <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+          <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+            Allocated Cylinders
           </Text>
-          <Text size="xs" c="dimmed" mt="xs">
-            Full cylinders currently on vehicle
+          <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+            {data.stock?.allocated_cylinders ?? data.stock?.allocated_quantity ?? 0}
+          </Text>
+          <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+            Morning loaded stock
           </Text>
         </Paper>
 
-        {/* Empty Cylinders */}
-        <Paper
-          p="md"
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          <Group justify="space-between" align="center" mb="xs">
-            <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Empty Cylinders
-            </Text>
-            <IconPackage size={20} color="#800020" stroke={1.75} />
-          </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {data.stock?.empty_quantity ?? 0} Cyl.
+        {/* Delivered Cylinders */}
+        <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+          <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+            Delivered Cylinders
           </Text>
-          <Text size="xs" c="dimmed" mt="xs">
-            Collected &amp; in transit on van
+          <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+            {data.stock?.delivered_cylinders ?? data.stock?.delivered_quantity ?? 0}
+          </Text>
+          <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+            Delivered on route
           </Text>
         </Paper>
 
-        {/* Delivered Today */}
-        <Paper
-          p="md"
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          <Group justify="space-between" align="center" mb="xs">
-            <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Delivered Today
-            </Text>
-            <IconTruck size={20} color="#800020" stroke={1.75} />
-          </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {data.stock?.delivered_quantity ?? 0} Cyl.
+        {/* Balance Van Stock */}
+        <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+          <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+            Balance Van Stock
           </Text>
-          <Text size="xs" c="dimmed" mt="xs">
-            Delivered across customer routes
+          <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+            {data.stock?.balance_van_stock ?? data.stock?.filled_quantity ?? 0}
+          </Text>
+          <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+            Filled cylinders on van
           </Text>
         </Paper>
 
-        {/* Returns */}
-        <Paper
-          p="md"
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-        >
-          <Group justify="space-between" align="center" mb="xs">
-            <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Customer Returns
-            </Text>
-            <IconArrowBack size={20} color="#800020" stroke={1.75} />
-          </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {data.stock?.return_quantity ?? 0} Cyl.
+        {/* Empty Cylinders Onboard */}
+        <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+          <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+            Empty Cylinders Onboard
           </Text>
-          <Text size="xs" c="dimmed" mt="xs">
-            Empty cylinders taken back
+          <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+            {data.stock?.empty_cylinders ?? data.stock?.empty_quantity ?? 0}
+          </Text>
+          <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+            Collected empty returns
+          </Text>
+        </Paper>
+
+        {/* Other Products */}
+        <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+          <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
+            Other Products
+          </Text>
+          <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
+            {data.stock?.other_products ?? 0}
+          </Text>
+          <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
+            Non-cylinder items balance
           </Text>
         </Paper>
       </SimpleGrid>
+
+      {/* ── 2b. Van Product Inventory Table ── */}
+      {data.products && data.products.length > 0 && (() => {
+        const prodAllocTotal = data.products.reduce((s, p) => s + (p.AllocatedQty || 0), 0);
+        const prodDelivTotal = data.products.reduce((s, p) => s + (p.DeliveredQty || 0), 0);
+        const prodBalTotal = data.products.reduce((s, p) => s + (p.BalanceQty || 0), 0);
+        const prodEmptyTotal = data.products.reduce((s, p) => s + (p.IsCylinder ? (p.EmptyQty || 0) : 0), 0);
+
+        return (
+          <Paper radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
+            <Group
+              justify="space-between"
+              align="center"
+              pt={10}
+              pb={4}
+              px="md"
+              style={{
+                borderBottom: isInventoryOpen ? '1px solid #f1f5f9' : 'none',
+                cursor: 'pointer',
+                userSelect: 'none',
+                transition: 'background-color 150ms ease',
+              }}
+              onClick={() => setIsInventoryOpen((prev) => !prev)}
+            >
+              <Text fw={700} style={{ color: '#0f172a', fontSize: 16.5, letterSpacing: '-0.01em', lineHeight: 1.2 }}>
+                Vehicle Product Inventory
+              </Text>
+
+              <Tooltip label={isInventoryOpen ? 'Collapse inventory table' : 'Expand inventory table'} withArrow position="top">
+                <ActionIcon
+                  variant="subtle"
+                  size="sm"
+                  color="gray"
+                  style={{
+                    color: '#800020',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    transition: 'transform 200ms ease',
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsInventoryOpen((prev) => !prev);
+                  }}
+                >
+                  {isInventoryOpen ? <IconChevronUp size={18} stroke={2} /> : <IconChevronDown size={18} stroke={2} />}
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+
+            {/* Permanent Column Headers Row */}
+            <Table.ScrollContainer minWidth={700}>
+              <Table style={{ tableLayout: 'fixed', width: '100%' }} verticalSpacing={4} horizontalSpacing="md">
+                <colgroup>
+                  <col style={{ width: 120 }} />
+                  <col />
+                  <col style={{ width: 100 }} />
+                  <col style={{ width: 100 }} />
+                  <col style={{ width: 100 }} />
+                  <col style={{ width: 90 }} />
+                </colgroup>
+                <Table.Thead style={{ backgroundColor: '#ffffff' }}>
+                  <Table.Tr style={{ height: 30, borderBottom: '1px solid #f1f5f9' }}>
+                    {isInventoryOpen ? (
+                      <>
+                        <Table.Th style={{ color: '#800020', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', paddingTop: 2, paddingBottom: 6 }}>
+                          PRODUCT CODE
+                        </Table.Th>
+                        <Table.Th style={{ color: '#800020', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', paddingTop: 2, paddingBottom: 6 }}>
+                          PRODUCT NAME
+                        </Table.Th>
+                      </>
+                    ) : (
+                      <Table.Th colSpan={2} style={{ color: '#800020', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', paddingTop: 2, paddingBottom: 6 }}>
+                        {data.products.length} PRODUCT{data.products.length !== 1 ? 'S' : ''} ON VEHICLE
+                      </Table.Th>
+                    )}
+                    <Table.Th style={{ color: '#800020', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right', paddingTop: 2, paddingBottom: 6 }}>
+                      ALLOCATED
+                    </Table.Th>
+                    <Table.Th style={{ color: '#800020', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right', paddingTop: 2, paddingBottom: 6 }}>
+                      DELIVERED
+                    </Table.Th>
+                    <Table.Th style={{ color: '#800020', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right', paddingTop: 2, paddingBottom: 6 }}>
+                      BALANCE
+                    </Table.Th>
+                    <Table.Th style={{ color: '#800020', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right', paddingRight: 20, paddingTop: 2, paddingBottom: 6 }}>
+                      EMPTY
+                    </Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+              </Table>
+            </Table.ScrollContainer>
+
+            <Collapse
+              expanded={isInventoryOpen}
+              transitionDuration={300}
+              transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+            >
+              <Table.ScrollContainer minWidth={700}>
+                <Table style={{ tableLayout: 'fixed', width: '100%' }} verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
+                  <colgroup>
+                    <col style={{ width: 120 }} />
+                    <col />
+                    <col style={{ width: 100 }} />
+                    <col style={{ width: 100 }} />
+                    <col style={{ width: 100 }} />
+                    <col style={{ width: 90 }} />
+                  </colgroup>
+                  <Table.Tbody>
+                    {data.products.map((p) => (
+                      <Table.Tr key={p.ProductId} style={{ height: 44 }}>
+                        <Table.Td style={{ fontSize: 12.5, color: '#64748b', fontFamily: 'monospace', fontWeight: 600 }}>
+                          {p.ProductCode || '—'}
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="sm" fw={700} style={{ color: '#0f172a' }}>
+                            {p.ProductName}
+                          </Text>
+                          {p.CategoryName && (
+                            <Text size="xs" c="dimmed">
+                              {p.CategoryName}
+                            </Text>
+                          )}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          {p.AllocatedQty}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          {p.DeliveredQty}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                          {p.BalanceQty}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: p.IsCylinder ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
+                          {p.IsCylinder ? p.EmptyQty : '—'}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </Collapse>
+
+            {/* Gliding Totals Footer Row */}
+            <Box
+              style={{
+                backgroundColor: '#ffffff',
+                borderTop: isInventoryOpen ? '2px solid #f1f5f9' : 'none',
+                cursor: !isInventoryOpen ? 'pointer' : 'default',
+              }}
+              onClick={!isInventoryOpen ? () => setIsInventoryOpen(true) : undefined}
+            >
+              <Table.ScrollContainer minWidth={700}>
+                <Table style={{ tableLayout: 'fixed', width: '100%' }} verticalSpacing="sm" horizontalSpacing="md">
+                  <colgroup>
+                    <col style={{ width: 120 }} />
+                    <col />
+                    <col style={{ width: 100 }} />
+                    <col style={{ width: 100 }} />
+                    <col style={{ width: 100 }} />
+                    <col style={{ width: 90 }} />
+                  </colgroup>
+                  <Table.Tbody>
+                    <Table.Tr style={{ border: 'none', height: 42 }}>
+                      <Table.Td colSpan={2} style={{ border: 'none' }}>
+                        <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Total
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                        {prodAllocTotal}
+                      </Table.Td>
+                      <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                        {prodDelivTotal}
+                      </Table.Td>
+                      <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                        {prodBalTotal}
+                      </Table.Td>
+                      <Table.Td style={{ border: 'none', textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#475569', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
+                        {prodEmptyTotal}
+                      </Table.Td>
+                    </Table.Tr>
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </Box>
+          </Paper>
+        );
+      })()}
 
       {/* ── 3. Revenue & Settlement Overview ── */}
       <Paper
@@ -491,7 +661,7 @@ export const RouteDetailsPage: React.FC = () => {
                 <IconBuildingBank size={17} color="#800020" />
               </Group>
               <Text fw={700} style={{ color: '#0f172a', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
-                {fmtInr(netBank)}
+                {fmtInr(bankCollection)}
               </Text>
               <Text size="xs" c="dimmed" mt={4}>
                 Direct QR / Bank payments

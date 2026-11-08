@@ -17,12 +17,10 @@ import {
   CloseButton,
 } from '@mantine/core';
 import {
-  IconTruck,
   IconRoute,
   IconSearch,
   IconRefresh,
   IconChevronRight,
-  IconUser,
   IconCylinder,
   IconReceipt,
   IconWallet,
@@ -85,24 +83,33 @@ export const VanManagementPage: React.FC = () => {
     refetch();
   };
 
+  // Base valid delivery routes (excludes Central Godown)
+  const validRoutes = useMemo(() => {
+    return (data?.routes || []).filter(
+      (r) =>
+        r.route_id !== 1 &&
+        !r.route_name.toLowerCase().includes('godown') &&
+        !(r.vehicle_number && r.vehicle_number.toLowerCase().includes('godown'))
+    );
+  }, [data?.routes]);
+
   // Filtered routes
   const filteredRoutes = useMemo(() => {
-    const list = data?.routes || [];
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return list;
-    return list.filter(
+    if (!q) return validRoutes;
+    return validRoutes.filter(
       (r) =>
         r.route_name.toLowerCase().includes(q) ||
         (r.vehicle_number && r.vehicle_number.toLowerCase().includes(q)) ||
         (r.driver_name && r.driver_name.toLowerCase().includes(q))
     );
-  }, [data?.routes, searchQuery]);
+  }, [validRoutes, searchQuery]);
 
   // Derived summary metrics
-  const liveCount = data?.routes.filter((r) => r.status === 'live').length ?? 0;
-  const totalDelivered = data?.routes.reduce((s, r) => s + (r.stock?.delivered_quantity ?? 0), 0) ?? 0;
-  const totalGrossCollection = data?.routes.reduce((s, r) => s + (r.collection?.total_collection ?? 0), 0) ?? 0;
-  const totalExpenses = data?.routes.reduce((s, r) => s + (r.expense?.total_expense ?? 0), 0) ?? 0;
+  const liveCount = validRoutes.filter((r) => r.status === 'live').length;
+  const totalDelivered = validRoutes.reduce((s, r) => s + (r.stock?.delivered_quantity ?? 0), 0);
+  const totalGrossCollection = validRoutes.reduce((s, r) => s + (r.collection?.total_collection ?? 0), 0);
+  const totalExpenses = validRoutes.reduce((s, r) => s + (r.expense?.total_expense ?? 0), 0);
   const totalNetBalance = totalGrossCollection - totalExpenses;
 
   return (
@@ -383,24 +390,18 @@ export const VanManagementPage: React.FC = () => {
                       onClick={() => navigate(`/van-management/${route.route_id}`)}
                     >
                       <Table.Td>
-                        <Group gap="xs">
-                          <IconRoute size={16} color="#800020" stroke={1.75} />
-                          <Text size="sm" fw={600} style={{ color: '#0f172a' }}>
-                            {route.route_name}
-                          </Text>
-                        </Group>
+                        <Text size="sm" fw={600} style={{ color: '#0f172a' }}>
+                          {route.route_name}
+                        </Text>
                       </Table.Td>
                       <Table.Td>
                         {(() => {
                           const vNum = route.vehicle_number || (route as any).vehicle?.vehicle_number;
                           const isGodown = !vNum || vNum === 'Not Assigned' || vNum.toLowerCase().includes('godown');
                           return !isGodown ? (
-                            <Group gap={5}>
-                              <IconTruck size={14} color="#64748b" />
-                              <Text size="sm" fw={600} style={{ color: '#334155' }}>
-                                {vNum}
-                              </Text>
-                            </Group>
+                            <Text size="sm" fw={600} style={{ color: '#334155' }}>
+                              {vNum}
+                            </Text>
                           ) : (
                             <Text size="sm" c="dimmed">
                               —
@@ -413,12 +414,9 @@ export const VanManagementPage: React.FC = () => {
                           const dName = route.driver_name || (route as any).driver?.name;
                           const isGodown = !dName || dName === 'Not Assigned' || dName.toLowerCase().includes('godown');
                           return !isGodown ? (
-                            <Group gap={5}>
-                              <IconUser size={14} color="#64748b" />
-                              <Text size="sm" style={{ color: '#334155' }}>
-                                {dName}
-                              </Text>
-                            </Group>
+                            <Text size="sm" style={{ color: '#334155' }}>
+                              {dName}
+                            </Text>
                           ) : (
                             <Text size="sm" c="dimmed">
                               —

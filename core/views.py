@@ -41,7 +41,8 @@ from core.models import (
     State, UserRole, Company, Driver, Route, Vehicle, RouteVehicleDriver,
     User, Category, Unit, Product, Group, Ledger, ProductPriceAudit,
     Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
-    Payment, PaymentLine, BillwiseAllocation, LedgerLine, RouteExpense
+    Payment, PaymentLine, BillwiseAllocation, LedgerLine, RouteExpense,
+    DeliveryNote, DeliveryNoteLine
 )
 
 
@@ -255,7 +256,13 @@ class RouteViewSet(viewsets.ModelViewSet):
         company_id = getattr(request.user, 'CompanyId', 1) or 1
         today = date.today()
 
-        routes_qs = Route.objects.filter(CompanyId=company_id, IsActive=True).order_by('RouteName')
+        routes_qs = (
+            Route.objects
+            .filter(CompanyId=company_id, IsActive=True)
+            .exclude(RouteName__icontains='godown')
+            .exclude(RouteId=1)
+            .order_by('RouteName')
+        )
 
         result = []
         total_route_count = routes_qs.count()
@@ -523,7 +530,13 @@ class RouteViewSet(viewsets.ModelViewSet):
                     'empty_quantity': 0.0,
                     'delivered_quantity': 0.0,
                     'return_quantity': 0.0,
+                    'allocated_cylinders': 0.0,
+                    'delivered_cylinders': 0.0,
+                    'balance_van_stock': 0.0,
+                    'empty_cylinders': 0.0,
+                    'other_products': 0.0,
                 },
+                'products': [],
                 'collection': {
                     'total_collection': 0.0,
                     'cash_collection': 0.0,
@@ -708,6 +721,56 @@ class RouteViewSet(viewsets.ModelViewSet):
                 'lines': line_items,
             })
 
+        # Product breakdown for this shift
+        product_breakdown = []
+        alloc_cyls = Decimal('0.00')
+        deliv_cyls = Decimal('0.00')
+        bal_cyls = Decimal('0.00')
+        empty_cyls = Decimal('0.00')
+        other_products_bal = Decimal('0.00')
+
+        p_ids = set(base_movs.values_list('Product_id', flat=True))
+        dn_p_ids = set(DeliveryNoteLine.objects.filter(DeliveryNote=latest_dn).values_list('Product_id', flat=True))
+        all_shift_p_ids = [pid for pid in p_ids.union(dn_p_ids) if pid is not None]
+
+        products_qs = Product.objects.filter(ProductId__in=all_shift_p_ids).select_related('Category', 'Unit')
+        for prod in products_qs:
+            is_cyl = getattr(prod, 'IsCylinder', True)
+            if is_cyl is None:
+                is_cyl = True
+
+            p_dn_in = base_movs.filter(Product=prod, TransactionType='DELIVERY_NOTE').aggregate(s=Sum('InQty'))['s'] or Decimal('0')
+            p_sale_out = base_movs.filter(Product=prod, TransactionType='VAN_SALE').aggregate(s=Sum('OutQty'))['s'] or Decimal('0')
+            p_unload = base_movs.filter(Product=prod, TransactionType='VAN_UNLOAD_FULL').aggregate(s=Sum('OutQty'))['s'] or Decimal('0')
+            p_bal = max(Decimal('0'), p_dn_in - p_sale_out - p_unload)
+
+            p_empty_in = base_movs.filter(Product=prod, TransactionType='VAN_EMPTY_RETURN').aggregate(s=Sum('InQty'))['s'] or Decimal('0')
+            p_empty_out = base_movs.filter(Product=prod, TransactionType='VAN_UNLOAD_EMPTY').aggregate(s=Sum('OutQty'))['s'] or Decimal('0')
+            p_empty_bal = max(Decimal('0'), p_empty_in - p_empty_out) if is_cyl else Decimal('0')
+
+            if is_cyl:
+                alloc_cyls += p_dn_in
+                deliv_cyls += p_sale_out
+                bal_cyls += p_bal
+                empty_cyls += p_empty_bal
+            else:
+                other_products_bal += p_bal
+
+            product_breakdown.append({
+                'ProductId': prod.ProductId,
+                'ProductName': prod.ProductName,
+                'ProductCode': prod.ProductCode or '—',
+                'CategoryName': prod.Category.CategoryName if prod.Category else 'General',
+                'IsCylinder': is_cyl,
+                'AllocatedQty': float(p_dn_in),
+                'DeliveredQty': float(p_sale_out),
+                'BalanceQty': float(p_bal),
+                'EmptyQty': float(p_empty_bal),
+                'Qty': float(p_bal) + float(p_empty_bal),
+            })
+
+        product_breakdown.sort(key=lambda x: (not x['IsCylinder'], x['ProductName']))
+
         is_active = True
 
         return Response({
@@ -727,7 +790,13 @@ class RouteViewSet(viewsets.ModelViewSet):
                 'empty_quantity': empty_qty,
                 'delivered_quantity': delivered_qty,
                 'return_quantity': return_qty,
+                'allocated_cylinders': float(alloc_cyls),
+                'delivered_cylinders': float(deliv_cyls),
+                'balance_van_stock': float(bal_cyls),
+                'empty_cylinders': float(empty_cyls),
+                'other_products': float(other_products_bal),
             },
+            'products': product_breakdown,
             'collection': {
                 'total_collection': total_collection,
                 'cash_collection': cash_collection,
@@ -778,93 +847,15 @@ class RouteViewSet(viewsets.ModelViewSet):
         notes = request.data.get('notes', '').strip()
 
         with transaction.atomic():
-            # Find the Travelling Expense ledger (Ledger ID 31 or name match)
-            travelling_ledger = (
-                Ledger.objects.filter(LedgerId=31).first()
-                or Ledger.objects.filter(CompanyId=company_id, LedgerName__iexact='Travelling Expense').first()
-                or Ledger.objects.filter(LedgerName__icontains='travel').first()
-            )
-
-            # Determine Cash or Bank ledger
-            if payment_mode.lower() == 'cash':
-                cash_or_bank = (
-                    Ledger.objects.filter(Group_id=16, CompanyId=company_id).first()
-                    or Ledger.objects.filter(LedgerId=24).first()
-                    or Ledger.objects.filter(LedgerName__iexact='Cash').first()
-                )
-            else:
-                cash_or_bank = (
-                    Ledger.objects.filter(Group_id=17, CompanyId=company_id).first()
-                    or Ledger.objects.filter(LedgerId=56).first()
-                    or Ledger.objects.filter(LedgerName__icontains='bank').first()
-                )
-
-            vehicle_num = alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''
-            driver_nm = alloc.Driver.DriverName if alloc and alloc.Driver else ''
-            narration_parts = [
-                f"Trip Expense: {category}",
-                f"Route: {route.RouteName}",
-            ]
-            if vehicle_num:
-                narration_parts.append(f"Van: {vehicle_num}")
-            if driver_nm:
-                narration_parts.append(f"Driver: {driver_nm}")
-            if notes:
-                narration_parts.append(notes)
-            full_narration = " | ".join(narration_parts)
-
-            payment = None
-            if travelling_ledger and cash_or_bank:
-                payment = Payment.objects.create(
-                    PartyLedger=travelling_ledger,
-                    Amount=amount,
-                    Narration=full_narration,
-                )
-                PaymentLine.objects.create(
-                    Payment=payment,
-                    LineNo=1,
-                    PaymentMode=payment_mode,
-                    Ledger=cash_or_bank,
-                    Amount=amount,
-                    Narration=f"{payment_mode} payment for trip expense",
-                )
-                voucher = Voucher.objects.create(
-                    VoucherNo=f"EXP-PAY-{payment.PaymentId}",
-                    VoucherDate=date.today(),
-                    VoucherType='PAYMENT',
-                    ReferenceTable='Payment',
-                    ReferenceId=payment.PaymentId,
-                    CompanyId=company_id,
-                    Narration=full_narration,
-                    IsCancelled=False,
-                )
-                # Debit Travelling Expense
-                VoucherLine.objects.create(
-                    Voucher=voucher,
-                    LineNo=1,
-                    Ledger=travelling_ledger,
-                    DebitAmount=amount,
-                    CreditAmount=Decimal('0.00'),
-                    Narration=full_narration,
-                )
-                # Credit Cash/Bank
-                VoucherLine.objects.create(
-                    Voucher=voucher,
-                    LineNo=2,
-                    Ledger=cash_or_bank,
-                    DebitAmount=Decimal('0.00'),
-                    CreditAmount=amount,
-                    Narration=f"Payment via {cash_or_bank.LedgerName}",
-                )
-                sync_ledger_balances(travelling_ledger.LedgerId, cash_or_bank.LedgerId)
-
+            # DO NOT post Payment or Voucher here! Only create RouteExpense.
+            # Financial accounting vouchers are posted only upon End-Shift settlement approval.
             expense = RouteExpense.objects.create(
                 CompanyId=company_id,
                 Route=route,
                 RouteVehicleDriver=alloc,
                 Driver=alloc.Driver if alloc else None,
                 Vehicle=alloc.Vehicle if alloc else None,
-                Payment=payment,
+                Payment=None,
                 ExpenseDate=date.today(),
                 Category=category,
                 Amount=amount,
@@ -880,7 +871,7 @@ class RouteViewSet(viewsets.ModelViewSet):
             'payment_mode': expense.PaymentMode,
             'notes': expense.Notes,
             'time': expense.CreatedAt.strftime('%I:%M %p') if expense.CreatedAt else '',
-            'ledger': travelling_ledger.LedgerName if travelling_ledger else 'Travelling Expense',
+            'ledger': 'Travelling Expense',
         }, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['delete'], url_path='delete-expense/(?P<expense_id>[^/.]+)')
@@ -2747,11 +2738,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
             created_lines = []
             for idx, l in enumerate(lines_data):
+                line_lid = l.get('LedgerId') or data.get('PaymentLedgerId')
+                if not line_lid:
+                    pm = (l.get('PaymentMode') or data.get('PaymentMode') or 'Cash').lower()
+                    target_group = 16 if pm == 'cash' else 17
+                    fallback_ledger = Ledger.objects.filter(Group_id=target_group, CompanyId=company_id).first() or Ledger.objects.filter(LedgerId=24 if pm == 'cash' else 56).first()
+                    line_lid = fallback_ledger.LedgerId if fallback_ledger else party_id
+
                 p_line = PaymentLine.objects.create(
                     Payment=payment,
                     LineNo=l.get('LineNo', idx + 1),
                     PaymentMode=l.get('PaymentMode', 'Cash'),
-                    Ledger_id=l.get('LedgerId'),
+                    Ledger_id=line_lid,
                     Amount=Decimal(str(l.get('Amount') or amount)),
                     InstrumentNumber=l.get('InstrumentNumber') or None,
                     InstrumentDate=l.get('InstrumentDate') or None,
@@ -2942,7 +2940,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             )
 
         user = request.user
-        company_id = getattr(user, 'CompanyId', 0)
+        company_id = getattr(user, 'CompanyId', 1) or (instance.PartyLedger.CompanyId if instance.PartyLedger else 1) or 1
 
         with transaction.atomic():
             old_party_id = instance.PartyLedger_id
@@ -2964,13 +2962,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
             for line in instance.lines.all():
                 for alloc in line.allocations.all():
                     if alloc.BillType == 'SALES' or alloc.BillReference:
-                        s = Sales.objects.filter(CompanyId=instance.CompanyId or company_id).filter(
+                        s = Sales.objects.filter(CompanyId=company_id).filter(
                             Q(SalesNo=alloc.BillReference) | Q(InvoiceNo=alloc.BillReference)
                         ).first()
                         if s:
                             s.PaidAmount = max(Decimal('0.00'), (s.PaidAmount or Decimal('0.00')) - alloc.AllocatedAmount)
                             s.save(update_fields=['PaidAmount'])
                 line.allocations.all().delete()
+
+            # Also delete any allocations referencing this Payment/Receipt directly
+            BillwiseAllocation.objects.filter(
+                Q(ReferenceTable__in=['Payment', 'Receipt'], ReferenceId=instance.PaymentId)
+            ).delete()
             instance.lines.all().delete()
 
             # Recreate lines
@@ -2995,11 +2998,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
             created_lines = []
             for idx, l in enumerate(lines_data):
+                line_lid = l.get('LedgerId') or data.get('PaymentLedgerId')
+                if not line_lid:
+                    pm = (l.get('PaymentMode') or data.get('PaymentMode') or 'Cash').lower()
+                    target_group = 16 if pm == 'cash' else 17
+                    fallback_ledger = Ledger.objects.filter(Group_id=target_group, CompanyId=company_id).first() or Ledger.objects.filter(LedgerId=24 if pm == 'cash' else 56).first()
+                    line_lid = fallback_ledger.LedgerId if fallback_ledger else party_id
+
                 p_line = PaymentLine.objects.create(
                     Payment=instance,
                     LineNo=l.get('LineNo', idx + 1),
                     PaymentMode=l.get('PaymentMode', 'Cash'),
-                    Ledger_id=l.get('LedgerId'),
+                    Ledger_id=line_lid,
                     Amount=Decimal(str(l.get('Amount') or amount)),
                     InstrumentNumber=l.get('InstrumentNumber') or None,
                     InstrumentDate=l.get('InstrumentDate') or None,
@@ -3160,6 +3170,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        company_id = getattr(request.user, 'CompanyId', 1) or (instance.PartyLedger.CompanyId if instance.PartyLedger else 1) or 1
         with transaction.atomic():
             party_id = instance.PartyLedger_id
             payment_ledger_ids = list(instance.lines.values_list('Ledger_id', flat=True))
@@ -3174,13 +3185,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
             for line in instance.lines.all():
                 for alloc in line.allocations.all():
                     if alloc.BillType == 'SALES' or alloc.BillReference:
-                        s = Sales.objects.filter(CompanyId=instance.CompanyId or 1).filter(
+                        s = Sales.objects.filter(CompanyId=company_id).filter(
                             Q(SalesNo=alloc.BillReference) | Q(InvoiceNo=alloc.BillReference)
                         ).first()
                         if s:
                             s.PaidAmount = max(Decimal('0.00'), (s.PaidAmount or Decimal('0.00')) - alloc.AllocatedAmount)
                             s.save(update_fields=['PaidAmount'])
                 line.allocations.all().delete()
+
+            # Also delete any allocations referencing this Payment/Receipt directly
+            BillwiseAllocation.objects.filter(
+                Q(ReferenceTable__in=['Payment', 'Receipt'], ReferenceId=instance.PaymentId)
+            ).delete()
 
             # Delete lines & payment
             instance.lines.all().delete()
@@ -4706,80 +4722,15 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         notes = request.data.get('notes') or ''
 
         with transaction.atomic():
-            travelling_ledger = (
-                Ledger.objects.filter(LedgerId=31).first()
-                or Ledger.objects.filter(CompanyId=company_id, LedgerName__iexact='Travelling Expense').first()
-                or Ledger.objects.filter(LedgerName__icontains='travel').first()
-            )
-
-            if payment_mode.lower() == 'cash':
-                cash_or_bank = (
-                    Ledger.objects.filter(Group_id=16, CompanyId=company_id).first()
-                    or Ledger.objects.filter(LedgerId=24).first()
-                    or Ledger.objects.filter(LedgerName__iexact='Cash').first()
-                )
-            else:
-                cash_or_bank = (
-                    Ledger.objects.filter(Group_id=17, CompanyId=company_id).first()
-                    or Ledger.objects.filter(LedgerId=56).first()
-                    or Ledger.objects.filter(LedgerName__icontains='bank').first()
-                )
-
-            vehicle_num = alloc.Vehicle.VehicleNumber if alloc.Vehicle else ''
-            driver_nm = alloc.Driver.DriverName if alloc.Driver else ''
-            route_nm = alloc.Route.RouteName if alloc.Route else ''
-            full_narration = f"Trip Expense: {category} | Route: {route_nm} | Van: {vehicle_num} | Driver: {driver_nm} | {notes}".strip()
-
-            payment = None
-            if travelling_ledger and cash_or_bank:
-                payment = Payment.objects.create(
-                    PartyLedger=travelling_ledger,
-                    Amount=amount,
-                    Narration=full_narration,
-                )
-                PaymentLine.objects.create(
-                    Payment=payment,
-                    LineNo=1,
-                    PaymentMode=payment_mode,
-                    Ledger=cash_or_bank,
-                    Amount=amount,
-                    Narration=f"{payment_mode} payment for trip expense",
-                )
-                voucher = Voucher.objects.create(
-                    VoucherNo=f"EXP-PAY-{payment.PaymentId}",
-                    VoucherDate=date.today(),
-                    VoucherType='PAYMENT',
-                    ReferenceTable='Payment',
-                    ReferenceId=payment.PaymentId,
-                    CompanyId=company_id,
-                    Narration=full_narration,
-                    IsCancelled=False,
-                )
-                VoucherLine.objects.create(
-                    Voucher=voucher,
-                    LineNo=1,
-                    Ledger=travelling_ledger,
-                    DebitAmount=amount,
-                    CreditAmount=Decimal('0.00'),
-                    Narration=full_narration,
-                )
-                VoucherLine.objects.create(
-                    Voucher=voucher,
-                    LineNo=2,
-                    Ledger=cash_or_bank,
-                    DebitAmount=Decimal('0.00'),
-                    CreditAmount=amount,
-                    Narration=f"Payment via {cash_or_bank.LedgerName}",
-                )
-                sync_ledger_balances(travelling_ledger.LedgerId, cash_or_bank.LedgerId)
-
+            # DO NOT post Payment or Voucher here! Only create RouteExpense.
+            # Financial accounting vouchers are posted only upon End-Shift settlement approval.
             exp = RouteExpense.objects.create(
                 CompanyId=company_id,
                 Route=alloc.Route,
                 RouteVehicleDriver=alloc,
                 Driver=alloc.Driver,
                 Vehicle=alloc.Vehicle,
-                Payment=payment,
+                Payment=None,
                 ExpenseDate=date.today(),
                 Category=category,
                 Amount=amount,
@@ -6082,6 +6033,31 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 vouchers.delete()
                 Voucher.objects.filter(CompanyId=company_id, VoucherNo=f"SHIFT-VCH-{dn.DeliveryNoteId}").delete()
 
+                # Also remove expense payment vouchers settled during this shift
+                settled_exps = RouteExpense.objects.filter(
+                    CompanyId=company_id,
+                    RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
+                    Payment__isnull=False
+                ).filter(
+                    Q(ExpenseDate=dn.DeliveryDate) | Q(CreatedAt__gte=dn.CreatedAt)
+                )
+                for exp in settled_exps:
+                    pmt = exp.Payment
+                    exp.Payment = None
+                    exp.save(update_fields=['Payment'])
+                    if pmt:
+                        if pmt.PartyLedger:
+                            affected_ledgers.add(pmt.PartyLedger.LedgerId)
+                        for pl in pmt.lines.all():
+                            if pl.Ledger:
+                                affected_ledgers.add(pl.Ledger.LedgerId)
+                        exp_vchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pmt.PaymentId)
+                        for ev in exp_vchs:
+                            ev.lines.all().delete()
+                        exp_vchs.delete()
+                        pmt.lines.all().delete()
+                        pmt.delete()
+
                 sales_qs.update(Status='LIVE', ApprovedBy=None, ApprovedAt=None)
                 sync_ledger_balances(*affected_ledgers)
 
@@ -6378,6 +6354,88 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                                 Narration=f"IGST Output {sale.SalesNo}"
                             )
                             line_no += 1
+
+            # 6. Generate Double-Entry Accounting Vouchers for Shift Route Expenses
+            shift_expenses_qs = RouteExpense.objects.filter(
+                CompanyId=company_id,
+                RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
+                Payment__isnull=True
+            ).filter(
+                Q(ExpenseDate=shift_date) | Q(CreatedAt__gte=dn.CreatedAt)
+            )
+
+            next_dn = DeliveryNote.objects.filter(
+                CompanyId=company_id,
+                RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
+                CreatedAt__gt=dn.CreatedAt
+            ).order_by('CreatedAt').first()
+            if next_dn and next_dn.CreatedAt:
+                shift_expenses_qs = shift_expenses_qs.filter(CreatedAt__lt=next_dn.CreatedAt)
+
+            travelling_ledger = (
+                Ledger.objects.filter(LedgerId=31).first()
+                or Ledger.objects.filter(CompanyId=company_id, LedgerName__iexact='Travelling Expense').first()
+                or Ledger.objects.filter(LedgerName__icontains='travel').first()
+            )
+
+            for exp in shift_expenses_qs:
+                exp_amt = Decimal(str(exp.Amount or 0))
+                if exp_amt <= Decimal('0.00'):
+                    continue
+
+                pm_lower = (exp.PaymentMode or 'Cash').lower()
+                exp_cash_or_bank = bank_led if ('upi' in pm_lower or 'bank' in pm_lower or 'online' in pm_lower) else cash_led
+                if travelling_ledger and exp_cash_or_bank:
+                    v_num = alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''
+                    d_nm = alloc.Driver.DriverName if alloc and alloc.Driver else ''
+                    r_nm = alloc.Route.RouteName if alloc and alloc.Route else ''
+                    notes_str = f" | {exp.Notes}" if exp.Notes else ""
+                    exp_narration = f"Trip Expense: {exp.Category} | Route: {r_nm} | Van: {v_num} | Driver: {d_nm}{notes_str}".strip()
+
+                    payment = Payment.objects.create(
+                        PartyLedger=travelling_ledger,
+                        Amount=exp_amt,
+                        Narration=exp_narration,
+                    )
+                    PaymentLine.objects.create(
+                        Payment=payment,
+                        LineNo=1,
+                        PaymentMode=exp.PaymentMode or 'Cash',
+                        Ledger=exp_cash_or_bank,
+                        Amount=exp_amt,
+                        Narration=f"{exp.PaymentMode or 'Cash'} payment for trip expense",
+                    )
+                    voucher = Voucher.objects.create(
+                        VoucherNo=f"EXP-PAY-{payment.PaymentId}",
+                        VoucherDate=shift_date,
+                        VoucherType='PAYMENT',
+                        ReferenceTable='Payment',
+                        ReferenceId=payment.PaymentId,
+                        CompanyId=company_id,
+                        Narration=exp_narration,
+                        IsCancelled=False,
+                    )
+                    VoucherLine.objects.create(
+                        Voucher=voucher,
+                        LineNo=1,
+                        Ledger=travelling_ledger,
+                        DebitAmount=exp_amt,
+                        CreditAmount=Decimal('0.00'),
+                        Narration=exp_narration,
+                    )
+                    VoucherLine.objects.create(
+                        Voucher=voucher,
+                        LineNo=2,
+                        Ledger=exp_cash_or_bank,
+                        DebitAmount=Decimal('0.00'),
+                        CreditAmount=exp_amt,
+                        Narration=f"Payment via {exp_cash_or_bank.LedgerName}",
+                    )
+                    exp.Payment = payment
+                    exp.save(update_fields=['Payment'])
+
+                    affected_ledgers.add(travelling_ledger.LedgerId)
+                    affected_ledgers.add(exp_cash_or_bank.LedgerId)
 
             # Clean up any legacy shift-level bulk voucher to avoid double counting
             Voucher.objects.filter(VoucherNo=f"SHIFT-VCH-{dn.DeliveryNoteId}").delete()
