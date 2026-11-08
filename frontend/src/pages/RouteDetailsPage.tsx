@@ -27,7 +27,6 @@ import {
   IconTrash,
   IconWallet,
   IconChevronDown,
-  IconChevronUp,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -430,20 +429,33 @@ export const RouteDetailsPage: React.FC = () => {
                     color: '#800020',
                     backgroundColor: 'transparent',
                     border: 'none',
-                    transition: 'transform 200ms ease',
                   }}
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsInventoryOpen((prev) => !prev);
                   }}
                 >
-                  {isInventoryOpen ? <IconChevronUp size={18} stroke={2} /> : <IconChevronDown size={18} stroke={2} />}
+                  <IconChevronDown
+                    size={18}
+                    stroke={2}
+                    style={{
+                      transform: isInventoryOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                    }}
+                  />
                 </ActionIcon>
               </Tooltip>
             </Group>
 
             {/* Permanent Column Headers Row */}
-            <Table.ScrollContainer minWidth={700}>
+            <Table.ScrollContainer
+              minWidth={700}
+              style={{
+                cursor: !isInventoryOpen ? 'pointer' : 'default',
+                userSelect: !isInventoryOpen ? 'none' : 'auto',
+              }}
+              onClick={!isInventoryOpen ? () => setIsInventoryOpen(true) : undefined}
+            >
               <Table style={{ tableLayout: 'fixed', width: '100%' }} verticalSpacing={4} horizontalSpacing="md">
                 <colgroup>
                   <col style={{ width: 120 }} />

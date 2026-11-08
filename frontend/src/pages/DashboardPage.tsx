@@ -25,7 +25,6 @@ import {
   IconCreditCard,
   IconTruck,
   IconPlus,
-  IconArrowRight,
   IconArrowUpRight,
   IconCalendar,
   IconSearch,
@@ -35,7 +34,6 @@ import {
   IconTruckDelivery,
   IconPackage,
   IconChevronDown,
-  IconChevronUp,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -492,14 +490,14 @@ export const DashboardPage: React.FC = () => {
           <Text
             fw={700}
             style={{
-              color: balancePayable > 0 ? '#b91c1c' : '#0f172a',
+              color: '#800020',
               fontSize: '24px',
               fontVariantNumeric: 'tabular-nums',
               letterSpacing: '-0.02em',
             }}
           >
             ₹{Math.abs(balancePayable).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-            <Text component="span" size="sm" c={balancePayable > 0 ? '#dc2626' : '#16a34a'} fw={600}>
+            <Text component="span" size="sm" c="#800020" fw={700}>
               {balancePayable >= 0 ? 'Cr' : 'Dr'}
             </Text>
           </Text>
@@ -647,14 +645,20 @@ export const DashboardPage: React.FC = () => {
                       color: '#800020',
                       backgroundColor: 'transparent',
                       border: 'none',
-                      transition: 'transform 200ms ease',
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleStockRow();
                     }}
                   >
-                    {isStockRowOpen ? <IconChevronUp size={20} stroke={2} /> : <IconChevronDown size={20} stroke={2} />}
+                    <IconChevronDown
+                      size={20}
+                      stroke={2}
+                      style={{
+                        transform: isStockRowOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                      }}
+                    />
                   </ActionIcon>
                 </Tooltip>
               </Group>
@@ -664,7 +668,13 @@ export const DashboardPage: React.FC = () => {
             <Table
               verticalSpacing="xs"
               horizontalSpacing="md"
-              style={{ tableLayout: 'fixed', width: '100%' }}
+              style={{
+                tableLayout: 'fixed',
+                width: '100%',
+                cursor: !isStockRowOpen ? 'pointer' : 'default',
+                userSelect: !isStockRowOpen ? 'none' : 'auto',
+              }}
+              onClick={!isStockRowOpen ? toggleStockRow : undefined}
             >
               <colgroup>
                 <col style={{ width: 75 }} />
@@ -908,14 +918,20 @@ export const DashboardPage: React.FC = () => {
                       color: '#800020',
                       backgroundColor: 'transparent',
                       border: 'none',
-                      transition: 'transform 200ms ease',
                     }}
                     onClick={(e) => {
                       e.stopPropagation();
                       toggleStockRow();
                     }}
                   >
-                    {isStockRowOpen ? <IconChevronUp size={20} stroke={2} /> : <IconChevronDown size={20} stroke={2} />}
+                    <IconChevronDown
+                      size={20}
+                      stroke={2}
+                      style={{
+                        transform: isStockRowOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                      }}
+                    />
                   </ActionIcon>
                 </Tooltip>
               </Group>
@@ -925,7 +941,13 @@ export const DashboardPage: React.FC = () => {
             <Table
               verticalSpacing="xs"
               horizontalSpacing="md"
-              style={{ tableLayout: 'fixed', width: '100%' }}
+              style={{
+                tableLayout: 'fixed',
+                width: '100%',
+                cursor: !isStockRowOpen ? 'pointer' : 'default',
+                userSelect: !isStockRowOpen ? 'none' : 'auto',
+              }}
+              onClick={!isStockRowOpen ? toggleStockRow : undefined}
             >
               <colgroup>
                 <col />
@@ -1105,48 +1127,65 @@ export const DashboardPage: React.FC = () => {
               >
                 {purchases.length}
               </Badge>
-            </Group>
-
-            <Group gap="sm" align="center" onClick={(e) => e.stopPropagation()}>
-              <Button
-                variant="subtle"
-                color="gray"
-                c="#800020"
-                size="xs"
-                fw={600}
-                className="erp-subtle-btn"
-                rightSection={<IconArrowRight size={14} />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate('/purchases');
-                }}
-              >
-                View All
-              </Button>
-              <Tooltip label={isCommercialRowOpen ? 'Collapse commercial row' : 'Expand commercial row'} withArrow position="top">
+              <Tooltip label="View all purchases" withArrow position="top">
                 <ActionIcon
                   variant="subtle"
-                  size="sm"
-                  color="gray"
+                  size="xs"
+                  color="burgundy"
                   style={{
                     color: '#800020',
                     backgroundColor: 'transparent',
-                    border: 'none',
-                    transition: 'transform 200ms ease',
+                    cursor: 'pointer',
+                    transition: 'transform 150ms ease',
                   }}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'translate(1px, -1px)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'none')}
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleCommercialRow();
+                    navigate('/purchases');
                   }}
                 >
-                  {isCommercialRowOpen ? <IconChevronUp size={20} stroke={2} /> : <IconChevronDown size={20} stroke={2} />}
+                  <IconArrowUpRight size={15} stroke={2} />
                 </ActionIcon>
               </Tooltip>
             </Group>
+
+            <Tooltip label={isCommercialRowOpen ? 'Collapse commercial row' : 'Expand commercial row'} withArrow position="top">
+              <ActionIcon
+                variant="subtle"
+                size="sm"
+                color="gray"
+                style={{
+                  color: '#800020',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCommercialRow();
+                }}
+              >
+                <IconChevronDown
+                  size={20}
+                  stroke={2}
+                  style={{
+                    transform: isCommercialRowOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                  }}
+                />
+              </ActionIcon>
+            </Tooltip>
           </Group>
 
           {/* Permanent Column Headers Row */}
-          <Table.ScrollContainer minWidth={450}>
+          <Table.ScrollContainer
+            minWidth={450}
+            style={{
+              cursor: !isCommercialRowOpen ? 'pointer' : 'default',
+              userSelect: !isCommercialRowOpen ? 'none' : 'auto',
+            }}
+            onClick={!isCommercialRowOpen ? toggleCommercialRow : undefined}
+          >
             <Table
               verticalSpacing="xs"
               horizontalSpacing="md"
@@ -1340,48 +1379,65 @@ export const DashboardPage: React.FC = () => {
               >
                 {payments.length}
               </Badge>
-            </Group>
-
-            <Group gap="sm" align="center" onClick={(e) => e.stopPropagation()}>
-              <Button
-                variant="subtle"
-                color="gray"
-                c="#800020"
-                size="xs"
-                fw={600}
-                className="erp-subtle-btn"
-                rightSection={<IconArrowRight size={14} />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate('/payments');
-                }}
-              >
-                View All
-              </Button>
-              <Tooltip label={isCommercialRowOpen ? 'Collapse commercial row' : 'Expand commercial row'} withArrow position="top">
+              <Tooltip label="View all payments" withArrow position="top">
                 <ActionIcon
                   variant="subtle"
-                  size="sm"
-                  color="gray"
+                  size="xs"
+                  color="burgundy"
                   style={{
                     color: '#800020',
                     backgroundColor: 'transparent',
-                    border: 'none',
-                    transition: 'transform 200ms ease',
+                    cursor: 'pointer',
+                    transition: 'transform 150ms ease',
                   }}
+                  onMouseEnter={(e) => (e.currentTarget.style.transform = 'translate(1px, -1px)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.transform = 'none')}
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleCommercialRow();
+                    navigate('/payments');
                   }}
                 >
-                  {isCommercialRowOpen ? <IconChevronUp size={20} stroke={2} /> : <IconChevronDown size={20} stroke={2} />}
+                  <IconArrowUpRight size={15} stroke={2} />
                 </ActionIcon>
               </Tooltip>
             </Group>
+
+            <Tooltip label={isCommercialRowOpen ? 'Collapse commercial row' : 'Expand commercial row'} withArrow position="top">
+              <ActionIcon
+                variant="subtle"
+                size="sm"
+                color="gray"
+                style={{
+                  color: '#800020',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleCommercialRow();
+                }}
+              >
+                <IconChevronDown
+                  size={20}
+                  stroke={2}
+                  style={{
+                    transform: isCommercialRowOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform 300ms cubic-bezier(0.16, 1, 0.3, 1)',
+                  }}
+                />
+              </ActionIcon>
+            </Tooltip>
           </Group>
 
           {/* Permanent Column Headers Row */}
-          <Table.ScrollContainer minWidth={450}>
+          <Table.ScrollContainer
+            minWidth={450}
+            style={{
+              cursor: !isCommercialRowOpen ? 'pointer' : 'default',
+              userSelect: !isCommercialRowOpen ? 'none' : 'auto',
+            }}
+            onClick={!isCommercialRowOpen ? toggleCommercialRow : undefined}
+          >
             <Table
               verticalSpacing="xs"
               horizontalSpacing="md"
