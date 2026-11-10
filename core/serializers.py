@@ -768,7 +768,8 @@ class PurchaseSerializer(serializers.ModelSerializer):
         if tax <= 0:
             return 0
         if self._is_intra_state(obj):
-            return round(tax / 2, 2)
+            cgst = round(tax / 2, 2)
+            return round(tax - cgst, 2)
         return 0
 
     def get_IGSTAmount(self, obj):

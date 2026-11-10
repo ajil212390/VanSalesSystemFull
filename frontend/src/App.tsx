@@ -31,6 +31,10 @@ import { ReceiptNotesPage } from './pages/ReceiptNotesPage';
 import { StockAnalysisPage } from './pages/StockAnalysisPage';
 import { VanManagementPage } from './pages/VanManagementPage';
 import { RouteDetailsPage } from './pages/RouteDetailsPage';
+import { InventoryByProductPage } from './pages/InventoryByProductPage';
+import { InventoryByLocationPage } from './pages/InventoryByLocationPage';
+import { PayablesReportPage } from './pages/PayablesReportPage';
+import { ReceivablesReportPage } from './pages/ReceivablesReportPage';
 
 
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -152,6 +156,10 @@ export const App: React.FC = () => {
               <Route path="/stock-analysis" element={<StockAnalysisPage />} />
               <Route path="/van-management" element={<VanManagementPage />} />
               <Route path="/van-management/:routeId" element={<RouteDetailsPage />} />
+              <Route path="/inventory/products" element={<InventoryByProductPage />} />
+              <Route path="/inventory/locations" element={<InventoryByLocationPage />} />
+              <Route path="/payables" element={<PayablesReportPage />} />
+              <Route path="/receivables" element={<ReceivablesReportPage />} />
 
 
             </Route>

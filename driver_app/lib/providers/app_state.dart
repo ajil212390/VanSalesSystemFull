@@ -18,7 +18,7 @@ class CylinderType {
     required this.weight,
     required this.price,
     required this.filledStock,
-    this.gstPercentage = 5.0,
+    this.gstPercentage = 0.0,
     this.hsnCode = '271109',
     int? initialFilledStock,
     this.emptyStock = 0,
@@ -34,6 +34,7 @@ class OtherProductItem {
   final int? productId;
   final String name;
   double price;
+  final double gstPercentage;
   final String categoryName;
   int initialStock;
   int deliveredStock;
@@ -43,6 +44,7 @@ class OtherProductItem {
     this.productId,
     required this.name,
     required this.price,
+    this.gstPercentage = 0.0,
     this.categoryName = 'Other Items',
     required this.initialStock,
     this.deliveredStock = 0,
@@ -491,7 +493,7 @@ class AppState extends ChangeNotifier {
                   ? s['AppProductName'].toString().trim()
                   : (s['ProductName'] ?? '').toString(),
               price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
-              gstPercentage: (s['GSTPercentage'] as num?)?.toDouble() ?? 5.0,
+              gstPercentage: (s['GSTPercentage'] as num?)?.toDouble() ?? 0.0,
               hsnCode: s['HSNCode']?.toString() ?? '271109',
               initialFilledStock: (s['AllocatedQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
               filledStock: (s['BalanceQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
@@ -508,6 +510,7 @@ class AppState extends ChangeNotifier {
                       ? s['AppProductName'].toString().trim()
                       : (s['ProductName'] ?? '').toString(),
                   price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
+                  gstPercentage: (s['GSTPercentage'] as num?)?.toDouble() ?? 0.0,
                   categoryName: (s['CategoryName'] ?? 'Other Items').toString(),
                   initialStock: (s['AllocatedQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
                   deliveredStock: (s['DeliveredQty'] as num?)?.toInt() ?? 0,
@@ -668,7 +671,7 @@ class AppState extends ChangeNotifier {
                 ? p['AppProductName'].toString().trim()
                 : (p['ProductName'] ?? ''),
             price: (p['SalesPrice'] as num?)?.toDouble() ?? 0.0,
-            gstPercentage: (p['GSTPercentage'] as num?)?.toDouble() ?? 5.0,
+            gstPercentage: (p['GSTPercentage'] as num?)?.toDouble() ?? 0.0,
             hsnCode: p['HSNCode']?.toString() ?? '271109',
             filledStock: 0,
             emptyStock: 0,
@@ -831,6 +834,7 @@ class AppState extends ChangeNotifier {
         'qty': it.deliveryQty,
         'empty_qty': it.emptyReturnQty,
         'rate': it.cylinder.price,
+        'gst_pct': it.cylinder.gstPercentage,
       }).toList();
 
       final backendOtherItems = otherDeliveryQty.entries
@@ -845,7 +849,8 @@ class AppState extends ChangeNotifier {
               'weight': prod.name,
               'qty': e.value,
               'empty_qty': 0,
-              'rate': 0.0, // Other product price not added; driver typed amount is final
+              'rate': prod.price,
+              'gst_pct': prod.gstPercentage,
             };
           })
           .toList();

@@ -300,10 +300,11 @@ def generate_tax_invoice_pdf(sale):
     if not lines.exists():
         # Synthetic single line fallback
         gross_val = Decimal(str(sale.GrandTotal or 0))
-        tax_pct = Decimal('5.00')
-        tax_fac = Decimal('1.00') + (tax_pct / Decimal('100.00'))
-        taxable_val = (gross_val / tax_fac).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-        tot_tax = gross_val - taxable_val
+        taxable_val = Decimal(str(sale.SubTotal or gross_val))
+        tot_tax = Decimal(str(sale.TaxAmount or (gross_val - taxable_val)))
+        if tot_tax < Decimal('0.00'):
+            tot_tax = Decimal('0.00')
+
         if is_intra_customer:
             cgst_val = (tot_tax / Decimal('2.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
             sgst_val = tot_tax - cgst_val
@@ -338,13 +339,23 @@ def generate_tax_invoice_pdf(sale):
             if gross_total == 0 and qty > 0:
                 gross_total = (qty * Decimal(str(line.SalesPrice or 0))).quantize(Decimal('0.01'))
 
-            gst_rate = Decimal(str(line.TaxPercent or (prod.GSTPercentage if prod else '5.00') or '5.00'))
-            if gst_rate <= 0:
-                gst_rate = Decimal('5.00')
+            # Resolve GST rate: explicitly respect line.TaxPercent (even if 0.00) or product GSTPercentage
+            gst_rate_raw = line.TaxPercent if line.TaxPercent is not None else (prod.GSTPercentage if prod else Decimal('0.00'))
+            try:
+                gst_rate = Decimal(str(gst_rate_raw or '0.00'))
+            except Exception:
+                gst_rate = Decimal('0.00')
 
-            tax_factor = Decimal('1.00') + (gst_rate / Decimal('100.00'))
-            taxable_amount = (gross_total / tax_factor).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            tax_amount = gross_total - taxable_amount
+            if gst_rate < Decimal('0.00'):
+                gst_rate = Decimal('0.00')
+
+            if gst_rate > Decimal('0.00') and gross_total > Decimal('0.00'):
+                tax_factor = Decimal('1.00') + (gst_rate / Decimal('100.00'))
+                taxable_amount = (gross_total / tax_factor).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                tax_amount = gross_total - taxable_amount
+            else:
+                taxable_amount = gross_total
+                tax_amount = Decimal('0.00')
 
             if is_intra_customer:
                 cgst_amount = (tax_amount / Decimal('2.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -354,7 +365,7 @@ def generate_tax_invoice_pdf(sale):
                 cgst_amount = Decimal('0.00')
                 sgst_amount = Decimal('0.00')
                 igst_amount = tax_amount
-            unit_taxable_rate = (taxable_amount / qty).quantize(Decimal('0.01')) if qty > 0 else taxable_amount
+            unit_taxable_rate = (taxable_amount / qty).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) if qty > 0 else taxable_amount
 
             total_taxable_sum += taxable_amount
             total_cgst_sum += cgst_amount

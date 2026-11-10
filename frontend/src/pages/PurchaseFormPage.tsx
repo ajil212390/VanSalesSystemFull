@@ -17,6 +17,7 @@ import {
   SimpleGrid,
   Modal,
   Box,
+  Badge,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -145,24 +146,27 @@ const recalc = (line: LineItem, intra: boolean): LineItem => {
   if (intra) {
     cgstPct = gst / 2;
     sgstPct = gst / 2;
-    cgstAmt = (taxable * cgstPct) / 100;
-    sgstAmt = (taxable * sgstPct) / 100;
+    const totTax = (taxable * gst) / 100;
+    cgstAmt = Number(((taxable * cgstPct) / 100).toFixed(2));
+    sgstAmt = Number((totTax - cgstAmt).toFixed(2));
   } else {
     igstPct = gst;
-    igstAmt = (taxable * igstPct) / 100;
+    igstAmt = Number(((taxable * igstPct) / 100).toFixed(2));
   }
+
+  const totalTaxAmt = cgstAmt + sgstAmt + igstAmt;
 
   return {
     ...line,
     TaxableAmount: Number(taxable.toFixed(2)),
     CGSTPercent: cgstPct,
-    CGSTAmount: Number(cgstAmt.toFixed(2)),
+    CGSTAmount: cgstAmt,
     SGSTPercent: sgstPct,
-    SGSTAmount: Number(sgstAmt.toFixed(2)),
+    SGSTAmount: sgstAmt,
     IGSTPercent: igstPct,
-    IGSTAmount: Number(igstAmt.toFixed(2)),
+    IGSTAmount: igstAmt,
     AltQuantity: altQty,
-    Total: Number((taxable + cgstAmt + sgstAmt + igstAmt).toFixed(2)),
+    Total: Number((taxable + totalTaxAmt).toFixed(2)),
   };
 };
 
@@ -332,7 +336,9 @@ export const PurchaseFormPage: React.FC = () => {
             ? Number(prod.UnitConversion)
             : 1;
           item.Rate = Number(prod.PurchasePrice) || '';
-          item.GSTPercent = Number(prod.GSTPercentage) || 18;
+          item.GSTPercent = (prod.GSTPercentage !== undefined && prod.GSTPercentage !== null && prod.GSTPercentage !== '')
+            ? Number(prod.GSTPercentage)
+            : 0;
         } else {
           item.ProductName = '';
           item.UnitId = null;
@@ -435,6 +441,9 @@ export const PurchaseFormPage: React.FC = () => {
           if (!item.ProductId) return item;
           const prod = products.find((p) => p.ProductId === Number(item.ProductId));
           if (!prod) return item;
+          const prodGst = (prod.GSTPercentage !== undefined && prod.GSTPercentage !== null && prod.GSTPercentage !== '')
+            ? Number(prod.GSTPercentage)
+            : 0;
           const updated = {
             ...item,
             ProductName: item.ProductName || prod.ProductName,
@@ -443,7 +452,7 @@ export const PurchaseFormPage: React.FC = () => {
             UnitConversion: prod.UnitConversion !== undefined && prod.UnitConversion !== null
               ? Number(prod.UnitConversion)
               : (Number(item.UnitConversion) || 1),
-            GSTPercent: item.GSTPercent || Number(prod.GSTPercentage) || 0,
+            GSTPercent: prodGst,
           };
           return recalc(updated, isIntraState);
         })
@@ -550,6 +559,7 @@ export const PurchaseFormPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
       queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
       queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
@@ -900,15 +910,30 @@ export const PurchaseFormPage: React.FC = () => {
                       )}
                     </Table.Td>
 
-                    {/* GST: Percentage on left of amount, both aligned to the right side */}
+                    {/* GST: Percentage strictly taken from Product Details Form */}
                     <Table.Td style={{ textAlign: 'right', paddingRight: 6 }}>
                       {line.ProductId ? (() => {
                         const lineTax = (line.CGSTAmount || 0) + (line.SGSTAmount || 0) + (line.IGSTAmount || 0);
                         return (
                           <Group justify="flex-end" wrap="nowrap" align="center" gap={6}>
-                            <Text style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>
-                              ({line.GSTPercent}%)
-                            </Text>
+                            <Badge
+                              size="sm"
+                              variant="light"
+                              color="gray"
+                              styles={{
+                                root: {
+                                  height: 22,
+                                  padding: '0 6px',
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: '#475569',
+                                  backgroundColor: '#f1f5f9',
+                                  border: '1px solid #e2e8f0',
+                                },
+                              }}
+                            >
+                              {line.GSTPercent}%
+                            </Badge>
                             <Text fw={600} style={{ fontSize: 13, color: '#0f766e', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                               ₹{lineTax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </Text>

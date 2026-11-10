@@ -1710,7 +1710,15 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 prod = Product.objects.filter(ProductId=p_id).first() if p_id else None
                 qty = Decimal(str(item.get('Quantity') or 0))
                 rate = Decimal(str(item.get('CostPrice') or item.get('Rate') or 0))
-                tax_pct = Decimal(str(item.get('TaxPercent') or item.get('GSTPercent') or (prod.GSTPercentage if prod else 0) or 0))
+                raw_tax = item.get('TaxPercent')
+                if raw_tax is None or str(raw_tax).strip() == '':
+                    raw_tax = item.get('GSTPercent')
+                if raw_tax is None or str(raw_tax).strip() == '':
+                    raw_tax = prod.GSTPercentage if prod else 0
+                try:
+                    tax_pct = Decimal(str(raw_tax or 0))
+                except Exception:
+                    tax_pct = Decimal('0.00')
                 alt_unit_id = item.get('AltUnitId') or (prod.AltUnit_id if prod else None)
                 unit_conv = Decimal(str(item.get('UnitConversion') or (prod.UnitConversion if prod else 1) or 1))
                 alt_qty = Decimal(str(item.get('AltQuantity') or 0))
@@ -1763,6 +1771,15 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                     OutQty=0,
                     Narration=f"Purchase {purchase.PurchaseNo}: {item.get('ProductName', '')}",
                 )
+
+                # Update product master with latest purchase price (and GST rate) everywhere
+                if prod and rate > 0:
+                    prod.PurchasePrice = rate
+                    fields_to_update = ['PurchasePrice']
+                    if tax_pct is not None and tax_pct >= 0:
+                        prod.GSTPercentage = tax_pct
+                        fields_to_update.append('GSTPercentage')
+                    prod.save(update_fields=fields_to_update)
 
             # Accounting Voucher
             voucher = Voucher.objects.create(
@@ -1996,9 +2013,19 @@ class PurchaseViewSet(viewsets.ModelViewSet):
 
             # Recreate lines & stock
             for idx, item in enumerate(lines_data):
+                p_id = item.get('ProductId')
+                prod = Product.objects.filter(ProductId=p_id).first() if p_id else None
                 qty = Decimal(str(item.get('Quantity') or 0))
                 rate = Decimal(str(item.get('CostPrice') or item.get('Rate') or 0))
-                tax_pct = Decimal(str(item.get('TaxPercent') or item.get('GSTPercent') or 0))
+                raw_tax = item.get('TaxPercent')
+                if raw_tax is None or str(raw_tax).strip() == '':
+                    raw_tax = item.get('GSTPercent')
+                if raw_tax is None or str(raw_tax).strip() == '':
+                    raw_tax = prod.GSTPercentage if prod else 0
+                try:
+                    tax_pct = Decimal(str(raw_tax or 0))
+                except Exception:
+                    tax_pct = Decimal('0.00')
                 alt_unit_id = item.get('AltUnitId') or item.get('UnitId')
                 unit_conv = Decimal(str(item.get('UnitConversion') or 1))
                 alt_qty = Decimal(str(item.get('AltQuantity') or 0))
@@ -2050,6 +2077,15 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                     OutQty=0,
                     Narration=f"Purchase {instance.PurchaseNo}: {item.get('ProductName', '')}",
                 )
+
+                # Update product master with latest purchase price (and GST rate) everywhere
+                if prod and rate > 0:
+                    prod.PurchasePrice = rate
+                    fields_to_update = ['PurchasePrice']
+                    if tax_pct is not None and tax_pct >= 0:
+                        prod.GSTPercentage = tax_pct
+                        fields_to_update.append('GSTPercentage')
+                    prod.save(update_fields=fields_to_update)
 
             # Recreate Voucher
             voucher = Voucher.objects.create(
@@ -4308,7 +4344,11 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 gross_unit_rate = rate or prod.SalesPrice or Decimal('0.00')
                 line_gross_total = qty * gross_unit_rate
 
-                gst_pct = Decimal(str(prod.GSTPercentage or '0.00'))
+                raw_item_gst = item.get('tax_percent') or item.get('TaxPercent') or item.get('gst_pct') or item.get('gstPercentage')
+                if raw_item_gst is not None and str(raw_item_gst).strip() != '':
+                    gst_pct = Decimal(str(raw_item_gst))
+                else:
+                    gst_pct = Decimal(str(prod.GSTPercentage or '0.00'))
                 is_intra = (not customer or not customer.StateId or customer.StateId in [12, 32])
                 if gst_pct > 0 and line_gross_total > 0:
                     tax_factor = Decimal('1.00') + (gst_pct / Decimal('100.00'))
@@ -4882,15 +4922,25 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
                     gross_unit = (rate or prod.SalesPrice or Decimal('0.00'))
                     line_gross = qty * gross_unit
-                    gst_p = Decimal(str(prod.GSTPercentage or '0.00'))
+                    raw_item_gst = item.get('tax_percent') or item.get('TaxPercent') or item.get('gst_pct') or item.get('gstPercentage')
+                    if raw_item_gst is not None and str(raw_item_gst).strip() != '':
+                        gst_p = Decimal(str(raw_item_gst))
+                    else:
+                        gst_p = Decimal(str(prod.GSTPercentage or '0.00'))
 
+                    cust = sale.CustomerLedger
+                    is_intra = (not cust or not cust.StateId or cust.StateId in [12, 32])
                     if gst_p > 0 and line_gross > 0:
                         tfactor = Decimal('1.00') + (gst_p / Decimal('100.00'))
                         line_taxable = (line_gross / tfactor).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
                         unit_taxable = (gross_unit / tfactor).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
                         line_tax = line_gross - line_taxable
-                        line_cgst = (line_tax / Decimal('2.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                        line_sgst = line_tax - line_cgst
+                        if is_intra:
+                            line_cgst = (line_tax / Decimal('2.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                            line_sgst = line_tax - line_cgst
+                        else:
+                            line_cgst = Decimal('0.00')
+                            line_sgst = Decimal('0.00')
                     else:
                         line_taxable = line_gross
                         unit_taxable = gross_unit

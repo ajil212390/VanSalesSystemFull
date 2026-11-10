@@ -157,6 +157,14 @@ export const AppLayout: React.FC = () => {
         return { section: 'Operations', title: 'Receipt Notes' };
       case '/stock-analysis':
         return { section: 'Inventory', title: 'Stock Analysis' };
+      case '/inventory/products':
+        return { section: 'Inventory', title: 'Inventory by Product' };
+      case '/inventory/locations':
+        return { section: 'Inventory', title: 'Inventory by Location' };
+      case '/payables':
+        return { section: 'Reports', title: 'Payables Report' };
+      case '/receivables':
+        return { section: 'Reports', title: 'Receivables Report' };
 
       default:
         if (location.pathname.startsWith('/purchases/')) {
@@ -530,8 +538,8 @@ export const AppLayout: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
                 padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname === '/' ? '#fdf2f4' : 'transparent',
-                color: location.pathname === '/' ? '#800020' : '#475569',
+                backgroundColor: location.pathname === '/' ? '#800020' : 'transparent',
+                color: location.pathname === '/' ? '#ffffff' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
@@ -584,8 +592,8 @@ export const AppLayout: React.FC = () => {
                     color="burgundy"
                     style={{
                       borderRadius: '6px',
-                      backgroundColor: isVanOpsActive ? '#fdf2f4' : 'transparent',
-                      color: isVanOpsActive ? '#800020' : '#475569',
+                      backgroundColor: isVanOpsActive ? '#800020' : 'transparent',
+                      color: isVanOpsActive ? '#ffffff' : '#475569',
                       width: '100%',
                       height: 40,
                     }}
@@ -625,8 +633,8 @@ export const AppLayout: React.FC = () => {
                     style={{
                       borderRadius: '6px',
                       fontWeight: isSubActive ? 600 : 500,
-                      backgroundColor: isSubActive ? '#fdf2f4' : 'transparent',
-                      color: isSubActive ? '#800020' : '#334155',
+                      backgroundColor: isSubActive ? '#800020' : 'transparent',
+                      color: isSubActive ? '#ffffff' : '#334155',
                       marginBottom: 2,
                     }}
                   >
@@ -665,8 +673,8 @@ export const AppLayout: React.FC = () => {
                 borderRadius: '6px',
                 height: 40,
                 fontWeight: 600,
-                backgroundColor: isVanOpsActive && !vanOpsOpened ? '#fdf2f4' : 'transparent',
-                color: isVanOpsActive ? '#800020' : '#334155',
+                backgroundColor: isVanOpsActive && !vanOpsOpened ? '#800020' : 'transparent',
+                color: isVanOpsActive && !vanOpsOpened ? '#ffffff' : (isVanOpsActive ? '#800020' : '#334155'),
                 transition: 'background-color 150ms ease, color 150ms ease',
               },
               section: { marginRight: 12 },
@@ -710,8 +718,8 @@ export const AppLayout: React.FC = () => {
                       borderRadius: '6px',
                       height: 36,
                       fontWeight: isSubActive ? 600 : 500,
-                      backgroundColor: isSubActive ? '#fdf2f4' : 'transparent',
-                      color: isSubActive ? '#800020' : '#475569',
+                      backgroundColor: isSubActive ? '#800020' : 'transparent',
+                      color: isSubActive ? '#ffffff' : '#475569',
                     },
                     section: { marginRight: 10 },
                   }}
@@ -742,8 +750,8 @@ export const AppLayout: React.FC = () => {
                   color="burgundy"
                   style={{
                     borderRadius: '6px',
-                    backgroundColor: isMasterActive ? '#fdf2f4' : 'transparent',
-                    color: isMasterActive ? '#800020' : '#475569',
+                    backgroundColor: isMasterActive ? '#800020' : 'transparent',
+                    color: isMasterActive ? '#ffffff' : '#475569',
                     width: '100%',
                     height: 40,
                   }}
@@ -768,8 +776,8 @@ export const AppLayout: React.FC = () => {
                     style={{
                       borderRadius: '6px',
                       fontWeight: isSubActive ? 600 : 500,
-                      backgroundColor: isSubActive ? '#fdf2f4' : 'transparent',
-                      color: isSubActive ? '#800020' : '#334155',
+                      backgroundColor: isSubActive ? '#800020' : 'transparent',
+                      color: isSubActive ? '#ffffff' : '#334155',
                       marginBottom: 2,
                     }}
                   >
@@ -795,8 +803,8 @@ export const AppLayout: React.FC = () => {
                 borderRadius: '6px',
                 height: 40,
                 fontWeight: 600,
-                backgroundColor: isMasterActive && !masterOpened ? '#fdf2f4' : 'transparent',
-                color: isMasterActive ? '#800020' : '#334155',
+                backgroundColor: isMasterActive && !masterOpened ? '#800020' : 'transparent',
+                color: isMasterActive && !masterOpened ? '#ffffff' : (isMasterActive ? '#800020' : '#334155'),
                 transition: 'background-color 150ms ease, color 150ms ease',
               },
               section: { marginRight: 12 },
@@ -825,8 +833,8 @@ export const AppLayout: React.FC = () => {
                       borderRadius: '6px',
                       height: 36,
                       fontWeight: isSubActive ? 600 : 500,
-                      backgroundColor: isSubActive ? '#fdf2f4' : 'transparent',
-                      color: isSubActive ? '#800020' : '#475569',
+                      backgroundColor: isSubActive ? '#800020' : 'transparent',
+                      color: isSubActive ? '#ffffff' : '#475569',
                     },
                     section: { marginRight: 10 },
                   }}
@@ -857,8 +865,8 @@ export const AppLayout: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
                 padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname.startsWith('/purchases') ? '#fdf2f4' : 'transparent',
-                color: location.pathname.startsWith('/purchases') ? '#800020' : '#475569',
+                backgroundColor: location.pathname.startsWith('/purchases') ? '#800020' : 'transparent',
+                color: location.pathname.startsWith('/purchases') ? '#ffffff' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
@@ -903,8 +911,8 @@ export const AppLayout: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
                 padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname.startsWith('/payments') ? '#fdf2f4' : 'transparent',
-                color: location.pathname.startsWith('/payments') ? '#800020' : '#475569',
+                backgroundColor: location.pathname.startsWith('/payments') ? '#800020' : 'transparent',
+                color: location.pathname.startsWith('/payments') ? '#ffffff' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
@@ -950,8 +958,8 @@ export const AppLayout: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
                 padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname.startsWith('/receipts') ? '#fdf2f4' : 'transparent',
-                color: location.pathname.startsWith('/receipts') ? '#800020' : '#475569',
+                backgroundColor: location.pathname.startsWith('/receipts') ? '#800020' : 'transparent',
+                color: location.pathname.startsWith('/receipts') ? '#ffffff' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
@@ -997,8 +1005,8 @@ export const AppLayout: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
                 padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname === '/delivery-notes' ? '#fdf2f4' : 'transparent',
-                color: location.pathname === '/delivery-notes' ? '#800020' : '#475569',
+                backgroundColor: location.pathname === '/delivery-notes' ? '#800020' : 'transparent',
+                color: location.pathname === '/delivery-notes' ? '#ffffff' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
@@ -1044,8 +1052,8 @@ export const AppLayout: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
                 padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname === '/receipt-notes' ? '#fdf2f4' : 'transparent',
-                color: location.pathname === '/receipt-notes' ? '#800020' : '#475569',
+                backgroundColor: location.pathname === '/receipt-notes' ? '#800020' : 'transparent',
+                color: location.pathname === '/receipt-notes' ? '#ffffff' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',
@@ -1089,8 +1097,8 @@ export const AppLayout: React.FC = () => {
                 alignItems: 'center',
                 justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
                 padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname === '/stock-analysis' ? '#fdf2f4' : 'transparent',
-                color: location.pathname === '/stock-analysis' ? '#800020' : '#475569',
+                backgroundColor: location.pathname === '/stock-analysis' ? '#800020' : 'transparent',
+                color: location.pathname === '/stock-analysis' ? '#ffffff' : '#475569',
                 fontWeight: 600,
                 overflow: 'hidden',
                 whiteSpace: 'nowrap',

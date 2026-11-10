@@ -11,7 +11,6 @@ import {
   Table,
   Loader,
   Center,
-  Box,
   ActionIcon,
   TextInput,
   CloseButton,
@@ -24,6 +23,7 @@ import {
   IconCylinder,
   IconReceipt,
   IconWallet,
+  IconArrowLeft,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -113,75 +113,71 @@ export const VanManagementPage: React.FC = () => {
   const totalNetBalance = totalGrossCollection - totalExpenses;
 
   return (
-    <Stack gap="md" style={{ width: '100%' }}>
+    <Stack gap="lg" style={{ width: '100%' }}>
       {/* ── 1. Page Header matching Executive Design System ── */}
-      <Paper
-        p="md"
-        radius="md"
-        withBorder
-        style={{
-          backgroundColor: '#ffffff',
-          borderColor: '#e2e8f0',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}
-      >
-        <Group justify="space-between" align="center" wrap="wrap" gap="md">
-          <Stack gap={4} style={{ flexGrow: 1, minWidth: 260 }}>
-            <Group gap="xs" align="center" wrap="wrap">
-              <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 21, letterSpacing: '-0.02em' }}>
-                Van Management
-              </Title>
-              <Badge
-                variant="dot"
-                color={liveCount > 0 ? 'teal' : 'gray'}
-                size="sm"
-                radius="sm"
-                style={{ fontWeight: 600 }}
-              >
-                {liveCount > 0 ? `${liveCount} Van${liveCount !== 1 ? 's' : ''} Live On Road` : 'Fleet Idle'}
-              </Badge>
-            </Group>
-            <Text size="xs" c="dimmed">
-              Real-time route fleet tracking &bull; Cylinder inventory &bull; Cash &amp; Bank Collections &bull; Trip Expenses
-            </Text>
-          </Stack>
-
-          {/* Search bar & Refresh action */}
-          <Group gap="sm" align="center" wrap="wrap">
-            <Box style={{ width: 260, minWidth: 180 }}>
-              <TextInput
-                placeholder="Search route, vehicle, driver..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.currentTarget.value)}
-                leftSection={<IconSearch size={16} stroke={1.5} color="#800020" />}
-                rightSection={
-                  searchQuery ? (
-                    <CloseButton size="sm" aria-label="Clear search" onClick={() => setSearchQuery('')} />
-                  ) : null
-                }
-                radius={10}
-                size="sm"
-              />
-            </Box>
-
-            <ActionIcon
-              variant="outline"
-              size="lg"
-              radius={10}
-              loading={isFetching}
-              onClick={handleRefresh}
-              style={{
-                backgroundColor: '#ffffff',
-                borderColor: '#cbd5e1',
-                color: '#800020',
-              }}
-              title="Refresh live data"
+      <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+        <div>
+          <Group gap="xs" align="center" mb={6}>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/')}
+              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
             >
-              <IconRefresh size={18} stroke={1.75} />
-            </ActionIcon>
+              Back to Dashboard
+            </Button>
           </Group>
+          <Group gap="xs" align="center" wrap="wrap">
+            <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 22, letterSpacing: '-0.02em' }}>
+              Van Management
+            </Title>
+            <Badge
+              variant="dot"
+              color={liveCount > 0 ? 'teal' : 'gray'}
+              size="sm"
+              radius="sm"
+              style={{ fontWeight: 600 }}
+            >
+              {liveCount > 0 ? `${liveCount} Van${liveCount !== 1 ? 's' : ''} Live On Road` : 'Fleet Idle'}
+            </Badge>
+          </Group>
+          <Text size="sm" c="dimmed" mt={2}>
+            Real-time route fleet tracking &bull; Cylinder inventory &bull; Cash &amp; Bank Collections &bull; Trip Expenses
+          </Text>
+        </div>
+
+        {/* Search bar & Refresh action */}
+        <Group gap="sm" align="center" wrap="wrap">
+          <TextInput
+            placeholder="Search route, vehicle, driver..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.currentTarget.value)}
+            leftSection={<IconSearch size={15} color="#64748b" />}
+            rightSection={
+              searchQuery ? (
+                <CloseButton size="sm" aria-label="Clear search" onClick={() => setSearchQuery('')} />
+              ) : null
+            }
+            radius="md"
+            size="sm"
+            style={{ width: 260 }}
+          />
+
+          <ActionIcon
+            variant="default"
+            size="lg"
+            radius="md"
+            loading={isFetching}
+            onClick={handleRefresh}
+            style={{ borderColor: '#cbd5e1' }}
+            title="Refresh live data"
+          >
+            <IconRefresh size={18} stroke={1.75} color="#475569" />
+          </ActionIcon>
         </Group>
-      </Paper>
+      </Group>
 
       {/* ── 2. Top Metric KPI Cards (Clean SaaS Design System) ── */}
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
