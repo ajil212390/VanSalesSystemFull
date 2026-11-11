@@ -174,65 +174,62 @@ export const ConnectionPackageFormPage: React.FC = () => {
     }
   };
 
-  // Add Item Line
+  // Add Item Line (Starts completely empty for user to choose product)
   const handleAddItem = () => {
-    const candidate =
-      products.find((p: any) => !p.IsCylinder && !/cylinder/i.test(p.ProductName)) || products[0];
-    const initialPrice = candidate ? Number(candidate.SalesPrice || 0) : 0;
     setItems((prev) => [
       ...prev,
       {
-        Product: candidate ? String(candidate.ProductId) : '',
+        Product: '',
         Quantity: 1,
-        UnitPrice: initialPrice,
-        TotalAmount: initialPrice,
+        UnitPrice: 0,
+        TotalAmount: 0,
       },
     ]);
   };
 
-  // Update Item Line
+  // Update Item Line: When user picks product, fetch normal sales price and allow user to edit
   const handleItemProductChange = (index: number, pId: string) => {
     const prod = productMap.get(Number(pId));
-    const price = prod ? Number(prod.SalesPrice || 0) : 0;
+    const normalPrice = prod ? Number(prod.SalesPrice || prod.PurchasePrice || 0) : 0;
     setItems((prev) =>
-      prev.map((it, i) =>
-        i === index
-          ? {
-              ...it,
-              Product: pId,
-              UnitPrice: price,
-              TotalAmount: Number((it.Quantity * price).toFixed(2)),
-            }
-          : it
-      )
+      prev.map((it, i) => {
+        if (i !== index) return it;
+        const qty = it.Quantity || 1;
+        return {
+          ...it,
+          Product: pId,
+          UnitPrice: normalPrice,
+          TotalAmount: Number((qty * normalPrice).toFixed(2)),
+        };
+      })
     );
   };
 
   const handleItemQtyChange = (index: number, qty: number) => {
     setItems((prev) =>
-      prev.map((it, i) =>
-        i === index
-          ? {
-              ...it,
-              Quantity: qty,
-              TotalAmount: Number((qty * it.UnitPrice).toFixed(2)),
-            }
-          : it
-      )
+      prev.map((it, i) => {
+        if (i !== index) return it;
+        const rate = it.UnitPrice || 0;
+        return {
+          ...it,
+          Quantity: qty,
+          TotalAmount: Number((qty * rate).toFixed(2)),
+        };
+      })
     );
   };
 
   const handleItemPriceChange = (index: number, price: number) => {
     setItems((prev) =>
-      prev.map((it, i) =>
-        i === index
-          ? {
-              ...it,
-              UnitPrice: price,
-              TotalAmount: Number((it.Quantity * price).toFixed(2)),
-            }
-          : it
-      )
+      prev.map((it, i) => {
+        if (i !== index) return it;
+        const qty = it.Quantity || 1;
+        return {
+          ...it,
+          UnitPrice: price,
+          TotalAmount: Number((qty * price).toFixed(2)),
+        };
+      })
     );
   };
 
@@ -571,12 +568,14 @@ export const ConnectionPackageFormPage: React.FC = () => {
                           <Table.Tr key={idx}>
                             <Table.Td>
                               <Select
-                                placeholder="Choose accessory..."
+                                placeholder="Choose accessory / product..."
                                 data={accessoryOptions}
-                                value={it.Product}
+                                value={it.Product || null}
                                 onChange={(val) => handleItemProductChange(idx, val || '')}
                                 searchable
+                                clearable
                                 size="xs"
+                                styles={{ input: { fontSize: 13, borderColor: '#cbd5e1' } }}
                               />
                             </Table.Td>
                             <Table.Td>
@@ -586,6 +585,7 @@ export const ConnectionPackageFormPage: React.FC = () => {
                                 value={it.Quantity}
                                 onChange={(val) => handleItemQtyChange(idx, typeof val === 'number' ? val : 1)}
                                 size="xs"
+                                styles={{ input: { fontSize: 13, fontWeight: 600, textAlign: 'center', borderColor: '#cbd5e1' } }}
                               />
                             </Table.Td>
                             <Table.Td>
@@ -593,12 +593,14 @@ export const ConnectionPackageFormPage: React.FC = () => {
                                 hideControls
                                 min={0}
                                 decimalScale={2}
-                                value={it.UnitPrice}
+                                placeholder="0.00"
+                                value={it.UnitPrice === 0 && !it.Product ? '' : it.UnitPrice}
                                 onChange={(val) => handleItemPriceChange(idx, typeof val === 'number' ? val : 0)}
                                 size="xs"
+                                styles={{ input: { fontSize: 13, fontWeight: 600, borderColor: '#cbd5e1' } }}
                               />
                             </Table.Td>
-                            <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13 }}>
+                            <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#0f172a' }}>
                               ₹{(it.TotalAmount || 0).toFixed(2)}
                             </Table.Td>
                             <Table.Td>

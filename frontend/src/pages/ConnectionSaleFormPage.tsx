@@ -336,7 +336,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
                       <Stack gap={2}>
                         {activePackage.items.map((it: any, idx: number) => (
                           <Text key={idx} size="11px" fw={500} style={{ color: '#334155' }}>
-                            &bull; {it.product_name || `Product #${it.Product}`} &times; {it.Quantity}
+                            &bull; {it.product_name || `Product #${it.Product}`} &times; {parseFloat(String(it.Quantity || 1))}
                           </Text>
                         ))}
                       </Stack>

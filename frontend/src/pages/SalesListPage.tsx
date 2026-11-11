@@ -284,32 +284,32 @@ export const SalesListPage: React.FC = () => {
 
       {/* ── Sales List Table ── */}
       <Paper radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
-        <Table.ScrollContainer minWidth={900}>
+        <Table.ScrollContainer minWidth={1050}>
           <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
             <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <Table.Tr>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px' }}>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', minWidth: 210 }}>
                   INVOICE # &amp; DATE
                 </Table.Th>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px' }}>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', minWidth: 150 }}>
                   CUSTOMER
                 </Table.Th>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px' }}>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', minWidth: 160 }}>
                   ROUTE / VEHICLE
                 </Table.Th>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center' }}>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center', minWidth: 140 }}>
                   QTY (FILLED / EMPTY)
                 </Table.Th>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center' }}>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center', minWidth: 90 }}>
                   PAYMENT
                 </Table.Th>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right', minWidth: 110 }}>
                   GRAND TOTAL
                 </Table.Th>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center' }}>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center', minWidth: 110 }}>
                   STATUS
                 </Table.Th>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center', width: 100 }}>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center', width: 90, minWidth: 90 }}>
                   ACTIONS
                 </Table.Th>
               </Table.Tr>
@@ -343,11 +343,25 @@ export const SalesListPage: React.FC = () => {
                     <Table.Tr key={sale.SalesId}>
                       <Table.Td>
                         <Group gap={6} align="center" wrap="nowrap">
-                          <Text fw={700} size="sm" ff="monospace" style={{ color: '#800020' }}>
+                          <Text fw={700} size="sm" ff="monospace" style={{ color: '#800020', whiteSpace: 'nowrap' }}>
                             {sale.InvoiceNo || sale.SalesNo || `#${sale.SalesId}`}
                           </Text>
                           {isPkg && (
-                            <Badge size="xs" color="burgundy" variant="light" style={{ backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 }}>
+                            <Badge
+                              size="xs"
+                              color="burgundy"
+                              variant="light"
+                              styles={{
+                                root: {
+                                  backgroundColor: '#fdf2f4',
+                                  color: '#800020',
+                                  fontWeight: 700,
+                                  flexShrink: 0,
+                                  overflow: 'visible',
+                                  whiteSpace: 'nowrap',
+                                },
+                              }}
+                            >
                               PACKAGE
                             </Badge>
                           )}
@@ -357,7 +371,7 @@ export const SalesListPage: React.FC = () => {
                               withArrow
                               position="top"
                             >
-                              <Badge size="xs" color="orange" variant="light" style={{ cursor: 'pointer', fontWeight: 700 }}>
+                              <Badge size="xs" color="orange" variant="light" styles={{ root: { cursor: 'pointer', fontWeight: 700, flexShrink: 0 } }}>
                                 Edited
                               </Badge>
                             </Tooltip>
@@ -443,11 +457,17 @@ export const SalesListPage: React.FC = () => {
                           <Badge
                             size="xs"
                             variant="filled"
-                            style={{
-                              fontWeight: 700,
-                              backgroundColor: '#fdf2f4',
-                              color: '#800020',
-                              border: '1px solid #f5c2cb',
+                            styles={{
+                              root: {
+                                fontWeight: 700,
+                                backgroundColor: '#fdf2f4',
+                                color: '#800020',
+                                border: '1px solid #f5c2cb',
+                                flexShrink: 0,
+                                overflow: 'visible',
+                                whiteSpace: 'nowrap',
+                                display: 'inline-block',
+                              },
                             }}
                           >
                             APPROVED
@@ -456,11 +476,17 @@ export const SalesListPage: React.FC = () => {
                           <Badge
                             size="xs"
                             variant="outline"
-                            style={{
-                              fontWeight: 700,
-                              backgroundColor: '#fffbeb',
-                              color: '#b45309',
-                              borderColor: '#fde68a',
+                            styles={{
+                              root: {
+                                fontWeight: 700,
+                                backgroundColor: '#fffbeb',
+                                color: '#b45309',
+                                borderColor: '#fde68a',
+                                flexShrink: 0,
+                                overflow: 'visible',
+                                whiteSpace: 'nowrap',
+                                display: 'inline-block',
+                              },
                             }}
                           >
                             PENDING

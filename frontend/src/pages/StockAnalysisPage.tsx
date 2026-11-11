@@ -1575,7 +1575,7 @@ export const StockAnalysisPage: React.FC = () => {
             ) : (
               <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 <ScrollArea
-                  h={305}
+                  h={265}
                   scrollbars="y"
                   scrollbarSize={6}
                   type="hover"
@@ -1647,16 +1647,19 @@ export const StockAnalysisPage: React.FC = () => {
                         );
                       })}
                     </Table.Tbody>
-                    <Table.Tfoot
-                      style={{
-                        position: 'sticky',
-                        bottom: 0,
-                        backgroundColor: '#f8fafc',
-                        zIndex: 2,
-                        borderTop: '2px solid #e2e8f0',
-                        boxShadow: '0 -2px 6px rgba(0,0,0,0.03)',
-                      }}
-                    >
+                  </Table>
+                </ScrollArea>
+
+                {/* Permanent Total Footer locked cleanly outside ScrollArea */}
+                <Box style={{ borderTop: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
+                  <Table verticalSpacing="xs" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <colgroup>
+                      <col style={{ width: 75 }} />
+                      <col />
+                      <col style={{ width: 95 }} />
+                      <col style={{ width: 95 }} />
+                    </colgroup>
+                    <Table.Tbody>
                       <Table.Tr style={{ height: 42 }}>
                         <Table.Td colSpan={2} style={{ fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Total
@@ -1668,9 +1671,9 @@ export const StockAnalysisPage: React.FC = () => {
                           {totalProductEmpty}
                         </Table.Td>
                       </Table.Tr>
-                    </Table.Tfoot>
+                    </Table.Tbody>
                   </Table>
-                </ScrollArea>
+                </Box>
               </Box>
             )}
           </Paper>
@@ -1752,7 +1755,7 @@ export const StockAnalysisPage: React.FC = () => {
             ) : (
               <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 <ScrollArea
-                  h={305}
+                  h={265}
                   scrollbars="y"
                   scrollbarSize={6}
                   type="hover"
@@ -1815,16 +1818,18 @@ export const StockAnalysisPage: React.FC = () => {
                         </Table.Tr>
                       ))}
                     </Table.Tbody>
-                    <Table.Tfoot
-                      style={{
-                        position: 'sticky',
-                        bottom: 0,
-                        backgroundColor: '#f8fafc',
-                        zIndex: 2,
-                        borderTop: '2px solid #e2e8f0',
-                        boxShadow: '0 -2px 6px rgba(0,0,0,0.03)',
-                      }}
-                    >
+                  </Table>
+                </ScrollArea>
+
+                {/* Permanent Total Footer locked cleanly outside ScrollArea */}
+                <Box style={{ borderTop: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
+                  <Table verticalSpacing="xs" horizontalSpacing="md" style={{ tableLayout: 'fixed', width: '100%' }}>
+                    <colgroup>
+                      <col />
+                      <col style={{ width: 105 }} />
+                      <col style={{ width: 105 }} />
+                    </colgroup>
+                    <Table.Tbody>
                       <Table.Tr style={{ height: 42 }}>
                         <Table.Td style={{ fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Total
@@ -1836,9 +1841,9 @@ export const StockAnalysisPage: React.FC = () => {
                           {totalLocationEmpty}
                         </Table.Td>
                       </Table.Tr>
-                    </Table.Tfoot>
+                    </Table.Tbody>
                   </Table>
-                </ScrollArea>
+                </Box>
               </Box>
             )}
           </Paper>

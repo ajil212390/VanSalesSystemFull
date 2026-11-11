@@ -222,14 +222,34 @@ export const ConnectionPackagesPage: React.FC = () => {
 
                       <Table.Td>
                         {itemsCount > 0 ? (
-                          <Group gap={4} wrap="wrap">
-                            {(pkg.items || []).slice(0, 3).map((it: any, idx: number) => (
-                              <Badge key={idx} size="xs" variant="outline" color="gray">
-                                {it.product_name || `Product #${it.Product}`} &times; {it.Quantity}
-                              </Badge>
-                            ))}
+                          <Group gap={6} wrap="wrap">
+                            {(pkg.items || []).slice(0, 3).map((it: any, idx: number) => {
+                              const qtyVal = parseFloat(String(it.Quantity || 1));
+                              return (
+                                <Badge
+                                  key={idx}
+                                  size="sm"
+                                  radius="md"
+                                  variant="light"
+                                  styles={{
+                                    root: {
+                                      backgroundColor: '#fdf2f4',
+                                      color: '#800020',
+                                      border: '1px solid #fecdd3',
+                                      fontWeight: 600,
+                                      fontSize: 11.5,
+                                      textTransform: 'none',
+                                      height: 22,
+                                      padding: '0 8px',
+                                    },
+                                  }}
+                                >
+                                  {it.product_name || `Product #${it.Product}`} &times; {qtyVal}
+                                </Badge>
+                              );
+                            })}
                             {itemsCount > 3 && (
-                              <Badge size="xs" variant="light" color="burgundy">
+                              <Badge size="xs" variant="light" color="burgundy" radius="md">
                                 +{itemsCount - 3} more
                               </Badge>
                             )}
