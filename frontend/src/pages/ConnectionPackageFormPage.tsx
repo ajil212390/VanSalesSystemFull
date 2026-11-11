@@ -325,7 +325,7 @@ export const ConnectionPackageFormPage: React.FC = () => {
 
   return (
     <form onSubmit={handleSubmit}>
-      <Stack gap="lg" style={{ width: '100%', maxWidth: 1200, margin: '0 auto' }}>
+      <Stack gap="lg" style={{ width: '100%' }}>
         {/* ── Top Header with Back Navigation ── */}
         <Box pt={4} pb={2}>
           <Group justify="space-between" align="center" wrap="wrap">

@@ -207,7 +207,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
   };
 
   return (
-    <Stack gap="lg" style={{ width: '100%', maxWidth: 1100, margin: '0 auto' }}>
+    <Stack gap="lg" style={{ width: '100%' }}>
       {/* ── Top Header ── */}
       <Box pt={4} pb={2}>
         <Group justify="space-between" align="center" wrap="wrap">

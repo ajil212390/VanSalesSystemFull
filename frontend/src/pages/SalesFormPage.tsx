@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Title,
   Text,
@@ -46,7 +46,8 @@ export const SalesFormPage: React.FC = () => {
   );
   const [routeId, setRouteId] = useState<string>('');
   const [customerId, setCustomerId] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<string>('CASH');
+  const [paymentMethod, setPaymentMethod] = useState<string>('CREDIT');
+  const [amountPaidNow, setAmountPaidNow] = useState<number | ''>('');
   const [notes, setNotes] = useState<string>('');
   const [totalEmptyQty, setTotalEmptyQty] = useState<number>(0);
   const [customGrandTotal, setCustomGrandTotal] = useState<number | ''>('');
@@ -256,6 +257,22 @@ export const SalesFormPage: React.FC = () => {
   }, [lines]);
 
   const finalGrandTotal = customGrandTotal !== '' ? Number(customGrandTotal) : autoGrandTotal;
+  const paidVal = Number(amountPaidNow !== '' ? amountPaidNow : (paymentMethod === 'CREDIT' ? 0 : finalGrandTotal));
+  const balanceDue = Math.max(0, finalGrandTotal - paidVal);
+
+  useEffect(() => {
+    if (paymentMethod !== 'CREDIT') {
+      if (finalGrandTotal > 0) {
+        setAmountPaidNow(finalGrandTotal);
+      } else {
+        setAmountPaidNow('');
+      }
+    } else {
+      if (amountPaidNow === 0) {
+        setAmountPaidNow('');
+      }
+    }
+  }, [finalGrandTotal, paymentMethod]);
 
   // Mutation: Create Sale
   const createSaleMutation = useMutation({
@@ -293,11 +310,16 @@ export const SalesFormPage: React.FC = () => {
       return;
     }
 
+    const paidAmountToSend = paymentMethod === 'CREDIT'
+      ? Number(amountPaidNow || 0)
+      : (amountPaidNow !== '' ? Number(amountPaidNow) : finalGrandTotal);
+
     const payload = {
       SalesDate: salesDate,
       RouteId: routeId ? Number(routeId) : 1,
       CustomerLedger: customerId ? Number(customerId) : null,
       PaymentMethod: paymentMethod,
+      PaidAmount: paidAmountToSend,
       Notes: notes.trim(),
       TotalEmptyQty: totalEmptyQty,
       GrandTotal: finalGrandTotal,
@@ -369,22 +391,41 @@ export const SalesFormPage: React.FC = () => {
 
               <Select
                 label="Customer / Buyer"
-                placeholder="Choose Customer..."
+                placeholder="Walk-in Cash Customer (Direct)"
                 data={customerOptions}
                 value={customerId}
-                onChange={(val) => setCustomerId(val)}
+                onChange={(val) => {
+                  setCustomerId(val);
+                  if (val) {
+                    setPaymentMethod('CREDIT');
+                    setAmountPaidNow('');
+                  } else {
+                    setPaymentMethod('CASH');
+                    setAmountPaidNow(finalGrandTotal > 0 ? finalGrandTotal : '');
+                  }
+                }}
                 searchable
                 clearable
               />
 
               <Select
-                label="Payment Method"
+                label="Payment Method / Terms"
                 data={[
-                  { value: 'CASH', label: 'Cash' },
+                  { value: 'CREDIT', label: 'Credit / Bill Later (On Account)' },
+                  { value: 'CASH', label: 'Cash Payment' },
                   { value: 'UPI', label: 'UPI / Bank Transfer' },
                 ]}
                 value={paymentMethod}
-                onChange={(val) => val && setPaymentMethod(val)}
+                onChange={(val) => {
+                  if (val) {
+                    setPaymentMethod(val);
+                    if (val === 'CREDIT') {
+                      setAmountPaidNow('');
+                    } else {
+                      setAmountPaidNow(finalGrandTotal > 0 ? finalGrandTotal : '');
+                    }
+                  }
+                }}
                 required
               />
             </SimpleGrid>
@@ -547,8 +588,15 @@ export const SalesFormPage: React.FC = () => {
                     hideControls
                     size="sm"
                     decimalScale={2}
-                    value={customGrandTotal !== '' ? customGrandTotal : autoGrandTotal}
-                    onChange={(val) => setCustomGrandTotal(val !== '' ? Number(val) : '')}
+                    placeholder="0.00"
+                    value={customGrandTotal !== '' ? customGrandTotal : (autoGrandTotal > 0 ? autoGrandTotal : '')}
+                    onChange={(val) => {
+                      const nextVal = val !== '' ? Number(val) : '';
+                      setCustomGrandTotal(nextVal);
+                      if (paymentMethod !== 'CREDIT') {
+                        setAmountPaidNow(typeof nextVal === 'number' && nextVal > 0 ? nextVal : '');
+                      }
+                    }}
                     style={{ width: 160 }}
                     styles={{
                       input: {
@@ -560,6 +608,45 @@ export const SalesFormPage: React.FC = () => {
                     }}
                   />
                 </Group>
+
+                <Group justify="space-between" align="center">
+                  <Text size="xs" c="dimmed" fw={600}>
+                    Amount Paid Now (₹):
+                  </Text>
+                  <NumberInput
+                    hideControls
+                    size="sm"
+                    decimalScale={2}
+                    min={0}
+                    max={finalGrandTotal}
+                    placeholder="0.00"
+                    value={amountPaidNow !== '' ? amountPaidNow : ''}
+                    onChange={(val) => setAmountPaidNow(val !== '' ? Number(val) : '')}
+                    style={{ width: 160 }}
+                    styles={{
+                      input: {
+                        fontWeight: 800,
+                        fontSize: 18,
+                        textAlign: 'right',
+                        borderColor: '#cbd5e1',
+                      },
+                    }}
+                  />
+                </Group>
+
+                <Group justify="space-between" align="center">
+                  <Text size="xs" fw={700} c={balanceDue > 0 ? 'red.7' : 'teal.7'}>
+                    Balance Due / Pending (₹):
+                  </Text>
+                  <Text size="sm" fw={800} c={balanceDue > 0 ? 'red.7' : 'teal.7'} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ₹{balanceDue.toFixed(2)}
+                  </Text>
+                </Group>
+                {balanceDue > 0 && (
+                  <Text size="11px" c="dimmed" ta="right">
+                    Pending bill will appear in Billwise Allocation for receipt collection.
+                  </Text>
+                )}
 
                 <Group justify="flex-end" mt="md" gap="sm">
                   <Button variant="default" onClick={() => navigate('/sales')}>

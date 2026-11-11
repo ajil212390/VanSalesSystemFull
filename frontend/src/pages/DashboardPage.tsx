@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Title,
   Text,
@@ -7,6 +7,8 @@ import {
   Stack,
   Box,
   Button,
+  Modal,
+  TextInput,
 } from '@mantine/core';
 import {
   IconReceipt,
@@ -20,14 +22,14 @@ import {
   IconPackage,
   IconBuildingFactory2,
   IconShoppingCart,
-  IconPlus,
+  IconCalendar,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
 
-// Modern 3D Premium Metric Card
+// ── Clean Premium Dashboard Metric Card ──
 interface MetricCardProps {
   title: string;
   icon: React.ReactNode;
@@ -70,7 +72,7 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
         minHeight: 148,
       }}
     >
-      {/* Card Header: Title + Clean Icon directly on card (no square boxes) */}
+      {/* Card Header: Title + Soft Tinted Icon Pill */}
       <Group justify="space-between" align="center" mb="xs" wrap="nowrap">
         <Text
           size="xs"
@@ -83,13 +85,17 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
         </Text>
         <Box
           style={{
+            width: 40,
+            height: 40,
+            borderRadius: 12,
+            backgroundColor: isHovered ? '#fae8eb' : '#fdf2f4',
             color: '#800020',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            transform: isHovered ? 'scale(1.08)' : 'none',
-            transition: 'transform 200ms ease',
+            transform: isHovered ? 'scale(1.05)' : 'none',
+            transition: 'all 200ms ease',
           }}
         >
           {icon}
@@ -116,31 +122,51 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
         )}
       </Box>
 
-      {/* Card Footer: Subtitle + Clean Arrow directly on card (no square/circle background) */}
+      {/* Card Footer: Subtitle Pill + Light Neutral Arrow Box */}
       <Group justify="space-between" align="center" mt="xs" wrap="nowrap" gap="xs">
-        <Text
-          size="xs"
-          c="dimmed"
-          truncate
+        <Box
           style={{
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            fontSize: 12,
+            display: 'inline-flex',
+            alignItems: 'center',
+            backgroundColor: '#f8fafc',
+            border: '1px solid #f1f5f9',
+            borderRadius: 9999,
+            padding: '3px 10px',
+            maxWidth: 'calc(100% - 36px)',
           }}
         >
-          {subtitle}
-        </Text>
-        <IconArrowUpRight
-          size={17}
-          color="#800020"
-          stroke={2}
+          <Text
+            size="xs"
+            c="#64748b"
+            fw={500}
+            truncate
+            style={{
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              fontSize: 11.5,
+            }}
+          >
+            {subtitle}
+          </Text>
+        </Box>
+        <Box
           style={{
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            backgroundColor: isHovered ? '#e2e8f0' : '#f1f5f9',
+            color: '#475569',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             flexShrink: 0,
             transform: isHovered ? 'translate(2px, -2px)' : 'none',
-            transition: 'transform 200ms ease',
+            transition: 'all 200ms ease',
           }}
-        />
+        >
+          <IconArrowUpRight size={16} stroke={2} />
+        </Box>
       </Group>
     </Box>
   );
@@ -149,6 +175,12 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
 export const DashboardPage: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+  const [timeFilter, setTimeFilter] = useState<'today' | 'week' | 'month' | 'quarter' | 'custom'>('week');
+  const [customDates, setCustomDates] = useState<{ from: string; to: string }>({
+    from: new Date().toISOString().split('T')[0],
+    to: new Date().toISOString().split('T')[0],
+  });
+  const [customModalOpened, setCustomModalOpened] = useState(false);
 
   // Current Date Display
   const todayFormatted = useMemo(() => {
@@ -247,35 +279,122 @@ export const DashboardPage: React.FC = () => {
     });
   }, [payments, customerLedgerIds]);
 
+  // ── Workable Date Range Calculation ──
+  const dateRange = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    if (timeFilter === 'today') {
+      return { start: todayStr, end: todayStr, label: 'Today' };
+    }
+
+    if (timeFilter === 'week') {
+      const start = new Date();
+      start.setDate(now.getDate() - 7);
+      return {
+        start: start.toISOString().split('T')[0],
+        end: todayStr,
+        label: 'This Week',
+      };
+    }
+
+    if (timeFilter === 'month') {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      return {
+        start: start.toISOString().split('T')[0],
+        end: todayStr,
+        label: 'This Month',
+      };
+    }
+
+    if (timeFilter === 'quarter') {
+      const qMonth = Math.floor(now.getMonth() / 3) * 3;
+      const start = new Date(now.getFullYear(), qMonth, 1);
+      return {
+        start: start.toISOString().split('T')[0],
+        end: todayStr,
+        label: 'This Quarter',
+      };
+    }
+
+    if (timeFilter === 'custom') {
+      return {
+        start: customDates.from || '2000-01-01',
+        end: customDates.to || todayStr,
+        label: customDates.from && customDates.to ? `${customDates.from} to ${customDates.to}` : 'Custom Range',
+      };
+    }
+
+    return { start: '', end: '', label: 'All Time' };
+  }, [timeFilter, customDates]);
+
+  // ── Filtered Datasets According to Date Range ──
+  const filteredPurchases = useMemo(() => {
+    if (!dateRange.start || !dateRange.end) return purchases;
+    return purchases.filter((p: any) => {
+      const pDate = p.PurchaseDate || p.InvoiceDate || p.CreatedAt?.split('T')[0];
+      return pDate && pDate >= dateRange.start && pDate <= dateRange.end;
+    });
+  }, [purchases, dateRange]);
+
+  const filteredSales = useMemo(() => {
+    return sales.filter((s: any) => {
+      if (s.Status === 'CANCELLED') return false;
+      if (!dateRange.start || !dateRange.end) return true;
+      const sDate = s.SalesDate || s.CreatedAt?.split('T')[0];
+      return sDate && sDate >= dateRange.start && sDate <= dateRange.end;
+    });
+  }, [sales, dateRange]);
+
+  const filteredSupplierPayments = useMemo(() => {
+    return supplierPayments.filter((p: any) => {
+      if (!dateRange.start || !dateRange.end) return true;
+      const pDate = p.payment_date || p.CreatedAt?.split('T')[0] || p.VoucherDate;
+      return pDate && pDate >= dateRange.start && pDate <= dateRange.end;
+    });
+  }, [supplierPayments, dateRange]);
+
+  const filteredCustomerReceipts = useMemo(() => {
+    return customerReceipts.filter((p: any) => {
+      if (!dateRange.start || !dateRange.end) return true;
+      const pDate = p.payment_date || p.CreatedAt?.split('T')[0] || p.VoucherDate;
+      return pDate && pDate >= dateRange.start && pDate <= dateRange.end;
+    });
+  }, [customerReceipts, dateRange]);
+
   // Row 1 Calculations: Purchases & Payables
   const totalPurchase = useMemo(() => {
-    return purchases.reduce((sum: number, p: any) => sum + Number(p.GrandTotal || 0), 0);
-  }, [purchases]);
+    return filteredPurchases.reduce((sum: number, p: any) => sum + Number(p.GrandTotal || 0), 0);
+  }, [filteredPurchases]);
 
   const totalSupplierPayments = useMemo(() => {
-    return supplierPayments.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
-  }, [supplierPayments]);
+    return filteredSupplierPayments.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
+  }, [filteredSupplierPayments]);
 
   const payableBalance = totalPurchase - totalSupplierPayments;
 
   // Row 2 Calculations: Sales & Receivables
   const totalSales = useMemo(() => {
-    return sales
-      .filter((s: any) => s.Status !== 'CANCELLED')
-      .reduce((sum: number, s: any) => sum + Number(s.GrandTotal || 0), 0);
-  }, [sales]);
+    return filteredSales.reduce((sum: number, s: any) => sum + Number(s.GrandTotal || 0), 0);
+  }, [filteredSales]);
 
   const validSalesCount = useMemo(() => {
-    return sales.filter((s: any) => s.Status !== 'CANCELLED').length;
-  }, [sales]);
+    return filteredSales.length;
+  }, [filteredSales]);
+
+  // Collections = Payment receipts + payments collected on sales in this period
+  const salesPaidTotal = useMemo(() => {
+    return filteredSales.reduce((sum: number, s: any) => sum + Number(s.PaidAmount || 0), 0);
+  }, [filteredSales]);
 
   const totalCustomerReceipts = useMemo(() => {
-    return customerReceipts.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
-  }, [customerReceipts]);
+    const directReceipts = filteredCustomerReceipts.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
+    return directReceipts + salesPaidTotal;
+  }, [filteredCustomerReceipts, salesPaidTotal]);
 
   const receivableBalance = totalSales - totalCustomerReceipts;
 
-  // Row 3 Calculations: Inventory & Van Management
+  // Row 3 Calculations: Inventory & Van Operations
   const stockProducts = stockAnalysis?.products || [];
 
   const stockLocations = useMemo(() => {
@@ -354,56 +473,211 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <Stack gap="lg" style={{ width: '100%' }}>
-      {/* 1. Header with Canvas Greeting & Quick Actions */}
+      {/* ── 1. Top Header: Greeting on Left & Workable Time Filter Tab on Top Right ── */}
       <Box pt={4} pb={2}>
         <Group justify="space-between" align="center" wrap="wrap" gap="sm">
           <div>
-            <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 24, letterSpacing: '-0.02em' }}>
+            <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
               {user?.company_name || 'Future Gas'}
             </Title>
             <Text size="xs" c="dimmed" mt={2}>
-              {todayFormatted} &bull; Executive Operations &amp; Commercial Overview
+              {todayFormatted} &bull; Executive Operations &amp; Commercial Overview &bull; Showing {dateRange.label}
             </Text>
           </div>
 
-          <Group gap="xs" wrap="wrap">
-            <Button
-              variant="outline"
-              color="burgundy"
-              size="sm"
-              radius="md"
-              leftSection={<IconShoppingCart size={16} />}
-              style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
-              onClick={() => navigate('/purchases/new')}
-            >
-              Add Purchase
-            </Button>
-            <Button
-              variant="outline"
-              color="burgundy"
-              size="sm"
-              radius="md"
-              leftSection={<IconCreditCard size={16} />}
-              style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
-              onClick={() => navigate('/payments/new')}
-            >
-              Add Payment
-            </Button>
-            <Button
-              variant="filled"
-              size="sm"
-              radius="md"
-              leftSection={<IconPlus size={16} />}
-              style={{ backgroundColor: '#800020', fontWeight: 600 }}
-              onClick={() => navigate('/sales/new')}
-            >
-              Add Sale
-            </Button>
-          </Group>
+          {/* Workable Time Filter Pill Tabs */}
+          <Box
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              backgroundColor: '#f1f5f9',
+              borderRadius: 9999,
+              padding: 3,
+              border: '1px solid #e2e8f0',
+            }}
+          >
+            {(
+              [
+                { id: 'today', label: 'Today', hasIcon: false },
+                { id: 'week', label: 'This Week', hasIcon: false },
+                { id: 'month', label: 'This Month', hasIcon: false },
+                { id: 'quarter', label: 'Quarter', hasIcon: false },
+                { id: 'custom', label: 'Custom', hasIcon: true },
+              ] as const
+            ).map((tab) => {
+              const isActive = timeFilter === tab.id;
+              return (
+                <Box
+                  key={tab.id}
+                  component="button"
+                  type="button"
+                  onClick={() => {
+                    if (tab.id === 'custom') {
+                      setCustomModalOpened(true);
+                    } else {
+                      setTimeFilter(tab.id);
+                    }
+                  }}
+                  style={{
+                    background: isActive ? '#800020' : 'transparent',
+                    color: isActive ? '#ffffff' : '#64748b',
+                    border: 'none',
+                    borderRadius: 9999,
+                    padding: '5px 14px',
+                    fontSize: 12,
+                    fontWeight: isActive ? 700 : 500,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    transition: 'all 150ms ease',
+                  }}
+                >
+                  {tab.hasIcon && <IconCalendar size={13} />}
+                  {tab.label}
+                </Box>
+              );
+            })}
+          </Box>
+        </Group>
+
+        {/* Action Buttons Row: 4 Properly Formatted Pills */}
+        <Group justify="flex-end" gap="sm" wrap="wrap" mt="sm">
+          {/* 1. Add Sale (White Pill with Soft Rose Icon Circle) */}
+          <Button
+            variant="default"
+            size="sm"
+            radius="xl"
+            leftSection={
+              <Box
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 9999,
+                  backgroundColor: '#fdf2f4',
+                  color: '#800020',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IconReceipt size={13} stroke={2.2} />
+              </Box>
+            }
+            style={{
+              borderColor: '#e2e8f0',
+              backgroundColor: '#ffffff',
+              color: '#1e293b',
+              fontWeight: 600,
+              padding: '8px 16px',
+            }}
+            onClick={() => navigate('/sales/new')}
+          >
+            Add Sale
+          </Button>
+
+          {/* 2. Add Receipt (White Pill with Soft Rose Icon Circle) */}
+          <Button
+            variant="default"
+            size="sm"
+            radius="xl"
+            leftSection={
+              <Box
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 9999,
+                  backgroundColor: '#fdf2f4',
+                  color: '#800020',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IconCoins size={13} stroke={2.2} />
+              </Box>
+            }
+            style={{
+              borderColor: '#e2e8f0',
+              backgroundColor: '#ffffff',
+              color: '#1e293b',
+              fontWeight: 600,
+              padding: '8px 16px',
+            }}
+            onClick={() => navigate('/receipts/new')}
+          >
+            Add Receipt
+          </Button>
+
+          {/* 3. Add Purchase (White Pill with Soft Rose Icon Circle) */}
+          <Button
+            variant="default"
+            size="sm"
+            radius="xl"
+            leftSection={
+              <Box
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 9999,
+                  backgroundColor: '#fdf2f4',
+                  color: '#800020',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IconShoppingCart size={13} stroke={2.2} />
+              </Box>
+            }
+            style={{
+              borderColor: '#e2e8f0',
+              backgroundColor: '#ffffff',
+              color: '#1e293b',
+              fontWeight: 600,
+              padding: '8px 16px',
+            }}
+            onClick={() => navigate('/purchases/new')}
+          >
+            Add Purchase
+          </Button>
+
+          {/* 4. Add Payment (White Pill with Soft Rose Icon Circle) */}
+          <Button
+            variant="default"
+            size="sm"
+            radius="xl"
+            leftSection={
+              <Box
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 9999,
+                  backgroundColor: '#fdf2f4',
+                  color: '#800020',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <IconCreditCard size={13} stroke={2.2} />
+              </Box>
+            }
+            style={{
+              borderColor: '#e2e8f0',
+              backgroundColor: '#ffffff',
+              color: '#1e293b',
+              fontWeight: 600,
+              padding: '8px 16px',
+            }}
+            onClick={() => navigate('/payments/new')}
+          >
+            Add Payment
+          </Button>
         </Group>
       </Box>
 
-      {/* 2. Structured 3x3 Metric Cards Grid */}
+      {/* ── 2. Structured 3x3 Metric Cards Grid (Original Clean Theme) ── */}
       <Stack gap="xl">
         {/* ROW 1: Purchases & Payables */}
         <Stack gap="sm">
@@ -419,7 +693,7 @@ export const DashboardPage: React.FC = () => {
               title="Total Purchase"
               icon={<IconReceipt size={22} stroke={1.75} />}
               value={`₹${totalPurchase.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-              subtitle={`${purchases.length} Invoice${purchases.length !== 1 ? 's' : ''} recorded`}
+              subtitle={`${filteredPurchases.length} Invoice${filteredPurchases.length !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/purchases')}
             />
 
@@ -427,7 +701,7 @@ export const DashboardPage: React.FC = () => {
               title="Supplier Payments"
               icon={<IconCreditCard size={22} stroke={1.75} />}
               value={`₹${totalSupplierPayments.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-              subtitle={`${supplierPayments.length} Payment voucher${supplierPayments.length !== 1 ? 's' : ''} recorded`}
+              subtitle={`${filteredSupplierPayments.length} Voucher${filteredSupplierPayments.length !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/payments')}
             />
 
@@ -471,7 +745,7 @@ export const DashboardPage: React.FC = () => {
               title="Sales"
               icon={<IconFileInvoice size={22} stroke={1.75} />}
               value={`₹${totalSales.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-              subtitle={`${validSalesCount} Delivery & sales bill${validSalesCount !== 1 ? 's' : ''}`}
+              subtitle={`${validSalesCount} Bill${validSalesCount !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/sales')}
             />
 
@@ -479,7 +753,7 @@ export const DashboardPage: React.FC = () => {
               title="Receipts"
               icon={<IconCash size={22} stroke={1.75} />}
               value={`₹${totalCustomerReceipts.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-              subtitle={`${customerReceipts.length} Collection voucher${customerReceipts.length !== 1 ? 's' : ''} recorded`}
+              subtitle={`${filteredCustomerReceipts.length} Voucher${filteredCustomerReceipts.length !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/receipts')}
             />
 
@@ -581,6 +855,45 @@ export const DashboardPage: React.FC = () => {
           </SimpleGrid>
         </Stack>
       </Stack>
+
+      {/* ── Custom Date Range Picker Modal ── */}
+      <Modal
+        opened={customModalOpened}
+        onClose={() => setCustomModalOpened(false)}
+        title="Select Custom Date Range"
+        centered
+        radius="md"
+        overlayProps={{ backgroundOpacity: 0.35, blur: 3 }}
+      >
+        <Stack gap="md">
+          <TextInput
+            type="date"
+            label="From Date"
+            value={customDates.from}
+            onChange={(e) => setCustomDates((prev) => ({ ...prev, from: e.target.value }))}
+          />
+          <TextInput
+            type="date"
+            label="To Date"
+            value={customDates.to}
+            onChange={(e) => setCustomDates((prev) => ({ ...prev, to: e.target.value }))}
+          />
+          <Group justify="flex-end" mt="xs">
+            <Button variant="default" onClick={() => setCustomModalOpened(false)}>
+              Cancel
+            </Button>
+            <Button
+              style={{ backgroundColor: '#800020' }}
+              onClick={() => {
+                setTimeFilter('custom');
+                setCustomModalOpened(false);
+              }}
+            >
+              Apply Filter
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 };

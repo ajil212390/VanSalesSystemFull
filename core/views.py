@@ -1408,10 +1408,51 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        force = request.query_params.get('force') == 'true' or (isinstance(request.data, dict) and request.data.get('force') is True)
         serializer = self.get_serializer(instance)
         block_reason = serializer.get_delete_block_reason(instance)
-        if block_reason:
+        if block_reason and not force:
             return Response({"detail": block_reason}, status=status.HTTP_400_BAD_REQUEST)
+
+        if force:
+            with transaction.atomic():
+                # 1. Cascade Sales
+                sales = Sales.objects.filter(CustomerLedger_id=instance.LedgerId)
+                for s in sales:
+                    BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=s.SalesId).delete()
+                    for v in Voucher.objects.filter(ReferenceTable='Sales', ReferenceId=s.SalesId):
+                        v.lines.all().delete()
+                        v.delete()
+                    StockMovement.objects.filter(TransactionNo__in=[s.SalesNo, s.InvoiceNo]).delete()
+                    s.lines.all().delete()
+                    s.delete()
+
+                # 2. Cascade Purchases
+                purchases = Purchase.objects.filter(SupplierLedger_id=instance.LedgerId)
+                for p in purchases:
+                    BillwiseAllocation.objects.filter(ReferenceTable='Purchase', ReferenceId=p.PurchaseId).delete()
+                    for v in Voucher.objects.filter(ReferenceTable='Purchase', ReferenceId=p.PurchaseId):
+                        v.lines.all().delete()
+                        v.delete()
+                    p.lines.all().delete()
+                    p.delete()
+
+                # 3. Clean up any remaining voucher lines / vouchers
+                vl_vouchers = list(VoucherLine.objects.filter(Ledger=instance).values_list('Voucher_id', flat=True))
+                VoucherLine.objects.filter(Ledger=instance).delete()
+                for vid in vl_vouchers:
+                    v = Voucher.objects.filter(VoucherId=vid).first()
+                    if v and not v.lines.exists():
+                        v.delete()
+
+                # 4. Clean up ledger lines and instance
+                instance.ledger_lines.all().delete()
+                instance.delete()
+
+                # 5. Recalculate all ledger balances
+                sync_ledger_balances()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
         return super().destroy(request, *args, **kwargs)
 
     @action(detail=False, methods=['post'], url_path='bulk-import')
@@ -2259,6 +2300,45 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             sync_ledger_balances(*affected_ledger_ids)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=False, methods=['get'], url_path='supplier-statement-pdf', permission_classes=[AllowAny])
+    def supplier_statement_pdf(self, request):
+        """
+        Generates and streams an official Supplier Account Statement PDF.
+        Lookup via ?supplier_id=... or ?ledger_id=... with optional &from_date=...&to_date=...
+        """
+        supp_id = request.query_params.get('supplier_id') or request.query_params.get('ledger_id')
+        if not supp_id:
+            return Response({'detail': 'Please provide a valid "supplier_id".'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            supp_id = int(supp_id)
+        except ValueError:
+            return Response({'detail': 'Invalid supplier_id format.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        supplier = Ledger.objects.filter(LedgerId=supp_id).first()
+        if not supplier:
+            return Response({'detail': f'Supplier account #{supp_id} not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        company_id = getattr(supplier, 'CompanyId', 1) or 1
+        from_date = request.query_params.get('from_date') or None
+        to_date = request.query_params.get('to_date') or None
+
+        purchases_qs = Purchase.objects.filter(SupplierLedger=supplier).order_by('PurchaseDate', 'PurchaseId')
+        payments_qs = Payment.objects.filter(PartyLedger=supplier).order_by('CreatedAt', 'PaymentId')
+
+        try:
+            from core.invoice_generator import generate_supplier_statement_pdf
+            pdf_bytes = generate_supplier_statement_pdf(
+                supplier, purchases_qs, payments_qs, company_id=company_id, from_date=from_date, to_date=to_date
+            )
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            clean_name = "".join(c for c in supplier.LedgerName if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+            filename = f"Supplier_Statement_{clean_name}_{date.today().strftime('%Y%m%d')}.pdf"
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            return response
+        except Exception as e:
+            return Response({'detail': f'Error generating supplier statement PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 def sync_sales_billwise_allocation(sale, voucher_line=None):
     """
     Synchronizes BillwiseAllocation records for a sales transaction.
@@ -2437,13 +2517,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
         op_type = (party.OpeningBalanceType or ('DR' if is_debtor else 'CR')).upper()
         op_net = op if op_type == 'DR' else -op
         current_bal = op_net + tot_dr - tot_cr
-
-        # If debtor has 0 or advance balance, no pending bills exist
-        if is_debtor and current_bal <= Decimal('0.00'):
-            return Response([], status=status.HTTP_200_OK)
-        # If creditor has 0 or debit balance, no pending bills exist
-        if not is_debtor and current_bal >= Decimal('0.00'):
-            return Response([], status=status.HTTP_200_OK)
 
         bills = []
 
@@ -2635,30 +2708,37 @@ class PaymentViewSet(viewsets.ModelViewSet):
             history = []
 
             # 1. Apply explicit allocations
-            if b_ref in explicit_allocs:
-                for item in explicit_allocs[b_ref]:
-                    paid_so_far += item['Amount']
-                    history.append({
-                        'PaymentId': item.get('PaymentId'),
-                        'PaymentNo': item.get('PaymentNo'),
-                        'Date': item.get('Date'),
-                        'Account': item.get('Account'),
-                        'Mode': item.get('Mode'),
-                        'Amount': float(item.get('Amount')),
-                    })
+            matched_allocs = list(explicit_allocs.get(b_ref, []))
+            inv_no = b.get('InvoiceNo')
+            if inv_no and inv_no != b_ref and inv_no in explicit_allocs:
+                matched_allocs.extend(explicit_allocs[inv_no])
+
+            for item in matched_allocs:
+                paid_so_far += item['Amount']
+                history.append({
+                    'PaymentId': item.get('PaymentId'),
+                    'PaymentNo': item.get('PaymentNo'),
+                    'Date': item.get('Date'),
+                    'Account': item.get('Account'),
+                    'Mode': item.get('Mode'),
+                    'Amount': float(item.get('Amount')),
+                })
 
             # 2. Apply sale-settled credits
-            if b_ref in sale_settled_credits:
-                for item in sale_settled_credits[b_ref]:
-                    paid_so_far += item['Amount']
-                    history.append({
-                        'PaymentId': None,
-                        'PaymentNo': item['PaymentNo'],
-                        'Date': item['Date'],
-                        'Account': item['Account'],
-                        'Mode': item['Mode'],
-                        'Amount': float(item['Amount']),
-                    })
+            matched_sale_credits = list(sale_settled_credits.get(b_ref, []))
+            if inv_no and inv_no != b_ref and inv_no in sale_settled_credits:
+                matched_sale_credits.extend(sale_settled_credits[inv_no])
+
+            for item in matched_sale_credits:
+                paid_so_far += item['Amount']
+                history.append({
+                    'PaymentId': None,
+                    'PaymentNo': item['PaymentNo'],
+                    'Date': item['Date'],
+                    'Account': item['Account'],
+                    'Mode': item['Mode'],
+                    'Amount': float(item['Amount']),
+                })
 
             # 3. Apply FIFO unallocated pool from vouchers
             if paid_so_far < total_bill:
@@ -7028,7 +7108,22 @@ class SalesViewSet(viewsets.ModelViewSet):
             sale.TaxAmount = tot_cgst + tot_sgst
             sale.TotalDeliveredQty = tot_deliv
             sale.TotalEmptyQty = tot_empty
-            sale.PaidAmount = sale.GrandTotal if pm in ['CASH', 'UPI', 'BANK'] else Decimal('0.00')
+
+            # Payment method & Paid Amount handling
+            pm = (data.get('PaymentMethod') or 'CREDIT').upper()
+            sale.PaymentMethod = pm
+            paid_input = data.get('PaidAmount')
+            if paid_input is not None:
+                try:
+                    p_amt = Decimal(str(paid_input))
+                    sale.PaidAmount = max(Decimal('0.00'), min(p_amt, sale.GrandTotal))
+                except Exception:
+                    sale.PaidAmount = Decimal('0.00')
+            elif pm in ['CASH', 'UPI', 'BANK']:
+                sale.PaidAmount = sale.GrandTotal
+            else:  # CREDIT, ON_ACCOUNT, etc.
+                sale.PaidAmount = Decimal('0.00')
+
             sale.save()
 
             post_sale_voucher(sale, company_id)
@@ -7176,12 +7271,17 @@ class SalesViewSet(viewsets.ModelViewSet):
             return Response({'detail': f'Customer account #{cust_id} not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         company_id = getattr(customer, 'CompanyId', 1) or 1
+        from_date = request.query_params.get('from_date') or None
+        to_date = request.query_params.get('to_date') or None
+
         sales_qs = Sales.objects.filter(CustomerLedger=customer, Status__in=['COMPLETED', 'APPROVED']).exclude(Status='CANCELLED').order_by('SalesDate', 'SalesId')
         receipts_qs = Payment.objects.filter(PartyLedger=customer).order_by('CreatedAt', 'PaymentId')
 
         try:
             from core.invoice_generator import generate_customer_statement_pdf
-            pdf_bytes = generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=company_id)
+            pdf_bytes = generate_customer_statement_pdf(
+                customer, sales_qs, receipts_qs, company_id=company_id, from_date=from_date, to_date=to_date
+            )
             response = HttpResponse(pdf_bytes, content_type='application/pdf')
             clean_name = "".join(c for c in customer.LedgerName if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
             filename = f"Statement_{clean_name}_{date.today().strftime('%Y%m%d')}.pdf"

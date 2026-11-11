@@ -27,7 +27,7 @@ import {
   IconChevronDown,
   IconChevronUp,
 } from '@tabler/icons-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
@@ -116,8 +116,10 @@ const emptyRow = (): PaymentParticularRow => ({
 export const PaymentFormPage: React.FC = () => {
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const isEditing = Boolean(id);
+  const prefillPartyId = searchParams.get('party_id') || searchParams.get('supplier_id');
 
   // Top Voucher Header State
   const [paymentNo, setPaymentNo] = useState('');
@@ -200,6 +202,17 @@ export const PaymentFormPage: React.FC = () => {
     },
     enabled: !isEditing,
   });
+
+  useEffect(() => {
+    if (!isEditing && prefillPartyId && ledgers.length > 0) {
+      setRows((prev) => {
+        if (prev.length > 0 && !prev[0].ledgerId) {
+          return [{ ...prev[0], ledgerId: String(prefillPartyId) }, ...prev.slice(1)];
+        }
+        return prev;
+      });
+    }
+  }, [isEditing, prefillPartyId, ledgers]);
 
   useEffect(() => {
     if (!isEditing && !paymentNo && paymentsList.length >= 0) {

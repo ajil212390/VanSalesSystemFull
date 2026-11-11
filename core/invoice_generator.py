@@ -597,10 +597,11 @@ def generate_tax_invoice_pdf(sale):
     return buf.getvalue()
 
 
-def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=1):
+def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=1, from_date=None, to_date=None):
     """
     Generates a clean, professional PDF statement of accounts for a customer.
-    Lists all sales invoices, payments/receipts, and the net outstanding balance.
+    Lists all sales invoices, payments/receipts, opening balance, and the net outstanding balance.
+    Supports optional from_date and to_date filtering with rolling opening balance.
     """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -646,6 +647,14 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
     story = []
 
     # 1. HEADER
+    period_text = "All Records to Date"
+    if from_date and to_date:
+        period_text = f"{from_date} to {to_date}"
+    elif from_date:
+        period_text = f"From {from_date}"
+    elif to_date:
+        period_text = f"Up to {to_date}"
+
     header_data = [
         [
             Paragraph(
@@ -658,7 +667,8 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
             Paragraph(
                 f"<b>STATEMENT OF ACCOUNT</b><br/>"
                 f"<font size=8 color='#64748B'>Customer Outstanding Statement</font><br/>"
-                f"<font size=7.5 color='#64748B'>Generated: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}</font>",
+                f"<font size=7.5 color='#64748B'>Period: <b>{period_text}</b></font><br/>"
+                f"<font size=7 color='#64748B'>Generated: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}</font>",
                 hdr_right
             )
         ]
@@ -677,30 +687,23 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
     cust_name = customer.LedgerName if customer else "Direct Customer"
     cust_phone = getattr(customer, 'PhoneNumber', '') or getattr(customer, 'MobileNumber', '') or '—'
     cust_city = getattr(customer, 'City', '') or '—'
-    cust_address = getattr(customer, 'Address', '') or '—'
+    cust_address = getattr(customer, 'Address', '') or getattr(customer, 'AddressLine1', '') or '—'
     cust_gstin = getattr(customer, 'GSTIN', '') or 'Unregistered Consumer'
 
-    # Build transaction entries
-    entries = []
+    # Build raw transaction entries
+    raw_entries = []
 
     # Opening balance
     op_bal = Decimal(str(getattr(customer, 'OpeningBalance', 0) or 0))
-    op_type = getattr(customer, 'OpeningBalanceType', 'DR') or 'DR'
-    if op_bal > 0:
-        entries.append({
-            'date': getattr(customer, 'CreatedAt', datetime.now()).strftime('%Y-%m-%d') if hasattr(customer, 'CreatedAt') and customer.CreatedAt else '',
-            'ref': 'OP-BAL',
-            'type': 'Opening Balance',
-            'debit': op_bal if op_type == 'DR' else Decimal('0.00'),
-            'credit': op_bal if op_type == 'CR' else Decimal('0.00'),
-            'sort_key': '0000-00-00',
-        })
+    op_type = (getattr(customer, 'OpeningBalanceType', 'DR') or 'DR').upper()
+    init_dr = op_bal if op_type == 'DR' else Decimal('0.00')
+    init_cr = op_bal if op_type == 'CR' else Decimal('0.00')
 
     # Sales Invoices
     for s in sales_qs:
         gt = Decimal(str(s.GrandTotal or 0))
         s_date = str(s.SalesDate or '')
-        entries.append({
+        raw_entries.append({
             'date': s_date,
             'ref': s.InvoiceNo or s.SalesNo or f"SAL-{s.SalesId}",
             'type': f"Sales Invoice ({s.PaymentMethod or 'CASH'})",
@@ -717,7 +720,7 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
         else:
             r_date = str(getattr(r, 'PaymentDate', '') or getattr(r, 'VoucherDate', '') or '')
         r_ref = getattr(r, 'PaymentNo', '') or getattr(r, 'VoucherNo', '') or f"REC-{getattr(r, 'PaymentId', '')}"
-        entries.append({
+        raw_entries.append({
             'date': r_date,
             'ref': r_ref,
             'type': f"Collection Receipt ({getattr(r, 'PaymentMode', 'CASH') or 'CASH'})",
@@ -726,13 +729,43 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
             'sort_key': f"{r_date}_2_{getattr(r, 'PaymentId', 0)}",
         })
 
-    entries.sort(key=lambda x: x['sort_key'])
+    raw_entries.sort(key=lambda x: x['sort_key'])
+
+    # Filter by date range with rolling opening balance
+    prior_dr = init_dr
+    prior_cr = init_cr
+    period_entries = []
+
+    for e in raw_entries:
+        if from_date and e['date'] and e['date'] < from_date:
+            prior_dr += e['debit']
+            prior_cr += e['credit']
+        elif to_date and e['date'] and e['date'] > to_date:
+            continue
+        else:
+            period_entries.append(e)
+
+    effective_op = prior_dr - prior_cr
+    final_entries = []
+
+    if from_date or op_bal > 0 or effective_op != 0:
+        op_date = from_date or (getattr(customer, 'CreatedAt', datetime.now()).strftime('%Y-%m-%d') if hasattr(customer, 'CreatedAt') and customer.CreatedAt else '')
+        final_entries.append({
+            'date': op_date,
+            'ref': 'OP-BAL',
+            'type': 'Opening Balance (b/f)',
+            'debit': effective_op if effective_op > 0 else Decimal('0.00'),
+            'credit': abs(effective_op) if effective_op < 0 else Decimal('0.00'),
+            'sort_key': '0000-00-00',
+        })
+
+    final_entries.extend(period_entries)
 
     # Calculate Running Balance & Totals
     running_bal = Decimal('0.00')
     tot_debit = Decimal('0.00')
     tot_credit = Decimal('0.00')
-    for e in entries:
+    for e in final_entries:
         tot_debit += e['debit']
         tot_credit += e['credit']
         running_bal += (e['debit'] - e['credit'])
@@ -749,6 +782,7 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
 
     kpi_box_content = [
         Paragraph(f"<b>OUTSTANDING SUMMARY</b>", meta_bold),
+        Paragraph(f"Opening Balance: <b>₹{abs(effective_op):,.2f} {'Dr' if effective_op >= 0 else 'Cr'}</b>", meta_style),
         Paragraph(f"Total Billed (Debit): <b>₹{tot_debit:,.2f}</b>", meta_style),
         Paragraph(f"Total Paid (Credit): <b>₹{tot_credit:,.2f}</b>", meta_style),
         Spacer(1, 3),
@@ -788,7 +822,7 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
         ]
     ]
 
-    for e in entries:
+    for e in final_entries:
         d_str = f"₹{e['debit']:,.2f}" if e['debit'] > 0 else "—"
         c_str = f"₹{e['credit']:,.2f}" if e['credit'] > 0 else "—"
         bal_str = f"₹{abs(e['balance']):,.2f} {'Dr' if e['balance'] >= 0 else 'Cr'}"
@@ -805,7 +839,7 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
     final_bal_str = f"₹{abs(running_bal):,.2f} {'Dr' if running_bal >= 0 else 'Cr'}"
     tbl_data.append([
         Paragraph("<b>TOTALS</b>", cell_bold),
-        Paragraph(f"<b>{len(entries)} Transactions</b>", cell_bold),
+        Paragraph(f"<b>{len(final_entries)} Transactions</b>", cell_bold),
         Paragraph("", cell_norm),
         Paragraph(f"<b>₹{tot_debit:,.2f}</b>", cell_right_b),
         Paragraph(f"<b>₹{tot_credit:,.2f}</b>", cell_right_b),
@@ -833,7 +867,7 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
     footer_data = [
         [
             Paragraph(
-                f"<b>Important Note:</b> This statement reflects all invoiced delivery bills and recorded receipts. "
+                f"<b>Important Note:</b> This statement reflects opening balance, invoiced delivery bills and recorded receipts. "
                 f"For any discrepancies or queries, kindly contact accounts within 7 days.<br/>"
                 f"<font size=7 color='#64748B'>Thank you for your business with Future Gas.</font>",
                 cell_norm
@@ -843,6 +877,296 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
                 f"<b>Authorized Signatory</b><br/>"
                 f"<font size=7 color='#64748B'>Verified Commercial Accounts Department</font>",
                 ParagraphStyle('SigR2', parent=cell_norm, alignment=2)
+            )
+        ]
+    ]
+    footer_table = Table(footer_data, colWidths=[310, 235])
+    footer_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(footer_table)
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company_id=1, from_date=None, to_date=None):
+    """
+    Generates a clean, professional PDF statement of accounts for a supplier (Sundry Creditor).
+    Lists all purchase invoices, payments disbursed, opening balance, and the net outstanding payable balance.
+    Supports optional from_date and to_date filtering with rolling opening balance.
+    """
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=25,
+        bottomMargin=25
+    )
+
+    # Company Details
+    company_name = "FUTURE GAS"
+    company_subtitle = "LPG Commercial & Domestic Distribution Network"
+    company_address = "Civil Station, Kozhikode, Kerala - 673020"
+    company_contact = "Ph: +91 98470 12345 | Email: accounts@futuregas.in"
+    company_gstin = "32AABCF1234F1Z8"
+
+    try:
+        from core.models import Company
+        co = Company.objects.filter(CompanyId=company_id).first()
+        if co:
+            company_name = co.CompanyName or company_name
+            company_address = co.Address or company_address
+            company_gstin = co.GSTIN or company_gstin
+            company_contact = f"Ph: {co.PhoneNumber or co.MobileNumber or '+91 98470 12345'}"
+    except Exception:
+        pass
+
+    title_style = ParagraphStyle('SuppStmtTitle', fontName=FONT_BOLD, fontSize=16, leading=20, textColor=PRIMARY_COLOR)
+    hdr_right = ParagraphStyle('SuppStmtHdrR', fontName=FONT_BOLD, fontSize=14, leading=18, textColor=PRIMARY_COLOR, alignment=2)
+    meta_style = ParagraphStyle('SuppStmtMeta', fontName=FONT_NAME, fontSize=8, leading=11, textColor=DARK_COLOR)
+    meta_bold = ParagraphStyle('SuppStmtMetaB', fontName=FONT_BOLD, fontSize=8.5, leading=12, textColor=DARK_COLOR)
+    cell_norm = ParagraphStyle('SuppStmtCell', fontName=FONT_NAME, fontSize=8, leading=10, textColor=DARK_COLOR)
+    cell_bold = ParagraphStyle('SuppStmtCellB', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR)
+    cell_right = ParagraphStyle('SuppStmtCellR', fontName=FONT_NAME, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)
+    cell_right_b = ParagraphStyle('SuppStmtCellRB', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)
+    cell_right_burg = ParagraphStyle('SuppStmtCellRBurg', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=PRIMARY_COLOR, alignment=2)
+
+    story = []
+
+    # 1. HEADER
+    period_text = "All Records to Date"
+    if from_date and to_date:
+        period_text = f"{from_date} to {to_date}"
+    elif from_date:
+        period_text = f"From {from_date}"
+    elif to_date:
+        period_text = f"Up to {to_date}"
+
+    header_data = [
+        [
+            Paragraph(
+                f"<b>{company_name}</b><br/>"
+                f"<font size=7.5 color='#64748B'>{company_subtitle}</font><br/>"
+                f"<font size=7.5 color='#64748B'>{company_address}</font><br/>"
+                f"<font size=7.5 color='#64748B'>{company_contact} | GSTIN: <b>{company_gstin}</b></font>",
+                title_style
+            ),
+            Paragraph(
+                f"<b>STATEMENT OF ACCOUNT</b><br/>"
+                f"<font size=8 color='#64748B'>Supplier Payables Statement</font><br/>"
+                f"<font size=7.5 color='#64748B'>Period: <b>{period_text}</b></font><br/>"
+                f"<font size=7 color='#64748B'>Generated: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}</font>",
+                hdr_right
+            )
+        ]
+    ]
+    hdr_table = Table(header_data, colWidths=[330, 215])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(hdr_table)
+    story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=8))
+
+    # 2. SUPPLIER INFO & SUMMARY CARDS
+    supp_name = supplier.LedgerName if supplier else "Direct Supplier"
+    supp_phone = getattr(supplier, 'PhoneNumber', '') or getattr(supplier, 'MobileNumber', '') or '—'
+    supp_city = getattr(supplier, 'City', '') or '—'
+    supp_address = getattr(supplier, 'Address', '') or getattr(supplier, 'AddressLine1', '') or '—'
+    supp_gstin = getattr(supplier, 'GSTIN', '') or 'Unregistered Vendor'
+
+    raw_entries = []
+
+    # Initial Opening balance
+    op_bal = Decimal(str(getattr(supplier, 'OpeningBalance', 0) or 0))
+    op_type = (getattr(supplier, 'OpeningBalanceType', 'CR') or 'CR').upper()
+    init_cr = op_bal if op_type == 'CR' else Decimal('0.00')
+    init_dr = op_bal if op_type == 'DR' else Decimal('0.00')
+
+    # Purchases
+    for p in purchases_qs:
+        gt = Decimal(str(p.GrandTotal or 0))
+        p_date = str(p.PurchaseDate or '')
+        raw_entries.append({
+            'date': p_date,
+            'ref': p.InvoiceNo or p.PurchaseNo or f"PUR-{p.PurchaseId}",
+            'type': f"Purchase Bill (#{p.InvoiceNo or p.PurchaseNo})",
+            'debit': Decimal('0.00'),
+            'credit': gt,
+            'sort_key': f"{p_date}_1_{p.PurchaseId}",
+        })
+
+    # Payments
+    for pm in payments_qs:
+        amt = Decimal(str(getattr(pm, 'Amount', 0) or 0))
+        if getattr(pm, 'CreatedAt', None):
+            pm_date = pm.CreatedAt.strftime('%Y-%m-%d')
+        else:
+            pm_date = str(getattr(pm, 'PaymentDate', '') or getattr(pm, 'VoucherDate', '') or '')
+        pm_ref = getattr(pm, 'PaymentNo', '') or getattr(pm, 'VoucherNo', '') or f"PAY-{getattr(pm, 'PaymentId', '')}"
+        raw_entries.append({
+            'date': pm_date,
+            'ref': pm_ref,
+            'type': f"Payment Disbursed ({getattr(pm, 'PaymentMode', 'CASH') or 'CASH'})",
+            'debit': amt,
+            'credit': Decimal('0.00'),
+            'sort_key': f"{pm_date}_2_{getattr(pm, 'PaymentId', 0)}",
+        })
+
+    raw_entries.sort(key=lambda x: x['sort_key'])
+
+    # Date filter with rolling opening balance
+    prior_dr = init_dr
+    prior_cr = init_cr
+    period_entries = []
+
+    for e in raw_entries:
+        if from_date and e['date'] and e['date'] < from_date:
+            prior_dr += e['debit']
+            prior_cr += e['credit']
+        elif to_date and e['date'] and e['date'] > to_date:
+            continue
+        else:
+            period_entries.append(e)
+
+    effective_op = prior_cr - prior_dr  # Positive is Credit (payable)
+    final_entries = []
+
+    if from_date or op_bal > 0 or effective_op != 0:
+        op_date = from_date or (getattr(supplier, 'CreatedAt', datetime.now()).strftime('%Y-%m-%d') if hasattr(supplier, 'CreatedAt') and supplier.CreatedAt else '')
+        final_entries.append({
+            'date': op_date,
+            'ref': 'OP-BAL',
+            'type': 'Opening Balance (b/f)',
+            'debit': abs(effective_op) if effective_op < 0 else Decimal('0.00'),
+            'credit': effective_op if effective_op > 0 else Decimal('0.00'),
+            'sort_key': '0000-00-00',
+        })
+
+    final_entries.extend(period_entries)
+
+    # Calculate Running Balance & Totals
+    running_bal = Decimal('0.00')
+    tot_debit = Decimal('0.00')
+    tot_credit = Decimal('0.00')
+    for e in final_entries:
+        tot_debit += e['debit']
+        tot_credit += e['credit']
+        running_bal += (e['credit'] - e['debit'])
+        e['balance'] = running_bal
+
+    supp_box_content = [
+        Paragraph(f"<b>SUPPLIER / CREDITOR:</b>", meta_bold),
+        Paragraph(f"<b>{supp_name}</b>", ParagraphStyle('SN', parent=meta_bold, fontSize=11, textColor=PRIMARY_COLOR)),
+        Paragraph(f"Phone: <b>{supp_phone}</b> | City: {supp_city}", meta_style),
+        Paragraph(f"Address: {supp_address}", meta_style),
+        Paragraph(f"GSTIN / Tax ID: <b>{supp_gstin}</b>", meta_style),
+    ]
+
+    kpi_box_content = [
+        Paragraph(f"<b>OUTSTANDING LIABILITY SUMMARY</b>", meta_bold),
+        Paragraph(f"Opening Balance: <b>₹{abs(effective_op):,.2f} {'Cr' if effective_op >= 0 else 'Dr'}</b>", meta_style),
+        Paragraph(f"Total Purchases (Credit): <b>₹{tot_credit:,.2f}</b>", meta_style),
+        Paragraph(f"Total Payments (Debit): <b>₹{tot_debit:,.2f}</b>", meta_style),
+        Spacer(1, 3),
+        Paragraph(
+            f"Net Balance Due: <font size=11 color='#800020'><b>₹{abs(running_bal):,.2f} {'Cr' if running_bal >= 0 else 'Dr'}</b></font>",
+            meta_bold
+        ),
+    ]
+
+    top_grid = Table([
+        [supp_box_content, kpi_box_content]
+    ], colWidths=[310, 235])
+    top_grid.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.5, BORDER_COLOR),
+        ('BOX', (1, 0), (1, 0), 0.5, PRIMARY_COLOR),
+        ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
+        ('BACKGROUND', (1, 0), (1, 0), CARD_BG),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(top_grid)
+    story.append(Spacer(1, 10))
+
+    # 3. TRANSACTIONS TABLE
+    col_widths = [65, 100, 140, 80, 80, 80]
+    tbl_data = [
+        [
+            Paragraph("<b>DATE</b>", cell_bold),
+            Paragraph("<b>REF / BILL #</b>", cell_bold),
+            Paragraph("<b>PARTICULARS</b>", cell_bold),
+            Paragraph("<b>DEBIT (₹)</b>", cell_right_b),
+            Paragraph("<b>CREDIT (₹)</b>", cell_right_b),
+            Paragraph("<b>BALANCE (₹)</b>", cell_right_b),
+        ]
+    ]
+
+    for e in final_entries:
+        d_str = f"₹{e['debit']:,.2f}" if e['debit'] > 0 else "—"
+        c_str = f"₹{e['credit']:,.2f}" if e['credit'] > 0 else "—"
+        bal_str = f"₹{abs(e['balance']):,.2f} {'Cr' if e['balance'] >= 0 else 'Dr'}"
+        tbl_data.append([
+            Paragraph(e['date'] or '—', cell_norm),
+            Paragraph(f"<b>{e['ref']}</b>", cell_norm),
+            Paragraph(e['type'], cell_norm),
+            Paragraph(d_str, cell_right),
+            Paragraph(c_str, cell_right),
+            Paragraph(bal_str, cell_right_burg if e['balance'] > 0 else cell_right),
+        ])
+
+    # Total Row
+    final_bal_str = f"₹{abs(running_bal):,.2f} {'Cr' if running_bal >= 0 else 'Dr'}"
+    tbl_data.append([
+        Paragraph("<b>TOTALS</b>", cell_bold),
+        Paragraph(f"<b>{len(final_entries)} Transactions</b>", cell_bold),
+        Paragraph("", cell_norm),
+        Paragraph(f"<b>₹{tot_debit:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>₹{tot_credit:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>{final_bal_str}</b>", cell_right_burg),
+    ])
+
+    stmt_table = Table(tbl_data, colWidths=col_widths, repeatRows=1)
+    stmt_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), CARD_BG),
+        ('TEXTCOLOR', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('GRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
+        ('LINEABOVE', (0, -1), (-1, -1), 1.5, PRIMARY_COLOR),
+        ('BACKGROUND', (0, -1), (-1, -1), LIGHT_BG),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    story.append(stmt_table)
+    story.append(Spacer(1, 14))
+
+    # 4. FOOTER NOTE & SIGNATURE
+    footer_data = [
+        [
+            Paragraph(
+                f"<b>Important Note:</b> This statement reflects opening balance, purchase invoices recorded and payment vouchers disbursed. "
+                f"For any discrepancies or queries, kindly contact accounts within 7 days.<br/>"
+                f"<font size=7 color='#64748B'>Future Gas &bull; Commercial Accounts Department</font>",
+                cell_norm
+            ),
+            Paragraph(
+                f"For <b>{company_name}</b><br/><br/><br/>"
+                f"<b>Authorized Signatory</b><br/>"
+                f"<font size=7 color='#64748B'>Verified Commercial Accounts Department</font>",
+                ParagraphStyle('SigSuppR2', parent=cell_norm, alignment=2)
             )
         ]
     ]
