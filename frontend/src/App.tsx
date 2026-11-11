@@ -35,6 +35,12 @@ import { InventoryByProductPage } from './pages/InventoryByProductPage';
 import { InventoryByLocationPage } from './pages/InventoryByLocationPage';
 import { PayablesReportPage } from './pages/PayablesReportPage';
 import { ReceivablesReportPage } from './pages/ReceivablesReportPage';
+import { ConnectionPackagesPage } from './pages/ConnectionPackagesPage';
+import { ConnectionPackageFormPage } from './pages/ConnectionPackageFormPage';
+import { SalesListPage } from './pages/SalesListPage';
+import { SalesFormPage } from './pages/SalesFormPage';
+import { ConnectionSaleFormPage } from './pages/ConnectionSaleFormPage';
+import { GodownInventoryFormPage } from './pages/GodownInventoryFormPage';
 
 
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -154,12 +160,19 @@ export const App: React.FC = () => {
               <Route path="/delivery-notes" element={<DeliveryNotesPage />} />
               <Route path="/receipt-notes" element={<ReceiptNotesPage />} />
               <Route path="/stock-analysis" element={<StockAnalysisPage />} />
+              <Route path="/stock-analysis/add-inventory" element={<GodownInventoryFormPage />} />
               <Route path="/van-management" element={<VanManagementPage />} />
               <Route path="/van-management/:routeId" element={<RouteDetailsPage />} />
               <Route path="/inventory/products" element={<InventoryByProductPage />} />
               <Route path="/inventory/locations" element={<InventoryByLocationPage />} />
               <Route path="/payables" element={<PayablesReportPage />} />
               <Route path="/receivables" element={<ReceivablesReportPage />} />
+              <Route path="/connection-packages" element={<ConnectionPackagesPage />} />
+              <Route path="/connection-packages/new" element={<ConnectionPackageFormPage />} />
+              <Route path="/connection-packages/:id/edit" element={<ConnectionPackageFormPage />} />
+              <Route path="/sales" element={<SalesListPage />} />
+              <Route path="/sales/new" element={<SalesFormPage />} />
+              <Route path="/sales/new-connection" element={<ConnectionSaleFormPage />} />
 
 
             </Route>

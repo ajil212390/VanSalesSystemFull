@@ -468,6 +468,11 @@ class Sales(models.Model):
         related_name='approved_sales'
     )
     ApprovedAt = models.DateTimeField(null=True, blank=True, db_column='ApprovedAt')
+    IsApproved = models.BooleanField(default=False, db_column='IsApproved')
+    IsEdited = models.BooleanField(default=False, db_column='IsEdited')
+    EditedBy = models.CharField(max_length=150, null=True, blank=True, db_column='EditedBy')
+    EditedAt = models.DateTimeField(null=True, blank=True, db_column='EditedAt')
+    EditReason = models.CharField(max_length=500, null=True, blank=True, db_column='EditReason')
     CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
     UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
@@ -799,6 +804,88 @@ class RouteExpense(models.Model):
 
     def __str__(self):
         return f"Expense #{self.ExpenseId}: {self.Category} - ₹{self.Amount} ({self.PaymentMode})"
+
+
+class SaleEditHistory(models.Model):
+    EditId = models.BigAutoField(primary_key=True, db_column='EditId')
+    Sales = models.ForeignKey(Sales, on_delete=models.CASCADE, db_column='SalesId', related_name='edit_history')
+    EditedBy = models.CharField(max_length=150, db_column='EditedBy')
+    EditedAt = models.DateTimeField(auto_now_add=True, db_column='EditedAt')
+    OldGrandTotal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='OldGrandTotal')
+    NewGrandTotal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='NewGrandTotal')
+    OldPaymentMethod = models.CharField(max_length=50, null=True, blank=True, db_column='OldPaymentMethod')
+    NewPaymentMethod = models.CharField(max_length=50, null=True, blank=True, db_column='NewPaymentMethod')
+    Notes = models.CharField(max_length=500, null=True, blank=True, db_column='Notes')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+
+    class Meta:
+        managed = False
+        db_table = '"SaleEditHistory"'
+        ordering = ['-EditedAt']
+
+    def __str__(self):
+        return f"Edit #{self.EditId} for Sale #{self.Sales_id} by {self.EditedBy}"
+
+
+class ConnectionPackage(models.Model):
+    PackageId = models.BigAutoField(primary_key=True, db_column='PackageId')
+    PackageName = models.CharField(max_length=200, db_column='PackageName')
+    Description = models.TextField(null=True, blank=True, db_column='Description')
+    CylinderProduct = models.ForeignKey(
+        Product,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='CylinderProductId',
+        related_name='cylinder_packages'
+    )
+    CylinderQty = models.DecimalField(max_digits=10, decimal_places=2, default=1, db_column='CylinderQty')
+    CylinderRate = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='CylinderRate')
+    LaborCharge = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='LaborCharge')
+    LaborDescription = models.CharField(max_length=200, default='Fitting / Installation Charge', db_column='LaborDescription')
+    TotalAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TotalAmount')
+    IsActive = models.BooleanField(default=True, db_column='IsActive')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"ConnectionPackage"'
+        ordering = ['-PackageId']
+
+    def __str__(self):
+        return f"{self.PackageName} - ₹{self.TotalAmount}"
+
+
+class ConnectionPackageItem(models.Model):
+    PackageItemId = models.BigAutoField(primary_key=True, db_column='PackageItemId')
+    Package = models.ForeignKey(
+        ConnectionPackage,
+        on_delete=models.CASCADE,
+        db_column='PackageId',
+        related_name='items'
+    )
+    Product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        db_column='ProductId',
+        related_name='package_items'
+    )
+    Quantity = models.DecimalField(max_digits=10, decimal_places=2, default=1, db_column='Quantity')
+    UnitPrice = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='UnitPrice')
+    TaxPercent = models.DecimalField(max_digits=5, decimal_places=2, default=0, db_column='TaxPercent')
+    TotalAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='TotalAmount')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+
+    class Meta:
+        managed = False
+        db_table = '"ConnectionPackageItem"'
+        ordering = ['PackageItemId']
+
+    def __str__(self):
+        return f"Package {self.Package_id} Item {self.Product_id} x {self.Quantity}"
+
 
 
 

@@ -46,6 +46,8 @@ import {
   IconBell,
   IconShoppingCart,
   IconPackageImport,
+  IconPackages,
+  IconFileInvoice,
 } from '@tabler/icons-react';
 
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
@@ -101,9 +103,13 @@ export const AppLayout: React.FC = () => {
     { label: 'Category', path: '/categories', icon: IconCategory },
     { label: 'Products', path: '/products', icon: IconPackage },
     { label: 'Accounts', path: '/accounts', icon: IconBuildingBank },
+    { label: 'Packages', path: '/connection-packages', icon: IconPackages },
   ];
 
-  const isMasterActive = masterItems.some((item) => location.pathname === item.path);
+  const isMasterActive = masterItems.some((item) =>
+    location.pathname === item.path ||
+    (item.path === '/connection-packages' && location.pathname.startsWith('/connection-packages'))
+  );
 
   useEffect(() => {
     if (isVanOpsActive) setVanOpsOpened(true);
@@ -157,6 +163,8 @@ export const AppLayout: React.FC = () => {
         return { section: 'Operations', title: 'Receipt Notes' };
       case '/stock-analysis':
         return { section: 'Inventory', title: 'Stock Analysis' };
+      case '/stock-analysis/add-inventory':
+        return { section: 'Inventory', title: 'Add Godown Inventory' };
       case '/inventory/products':
         return { section: 'Inventory', title: 'Inventory by Product' };
       case '/inventory/locations':
@@ -165,8 +173,21 @@ export const AppLayout: React.FC = () => {
         return { section: 'Reports', title: 'Payables Report' };
       case '/receivables':
         return { section: 'Reports', title: 'Receivables Report' };
+      case '/connection-packages':
+        return { section: 'Master', title: 'Connection Packages' };
+      case '/connection-packages/new':
+        return { section: 'Master', title: 'New Connection Package' };
+      case '/sales':
+        return { section: 'Commercial', title: 'Sales & Invoices' };
+      case '/sales/new':
+        return { section: 'Commercial', title: 'New Sale' };
+      case '/sales/new-connection':
+        return { section: 'Commercial', title: 'New Connection Sale' };
 
       default:
+        if (location.pathname.startsWith('/connection-packages/')) {
+          return { section: 'Master', title: 'Edit Connection Package' };
+        }
         if (location.pathname.startsWith('/purchases/')) {
           return { section: 'Purchase', title: 'Edit Purchase' };
         }
@@ -181,16 +202,105 @@ export const AppLayout: React.FC = () => {
   };
   const breadcrumb = getBreadcrumb();
 
+  const getNavStyles = (isActive: boolean) => ({
+    root: {
+      borderRadius: '10px',
+      height: 38,
+      width: 'calc(100% - 16px)',
+      margin: '0 8px 3px 8px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      padding: '0 12px',
+      backgroundColor: isActive ? '#800020' : 'transparent',
+      color: isActive ? '#ffffff' : '#475569',
+      boxShadow: 'none',
+      fontWeight: 600,
+      fontSize: 13,
+      overflow: 'hidden',
+      whiteSpace: 'nowrap',
+      transform: 'translateX(0)',
+      transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
+      cursor: 'pointer',
+      '&:hover': {
+        backgroundColor: isActive ? '#800020' : '#fdf2f4',
+        color: isActive ? '#ffffff' : '#800020',
+        transform: isActive ? 'none' : 'translateX(4px)',
+      },
+    },
+    section: {
+      marginRight: 10,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0,
+      transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1)',
+    },
+    body: {
+      overflow: 'hidden',
+      whiteSpace: 'nowrap',
+    },
+  });
+
+  const renderDirectNavItem = (
+    label: string,
+    to: string,
+    IconComponent: React.ComponentType<{ size?: number; stroke?: number }>,
+    isActive: boolean
+  ) => {
+    if (effectiveCollapsed) {
+      return (
+        <Tooltip label={label} position="right" withArrow key={to}>
+          <Box style={{ width: '100%', display: 'flex', justifyContent: 'center' }} mb={4}>
+            <ActionIcon
+              component={Link}
+              to={to}
+              size={44}
+              variant="subtle"
+              onClick={() => opened && toggle()}
+              style={{
+                borderRadius: '13px',
+                width: 44,
+                height: 44,
+                backgroundColor: isActive ? '#800020' : 'transparent',
+                color: isActive ? '#ffffff' : '#475569',
+                boxShadow: 'none',
+                transform: 'scale(1)',
+                transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
+              }}
+            >
+              <IconComponent size={22} stroke={1.75} />
+            </ActionIcon>
+          </Box>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <NavLink
+        key={to}
+        component={Link}
+        to={to}
+        label={label}
+        leftSection={<IconComponent size={21} stroke={1.75} />}
+        active={isActive}
+        color="burgundy"
+        variant="light"
+        onClick={() => opened && toggle()}
+        styles={getNavStyles(isActive)}
+      />
+    );
+  };
 
   return (
      <AppShell
       header={{ height: 60 }}
       navbar={{
-        width: { base: 280, sm: effectiveCollapsed ? 68 : 240 },
+        width: { base: 280, sm: effectiveCollapsed ? 76 : 256 },
         breakpoint: 'sm',
         collapsed: { mobile: !opened },
       }}
-      transitionDuration={300}
+      transitionDuration={250}
       transitionTimingFunction="cubic-bezier(0.4, 0, 0.2, 1)"
       padding={{ base: 'xs', sm: 'md', lg: 'lg' }}
       styles={{
@@ -443,7 +553,7 @@ export const AppLayout: React.FC = () => {
         </Group>
       </AppShell.Header>
 
-       <AppShell.Navbar px="xs" pt={6} pb="xs">
+       <AppShell.Navbar px={effectiveCollapsed ? 0 : 'xs'} pt={6} pb="xs">
         {/* Top Header with Seamless Collapse/Expand Sidebar Icon for Desktop */}
         <AppShell.Section visibleFrom="sm">
           <Box
@@ -455,7 +565,7 @@ export const AppLayout: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: isCollapsed ? 'center' : 'space-between',
-              padding: isCollapsed ? 0 : '0 4px',
+              padding: isCollapsed ? 0 : '0 10px',
               overflow: 'hidden',
               transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1)',
             }}
@@ -500,6 +610,7 @@ export const AppLayout: React.FC = () => {
         <AppShell.Section grow my={4} style={{ overflow: 'hidden' }}>
           <ScrollArea
             h="100%"
+            px={effectiveCollapsed ? 0 : 8}
             scrollbarSize={4}
             type="hover"
             offsetScrollbars={false}
@@ -518,51 +629,7 @@ export const AppLayout: React.FC = () => {
             }}
           >
             {/* Dashboard Link */}
-        <Tooltip label="Dashboard" position="right" withArrow disabled={!effectiveCollapsed}>
-          <NavLink
-            component={Link}
-            to="/"
-            label="Dashboard"
-            leftSection={<IconLayoutDashboard size={20} stroke={1.75} />}
-            active={location.pathname === '/'}
-            color="burgundy"
-            variant="light"
-            mb={4}
-            onClick={() => opened && toggle()}
-            styles={{
-              root: {
-                borderRadius: '6px',
-                height: 40,
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname === '/' ? '#800020' : 'transparent',
-                color: location.pathname === '/' ? '#ffffff' : '#475569',
-                fontWeight: 600,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
-              },
-              section: {
-                marginRight: effectiveCollapsed ? 0 : 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-              body: {
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                opacity: effectiveCollapsed ? 0 : 1,
-                maxWidth: effectiveCollapsed ? 0 : 160,
-                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-            }}
-          />
-        </Tooltip>
+            {renderDirectNavItem('Dashboard', '/', IconLayoutDashboard, location.pathname === '/')}
 
         {/* Van Management Group (Accordion in Expanded / Flyout in Collapsed) */}
         {effectiveCollapsed ? (
@@ -587,18 +654,20 @@ export const AppLayout: React.FC = () => {
                   styles={{ indicator: { backgroundColor: '#800020' } }}
                 >
                   <ActionIcon
-                    size={40}
-                    variant="light"
-                    color="burgundy"
+                    size={44}
+                    variant="subtle"
                     style={{
-                      borderRadius: '6px',
+                      borderRadius: '13px',
                       backgroundColor: isVanOpsActive ? '#800020' : 'transparent',
                       color: isVanOpsActive ? '#ffffff' : '#475569',
-                      width: '100%',
-                      height: 40,
+                      width: 44,
+                      height: 44,
+                      boxShadow: 'none',
+                      transform: 'scale(1)',
+                      transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
                     }}
                   >
-                    <IconTruckDelivery size={20} stroke={1.75} />
+                    <IconTruckDelivery size={22} stroke={1.75} />
                   </ActionIcon>
                 </Indicator>
               </Box>
@@ -617,7 +686,7 @@ export const AppLayout: React.FC = () => {
                     key={sub.path}
                     component={Link}
                     to={sub.path}
-                    leftSection={<SubIcon size={18} stroke={1.75} />}
+                    leftSection={<SubIcon size={16} stroke={1.75} />}
                     rightSection={
                       hasPending ? (
                         <Box
@@ -631,8 +700,9 @@ export const AppLayout: React.FC = () => {
                       ) : null
                     }
                     style={{
-                      borderRadius: '6px',
+                      borderRadius: '8px',
                       fontWeight: isSubActive ? 600 : 500,
+                      fontSize: 12.5,
                       backgroundColor: isSubActive ? '#800020' : 'transparent',
                       color: isSubActive ? '#ffffff' : '#334155',
                       marginBottom: 2,
@@ -647,14 +717,14 @@ export const AppLayout: React.FC = () => {
         ) : (
           <NavLink
             label="Van Operations"
-            leftSection={<IconTruckDelivery size={20} stroke={1.75} />}
+            leftSection={<IconTruckDelivery size={21} stroke={1.75} />}
             opened={vanOpsOpened}
             onChange={setVanOpsOpened}
             active={isVanOpsActive}
             color="burgundy"
             variant="light"
-            childrenOffset={12}
-            mb={4}
+            childrenOffset={10}
+            mb={3}
             rightSection={
               !vanOpsOpened && pendingEndRoutes.length > 0 ? (
                 <Box
@@ -670,14 +740,26 @@ export const AppLayout: React.FC = () => {
             }
             styles={{
               root: {
-                borderRadius: '6px',
-                height: 40,
+                borderRadius: '10px',
+                height: 38,
+                width: 'calc(100% - 16px)',
+                margin: '0 8px 3px 8px',
+                padding: '0 12px',
                 fontWeight: 600,
+                fontSize: 13,
                 backgroundColor: isVanOpsActive && !vanOpsOpened ? '#800020' : 'transparent',
                 color: isVanOpsActive && !vanOpsOpened ? '#ffffff' : (isVanOpsActive ? '#800020' : '#334155'),
-                transition: 'background-color 150ms ease, color 150ms ease',
+                boxShadow: 'none',
+                transform: 'translateX(0)',
+                transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
+                cursor: 'pointer',
+                '&:hover': {
+                  backgroundColor: isVanOpsActive && !vanOpsOpened ? '#800020' : '#fdf2f4',
+                  color: isVanOpsActive && !vanOpsOpened ? '#ffffff' : '#800020',
+                  transform: isVanOpsActive && !vanOpsOpened ? 'none' : 'translateX(4px)',
+                },
               },
-              section: { marginRight: 12 },
+              section: { marginRight: 10 },
               chevron: {
                 transition: 'transform 250ms cubic-bezier(0.4, 0, 0.2, 1)',
               },
@@ -694,7 +776,7 @@ export const AppLayout: React.FC = () => {
                   component={Link}
                   to={sub.path}
                   label={sub.label}
-                  leftSection={<SubIcon size={18} stroke={1.75} />}
+                  leftSection={<SubIcon size={16} stroke={1.75} />}
                   rightSection={
                     hasPending ? (
                       <Box
@@ -715,13 +797,25 @@ export const AppLayout: React.FC = () => {
                   onClick={() => opened && toggle()}
                   styles={{
                     root: {
-                      borderRadius: '6px',
-                      height: 36,
+                      borderRadius: '8px',
+                      height: 34,
+                      width: 'calc(100% - 20px)',
+                      margin: '0 10px 2px 10px',
+                      padding: '0 10px',
                       fontWeight: isSubActive ? 600 : 500,
+                      fontSize: 12.5,
                       backgroundColor: isSubActive ? '#800020' : 'transparent',
                       color: isSubActive ? '#ffffff' : '#475569',
+                      boxShadow: 'none',
+                      transform: 'translateX(0)',
+                      transition: 'transform 180ms cubic-bezier(0.2, 0, 0, 1), background-color 180ms cubic-bezier(0.2, 0, 0, 1), color 180ms cubic-bezier(0.2, 0, 0, 1)',
+                      '&:hover': {
+                        backgroundColor: isSubActive ? '#800020' : '#fdf2f4',
+                        color: isSubActive ? '#ffffff' : '#800020',
+                        transform: isSubActive ? 'none' : 'translateX(4px)',
+                      },
                     },
-                    section: { marginRight: 10 },
+                    section: { marginRight: 8 },
                   }}
                 />
               );
@@ -745,18 +839,20 @@ export const AppLayout: React.FC = () => {
             <Menu.Target>
               <Box style={{ width: '100%', display: 'flex', justifyContent: 'center' }} mb={4}>
                 <ActionIcon
-                  size={40}
-                  variant="light"
-                  color="burgundy"
+                  size={44}
+                  variant="subtle"
                   style={{
-                    borderRadius: '6px',
+                    borderRadius: '13px',
                     backgroundColor: isMasterActive ? '#800020' : 'transparent',
                     color: isMasterActive ? '#ffffff' : '#475569',
-                    width: '100%',
-                    height: 40,
+                    width: 44,
+                    height: 44,
+                    boxShadow: 'none',
+                    transform: 'scale(1)',
+                    transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
                   }}
                 >
-                  <IconFolders size={20} stroke={1.75} />
+                  <IconFolders size={22} stroke={1.75} />
                 </ActionIcon>
               </Box>
             </Menu.Target>
@@ -772,10 +868,11 @@ export const AppLayout: React.FC = () => {
                     key={sub.path}
                     component={Link}
                     to={sub.path}
-                    leftSection={<SubIcon size={18} stroke={1.75} />}
+                    leftSection={<SubIcon size={16} stroke={1.75} />}
                     style={{
-                      borderRadius: '6px',
+                      borderRadius: '8px',
                       fontWeight: isSubActive ? 600 : 500,
+                      fontSize: 12.5,
                       backgroundColor: isSubActive ? '#800020' : 'transparent',
                       color: isSubActive ? '#ffffff' : '#334155',
                       marginBottom: 2,
@@ -790,24 +887,36 @@ export const AppLayout: React.FC = () => {
         ) : (
           <NavLink
             label="Master"
-            leftSection={<IconFolders size={20} stroke={1.75} />}
+            leftSection={<IconFolders size={21} stroke={1.75} />}
             opened={masterOpened}
             onChange={setMasterOpened}
             active={isMasterActive}
             color="burgundy"
             variant="light"
-            childrenOffset={12}
-            mb={4}
+            childrenOffset={10}
+            mb={3}
             styles={{
               root: {
-                borderRadius: '6px',
-                height: 40,
+                borderRadius: '10px',
+                height: 38,
+                width: 'calc(100% - 16px)',
+                margin: '0 8px 3px 8px',
+                padding: '0 12px',
                 fontWeight: 600,
+                fontSize: 13,
                 backgroundColor: isMasterActive && !masterOpened ? '#800020' : 'transparent',
                 color: isMasterActive && !masterOpened ? '#ffffff' : (isMasterActive ? '#800020' : '#334155'),
-                transition: 'background-color 150ms ease, color 150ms ease',
+                boxShadow: 'none',
+                transform: 'translateX(0)',
+                transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
+                cursor: 'pointer',
+                '&:hover': {
+                  backgroundColor: isMasterActive && !masterOpened ? '#800020' : '#fdf2f4',
+                  color: isMasterActive && !masterOpened ? '#ffffff' : '#800020',
+                  transform: isMasterActive && !masterOpened ? 'none' : 'translateX(4px)',
+                },
               },
-              section: { marginRight: 12 },
+              section: { marginRight: 10 },
               chevron: {
                 transition: 'transform 250ms cubic-bezier(0.4, 0, 0.2, 1)',
               },
@@ -822,7 +931,7 @@ export const AppLayout: React.FC = () => {
                   component={Link}
                   to={sub.path}
                   label={sub.label}
-                  leftSection={<SubIcon size={18} stroke={1.75} />}
+                  leftSection={<SubIcon size={16} stroke={1.75} />}
                   active={isSubActive}
                   color="burgundy"
                   variant="light"
@@ -830,13 +939,25 @@ export const AppLayout: React.FC = () => {
                   onClick={() => opened && toggle()}
                   styles={{
                     root: {
-                      borderRadius: '6px',
-                      height: 36,
+                      borderRadius: '8px',
+                      height: 34,
+                      width: 'calc(100% - 20px)',
+                      margin: '0 10px 2px 10px',
+                      padding: '0 10px',
                       fontWeight: isSubActive ? 600 : 500,
+                      fontSize: 12.5,
                       backgroundColor: isSubActive ? '#800020' : 'transparent',
                       color: isSubActive ? '#ffffff' : '#475569',
+                      boxShadow: 'none',
+                      transform: 'translateX(0)',
+                      transition: 'transform 180ms cubic-bezier(0.2, 0, 0, 1), background-color 180ms cubic-bezier(0.2, 0, 0, 1), color 180ms cubic-bezier(0.2, 0, 0, 1)',
+                      '&:hover': {
+                        backgroundColor: isSubActive ? '#800020' : '#fdf2f4',
+                        color: isSubActive ? '#ffffff' : '#800020',
+                        transform: isSubActive ? 'none' : 'translateX(4px)',
+                      },
                     },
-                    section: { marginRight: 10 },
+                    section: { marginRight: 8 },
                   }}
                 />
               );
@@ -844,290 +965,20 @@ export const AppLayout: React.FC = () => {
           </NavLink>
         )}
 
-        {/* Purchase Link */}
-        <Tooltip label="Purchase" position="right" withArrow disabled={!effectiveCollapsed}>
-          <NavLink
-            component={Link}
-            to="/purchases"
-            label="Purchase"
-            leftSection={<IconShoppingCart size={20} stroke={1.75} />}
-            active={location.pathname.startsWith('/purchases')}
-            color="burgundy"
-            variant="light"
-            mb={4}
-            onClick={() => opened && toggle()}
-            styles={{
-              root: {
-                borderRadius: '6px',
-                height: 40,
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname.startsWith('/purchases') ? '#800020' : 'transparent',
-                color: location.pathname.startsWith('/purchases') ? '#ffffff' : '#475569',
-                fontWeight: 600,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
-              },
-              section: {
-                marginRight: effectiveCollapsed ? 0 : 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-              body: {
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                opacity: effectiveCollapsed ? 0 : 1,
-                maxWidth: effectiveCollapsed ? 0 : 160,
-                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-            }}
-          />
-        </Tooltip>
-                    {/* Payment NavLink */}
-        <Tooltip label="Payment" position="right" withArrow disabled={!effectiveCollapsed}>
-          <NavLink
-            component={Link}
-            to="/payments"
-            label="Payment"
-            leftSection={<IconCreditCard size={20} stroke={1.75} />}
-            active={location.pathname.startsWith('/payments')}
-            color="burgundy"
-            variant="light"
-            mb={4}
-            onClick={() => opened && toggle()}
-            styles={{
-              root: {
-                borderRadius: '6px',
-                height: 40,
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname.startsWith('/payments') ? '#800020' : 'transparent',
-                color: location.pathname.startsWith('/payments') ? '#ffffff' : '#475569',
-                fontWeight: 600,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
-              },
-              section: {
-                marginRight: effectiveCollapsed ? 0 : 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-              body: {
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                opacity: effectiveCollapsed ? 0 : 1,
-                maxWidth: effectiveCollapsed ? 0 : 160,
-                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-            }}
-          />
-        </Tooltip>
-
-        {/* Receipt NavLink */}
-        <Tooltip label="Receipt" position="right" withArrow disabled={!effectiveCollapsed}>
-          <NavLink
-            component={Link}
-            to="/receipts"
-            label="Receipt"
-            leftSection={<IconReceipt size={20} stroke={1.75} />}
-            active={location.pathname.startsWith('/receipts')}
-            color="burgundy"
-            variant="light"
-            mb={4}
-            onClick={() => opened && toggle()}
-            styles={{
-              root: {
-                borderRadius: '6px',
-                height: 40,
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname.startsWith('/receipts') ? '#800020' : 'transparent',
-                color: location.pathname.startsWith('/receipts') ? '#ffffff' : '#475569',
-                fontWeight: 600,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
-              },
-              section: {
-                marginRight: effectiveCollapsed ? 0 : 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-              body: {
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                opacity: effectiveCollapsed ? 0 : 1,
-                maxWidth: effectiveCollapsed ? 0 : 160,
-                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-            }}
-          />
-        </Tooltip>
-
-        {/* Delivery Notes Link (Below Payment) */}
-        <Tooltip label="Delivery Notes" position="right" withArrow disabled={!effectiveCollapsed}>
-          <NavLink
-            component={Link}
-            to="/delivery-notes"
-            label="Delivery Notes"
-            leftSection={<IconClipboardList size={20} stroke={1.75} />}
-            active={location.pathname === '/delivery-notes'}
-            color="burgundy"
-            variant="light"
-            mb={4}
-            onClick={() => opened && toggle()}
-            styles={{
-              root: {
-                borderRadius: '6px',
-                height: 40,
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname === '/delivery-notes' ? '#800020' : 'transparent',
-                color: location.pathname === '/delivery-notes' ? '#ffffff' : '#475569',
-                fontWeight: 600,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
-              },
-              section: {
-                marginRight: effectiveCollapsed ? 0 : 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-              body: {
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                opacity: effectiveCollapsed ? 0 : 1,
-                maxWidth: effectiveCollapsed ? 0 : 160,
-                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-            }}
-          />
-        </Tooltip>
-
-        {/* Receipt Notes Link (Below Delivery Notes) */}
-        <Tooltip label="Receipt Notes" position="right" withArrow disabled={!effectiveCollapsed}>
-          <NavLink
-            component={Link}
-            to="/receipt-notes"
-            label="Receipt Notes"
-            leftSection={<IconPackageImport size={20} stroke={1.75} />}
-            active={location.pathname === '/receipt-notes'}
-            color="burgundy"
-            variant="light"
-            mb={4}
-            onClick={() => opened && toggle()}
-            styles={{
-              root: {
-                borderRadius: '6px',
-                height: 40,
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname === '/receipt-notes' ? '#800020' : 'transparent',
-                color: location.pathname === '/receipt-notes' ? '#ffffff' : '#475569',
-                fontWeight: 600,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
-              },
-              section: {
-                marginRight: effectiveCollapsed ? 0 : 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-              body: {
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                opacity: effectiveCollapsed ? 0 : 1,
-                maxWidth: effectiveCollapsed ? 0 : 160,
-                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-            }}
-          />
-        </Tooltip>
-        <Tooltip label="Stock Analysis" position="right" withArrow disabled={!effectiveCollapsed}>
-          <NavLink
-            component={Link}
-            to="/stock-analysis"
-            label="Stock Analysis"
-            leftSection={<IconChartBar size={20} stroke={1.75} />}
-            active={location.pathname === '/stock-analysis'}
-            color="burgundy"
-            variant="light"
-            mb={4}
-            onClick={() => opened && toggle()}
-            styles={{
-              root: {
-                borderRadius: '6px',
-                height: 40,
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                padding: effectiveCollapsed ? '0' : '0 12px',
-                backgroundColor: location.pathname === '/stock-analysis' ? '#800020' : 'transparent',
-                color: location.pathname === '/stock-analysis' ? '#ffffff' : '#475569',
-                fontWeight: 600,
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
-              },
-              section: {
-                marginRight: effectiveCollapsed ? 0 : 12,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-                transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-              body: {
-                overflow: 'hidden',
-                whiteSpace: 'nowrap',
-                opacity: effectiveCollapsed ? 0 : 1,
-                maxWidth: effectiveCollapsed ? 0 : 160,
-                transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-              },
-            }}
-          />
-        </Tooltip>
+        {/* Direct Links */}
+        {renderDirectNavItem('Sales', '/sales', IconFileInvoice, location.pathname.startsWith('/sales'))}
+        {renderDirectNavItem('Purchase', '/purchases', IconShoppingCart, location.pathname.startsWith('/purchases'))}
+        {renderDirectNavItem('Payment', '/payments', IconCreditCard, location.pathname.startsWith('/payments'))}
+        {renderDirectNavItem('Receipt', '/receipts', IconReceipt, location.pathname.startsWith('/receipts'))}
+        {renderDirectNavItem('Delivery Notes', '/delivery-notes', IconClipboardList, location.pathname === '/delivery-notes')}
+        {renderDirectNavItem('Receipt Notes', '/receipt-notes', IconPackageImport, location.pathname === '/receipt-notes')}
+        {renderDirectNavItem('Stock Analysis', '/stock-analysis', IconChartBar, location.pathname === '/stock-analysis')}
           </ScrollArea>
         </AppShell.Section>
 
         {/* Bottom Settings Icon with Spinning Animation & Logout Popover */}
         <AppShell.Section>
-          <Box pt="xs" style={{ borderTop: '1px solid #f1f5f9' }}>
+          <Box pt="xs" pb={2} style={{ borderTop: '1px solid #f1f5f9' }}>
           <Popover
             opened={settingsOpened}
             onChange={setSettingsOpened}
@@ -1139,60 +990,93 @@ export const AppLayout: React.FC = () => {
           >
             <Popover.Target>
               <Tooltip label="Settings" position="right" withArrow disabled={!effectiveCollapsed || settingsOpened}>
-                <NavLink
-                  component="button"
-                  type="button"
-                  label="Settings"
-                  leftSection={
-                    <IconSettings
-                      size={20}
-                      stroke={1.75}
+                {effectiveCollapsed ? (
+                  <Box style={{ width: '100%', display: 'flex', justifyContent: 'center' }} mb={2}>
+                    <ActionIcon
+                      size={44}
+                      variant="subtle"
+                      onClick={() => setSettingsOpened((o) => !o)}
                       style={{
-                        transform: settingsOpened ? 'rotate(180deg)' : 'rotate(0deg)',
-                        transition: 'transform 300ms ease',
+                        borderRadius: '13px',
+                        width: 44,
+                        height: 44,
+                        backgroundColor: settingsOpened ? '#fdf2f4' : 'transparent',
+                        color: settingsOpened ? '#800020' : '#475569',
+                        boxShadow: 'none',
+                        transform: 'scale(1)',
+                        transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
                       }}
-                    />
-                  }
-                  active={settingsOpened}
-                  color="burgundy"
-                  variant="light"
-                  onClick={() => setSettingsOpened((o) => !o)}
-                  styles={{
-                    root: {
-                      borderRadius: '6px',
-                      height: 40,
-                      width: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-                      padding: effectiveCollapsed ? '0' : '0 12px',
-                      backgroundColor: settingsOpened ? '#fdf2f4' : 'transparent',
-                      color: settingsOpened ? '#800020' : '#475569',
-                      fontWeight: settingsOpened ? 600 : 500,
-                      overflow: 'hidden',
-                      whiteSpace: 'nowrap',
-                      cursor: 'pointer',
-                      border: 'none',
-                      transition: 'padding 300ms cubic-bezier(0.4, 0, 0.2, 1), background-color 150ms ease',
-                    },
-                    section: {
-                      marginRight: effectiveCollapsed ? 0 : 12,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                      transition: 'margin-right 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-                    },
-                    body: {
-                      overflow: 'hidden',
-                      whiteSpace: 'nowrap',
-                      opacity: effectiveCollapsed ? 0 : 1,
-                      maxWidth: effectiveCollapsed ? 0 : 160,
-                      textAlign: 'left',
-                      transition: 'opacity 220ms ease, max-width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
-                    },
-                  }}
-                />
+                    >
+                      <IconSettings
+                        size={22}
+                        stroke={1.75}
+                        style={{
+                          transform: settingsOpened ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 300ms ease',
+                        }}
+                      />
+                    </ActionIcon>
+                  </Box>
+                ) : (
+                  <NavLink
+                    component="button"
+                    type="button"
+                    label="Settings"
+                    leftSection={
+                      <IconSettings
+                        size={21}
+                        stroke={1.75}
+                        style={{
+                          transform: settingsOpened ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 300ms ease',
+                        }}
+                      />
+                    }
+                    active={settingsOpened}
+                    color="burgundy"
+                    variant="light"
+                    onClick={() => setSettingsOpened((o) => !o)}
+                    styles={{
+                      root: {
+                        borderRadius: '10px',
+                        height: 38,
+                        width: 'calc(100% - 16px)',
+                        margin: '0 8px 3px 8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'flex-start',
+                        padding: '0 12px',
+                        backgroundColor: settingsOpened ? '#fdf2f4' : 'transparent',
+                        color: settingsOpened ? '#800020' : '#475569',
+                        boxShadow: 'none',
+                        fontWeight: settingsOpened ? 600 : 500,
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap',
+                        cursor: 'pointer',
+                        border: 'none',
+                        transform: 'translateX(0)',
+                        transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
+                        '&:hover': {
+                          backgroundColor: '#fdf2f4',
+                          color: '#800020',
+                          transform: 'translateX(4px)',
+                        },
+                      },
+                      section: {
+                        marginRight: 10,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      },
+                      body: {
+                        overflow: 'hidden',
+                        whiteSpace: 'nowrap',
+                        textAlign: 'left',
+                      },
+                    }}
+                  />
+                )}
               </Tooltip>
             </Popover.Target>
 

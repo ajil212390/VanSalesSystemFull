@@ -443,26 +443,6 @@ export const StockAnalysisPage: React.FC = () => {
     return filteredLocations.reduce((sum, l) => sum + (Number(l.emptyQuantity) || 0), 0);
   }, [filteredLocations]);
 
-  // Balanced table rows calculation:
-  // Whichever table has more items, take that count + 1 extra line (breathing space),
-  // ensuring both tables have identical row counts and perfectly aligned Total footers.
-  const targetTableRows = useMemo(() => {
-    const pCount = filteredProducts.length;
-    const lCount = filteredLocations.length;
-    const maxCount = Math.max(pCount, lCount);
-    return maxCount > 0 ? maxCount + 1 : 0;
-  }, [filteredProducts.length, filteredLocations.length]);
-
-  const productSpacerCount = useMemo(() => {
-    if (filteredProducts.length === 0) return 0;
-    return Math.max(0, targetTableRows - filteredProducts.length);
-  }, [targetTableRows, filteredProducts.length]);
-
-  const locationSpacerCount = useMemo(() => {
-    if (filteredLocations.length === 0) return 0;
-    return Math.max(0, targetTableRows - filteredLocations.length);
-  }, [targetTableRows, filteredLocations.length]);
-
   const summary = data?.summary || {
     total_system_cylinders: 0,
     total_godown_cylinders: 0,
@@ -1340,7 +1320,7 @@ export const StockAnalysisPage: React.FC = () => {
             color="burgundy"
             size="sm"
             leftSection={<IconPlus size={15} />}
-            onClick={() => setAddStockModalOpened(true)}
+            onClick={() => navigate('/stock-analysis/add-inventory')}
             style={{ fontWeight: 600 }}
           >
             Add Godown Stock
@@ -1595,23 +1575,23 @@ export const StockAnalysisPage: React.FC = () => {
             ) : (
               <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 <ScrollArea
-                  mah={480}
+                  h={305}
                   scrollbars="y"
-                  scrollbarSize={5}
+                  scrollbarSize={6}
                   type="hover"
                   styles={{
                     thumb: { backgroundColor: '#800020', borderRadius: 9999 },
                     scrollbar: { backgroundColor: 'transparent' },
                   }}
                 >
-                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
                       <col style={{ width: 75 }} />
                       <col />
                       <col style={{ width: 95 }} />
                       <col style={{ width: 95 }} />
                     </colgroup>
-                    <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
+                    <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 2, borderBottom: '1px solid #e2e8f0' }}>
                       <Table.Tr>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                           CODE
@@ -1640,7 +1620,7 @@ export const StockAnalysisPage: React.FC = () => {
                             onClick={() => setSearchParams({ product: String(product.ProductId) })}
                             style={{
                               cursor: 'pointer',
-                              height: 44,
+                              height: 42,
                               transition: 'background-color 150ms ease',
                             }}
                           >
@@ -1666,25 +1646,18 @@ export const StockAnalysisPage: React.FC = () => {
                           </Table.Tr>
                         );
                       })}
-                      {Array.from({ length: productSpacerCount }).map((_, idx) => (
-                        <Table.Tr key={`prod-spacer-${idx}`} style={{ height: 44, borderBottom: '1px solid #f1f5f9', pointerEvents: 'none' }}>
-                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
-                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
-                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
-                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
-                        </Table.Tr>
-                      ))}
                     </Table.Tbody>
                     <Table.Tfoot
                       style={{
                         position: 'sticky',
                         bottom: 0,
-                        backgroundColor: '#ffffff',
-                        zIndex: 1,
+                        backgroundColor: '#f8fafc',
+                        zIndex: 2,
                         borderTop: '2px solid #e2e8f0',
+                        boxShadow: '0 -2px 6px rgba(0,0,0,0.03)',
                       }}
                     >
-                      <Table.Tr style={{ height: 44 }}>
+                      <Table.Tr style={{ height: 42 }}>
                         <Table.Td colSpan={2} style={{ fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Total
                         </Table.Td>
@@ -1779,22 +1752,22 @@ export const StockAnalysisPage: React.FC = () => {
             ) : (
               <Box style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
                 <ScrollArea
-                  mah={480}
+                  h={305}
                   scrollbars="y"
-                  scrollbarSize={5}
+                  scrollbarSize={6}
                   type="hover"
                   styles={{
                     thumb: { backgroundColor: '#800020', borderRadius: 9999 },
                     scrollbar: { backgroundColor: 'transparent' },
                   }}
                 >
-                  <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
+                  <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="md" stickyHeader style={{ tableLayout: 'fixed', width: '100%' }}>
                     <colgroup>
                       <col />
                       <col style={{ width: 105 }} />
                       <col style={{ width: 105 }} />
                     </colgroup>
-                    <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 1 }}>
+                    <Table.Thead style={{ backgroundColor: '#ffffff', zIndex: 2, borderBottom: '1px solid #e2e8f0' }}>
                       <Table.Tr>
                         <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                           LOCATION
@@ -1816,7 +1789,7 @@ export const StockAnalysisPage: React.FC = () => {
                           onClick={() => setSearchParams({ location: location.id })}
                           style={{
                             cursor: 'pointer',
-                            height: 44,
+                            height: 42,
                             transition: 'background-color 150ms ease',
                           }}
                         >
@@ -1841,24 +1814,18 @@ export const StockAnalysisPage: React.FC = () => {
                           </Table.Td>
                         </Table.Tr>
                       ))}
-                      {Array.from({ length: locationSpacerCount }).map((_, idx) => (
-                        <Table.Tr key={`loc-spacer-${idx}`} style={{ height: 44, borderBottom: '1px solid #f1f5f9', pointerEvents: 'none' }}>
-                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
-                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
-                          <Table.Td style={{ height: 44, border: 'none' }}>&nbsp;</Table.Td>
-                        </Table.Tr>
-                      ))}
                     </Table.Tbody>
                     <Table.Tfoot
                       style={{
                         position: 'sticky',
                         bottom: 0,
-                        backgroundColor: '#ffffff',
-                        zIndex: 1,
+                        backgroundColor: '#f8fafc',
+                        zIndex: 2,
                         borderTop: '2px solid #e2e8f0',
+                        boxShadow: '0 -2px 6px rgba(0,0,0,0.03)',
                       }}
                     >
-                      <Table.Tr style={{ height: 44 }}>
+                      <Table.Tr style={{ height: 42 }}>
                         <Table.Td style={{ fontWeight: 800, color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                           Total
                         </Table.Td>
@@ -1921,6 +1888,7 @@ export const StockAnalysisPage: React.FC = () => {
             label="Filled Quantity (Full Stock)"
             placeholder="0"
             min={0}
+            hideControls
             value={filledStockInput}
             onChange={(val) => setFilledStockInput(val === '' ? '' : Number(val))}
             description="Number of filled cylinders ready in warehouse"
@@ -1930,6 +1898,7 @@ export const StockAnalysisPage: React.FC = () => {
             label="Empty Cylinders Quantity"
             placeholder="0"
             min={0}
+            hideControls
             value={emptyStockInput}
             onChange={(val) => setEmptyStockInput(val === '' ? '' : Number(val))}
             description="Number of empty cylinders on hand in godown"

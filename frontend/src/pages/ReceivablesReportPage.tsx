@@ -15,6 +15,8 @@ import {
   CloseButton,
   ActionIcon,
   Tooltip,
+  Modal,
+  Divider,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -24,7 +26,7 @@ import {
   IconCash,
   IconUsers,
   IconRefresh,
-  IconArrowUpRight,
+  IconPrinter,
   IconPlus,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
@@ -34,6 +36,7 @@ import { apiClient } from '../api/client';
 export const ReceivablesReportPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
 
   // 1. Fetch Ledgers
   const {
@@ -97,6 +100,20 @@ export const ReceivablesReportPage: React.FC = () => {
       .filter((l: any) => {
         const gName = (l.group_name || l.GroupName || '').toLowerCase();
         const gid = Number(l.GroupId ?? l.Group ?? 0);
+        const lName = (l.LedgerName || '').trim().toLowerCase();
+
+        // Strictly exclude Duties & Taxes, Tax accounts, Cash, and Bank accounts
+        if (
+          gid === 22 ||
+          gid === 16 ||
+          gid === 17 ||
+          gName.includes('duties') ||
+          gName.includes('tax') ||
+          /^(cgst|sgst|igst|gst|tax|round off)/i.test(lName)
+        ) {
+          return false;
+        }
+
         const isDebtorGroup = gid === 21 || gName.includes('debtor') || gName.includes('customer');
         const hasSales = salesMap.has(l.LedgerId);
         return isDebtorGroup || hasSales;
@@ -148,6 +165,22 @@ export const ReceivablesReportPage: React.FC = () => {
   const totalReceivableSum = useMemo(() => {
     return debtorsList.reduce((sum, d) => sum + d.receivable, 0);
   }, [debtorsList]);
+
+  const handlePrintStatement = (customerId: number) => {
+    const url = `${apiClient.defaults.baseURL}/sales/customer-statement-pdf/?customer_id=${customerId}`;
+    window.open(url, '_blank');
+  };
+
+  // Selected customer invoices & receipts
+  const customerInvoices = useMemo(() => {
+    if (!selectedCustomer) return [];
+    return sales.filter((s: any) => Number(s.CustomerLedger) === selectedCustomer.id && s.Status !== 'CANCELLED');
+  }, [sales, selectedCustomer]);
+
+  const customerReceipts = useMemo(() => {
+    if (!selectedCustomer) return [];
+    return payments.filter((p: any) => Number(p.PartyLedgerId) === selectedCustomer.id);
+  }, [payments, selectedCustomer]);
 
   return (
     <Stack gap="lg" style={{ width: '100%' }}>
@@ -261,10 +294,10 @@ export const ReceivablesReportPage: React.FC = () => {
             <IconCoins size={20} color="#800020" stroke={1.75} />
           </Group>
           <Group align="baseline" gap={6} mb={4}>
-            <Text fw={700} style={{ color: '#166534', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+            <Text fw={700} style={{ color: '#800020', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
               ₹{totalReceivableSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
-            <Badge color="teal" variant="light" size="xs">
+            <Badge color="burgundy" variant="light" size="xs">
               DR
             </Badge>
           </Group>
@@ -291,13 +324,13 @@ export const ReceivablesReportPage: React.FC = () => {
 
           <Badge
             variant="light"
-            color="teal"
+            color="burgundy"
             size="md"
             radius="sm"
             styles={{
               root: {
-                backgroundColor: '#f0fdf4',
-                color: '#166534',
+                backgroundColor: '#fdf2f4',
+                color: '#800020',
                 fontWeight: 700,
               },
             }}
@@ -326,28 +359,28 @@ export const ReceivablesReportPage: React.FC = () => {
         ) : (
           <Table.ScrollContainer minWidth={700}>
             <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover style={{ tableLayout: 'auto' }}>
-              <Table.Thead style={{ backgroundColor: '#f0fdf4' }}>
+              <Table.Thead style={{ backgroundColor: '#fdf2f4', borderBottom: '1px solid #fce7ec' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#166534', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                     Customer Name
                   </Table.Th>
-                  <Table.Th style={{ color: '#166534', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', width: 140 }}>
+                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', width: 140 }}>
                     Contact Phone
                   </Table.Th>
-                  <Table.Th style={{ color: '#166534', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', width: 130 }}>
+                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', width: 130 }}>
                     City
                   </Table.Th>
-                  <Table.Th style={{ color: '#166534', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 140 }}>
+                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 140 }}>
                     Sales Billed (₹)
                   </Table.Th>
-                  <Table.Th style={{ color: '#166534', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 140 }}>
+                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 140 }}>
                     Collections (₹)
                   </Table.Th>
-                  <Table.Th style={{ color: '#166534', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
+                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
                     Receivable Balance (₹)
                   </Table.Th>
-                  <Table.Th style={{ color: '#166534', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 110, paddingRight: 16 }}>
-                    Action
+                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 90, paddingRight: 16 }}>
+                    STATEMENT
                   </Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -356,7 +389,7 @@ export const ReceivablesReportPage: React.FC = () => {
                   <Table.Tr
                     key={debtor.id}
                     style={{ cursor: 'pointer', height: 46 }}
-                    onClick={() => navigate('/receipts')}
+                    onClick={() => setSelectedCustomer(debtor)}
                   >
                     <Table.Td>
                       <Text size="sm" fw={700} c="#0f172a">
@@ -384,26 +417,29 @@ export const ReceivablesReportPage: React.FC = () => {
                       ₹{debtor.totalReceived.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Table.Td>
 
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#166534', fontVariantNumeric: 'tabular-nums' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
                       ₹{debtor.receivable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                      <Text component="span" size="xs" fw={700} c="#166534">
+                      <Text component="span" size="xs" fw={700} c="#800020">
                         Dr
                       </Text>
                     </Table.Td>
 
                     <Table.Td style={{ textAlign: 'center', paddingRight: 16 }}>
-                      <Button
-                        size="compact-xs"
-                        variant="light"
-                        color="teal"
-                        rightSection={<IconArrowUpRight size={12} />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate('/receipts/new');
-                        }}
-                      >
-                        Receive
-                      </Button>
+                      <Tooltip label="Print Account Statement (PDF)" withArrow position="top">
+                        <ActionIcon
+                          size="md"
+                          variant="light"
+                          color="burgundy"
+                          radius="md"
+                          style={{ backgroundColor: '#fdf2f4', color: '#800020' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePrintStatement(debtor.id);
+                          }}
+                        >
+                          <IconPrinter size={16} />
+                        </ActionIcon>
+                      </Tooltip>
                     </Table.Td>
                   </Table.Tr>
                 ))}
@@ -413,7 +449,7 @@ export const ReceivablesReportPage: React.FC = () => {
               <Table.Tfoot style={{ borderTop: '2px solid #e2e8f0', backgroundColor: '#f8fafc' }}>
                 <Table.Tr style={{ height: 46 }}>
                   <Table.Td colSpan={3}>
-                    <Text fw={800} style={{ color: '#166534', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                       TOTAL ({filteredDebtors.length} DEBTORS)
                     </Text>
                   </Table.Td>
@@ -423,9 +459,9 @@ export const ReceivablesReportPage: React.FC = () => {
                   <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                     ₹{filteredDebtors.reduce((s, d) => s + d.totalReceived, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 900, fontSize: 15, color: '#166534', fontVariantNumeric: 'tabular-nums' }}>
+                  <Table.Td style={{ textAlign: 'right', fontWeight: 900, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
                     ₹{filteredDebtors.reduce((s, d) => s + d.receivable, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                    <Text component="span" size="xs" fw={800}>
+                    <Text component="span" size="xs" fw={800} c="#800020">
                       Dr
                     </Text>
                   </Table.Td>
@@ -436,6 +472,126 @@ export const ReceivablesReportPage: React.FC = () => {
           </Table.ScrollContainer>
         )}
       </Paper>
+
+      {/* ── Customer Account Breakdown Modal ── */}
+      <Modal
+        opened={Boolean(selectedCustomer)}
+        onClose={() => setSelectedCustomer(null)}
+        title={
+          <Group gap="xs">
+            <IconFileInvoice size={20} color="#800020" />
+            <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
+              {selectedCustomer?.name} — Account Breakdown
+            </Text>
+          </Group>
+        }
+        size="lg"
+        radius="md"
+      >
+        {selectedCustomer && (
+          <Stack gap="md">
+            <SimpleGrid cols={2} spacing="xs">
+              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc' }}>
+                <Text size="xs" c="dimmed">Contact Phone</Text>
+                <Text size="sm" fw={600}>{selectedCustomer.phone}</Text>
+              </Paper>
+              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#fdf2f4', borderColor: '#f5c2cb' }}>
+                <Text size="xs" c="#800020">Net Outstanding Balance</Text>
+                <Text size="md" fw={800} c="#800020">
+                  ₹{selectedCustomer.receivable.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Dr
+                </Text>
+              </Paper>
+            </SimpleGrid>
+
+            <Group justify="space-between" align="center">
+              <Text size="xs" fw={700} c="dimmed" tt="uppercase">
+                Invoiced Sales Bills ({customerInvoices.length})
+              </Text>
+              <Button
+                size="compact-xs"
+                variant="light"
+                color="burgundy"
+                leftSection={<IconPrinter size={13} />}
+                onClick={() => handlePrintStatement(selectedCustomer.id)}
+              >
+                Print Full Statement
+              </Button>
+            </Group>
+
+            {customerInvoices.length === 0 ? (
+              <Text size="xs" c="dimmed" py="xs">No sales bills recorded for this customer.</Text>
+            ) : (
+              <Table verticalSpacing="xs" striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th style={{ fontSize: 11 }}>Date</Table.Th>
+                    <Table.Th style={{ fontSize: 11 }}>Invoice #</Table.Th>
+                    <Table.Th style={{ fontSize: 11 }}>Payment Mode</Table.Th>
+                    <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>Amount (₹)</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {customerInvoices.slice(0, 8).map((inv: any) => (
+                    <Table.Tr key={inv.SalesId}>
+                      <Table.Td style={{ fontSize: 12 }}>{inv.SalesDate}</Table.Td>
+                      <Table.Td style={{ fontSize: 12, fontWeight: 600 }}>{inv.InvoiceNo || inv.SalesNo}</Table.Td>
+                      <Table.Td style={{ fontSize: 12 }}>{inv.PaymentMethod || 'CASH'}</Table.Td>
+                      <Table.Td style={{ fontSize: 12, fontWeight: 700, textAlign: 'right' }}>
+                        ₹{Number(inv.GrandTotal || 0).toFixed(2)}
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            )}
+
+            {customerReceipts.length > 0 && (
+              <>
+                <Text size="xs" fw={700} c="dimmed" tt="uppercase" mt="xs">
+                  Collections &amp; Receipts ({customerReceipts.length})
+                </Text>
+                <Table verticalSpacing="xs" striped highlightOnHover>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th style={{ fontSize: 11 }}>Receipt #</Table.Th>
+                      <Table.Th style={{ fontSize: 11 }}>Mode</Table.Th>
+                      <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>Amount Paid (₹)</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {customerReceipts.slice(0, 5).map((rec: any) => (
+                      <Table.Tr key={rec.PaymentId}>
+                        <Table.Td style={{ fontSize: 12, fontWeight: 600 }}>REC-{rec.PaymentId}</Table.Td>
+                        <Table.Td style={{ fontSize: 12 }}>{rec.voucher_type || 'RECEIPT'}</Table.Td>
+                        <Table.Td style={{ fontSize: 12, fontWeight: 700, textAlign: 'right', color: '#800020' }}>
+                          ₹{Number(rec.Amount || 0).toFixed(2)}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </>
+            )}
+
+            <Divider />
+
+            <Group justify="flex-end">
+              <Button variant="default" size="xs" onClick={() => setSelectedCustomer(null)}>
+                Close
+              </Button>
+              <Button
+                color="burgundy"
+                size="xs"
+                leftSection={<IconPrinter size={14} />}
+                onClick={() => handlePrintStatement(selectedCustomer.id)}
+                style={{ backgroundColor: '#800020' }}
+              >
+                Download Statement PDF
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </Stack>
   );
 };

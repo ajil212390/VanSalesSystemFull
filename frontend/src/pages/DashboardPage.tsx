@@ -2,11 +2,11 @@ import React, { useMemo } from 'react';
 import {
   Title,
   Text,
-  Paper,
   SimpleGrid,
   Group,
   Stack,
   Box,
+  Button,
 } from '@mantine/core';
 import {
   IconReceipt,
@@ -19,6 +19,8 @@ import {
   IconCoins,
   IconPackage,
   IconBuildingFactory2,
+  IconShoppingCart,
+  IconPlus,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -233,143 +235,186 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <Stack gap="lg" style={{ width: '100%' }}>
-      {/* 1. Header: Clean Canvas Greeting */}
+      {/* 1. Header with Canvas Greeting & Quick Actions */}
       <Box pt={4} pb={2}>
-        <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 24, letterSpacing: '-0.02em' }}>
-          {user?.company_name || 'Future Gas'}
-        </Title>
-        <Text size="xs" c="dimmed" mt={2}>
-          {todayFormatted} &bull; Executive Operations &amp; Commercial Overview
-        </Text>
+        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+          <div>
+            <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 24, letterSpacing: '-0.02em' }}>
+              {user?.company_name || 'Future Gas'}
+            </Title>
+            <Text size="xs" c="dimmed" mt={2}>
+              {todayFormatted} &bull; Executive Operations &amp; Commercial Overview
+            </Text>
+          </div>
+
+          <Group gap="xs" wrap="wrap">
+            <Button
+              variant="outline"
+              color="burgundy"
+              size="sm"
+              radius="md"
+              leftSection={<IconShoppingCart size={16} />}
+              style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
+              onClick={() => navigate('/purchases/new')}
+            >
+              Add Purchase
+            </Button>
+            <Button
+              variant="outline"
+              color="burgundy"
+              size="sm"
+              radius="md"
+              leftSection={<IconCreditCard size={16} />}
+              style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
+              onClick={() => navigate('/payments/new')}
+            >
+              Add Payment
+            </Button>
+            <Button
+              variant="filled"
+              size="sm"
+              radius="md"
+              leftSection={<IconPlus size={16} />}
+              style={{ backgroundColor: '#800020', fontWeight: 600 }}
+              onClick={() => navigate('/sales/new')}
+            >
+              Add Sale
+            </Button>
+          </Group>
+        </Group>
       </Box>
 
       {/* 2. Structured 3x3 Metric Cards Grid */}
-      <Stack gap="md">
+      <Stack gap="lg">
         {/* ROW 1: Purchases & Payables */}
         <Stack gap="xs">
-          <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.6px', fontSize: 11 }}>
-            Purchases &amp; Payables
-          </Text>
+          <Group gap={8} align="center">
+            <Box style={{ width: 4, height: 14, borderRadius: 2, backgroundColor: '#800020' }} />
+            <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.6px', fontSize: 11 }}>
+              Purchases &amp; Payables
+            </Text>
+          </Group>
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
             {/* Card 1: Total Purchase */}
-            <Paper
-              p="md"
-              radius="md"
-              withBorder
+            <Box
               onClick={() => navigate('/purchases')}
               style={{
                 backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
+                border: '1px solid #eef2f6',
+                borderRadius: '16px',
                 cursor: 'pointer',
-                transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                padding: '20px 22px',
+                boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)';
+                e.currentTarget.style.borderColor = '#f5c2cb';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)';
+                e.currentTarget.style.borderColor = '#eef2f6';
               }}
             >
               <Group justify="space-between" align="center" mb="xs">
                 <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Total Purchase
                 </Text>
-                <IconReceipt size={18} color="#800020" stroke={1.75} />
+                <IconReceipt size={22} color="#800020" stroke={1.75} />
               </Group>
-              <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: '25px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.25 }}>
                 ₹{totalPurchase.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
               <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
                 <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
                   {purchases.length} Invoice{purchases.length !== 1 ? 's' : ''} recorded
                 </Text>
-                <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+                <IconArrowUpRight size={16} color="#800020" stroke={2} style={{ flexShrink: 0 }} />
               </Group>
-            </Paper>
+            </Box>
 
             {/* Card 2: Supplier Payments */}
-            <Paper
-              p="md"
-              radius="md"
-              withBorder
+            <Box
               onClick={() => navigate('/payments')}
               style={{
                 backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
+                border: '1px solid #eef2f6',
+                borderRadius: '16px',
                 cursor: 'pointer',
-                transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                padding: '20px 22px',
+                boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)';
+                e.currentTarget.style.borderColor = '#f5c2cb';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)';
+                e.currentTarget.style.borderColor = '#eef2f6';
               }}
             >
               <Group justify="space-between" align="center" mb="xs">
                 <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Supplier Payments
                 </Text>
-                <IconCreditCard size={18} color="#800020" stroke={1.75} />
+                <IconCreditCard size={22} color="#800020" stroke={1.75} />
               </Group>
-              <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: '25px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.25 }}>
                 ₹{totalSupplierPayments.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
               <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
                 <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
                   {supplierPayments.length} Payment voucher{supplierPayments.length !== 1 ? 's' : ''} recorded
                 </Text>
-                <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+                <IconArrowUpRight size={16} color="#800020" stroke={2} style={{ flexShrink: 0 }} />
               </Group>
-            </Paper>
+            </Box>
 
             {/* Card 3: Payable */}
-            <Paper
-              p="md"
-              radius="md"
-              withBorder
+            <Box
               onClick={() => navigate('/payables')}
               style={{
                 backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
+                border: '1px solid #eef2f6',
+                borderRadius: '16px',
                 cursor: 'pointer',
-                transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                padding: '20px 22px',
+                boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)';
+                e.currentTarget.style.borderColor = '#f5c2cb';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)';
+                e.currentTarget.style.borderColor = '#eef2f6';
               }}
             >
               <Group justify="space-between" align="center" mb="xs">
                 <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Payable
                 </Text>
-                <IconWallet size={18} color="#800020" stroke={1.75} />
+                <IconWallet size={22} color="#800020" stroke={1.75} />
               </Group>
               <Text
                 fw={700}
                 style={{
                   color: '#800020',
-                  fontSize: '24px',
+                  fontSize: '25px',
                   fontVariantNumeric: 'tabular-nums',
                   letterSpacing: '-0.02em',
+                  lineHeight: 1.25,
                 }}
               >
                 ₹{Math.abs(payableBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
@@ -381,141 +426,145 @@ export const DashboardPage: React.FC = () => {
                 <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   Outstanding supplier liability
                 </Text>
-                <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+                <IconArrowUpRight size={16} color="#800020" stroke={2} style={{ flexShrink: 0 }} />
               </Group>
-            </Paper>
+            </Box>
           </SimpleGrid>
         </Stack>
 
         {/* ROW 2: Sales & Receivables */}
         <Stack gap="xs" mt={4}>
-          <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.6px', fontSize: 11 }}>
-            Sales &amp; Receivables
-          </Text>
+          <Group gap={8} align="center">
+            <Box style={{ width: 4, height: 14, borderRadius: 2, backgroundColor: '#800020' }} />
+            <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.6px', fontSize: 11 }}>
+              Sales &amp; Receivables
+            </Text>
+          </Group>
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
             {/* Card 4: Sales */}
-            <Paper
-              p="md"
-              radius="md"
-              withBorder
-              onClick={() => navigate('/delivery-notes')}
+            <Box
+              onClick={() => navigate('/sales')}
               style={{
                 backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
+                border: '1px solid #eef2f6',
+                borderRadius: '16px',
                 cursor: 'pointer',
-                transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                padding: '20px 22px',
+                boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)';
+                e.currentTarget.style.borderColor = '#f5c2cb';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)';
+                e.currentTarget.style.borderColor = '#eef2f6';
               }}
             >
               <Group justify="space-between" align="center" mb="xs">
                 <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Sales
                 </Text>
-                <IconFileInvoice size={18} color="#800020" stroke={1.75} />
+                <IconFileInvoice size={22} color="#800020" stroke={1.75} />
               </Group>
-              <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: '25px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.25 }}>
                 ₹{totalSales.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
               <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
                 <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
                   {validSalesCount} Delivery &amp; sales bill{validSalesCount !== 1 ? 's' : ''}
                 </Text>
-                <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+                <IconArrowUpRight size={16} color="#800020" stroke={2} style={{ flexShrink: 0 }} />
               </Group>
-            </Paper>
+            </Box>
 
             {/* Card 5: Receipts */}
-            <Paper
-              p="md"
-              radius="md"
-              withBorder
+            <Box
               onClick={() => navigate('/receipts')}
               style={{
                 backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
+                border: '1px solid #eef2f6',
+                borderRadius: '16px',
                 cursor: 'pointer',
-                transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                padding: '20px 22px',
+                boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)';
+                e.currentTarget.style.borderColor = '#f5c2cb';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)';
+                e.currentTarget.style.borderColor = '#eef2f6';
               }}
             >
               <Group justify="space-between" align="center" mb="xs">
                 <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Receipts
                 </Text>
-                <IconCash size={18} color="#800020" stroke={1.75} />
+                <IconCash size={22} color="#800020" stroke={1.75} />
               </Group>
-              <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: '25px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.25 }}>
                 ₹{totalCustomerReceipts.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
               <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
                 <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
                   {customerReceipts.length} Collection voucher{customerReceipts.length !== 1 ? 's' : ''} recorded
                 </Text>
-                <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+                <IconArrowUpRight size={16} color="#800020" stroke={2} style={{ flexShrink: 0 }} />
               </Group>
-            </Paper>
+            </Box>
 
             {/* Card 6: Receivable */}
-            <Paper
-              p="md"
-              radius="md"
-              withBorder
+            <Box
               onClick={() => navigate('/receivables')}
               style={{
                 backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
+                border: '1px solid #eef2f6',
+                borderRadius: '16px',
                 cursor: 'pointer',
-                transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                padding: '20px 22px',
+                boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)';
+                e.currentTarget.style.borderColor = '#f5c2cb';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)';
+                e.currentTarget.style.borderColor = '#eef2f6';
               }}
             >
               <Group justify="space-between" align="center" mb="xs">
                 <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Receivable
                 </Text>
-                <IconCoins size={18} color="#800020" stroke={1.75} />
+                <IconCoins size={22} color="#800020" stroke={1.75} />
               </Group>
               <Text
                 fw={700}
                 style={{
-                  color: '#166534',
-                  fontSize: '24px',
+                  color: '#800020',
+                  fontSize: '25px',
                   fontVariantNumeric: 'tabular-nums',
                   letterSpacing: '-0.02em',
+                  lineHeight: 1.25,
                 }}
               >
                 ₹{Math.abs(receivableBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                <Text component="span" size="sm" c="#166534" fw={700}>
+                <Text component="span" size="sm" c="#800020" fw={700}>
                   {receivableBalance >= 0 ? 'Dr' : 'Cr'}
                 </Text>
               </Text>
@@ -523,57 +572,60 @@ export const DashboardPage: React.FC = () => {
                 <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   Outstanding customer balance
                 </Text>
-                <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+                <IconArrowUpRight size={16} color="#800020" stroke={2} style={{ flexShrink: 0 }} />
               </Group>
-            </Paper>
+            </Box>
           </SimpleGrid>
         </Stack>
 
         {/* ROW 3: Inventory & Van Operations */}
         <Stack gap="xs" mt={4}>
-          <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.6px', fontSize: 11 }}>
-            Inventory &amp; Van Operations
-          </Text>
+          <Group gap={8} align="center">
+            <Box style={{ width: 4, height: 14, borderRadius: 2, backgroundColor: '#800020' }} />
+            <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.6px', fontSize: 11 }}>
+              Inventory &amp; Van Operations
+            </Text>
+          </Group>
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
             {/* Card 7: Inventory by Product */}
-            <Paper
-              p="md"
-              radius="md"
-              withBorder
+            <Box
               onClick={() => navigate('/inventory/products')}
               style={{
                 backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
+                border: '1px solid #eef2f6',
+                borderRadius: '16px',
                 cursor: 'pointer',
-                transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                padding: '20px 22px',
+                boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)';
+                e.currentTarget.style.borderColor = '#f5c2cb';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)';
+                e.currentTarget.style.borderColor = '#eef2f6';
               }}
             >
               <Group justify="space-between" align="center" mb="xs">
                 <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Inventory by Product
                 </Text>
-                <IconPackage size={18} color="#800020" stroke={1.75} />
+                <IconPackage size={22} color="#800020" stroke={1.75} />
               </Group>
               <Group align="baseline" gap={6} mb={4}>
                 <Text
                   fw={700}
                   style={{
                     color: '#0f172a',
-                    fontSize: 24,
+                    fontSize: 25,
                     letterSpacing: '-0.02em',
                     fontVariantNumeric: 'tabular-nums',
-                    lineHeight: 1.1,
+                    lineHeight: 1.25,
                   }}
                 >
                   {totalProductFilled.toLocaleString()}
@@ -586,49 +638,49 @@ export const DashboardPage: React.FC = () => {
                 <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
                   {totalProductEmpty.toLocaleString()} empty &bull; {stockProducts.length} items
                 </Text>
-                <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+                <IconArrowUpRight size={16} color="#800020" stroke={2} style={{ flexShrink: 0 }} />
               </Group>
-            </Paper>
+            </Box>
 
             {/* Card 8: Inventory by Location */}
-            <Paper
-              p="md"
-              radius="md"
-              withBorder
+            <Box
               onClick={() => navigate('/inventory/locations')}
               style={{
                 backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
+                border: '1px solid #eef2f6',
+                borderRadius: '16px',
                 cursor: 'pointer',
-                transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                padding: '20px 22px',
+                boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)';
+                e.currentTarget.style.borderColor = '#f5c2cb';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)';
+                e.currentTarget.style.borderColor = '#eef2f6';
               }}
             >
               <Group justify="space-between" align="center" mb="xs">
                 <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Inventory by Location
                 </Text>
-                <IconBuildingFactory2 size={18} color="#800020" stroke={1.75} />
+                <IconBuildingFactory2 size={22} color="#800020" stroke={1.75} />
               </Group>
               <Group align="baseline" gap={6} mb={4}>
                 <Text
                   fw={700}
                   style={{
                     color: '#0f172a',
-                    fontSize: 24,
+                    fontSize: 25,
                     letterSpacing: '-0.02em',
                     fontVariantNumeric: 'tabular-nums',
-                    lineHeight: 1.1,
+                    lineHeight: 1.25,
                   }}
                 >
                   {stockLocations.length}
@@ -641,50 +693,50 @@ export const DashboardPage: React.FC = () => {
                 <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
                   {godownCount} godown &bull; {vanCount} vans
                 </Text>
-                <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+                <IconArrowUpRight size={16} color="#800020" stroke={2} style={{ flexShrink: 0 }} />
               </Group>
-            </Paper>
+            </Box>
 
             {/* Card 9: Van Management */}
-            <Paper
-              p="md"
-              radius="md"
-              withBorder
+            <Box
               onClick={() => navigate('/van-management')}
               style={{
                 backgroundColor: '#ffffff',
-                borderColor: '#e2e8f0',
+                border: '1px solid #eef2f6',
+                borderRadius: '16px',
                 cursor: 'pointer',
-                transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+                padding: '20px 22px',
+                boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
+                transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-                e.currentTarget.style.borderColor = '#cbd5e1';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+                e.currentTarget.style.boxShadow = '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)';
+                e.currentTarget.style.borderColor = '#f5c2cb';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.transform = 'none';
-                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-                e.currentTarget.style.borderColor = '#e2e8f0';
+                e.currentTarget.style.boxShadow = '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)';
+                e.currentTarget.style.borderColor = '#eef2f6';
               }}
             >
               <Group justify="space-between" align="center" mb="xs">
                 <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                   Van Management
                 </Text>
-                <IconTruckDelivery size={18} color="#800020" stroke={1.75} />
+                <IconTruckDelivery size={22} color="#800020" stroke={1.75} />
               </Group>
-              <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: '25px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.25 }}>
                 {activeRoutesCount} Active Route{activeRoutesCount !== 1 ? 's' : ''}
               </Text>
               <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
                 <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
                   Live delivery fleet &amp; route operations
                 </Text>
-                <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+                <IconArrowUpRight size={16} color="#800020" stroke={2} style={{ flexShrink: 0 }} />
               </Group>
-            </Paper>
+            </Box>
           </SimpleGrid>
         </Stack>
       </Stack>

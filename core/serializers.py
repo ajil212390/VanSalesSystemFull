@@ -7,7 +7,8 @@ from core.models import (
     User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver,
     Category, Unit, Product, Group, Ledger, ProductPriceAudit,
     Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
-    Payment, PaymentLine, BillwiseAllocation, LedgerLine
+    Payment, PaymentLine, BillwiseAllocation, LedgerLine,
+    SaleEditHistory, ConnectionPackage, ConnectionPackageItem
 )
 
 from core.services import register_company
@@ -1029,12 +1030,25 @@ class SalesLineSerializer(serializers.ModelSerializer):
         read_only_fields = ['Sales']
 
 
+class SaleEditHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SaleEditHistory
+        fields = [
+            'EditId', 'SalesId', 'EditedBy', 'EditedAt',
+            'OldGrandTotal', 'NewGrandTotal', 'OldPaymentMethod',
+            'NewPaymentMethod', 'Notes', 'CompanyId'
+        ]
+
+
 class SalesSerializer(serializers.ModelSerializer):
     lines = SalesLineSerializer(many=True, required=False)
+    edit_history = SaleEditHistorySerializer(many=True, read_only=True)
     route_name = serializers.CharField(source='RouteVehicleDriver.Route.RouteName', read_only=True)
     vehicle_number = serializers.CharField(source='RouteVehicleDriver.Vehicle.VehicleNumber', read_only=True)
     driver_name = serializers.CharField(source='RouteVehicleDriver.Driver.DriverName', read_only=True)
     customer_name = serializers.CharField(source='CustomerLedger.LedgerName', read_only=True)
+    customer_phone = serializers.CharField(source='CustomerLedger.Mobile', read_only=True)
+    customer_gstin = serializers.CharField(source='CustomerLedger.GSTIN', read_only=True)
     approved_by_name = serializers.CharField(source='ApprovedBy.Username', read_only=True)
 
     class Meta:
@@ -1050,6 +1064,8 @@ class SalesSerializer(serializers.ModelSerializer):
             'driver_name',
             'CustomerLedger',
             'customer_name',
+            'customer_phone',
+            'customer_gstin',
             'PaymentMethod',
             'Notes',
             'SubTotal',
@@ -1060,14 +1076,65 @@ class SalesSerializer(serializers.ModelSerializer):
             'TotalDeliveredQty',
             'TotalEmptyQty',
             'Status',
+            'IsApproved',
+            'IsEdited',
+            'EditedBy',
+            'EditedAt',
+            'EditReason',
             'ApprovedBy',
             'approved_by_name',
             'ApprovedAt',
             'CompanyId',
             'CreatedAt',
             'UpdatedAt',
-            'lines'
+            'lines',
+            'edit_history'
         ]
+
+
+class ConnectionPackageItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='Product.ProductName', read_only=True)
+    product_code = serializers.CharField(source='Product.ProductCode', read_only=True)
+
+    class Meta:
+        model = ConnectionPackageItem
+        fields = [
+            'PackageItemId', 'Package', 'Product', 'product_name', 'product_code',
+            'Quantity', 'UnitPrice', 'TaxPercent', 'TotalAmount', 'CompanyId'
+        ]
+        extra_kwargs = {'Package': {'required': False}}
+
+
+class ConnectionPackageSerializer(serializers.ModelSerializer):
+    items = ConnectionPackageItemSerializer(many=True, required=False)
+    cylinder_name = serializers.CharField(source='CylinderProduct.ProductName', read_only=True)
+
+    class Meta:
+        model = ConnectionPackage
+        fields = [
+            'PackageId', 'PackageName', 'Description', 'CylinderProduct', 'cylinder_name',
+            'CylinderQty', 'CylinderRate', 'LaborCharge', 'LaborDescription',
+            'TotalAmount', 'IsActive', 'CompanyId', 'CreatedAt', 'UpdatedAt', 'items'
+        ]
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items', [])
+        package = ConnectionPackage.objects.create(**validated_data)
+        for item_data in items_data:
+            ConnectionPackageItem.objects.create(Package=package, **item_data)
+        return package
+
+    def update(self, instance, validated_data):
+        items_data = validated_data.pop('items', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if items_data is not None:
+            instance.items.all().delete()
+            for item_data in items_data:
+                ConnectionPackageItem.objects.create(Package=instance, **item_data)
+        return instance
+
 
 
 

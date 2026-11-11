@@ -95,7 +95,21 @@ export const PayablesReportPage: React.FC = () => {
       .filter((l: any) => {
         const gName = (l.group_name || l.GroupName || '').toLowerCase();
         const gid = Number(l.GroupId ?? l.Group ?? 0);
-        const isCreditorGroup = gid === 22 || gName.includes('creditor') || gName.includes('supplier');
+        const lName = (l.LedgerName || '').trim().toLowerCase();
+
+        // Strictly exclude Duties & Taxes, Tax accounts, Cash, and Bank accounts
+        if (
+          gid === 22 ||
+          gid === 16 ||
+          gid === 17 ||
+          gName.includes('duties') ||
+          gName.includes('tax') ||
+          /^(cgst|sgst|igst|gst|tax|round off)/i.test(lName)
+        ) {
+          return false;
+        }
+
+        const isCreditorGroup = gid === 24 || gName.includes('creditor') || gName.includes('supplier');
         const hasPurchases = purchaseMap.has(l.LedgerId);
         return isCreditorGroup || hasPurchases;
       })

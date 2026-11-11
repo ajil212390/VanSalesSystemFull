@@ -8,7 +8,7 @@ from core.views import (
     CategoryViewSet, UnitViewSet, ProductViewSet,
     GroupViewSet, LedgerViewSet, ProductPriceAuditViewSet,
     PurchaseViewSet, PaymentViewSet, LedgerLineViewSet, DeliveryNoteViewSet, ReceiptNoteViewSet,
-    EndRouteDriverViewSet, SalesViewSet
+    EndRouteDriverViewSet, SalesViewSet, ConnectionPackageViewSet
 )
 
 
@@ -31,6 +31,7 @@ router.register(r'delivery-notes', DeliveryNoteViewSet, basename='delivery-note'
 router.register(r'receipt-notes', ReceiptNoteViewSet, basename='receipt-note')
 router.register(r'end-route-drivers', EndRouteDriverViewSet, basename='end-route-driver')
 router.register(r'sales', SalesViewSet, basename='sales')
+router.register(r'connection-packages', ConnectionPackageViewSet, basename='connection-package')
 
 
 

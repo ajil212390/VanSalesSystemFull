@@ -61,6 +61,11 @@ interface RecentSale {
   payment_mode?: string;
   payment_method?: string;
   status?: string;
+  is_approved?: boolean;
+  is_edited?: boolean;
+  edited_by?: string;
+  edited_at?: string;
+  edit_reason?: string;
   lines?: SalesLineItem[];
 }
 
@@ -913,9 +918,22 @@ export const RouteDetailsPage: React.FC = () => {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm" fw={700} ff="monospace" style={{ color: '#800020' }}>
-                          {billNo}
-                        </Text>
+                        <Group gap={6} wrap="nowrap" align="center">
+                          <Text size="sm" fw={700} ff="monospace" style={{ color: '#800020' }}>
+                            {billNo}
+                          </Text>
+                          {sale.is_edited && (
+                            <Tooltip
+                              label={`Edited by ${sale.edited_by || 'Driver'}${sale.edited_at ? ` at ${new Date(sale.edited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}${sale.edit_reason ? ` • ${sale.edit_reason}` : ''}`}
+                              withArrow
+                              position="top"
+                            >
+                              <Badge size="xs" color="orange" variant="light" style={{ cursor: 'pointer', fontWeight: 700 }}>
+                                Edited
+                              </Badge>
+                            </Tooltip>
+                          )}
+                        </Group>
                       </Table.Td>
                       <Table.Td>
                         <Text size="sm" fw={600} style={{ color: '#0f172a' }}>
