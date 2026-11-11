@@ -5,7 +5,7 @@ from django.contrib.auth import authenticate
 from drf_spectacular.utils import extend_schema_field
 from core.models import (
     User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver,
-    Category, Unit, Product, Group, Ledger, ProductPriceAudit,
+    Category, Unit, Product, Group, Ledger, ProductPriceAudit, CustomerProductPrice,
     Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
     Payment, PaymentLine, BillwiseAllocation, LedgerLine,
     SaleEditHistory, ConnectionPackage, ConnectionPackageItem
@@ -674,6 +674,21 @@ class ProductPriceAuditSerializer(serializers.ModelSerializer):
             'CompanyId', 'CreatedTimestamp'
         ]
         read_only_fields = fields
+
+
+class CustomerProductPriceSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='Product.ProductName', read_only=True)
+    product_code = serializers.CharField(source='Product.ProductCode', read_only=True)
+    customer_name = serializers.CharField(source='CustomerLedger.LedgerName', read_only=True)
+    standard_price = serializers.DecimalField(source='Product.SalesPrice', max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = CustomerProductPrice
+        fields = [
+            'CustomerPriceId', 'CustomerLedger', 'Product',
+            'product_name', 'product_code', 'customer_name', 'standard_price',
+            'SpecialPrice', 'CompanyId', 'CreatedTimestamp', 'UpdatedTimestamp'
+        ]
 
 
 class PurchaseLineSerializer(serializers.ModelSerializer):

@@ -38,6 +38,33 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 
+// Clean, concise reference formatter e.g. SAL-20261111-0001 -> INV-0001, PAY-SAL-... -> PAY-0001
+const formatShortRef = (raw: string | null | undefined): string => {
+  if (!raw) return '—';
+  const str = String(raw).trim();
+  if (/^PAY-/i.test(str)) {
+    const nums = str.match(/(\d+)$/);
+    if (nums) return `PAY-${nums[1]}`;
+    return str;
+  }
+  if (/^(?:SAL|INV)-/i.test(str)) {
+    const nums = str.match(/(\d+)$/);
+    if (nums) return `INV-${nums[1]}`;
+    return str;
+  }
+  if (/^DT-/i.test(str)) {
+    const nums = str.match(/(\d+)$/);
+    if (nums) return `DT-${nums[1]}`;
+    return str;
+  }
+  if (/^PUR-/i.test(str)) {
+    const nums = str.match(/(\d+)$/);
+    if (nums) return `PUR-${nums[1]}`;
+    return str;
+  }
+  return str;
+};
+
 export const ReceivablesReportPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -191,6 +218,7 @@ export const ReceivablesReportPage: React.FC = () => {
           totalBilled,
           totalReceived,
           receivable,
+          creditPeriod: Number(l.CreditPeriodDays) || 15,
           deleteBlockReason: l.delete_block_reason || null,
         };
       })
@@ -256,13 +284,35 @@ export const ReceivablesReportPage: React.FC = () => {
     // Sales (Debit entries - customer owes money)
     custSales.forEach((s: any) => {
       const dt = String(s.SalesDate || '');
+      const creditDays = selectedCustomer.creditPeriod || 15;
+      let dueDate = '';
+      let isOverdue = false;
+      let overdueDays = 0;
+      if (dt) {
+        const d = new Date(dt);
+        d.setDate(d.getDate() + creditDays);
+        dueDate = d.toISOString().split('T')[0];
+        const now = new Date();
+        const diffMs = now.getTime() - d.getTime();
+        overdueDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        isOverdue = overdueDays > 0;
+      }
+
+      const rawRef = s.InvoiceNo || s.SalesNo || `INV-${s.SalesId}`;
+      const shortRef = formatShortRef(rawRef);
+
       allTx.push({
         date: dt,
-        ref: s.InvoiceNo || s.SalesNo || `SAL-${s.SalesId}`,
+        ref: shortRef,
+        rawRef: rawRef,
         particulars: `Sales Invoice (${s.PaymentMethod || 'CASH'})`,
         debit: Number(s.GrandTotal || 0),
         credit: 0,
         sortKey: `${dt}_1_${s.SalesId}`,
+        dueDate,
+        isOverdue,
+        overdueDays,
+        isSale: true,
       });
 
       // If customer paid on this sale, record the payment received credit line
@@ -270,7 +320,8 @@ export const ReceivablesReportPage: React.FC = () => {
       if (paidOnSale > 0) {
         allTx.push({
           date: dt,
-          ref: `PAY-${s.InvoiceNo || s.SalesNo || s.SalesId}`,
+          ref: formatShortRef(`PAY-${rawRef}`),
+          rawRef: `PAY-${rawRef}`,
           particulars: `Payment Received on Sale (${s.PaymentMethod || 'CASH'})`,
           debit: 0,
           credit: paidOnSale,
@@ -282,9 +333,11 @@ export const ReceivablesReportPage: React.FC = () => {
     // Receipts (Credit entries - customer payment cleared)
     custReceipts.forEach((r: any) => {
       const dt = String(r.payment_date || r.CreatedAt?.split('T')[0] || r.VoucherDate || '');
+      const rawRecRef = r.PaymentNo || `REC-${r.PaymentId}`;
       allTx.push({
         date: dt,
-        ref: r.PaymentNo || `REC-${r.PaymentId}`,
+        ref: formatShortRef(rawRecRef),
+        rawRecRef: rawRecRef,
         particulars: `Collection Receipt (${r.PaymentMode || 'CASH'})`,
         debit: 0,
         credit: Number(r.Amount || 0),
@@ -327,7 +380,7 @@ export const ReceivablesReportPage: React.FC = () => {
     // Apply text search inside statement
     const q = stmtSearch.toLowerCase().trim();
     periodEntries.forEach((tx) => {
-      if (!q || tx.ref.toLowerCase().includes(q) || tx.particulars.toLowerCase().includes(q)) {
+      if (!q || tx.ref.toLowerCase().includes(q) || (tx.rawRef && tx.rawRef.toLowerCase().includes(q)) || (tx.rawRecRef && tx.rawRecRef.toLowerCase().includes(q)) || tx.particulars.toLowerCase().includes(q)) {
         finalTx.push(tx);
       }
     });
@@ -418,9 +471,14 @@ export const ReceivablesReportPage: React.FC = () => {
         {/* 4 Summary / KPI Cards */}
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
-            <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Contact Details
-            </Text>
+            <Group justify="space-between" align="baseline">
+              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                Contact Details
+              </Text>
+              <Badge variant="light" color="burgundy" size="xs">
+                Term: {selectedCustomer.creditPeriod || 15} Days
+              </Badge>
+            </Group>
             <Text fw={700} style={{ color: '#0f172a', fontSize: 18, marginTop: 4 }}>
               {selectedCustomer.phone}
             </Text>
@@ -589,7 +647,19 @@ export const ReceivablesReportPage: React.FC = () => {
                         {entry.ref}
                       </Table.Td>
                       <Table.Td style={{ color: entry.isOpening ? '#800020' : '#334155', fontWeight: entry.isOpening ? 700 : 400 }}>
-                        {entry.particulars}
+                        <Group gap={6} align="center" wrap="wrap">
+                          <span>{entry.particulars}</span>
+                          {entry.isSale && entry.dueDate && (
+                            <Badge
+                              size="xs"
+                              variant={entry.isOverdue ? 'filled' : 'light'}
+                              color={entry.isOverdue ? 'red' : 'gray'}
+                              style={{ fontSize: 10, height: 18 }}
+                            >
+                              {entry.isOverdue ? `Overdue by ${entry.overdueDays}d` : `Due: ${entry.dueDate}`}
+                            </Badge>
+                          )}
+                        </Group>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: entry.debit > 0 ? 600 : 400, color: '#0f172a' }}>
                         {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
@@ -916,20 +986,9 @@ export const ReceivablesReportPage: React.FC = () => {
                       </Text>
                     </Table.Td>
 
-                    {/* Actions: Receive, Print Statement, Delete */}
+                    {/* Actions: Print Statement, Delete */}
                     <Table.Td style={{ textAlign: 'center', paddingRight: 16 }}>
                       <Group gap={6} justify="center" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          size="compact-xs"
-                          variant="light"
-                          color="burgundy"
-                          rightSection={<IconArrowUpRight size={12} />}
-                          onClick={() => navigate(`/receipts/new?party_id=${debtor.id}`)}
-                          style={{ backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 600 }}
-                        >
-                          Receive
-                        </Button>
-
                         <Tooltip label="Print Statement PDF" withArrow position="top">
                           <ActionIcon
                             size="sm"

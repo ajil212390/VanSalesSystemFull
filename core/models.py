@@ -355,6 +355,24 @@ class ProductPriceAudit(models.Model):
         return f"{self.ProductName}: {self.OldSalesPrice} -> {self.NewSalesPrice}"
 
 
+class CustomerProductPrice(models.Model):
+    CustomerPriceId = models.BigAutoField(primary_key=True, db_column='CustomerPriceId')
+    CustomerLedger = models.ForeignKey(Ledger, on_delete=models.CASCADE, db_column='CustomerLedgerId', related_name='special_prices')
+    Product = models.ForeignKey(Product, on_delete=models.CASCADE, db_column='ProductId', related_name='customer_prices')
+    SpecialPrice = models.DecimalField(max_digits=12, decimal_places=2, db_column='SpecialPrice')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+    CreatedTimestamp = models.DateTimeField(auto_now_add=True, db_column='CreatedTimestamp')
+    UpdatedTimestamp = models.DateTimeField(auto_now=True, db_column='UpdatedTimestamp')
+
+    class Meta:
+        managed = False
+        db_table = '"CustomerProductPrice"'
+        unique_together = (('CustomerLedger', 'Product'),)
+
+    def __str__(self):
+        return f"{self.CustomerLedger.LedgerName} - {self.Product.ProductName}: ₹{self.SpecialPrice}"
+
+
 class Purchase(models.Model):
     PurchaseId = models.BigAutoField(primary_key=True, db_column='PurchaseId')
     PurchaseNo = models.CharField(max_length=50, db_column='PurchaseNo')

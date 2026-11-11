@@ -16,6 +16,7 @@ import {
   Divider,
   Card,
   Box,
+  Badge,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -79,6 +80,40 @@ export const SalesFormPage: React.FC = () => {
     },
   });
 
+  // 4. Fetch Customer Special Prices if customer is selected
+  const { data: customerSpecialPrices = [] } = useQuery<any[]>({
+    queryKey: ['customer-prices', customerId],
+    queryFn: async () => {
+      if (!customerId) return [];
+      const res = await apiClient.get(`/customer-prices/?customer=${customerId}`);
+      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+    },
+    enabled: !!customerId,
+  });
+
+  const customerPriceMap = useMemo(() => {
+    const map = new Map<number, number>();
+    customerSpecialPrices.forEach((cp: any) => {
+      if (cp.SpecialPrice !== undefined && cp.SpecialPrice !== null) {
+        map.set(Number(cp.Product), Number(cp.SpecialPrice));
+      }
+    });
+    return map;
+  }, [customerSpecialPrices]);
+
+  const selectedCustomerObj = useMemo(() => {
+    return ledgers.find((l: any) => String(l.LedgerId) === String(customerId));
+  }, [ledgers, customerId]);
+
+  // Credit Movement Term (Days)
+  const creditDays = Number(selectedCustomerObj?.CreditPeriodDays) || 15;
+  const dueDateStr = useMemo(() => {
+    if (!salesDate) return '';
+    const d = new Date(salesDate);
+    d.setDate(d.getDate() + creditDays);
+    return d.toLocaleDateString('en-GB'); // DD/MM/YYYY
+  }, [salesDate, creditDays]);
+
   // Product map
   const productMap = useMemo(() => {
     const map = new Map<number, any>();
@@ -125,17 +160,23 @@ export const SalesFormPage: React.FC = () => {
     return [{ value: '', label: 'Walk-in Cash Customer' }, ...list];
   }, [ledgers]);
 
-  // Product options
+  // Product options (incorporating Customer-Specific Rates naturally)
   const productOptions = useMemo(() => {
     return products
       .filter((p: any) => p.IsActive !== false)
-      .map((p: any) => ({
-        value: String(p.ProductId),
-        label: `${p.ProductName} (Rate: ₹${Number(p.SalesPrice || 0).toFixed(2)})`,
-        price: Number(p.SalesPrice || 0),
-        tax: Number(p.GSTPercentage || 0),
-      }));
-  }, [products]);
+      .map((p: any) => {
+        const specialRate = customerPriceMap.get(p.ProductId);
+        const hasSpecial = specialRate !== undefined && specialRate > 0;
+        const effectiveRate = hasSpecial ? specialRate : Number(p.SalesPrice || 0);
+
+        return {
+          value: String(p.ProductId),
+          label: `${p.ProductName} (Rate: ₹${effectiveRate.toFixed(2)})`,
+          price: effectiveRate,
+          tax: Number(p.GSTPercentage || 0),
+        };
+      });
+  }, [products, customerPriceMap]);
 
   // Dynamic Line Items (starts unselected / empty by default)
   const [lines, setLines] = useState<SaleLineItem[]>([
@@ -165,7 +206,8 @@ export const SalesFormPage: React.FC = () => {
 
   const handleProductChange = (index: number, pId: string) => {
     const prod = productMap.get(Number(pId));
-    const rate = prod ? Number(prod.SalesPrice || 0) : 0;
+    const specialRate = customerPriceMap.get(Number(pId));
+    const rate = specialRate !== undefined && specialRate > 0 ? specialRate : (prod ? Number(prod.SalesPrice || 0) : 0);
     const tax = prod ? Number(prod.GSTPercentage || 0) : 0;
 
     setLines((prev) =>
@@ -182,6 +224,24 @@ export const SalesFormPage: React.FC = () => {
       )
     );
   };
+
+  // Automatically update prices on existing lines if customer changes
+  useEffect(() => {
+    setLines((prev) =>
+      prev.map((ln) => {
+        if (!ln.Product) return ln;
+        const pId = Number(ln.Product);
+        const prod = productMap.get(pId);
+        const specialRate = customerPriceMap.get(pId);
+        const rate = specialRate !== undefined && specialRate > 0 ? specialRate : (prod ? Number(prod.SalesPrice || 0) : 0);
+        return {
+          ...ln,
+          SalesPrice: rate,
+          Total: Number((ln.Quantity * rate).toFixed(2)),
+        };
+      })
+    );
+  }, [customerPriceMap, productMap]);
 
   const handleQtyChange = (index: number, qty: number) => {
     setLines((prev) =>
@@ -429,6 +489,33 @@ export const SalesFormPage: React.FC = () => {
                 required
               />
             </SimpleGrid>
+
+            {/* Credit Movement Deadline & Special Rates Notice */}
+            {paymentMethod === 'CREDIT' && selectedCustomerObj && (
+              <Box
+                mt="sm"
+                p="xs"
+                style={{
+                  backgroundColor: '#fcf8f9',
+                  borderRadius: 8,
+                  border: '1px solid #f7d6dc',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                }}
+              >
+                <Group gap="xs">
+                  <Badge variant="filled" color="burgundy" size="sm">
+                    Credit Movement Term: {creditDays} Days
+                  </Badge>
+                  <Text size="xs" fw={600} c="#800020">
+                    Payment Deadline: {dueDateStr}
+                  </Text>
+                </Group>
+              </Box>
+            )}
           </Paper>
 
           {/* ── Line Items Card ── */}

@@ -1,5 +1,6 @@
 import os
 import io
+import re
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 
@@ -597,6 +598,42 @@ def generate_tax_invoice_pdf(sale):
     return buf.getvalue()
 
 
+def format_short_ref(val):
+    """
+    Formats long or repetitive references into clean, concise numbers.
+    e.g.:
+      SAL-20261111-0001 -> INV-0001
+      PAY-SAL-20261111-0001 -> PAY-0001
+      INV-20261111-0001 -> INV-0001
+      DT-20261111-001 -> DT-001
+      PUR-20261111-0001 -> PUR-0001
+    """
+    if not val:
+        return '—'
+    s = str(val).strip()
+    if s.upper().startswith('PAY-'):
+        nums = re.findall(r'\d+', s)
+        if nums:
+            return f"PAY-{nums[-1]}"
+        return s
+    if re.match(r'^(?:SAL|INV)-', s, re.I):
+        nums = re.findall(r'\d+', s)
+        if nums:
+            return f"INV-{nums[-1]}"
+        return s
+    if re.match(r'^DT-', s, re.I):
+        nums = re.findall(r'\d+', s)
+        if nums:
+            return f"DT-{nums[-1]}"
+        return s
+    if re.match(r'^PUR-', s, re.I):
+        nums = re.findall(r'\d+', s)
+        if nums:
+            return f"PUR-{nums[-1]}"
+        return s
+    return s
+
+
 def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=1, from_date=None, to_date=None):
     """
     Generates a clean, professional PDF statement of accounts for a customer.
@@ -703,14 +740,27 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
     for s in sales_qs:
         gt = Decimal(str(s.GrandTotal or 0))
         s_date = str(s.SalesDate or '')
+        s_ref = format_short_ref(s.InvoiceNo or s.SalesNo or f"INV-{s.SalesId}")
         raw_entries.append({
             'date': s_date,
-            'ref': s.InvoiceNo or s.SalesNo or f"SAL-{s.SalesId}",
+            'ref': s_ref,
             'type': f"Sales Invoice ({s.PaymentMethod or 'CASH'})",
             'debit': gt,
             'credit': Decimal('0.00'),
             'sort_key': f"{s_date}_1_{s.SalesId}",
         })
+
+        paid_amt = Decimal(str(s.PaidAmount or 0))
+        if paid_amt > 0:
+            pay_ref = format_short_ref(f"PAY-{s.InvoiceNo or s.SalesNo or s.SalesId}")
+            raw_entries.append({
+                'date': s_date,
+                'ref': pay_ref,
+                'type': f"Payment Received on Sale ({s.PaymentMethod or 'CASH'})",
+                'debit': Decimal('0.00'),
+                'credit': paid_amt,
+                'sort_key': f"{s_date}_1_paid_{s.SalesId}",
+            })
 
     # Receipts / Payments
     for r in receipts_qs:
@@ -722,7 +772,7 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
         r_ref = getattr(r, 'PaymentNo', '') or getattr(r, 'VoucherNo', '') or f"REC-{getattr(r, 'PaymentId', '')}"
         raw_entries.append({
             'date': r_date,
-            'ref': r_ref,
+            'ref': format_short_ref(r_ref),
             'type': f"Collection Receipt ({getattr(r, 'PaymentMode', 'CASH') or 'CASH'})",
             'debit': Decimal('0.00'),
             'credit': amt,
@@ -771,6 +821,9 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
         running_bal += (e['debit'] - e['credit'])
         e['balance'] = running_bal
 
+    period_billed = sum(e['debit'] for e in period_entries)
+    period_paid = sum(e['credit'] for e in period_entries)
+
     # Customer Box & KPI Box Table
     cust_box_content = [
         Paragraph(f"<b>BILL TO / CUSTOMER:</b>", meta_bold),
@@ -783,8 +836,8 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
     kpi_box_content = [
         Paragraph(f"<b>OUTSTANDING SUMMARY</b>", meta_bold),
         Paragraph(f"Opening Balance: <b>₹{abs(effective_op):,.2f} {'Dr' if effective_op >= 0 else 'Cr'}</b>", meta_style),
-        Paragraph(f"Total Billed (Debit): <b>₹{tot_debit:,.2f}</b>", meta_style),
-        Paragraph(f"Total Paid (Credit): <b>₹{tot_credit:,.2f}</b>", meta_style),
+        Paragraph(f"Total Billed (Debit): <b>₹{period_billed:,.2f}</b>", meta_style),
+        Paragraph(f"Total Paid (Credit): <b>₹{period_paid:,.2f}</b>", meta_style),
         Spacer(1, 3),
         Paragraph(
             f"Net Balance Due: <font size=11 color='#800020'><b>₹{abs(running_bal):,.2f} {'Dr' if running_bal >= 0 else 'Cr'}</b></font>",
@@ -841,8 +894,8 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
         Paragraph("<b>TOTALS</b>", cell_bold),
         Paragraph(f"<b>{len(final_entries)} Transactions</b>", cell_bold),
         Paragraph("", cell_norm),
-        Paragraph(f"<b>₹{tot_debit:,.2f}</b>", cell_right_b),
-        Paragraph(f"<b>₹{tot_credit:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>₹{period_billed:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>₹{period_paid:,.2f}</b>", cell_right_b),
         Paragraph(f"<b>{final_bal_str}</b>", cell_right_burg),
     ])
 
@@ -996,7 +1049,7 @@ def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company
         p_date = str(p.PurchaseDate or '')
         raw_entries.append({
             'date': p_date,
-            'ref': p.InvoiceNo or p.PurchaseNo or f"PUR-{p.PurchaseId}",
+            'ref': format_short_ref(p.InvoiceNo or p.PurchaseNo or f"PUR-{p.PurchaseId}"),
             'type': f"Purchase Bill (#{p.InvoiceNo or p.PurchaseNo})",
             'debit': Decimal('0.00'),
             'credit': gt,
@@ -1013,7 +1066,7 @@ def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company
         pm_ref = getattr(pm, 'PaymentNo', '') or getattr(pm, 'VoucherNo', '') or f"PAY-{getattr(pm, 'PaymentId', '')}"
         raw_entries.append({
             'date': pm_date,
-            'ref': pm_ref,
+            'ref': format_short_ref(pm_ref),
             'type': f"Payment Disbursed ({getattr(pm, 'PaymentMode', 'CASH') or 'CASH'})",
             'debit': amt,
             'credit': Decimal('0.00'),
@@ -1061,6 +1114,9 @@ def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company
         tot_credit += e['credit']
         running_bal += (e['credit'] - e['debit'])
         e['balance'] = running_bal
+
+    period_billed = sum(e['credit'] for e in period_entries)
+    period_paid = sum(e['debit'] for e in period_entries)
 
     supp_box_content = [
         Paragraph(f"<b>SUPPLIER / CREDITOR:</b>", meta_bold),
@@ -1131,8 +1187,8 @@ def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company
         Paragraph("<b>TOTALS</b>", cell_bold),
         Paragraph(f"<b>{len(final_entries)} Transactions</b>", cell_bold),
         Paragraph("", cell_norm),
-        Paragraph(f"<b>₹{tot_debit:,.2f}</b>", cell_right_b),
-        Paragraph(f"<b>₹{tot_credit:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>₹{period_billed:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>₹{period_paid:,.2f}</b>", cell_right_b),
         Paragraph(f"<b>{final_bal_str}</b>", cell_right_burg),
     ])
 

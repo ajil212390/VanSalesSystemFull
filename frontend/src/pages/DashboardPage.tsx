@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Title,
   Text,
@@ -21,13 +21,76 @@ import {
   IconCoins,
   IconPackage,
   IconBuildingFactory2,
-  IconShoppingCart,
   IconCalendar,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
+
+// ── Smooth Animated Count-Up for Numbers ──
+interface CountUpProps {
+  value: number;
+  duration?: number;
+  prefix?: string;
+  suffix?: string;
+  decimals?: number;
+}
+
+const CountUp: React.FC<CountUpProps> = ({
+  value,
+  duration = 750,
+  prefix = '',
+  suffix = '',
+  decimals = 0,
+}) => {
+  const [displayValue, setDisplayValue] = useState<number>(0);
+  const startRef = useRef<number>(0);
+  const startTimeRef = useRef<number | null>(null);
+  const animFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const endVal = Number(value) || 0;
+    const startVal = displayValue;
+    if (startVal === endVal) return;
+
+    startTimeRef.current = null;
+    startRef.current = startVal;
+
+    const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
+
+    const animate = (timestamp: number) => {
+      if (!startTimeRef.current) startTimeRef.current = timestamp;
+      const elapsed = timestamp - startTimeRef.current;
+      const progress = Math.min(elapsed / duration, 1);
+      const easedProgress = easeOutCubic(progress);
+
+      const current = startRef.current + (endVal - startRef.current) * easedProgress;
+      setDisplayValue(current);
+
+      if (progress < 1) {
+        animFrameRef.current = requestAnimationFrame(animate);
+      } else {
+        setDisplayValue(endVal);
+      }
+    };
+
+    animFrameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [value, duration]);
+
+  const formatted = useMemo(() => {
+    return displayValue.toLocaleString('en-IN', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }, [displayValue, decimals]);
+
+  return <>{prefix}{formatted}{suffix}</>;
+};
 
 // ── Clean Premium Dashboard Metric Card ──
 interface MetricCardProps {
@@ -104,7 +167,9 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
 
       {/* Card Body: Metric Value */}
       <Box my={3}>
-        {typeof value === 'string' || typeof value === 'number' ? (
+        {React.isValidElement(value) && (value.type === Text || (value.props as any)?.style?.fontSize || (value.props as any)?.gap !== undefined) ? (
+          value
+        ) : (
           <Text
             fw={700}
             style={{
@@ -117,8 +182,6 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
           >
             {value}
           </Text>
-        ) : (
-          value
         )}
       </Box>
 
@@ -175,7 +238,7 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
 export const DashboardPage: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const [timeFilter, setTimeFilter] = useState<'today' | 'week' | 'month' | 'quarter' | 'custom'>('week');
+  const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'quarter' | 'custom'>('all');
   const [customDates, setCustomDates] = useState<{ from: string; to: string }>({
     from: new Date().toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0],
@@ -283,6 +346,10 @@ export const DashboardPage: React.FC = () => {
   const dateRange = useMemo(() => {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
+
+    if (timeFilter === 'all') {
+      return { start: '', end: '', label: 'All Time' };
+    }
 
     if (timeFilter === 'today') {
       return { start: todayStr, end: todayStr, label: 'Today' };
@@ -392,6 +459,15 @@ export const DashboardPage: React.FC = () => {
     return directReceipts + salesPaidTotal;
   }, [filteredCustomerReceipts, salesPaidTotal]);
 
+  // Direct collections received on sales invoices (Cash, UPI, etc.)
+  const salesWithPaidCount = useMemo(() => {
+    return filteredSales.filter((s: any) => Number(s.PaidAmount || 0) > 0).length;
+  }, [filteredSales]);
+
+  const totalCollectionsCount = useMemo(() => {
+    return filteredCustomerReceipts.length + salesWithPaidCount;
+  }, [filteredCustomerReceipts.length, salesWithPaidCount]);
+
   const receivableBalance = totalSales - totalCustomerReceipts;
 
   // Row 3 Calculations: Inventory & Van Operations
@@ -498,6 +574,7 @@ export const DashboardPage: React.FC = () => {
           >
             {(
               [
+                { id: 'all', label: 'All', hasIcon: false },
                 { id: 'today', label: 'Today', hasIcon: false },
                 { id: 'week', label: 'This Week', hasIcon: false },
                 { id: 'month', label: 'This Month', hasIcon: false },
@@ -543,7 +620,7 @@ export const DashboardPage: React.FC = () => {
 
         {/* Action Buttons Row: 4 Properly Formatted Pills */}
         <Group justify="flex-end" gap="sm" wrap="wrap" mt="sm">
-          {/* 1. Add Sale (White Pill with Soft Rose Icon Circle) */}
+          {/* 1. New Sale (White Pill with Soft Rose Icon Circle) */}
           <Button
             variant="default"
             size="sm"
@@ -551,8 +628,8 @@ export const DashboardPage: React.FC = () => {
             leftSection={
               <Box
                 style={{
-                  width: 22,
-                  height: 22,
+                  width: 24,
+                  height: 24,
                   borderRadius: 9999,
                   backgroundColor: '#fdf2f4',
                   color: '#800020',
@@ -561,7 +638,7 @@ export const DashboardPage: React.FC = () => {
                   justifyContent: 'center',
                 }}
               >
-                <IconReceipt size={13} stroke={2.2} />
+                <IconReceipt size={14} stroke={2.2} />
               </Box>
             }
             style={{
@@ -573,10 +650,10 @@ export const DashboardPage: React.FC = () => {
             }}
             onClick={() => navigate('/sales/new')}
           >
-            Add Sale
+            New Sale
           </Button>
 
-          {/* 2. Add Receipt (White Pill with Soft Rose Icon Circle) */}
+          {/* 2. Record Receipt (White Pill with Soft Rose Icon Circle) */}
           <Button
             variant="default"
             size="sm"
@@ -584,8 +661,8 @@ export const DashboardPage: React.FC = () => {
             leftSection={
               <Box
                 style={{
-                  width: 22,
-                  height: 22,
+                  width: 24,
+                  height: 24,
                   borderRadius: 9999,
                   backgroundColor: '#fdf2f4',
                   color: '#800020',
@@ -594,7 +671,7 @@ export const DashboardPage: React.FC = () => {
                   justifyContent: 'center',
                 }}
               >
-                <IconCoins size={13} stroke={2.2} />
+                <IconCoins size={14} stroke={2.2} />
               </Box>
             }
             style={{
@@ -606,10 +683,10 @@ export const DashboardPage: React.FC = () => {
             }}
             onClick={() => navigate('/receipts/new')}
           >
-            Add Receipt
+            Record Receipt
           </Button>
 
-          {/* 3. Add Purchase (White Pill with Soft Rose Icon Circle) */}
+          {/* 3. New Purchase (White Pill with Soft Rose Icon Circle) */}
           <Button
             variant="default"
             size="sm"
@@ -617,8 +694,8 @@ export const DashboardPage: React.FC = () => {
             leftSection={
               <Box
                 style={{
-                  width: 22,
-                  height: 22,
+                  width: 24,
+                  height: 24,
                   borderRadius: 9999,
                   backgroundColor: '#fdf2f4',
                   color: '#800020',
@@ -627,7 +704,7 @@ export const DashboardPage: React.FC = () => {
                   justifyContent: 'center',
                 }}
               >
-                <IconShoppingCart size={13} stroke={2.2} />
+                <IconPackage size={14} stroke={2.2} />
               </Box>
             }
             style={{
@@ -639,10 +716,10 @@ export const DashboardPage: React.FC = () => {
             }}
             onClick={() => navigate('/purchases/new')}
           >
-            Add Purchase
+            New Purchase
           </Button>
 
-          {/* 4. Add Payment (White Pill with Soft Rose Icon Circle) */}
+          {/* 4. Load Van (White Pill with Soft Rose Icon Circle) */}
           <Button
             variant="default"
             size="sm"
@@ -650,8 +727,8 @@ export const DashboardPage: React.FC = () => {
             leftSection={
               <Box
                 style={{
-                  width: 22,
-                  height: 22,
+                  width: 24,
+                  height: 24,
                   borderRadius: 9999,
                   backgroundColor: '#fdf2f4',
                   color: '#800020',
@@ -660,7 +737,7 @@ export const DashboardPage: React.FC = () => {
                   justifyContent: 'center',
                 }}
               >
-                <IconCreditCard size={13} stroke={2.2} />
+                <IconTruckDelivery size={14} stroke={2.2} />
               </Box>
             }
             style={{
@@ -670,9 +747,9 @@ export const DashboardPage: React.FC = () => {
               fontWeight: 600,
               padding: '8px 16px',
             }}
-            onClick={() => navigate('/payments/new')}
+            onClick={() => navigate('/van-management')}
           >
-            Add Payment
+            Load Van
           </Button>
         </Group>
       </Box>
@@ -692,7 +769,7 @@ export const DashboardPage: React.FC = () => {
             <DashboardMetricCard
               title="Total Purchase"
               icon={<IconReceipt size={22} stroke={1.75} />}
-              value={`₹${totalPurchase.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              value={<CountUp value={totalPurchase} prefix="₹" decimals={2} />}
               subtitle={`${filteredPurchases.length} Invoice${filteredPurchases.length !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/purchases')}
             />
@@ -700,7 +777,7 @@ export const DashboardPage: React.FC = () => {
             <DashboardMetricCard
               title="Supplier Payments"
               icon={<IconCreditCard size={22} stroke={1.75} />}
-              value={`₹${totalSupplierPayments.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              value={<CountUp value={totalSupplierPayments} prefix="₹" decimals={2} />}
               subtitle={`${filteredSupplierPayments.length} Voucher${filteredSupplierPayments.length !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/payments')}
             />
@@ -719,7 +796,7 @@ export const DashboardPage: React.FC = () => {
                     lineHeight: 1.15,
                   }}
                 >
-                  ₹{Math.abs(payableBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                  <CountUp value={Math.abs(payableBalance)} prefix="₹" decimals={2} />{' '}
                   <Text component="span" size="sm" c="#800020" fw={700}>
                     {payableBalance >= 0 ? 'Cr' : 'Dr'}
                   </Text>
@@ -744,16 +821,16 @@ export const DashboardPage: React.FC = () => {
             <DashboardMetricCard
               title="Sales"
               icon={<IconFileInvoice size={22} stroke={1.75} />}
-              value={`₹${totalSales.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              value={<CountUp value={totalSales} prefix="₹" decimals={2} />}
               subtitle={`${validSalesCount} Bill${validSalesCount !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/sales')}
             />
 
             <DashboardMetricCard
-              title="Receipts"
+              title="Collections"
               icon={<IconCash size={22} stroke={1.75} />}
-              value={`₹${totalCustomerReceipts.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-              subtitle={`${filteredCustomerReceipts.length} Voucher${filteredCustomerReceipts.length !== 1 ? 's' : ''} (${dateRange.label})`}
+              value={<CountUp value={totalCustomerReceipts} prefix="₹" decimals={2} />}
+              subtitle={`${totalCollectionsCount} Collection${totalCollectionsCount !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/receipts')}
             />
 
@@ -771,7 +848,7 @@ export const DashboardPage: React.FC = () => {
                     lineHeight: 1.2,
                   }}
                 >
-                  ₹{Math.abs(receivableBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                  <CountUp value={Math.abs(receivableBalance)} prefix="₹" decimals={2} />{' '}
                   <Text component="span" size="sm" c="#800020" fw={700}>
                     {receivableBalance >= 0 ? 'Dr' : 'Cr'}
                   </Text>
@@ -808,7 +885,7 @@ export const DashboardPage: React.FC = () => {
                       lineHeight: 1.15,
                     }}
                   >
-                    {totalProductFilled.toLocaleString()}
+                    <CountUp value={totalProductFilled} decimals={0} />
                   </Text>
                   <Text size="sm" fw={600} c="#64748b">
                     filled
@@ -834,7 +911,7 @@ export const DashboardPage: React.FC = () => {
                       lineHeight: 1.15,
                     }}
                   >
-                    {stockLocations.length}
+                    <CountUp value={stockLocations.length} decimals={0} />
                   </Text>
                   <Text size="sm" fw={600} c="#64748b">
                     locations

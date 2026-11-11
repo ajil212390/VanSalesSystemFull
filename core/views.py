@@ -39,7 +39,7 @@ def safe_parse_date(val):
 
 from core.models import (
     State, UserRole, Company, Driver, Route, Vehicle, RouteVehicleDriver,
-    User, Category, Unit, Product, Group, Ledger, ProductPriceAudit,
+    User, Category, Unit, Product, Group, Ledger, ProductPriceAudit, CustomerProductPrice,
     Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
     Payment, PaymentLine, BillwiseAllocation, LedgerLine, RouteExpense,
     DeliveryNote, DeliveryNoteLine,
@@ -52,7 +52,7 @@ from core.serializers import (
     CompanySerializer, StateSerializer, UserRoleSerializer,
     DriverSerializer, RouteSerializer, VehicleSerializer, RouteVehicleDriverSerializer,
     UserManagementSerializer, CategorySerializer, UnitSerializer, ProductSerializer,
-    GroupSerializer, LedgerSerializer, ProductPriceAuditSerializer,
+    GroupSerializer, LedgerSerializer, ProductPriceAuditSerializer, CustomerProductPriceSerializer,
     PurchaseSerializer, PurchaseLineSerializer, PaymentSerializer, PaymentLineSerializer, BillwiseAllocationSerializer,
     LedgerLineSerializer,
     SaleEditHistorySerializer, ConnectionPackageSerializer, ConnectionPackageItemSerializer
@@ -1171,6 +1171,53 @@ class ProductPriceAuditViewSet(viewsets.ReadOnlyModelViewSet):
         if product_id:
             qs = qs.filter(Product_id=product_id)
         return qs
+
+
+class CustomerProductPriceViewSet(viewsets.ModelViewSet):
+    """
+    CRUD endpoint for customer-specific special product prices.
+    Allows bulk saving prices for a specific customer or querying prices for a customer.
+    """
+    serializer_class = CustomerProductPriceSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = CustomerProductPrice.objects.select_related('CustomerLedger', 'Product').order_by('Product__ProductName')
+        customer_id = self.request.query_params.get('customer') or self.request.query_params.get('customer_id')
+        if customer_id:
+            qs = qs.filter(CustomerLedger_id=customer_id)
+        return qs
+
+    @action(detail=False, methods=['post'], url_path='bulk_update')
+    def bulk_update(self, request):
+        customer_id = request.data.get('customer_id')
+        if not customer_id:
+            return Response({'error': 'customer_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        prices = request.data.get('prices', [])
+        saved = []
+        for item in prices:
+            prod_id = item.get('product_id')
+            special_price = item.get('special_price')
+            if not prod_id:
+                continue
+
+            if special_price is None or str(special_price).strip() == '' or float(special_price) <= 0:
+                CustomerProductPrice.objects.filter(CustomerLedger_id=customer_id, Product_id=prod_id).delete()
+            else:
+                obj, _ = CustomerProductPrice.objects.update_or_create(
+                    CustomerLedger_id=customer_id,
+                    Product_id=prod_id,
+                    defaults={'SpecialPrice': Decimal(str(special_price))}
+                )
+                saved.append(obj.CustomerPriceId)
+
+        return Response({
+            'success': True,
+            'saved_count': len(saved),
+            'message': 'Customer special prices updated successfully'
+        })
 
 
 class GroupViewSet(viewsets.ReadOnlyModelViewSet):
@@ -6971,15 +7018,22 @@ class SalesViewSet(viewsets.ModelViewSet):
         notes = data.get('Notes', '')
         lines_data = data.get('lines', [])
 
-        today_str = sales_date.strftime('%Y%m%d')
-        last_sale = Sales.objects.filter(CompanyId=company_id, SalesNo__startswith=f"SAL-{today_str}").order_by('-SalesId').first()
+        # Clean, concise invoice numbering e.g. INV-0001, INV-0002
+        last_sale = Sales.objects.filter(CompanyId=company_id).order_by('-SalesId').first()
         seq = 1
-        if last_sale and last_sale.SalesNo:
-            try:
-                seq = int(last_sale.SalesNo.split('-')[-1]) + 1
-            except (ValueError, IndexError):
+        if last_sale and (last_sale.InvoiceNo or last_sale.SalesNo):
+            ref_str = last_sale.InvoiceNo or last_sale.SalesNo
+            digits = re.findall(r'\d+', ref_str)
+            if digits:
+                try:
+                    seq = int(digits[-1]) + 1
+                except ValueError:
+                    seq = Sales.objects.filter(CompanyId=company_id).count() + 1
+            else:
                 seq = Sales.objects.filter(CompanyId=company_id).count() + 1
-        sales_no = f"SAL-{today_str}-{seq:04d}"
+        else:
+            seq = Sales.objects.filter(CompanyId=company_id).count() + 1
+        sales_no = f"INV-{seq:04d}"
         invoice_no = sales_no
 
         with transaction.atomic():
@@ -7274,7 +7328,7 @@ class SalesViewSet(viewsets.ModelViewSet):
         from_date = request.query_params.get('from_date') or None
         to_date = request.query_params.get('to_date') or None
 
-        sales_qs = Sales.objects.filter(CustomerLedger=customer, Status__in=['COMPLETED', 'APPROVED']).exclude(Status='CANCELLED').order_by('SalesDate', 'SalesId')
+        sales_qs = Sales.objects.filter(CustomerLedger=customer).exclude(Status='CANCELLED').order_by('SalesDate', 'SalesId')
         receipts_qs = Payment.objects.filter(PartyLedger=customer).order_by('CreatedAt', 'PaymentId')
 
         try:

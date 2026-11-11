@@ -38,6 +38,33 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 
+// Clean, concise reference formatter e.g. PUR-20261111-0001 -> PUR-0001, PAY-SAL-... -> PAY-0001
+const formatShortRef = (raw: string | null | undefined): string => {
+  if (!raw) return '—';
+  const str = String(raw).trim();
+  if (/^PAY-/i.test(str)) {
+    const nums = str.match(/(\d+)$/);
+    if (nums) return `PAY-${nums[1]}`;
+    return str;
+  }
+  if (/^(?:SAL|INV)-/i.test(str)) {
+    const nums = str.match(/(\d+)$/);
+    if (nums) return `INV-${nums[1]}`;
+    return str;
+  }
+  if (/^DT-/i.test(str)) {
+    const nums = str.match(/(\d+)$/);
+    if (nums) return `DT-${nums[1]}`;
+    return str;
+  }
+  if (/^PUR-/i.test(str)) {
+    const nums = str.match(/(\d+)$/);
+    if (nums) return `PUR-${nums[1]}`;
+    return str;
+  }
+  return str;
+};
+
 export const PayablesReportPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -248,10 +275,12 @@ export const PayablesReportPage: React.FC = () => {
     // Purchases (Credit entries)
     suppPurchases.forEach((p: any) => {
       const dt = String(p.PurchaseDate || p.CreatedAt?.split('T')[0] || '');
+      const rawRef = p.InvoiceNo || p.PurchaseNo || `PUR-${p.PurchaseId}`;
       allTx.push({
         date: dt,
-        ref: p.InvoiceNo || p.PurchaseNo || `PUR-${p.PurchaseId}`,
-        particulars: `Purchase Bill (#${p.InvoiceNo || p.PurchaseNo})`,
+        ref: formatShortRef(rawRef),
+        rawRef: rawRef,
+        particulars: `Purchase Bill (#${formatShortRef(p.InvoiceNo || p.PurchaseNo)})`,
         debit: 0,
         credit: Number(p.GrandTotal || 0),
         sortKey: `${dt}_1_${p.PurchaseId}`,
@@ -261,9 +290,11 @@ export const PayablesReportPage: React.FC = () => {
     // Payments (Debit entries)
     suppPayments.forEach((pm: any) => {
       const dt = String(pm.payment_date || pm.CreatedAt?.split('T')[0] || pm.VoucherDate || '');
+      const rawPayRef = pm.PaymentNo || `PAY-${pm.PaymentId}`;
       allTx.push({
         date: dt,
-        ref: pm.PaymentNo || `PAY-${pm.PaymentId}`,
+        ref: formatShortRef(rawPayRef),
+        rawPayRef: rawPayRef,
         particulars: `Payment Disbursed (${pm.PaymentMode || 'CASH'})`,
         debit: Number(pm.Amount || 0),
         credit: 0,
@@ -306,7 +337,7 @@ export const PayablesReportPage: React.FC = () => {
     // Apply text search inside statement
     const q = stmtSearch.toLowerCase().trim();
     periodEntries.forEach((tx) => {
-      if (!q || tx.ref.toLowerCase().includes(q) || tx.particulars.toLowerCase().includes(q)) {
+      if (!q || tx.ref.toLowerCase().includes(q) || (tx.rawRef && tx.rawRef.toLowerCase().includes(q)) || (tx.rawPayRef && tx.rawPayRef.toLowerCase().includes(q)) || tx.particulars.toLowerCase().includes(q)) {
         finalTx.push(tx);
       }
     });
@@ -895,20 +926,9 @@ export const PayablesReportPage: React.FC = () => {
                       </Text>
                     </Table.Td>
 
-                    {/* Actions: Pay, Print Statement, Delete */}
+                    {/* Actions: Print Statement, Delete */}
                     <Table.Td style={{ textAlign: 'center', paddingRight: 16 }}>
                       <Group gap={6} justify="center" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          size="compact-xs"
-                          variant="light"
-                          color="burgundy"
-                          rightSection={<IconArrowUpRight size={12} />}
-                          onClick={() => navigate(`/payments/new?party_id=${creditor.id}`)}
-                          style={{ backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 600 }}
-                        >
-                          Pay
-                        </Button>
-
                         <Tooltip label="Print Statement PDF" withArrow position="top">
                           <ActionIcon
                             size="sm"
