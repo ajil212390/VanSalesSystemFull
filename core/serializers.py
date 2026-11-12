@@ -466,6 +466,13 @@ class ProductSerializer(serializers.ModelSerializer):
     unit_name = serializers.CharField(source='Unit.UnitName', read_only=True)
     alt_unit_name = serializers.CharField(source='AltUnit.UnitName', read_only=True, default=None)
     delete_block_reason = serializers.SerializerMethodField()
+    opening_filled_qty = serializers.DecimalField(max_digits=12, decimal_places=3, required=False, write_only=True)
+    opening_empty_qty = serializers.DecimalField(max_digits=12, decimal_places=3, required=False, write_only=True)
+    opening_cost_rate = serializers.DecimalField(max_digits=12, decimal_places=4, required=False, write_only=True)
+    opening_filled = serializers.SerializerMethodField()
+    opening_empty = serializers.SerializerMethodField()
+    opening_rate = serializers.SerializerMethodField()
+    opening_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -477,9 +484,57 @@ class ProductSerializer(serializers.ModelSerializer):
             'HSNCode', 'GSTPercentage',
             'SalesPrice', 'PurchasePrice', 'MRP',
             'IsActive', 'CreatedAt', 'UpdatedAt', 'CompanyId',
-            'delete_block_reason'
+            'delete_block_reason',
+            'opening_filled_qty', 'opening_empty_qty', 'opening_cost_rate',
+            'opening_filled', 'opening_empty', 'opening_rate', 'opening_amount'
         ]
-        read_only_fields = ['ProductId', 'CreatedAt', 'UpdatedAt', 'CompanyId', 'category_name', 'unit_name', 'alt_unit_name', 'delete_block_reason']
+        read_only_fields = [
+            'ProductId', 'CreatedAt', 'UpdatedAt', 'CompanyId',
+            'category_name', 'unit_name', 'alt_unit_name', 'delete_block_reason',
+            'opening_filled', 'opening_empty', 'opening_rate', 'opening_amount'
+        ]
+
+    def create(self, validated_data):
+        filled = validated_data.pop('opening_filled_qty', None)
+        empty = validated_data.pop('opening_empty_qty', None)
+        rate = validated_data.pop('opening_cost_rate', None)
+        instance = super().create(validated_data)
+        validated_data['opening_filled_qty'] = filled
+        validated_data['opening_empty_qty'] = empty
+        validated_data['opening_cost_rate'] = rate
+        return instance
+
+    def update(self, instance, validated_data):
+        filled = validated_data.pop('opening_filled_qty', None)
+        empty = validated_data.pop('opening_empty_qty', None)
+        rate = validated_data.pop('opening_cost_rate', None)
+        instance = super().update(instance, validated_data)
+        validated_data['opening_filled_qty'] = filled
+        validated_data['opening_empty_qty'] = empty
+        validated_data['opening_cost_rate'] = rate
+        return instance
+
+    def get_opening_filled(self, obj):
+        from core.models import StockMovement
+        sm = StockMovement.objects.filter(Product=obj, TransactionType='OPENING_STOCK').first()
+        return float(sm.InQty) if sm else 0.0
+
+    def get_opening_empty(self, obj):
+        from core.models import StockMovement
+        sm = StockMovement.objects.filter(Product=obj, TransactionType='OPENING_EMPTY').first()
+        return float(sm.InQty) if sm else 0.0
+
+    def get_opening_rate(self, obj):
+        from core.models import StockMovement
+        sm = StockMovement.objects.filter(Product=obj, TransactionType='OPENING_STOCK').first()
+        if sm and sm.InCostRate:
+            return float(sm.InCostRate)
+        return float(obj.PurchasePrice or 0.0)
+
+    def get_opening_amount(self, obj):
+        from core.models import StockMovement
+        sm = StockMovement.objects.filter(Product=obj, TransactionType='OPENING_STOCK').first()
+        return float(sm.InCostAmount) if sm else 0.0
 
     def get_delete_block_reason(self, obj):
         from django.db import connection
@@ -502,11 +557,15 @@ class ProductSerializer(serializers.ModelSerializer):
             if purch_count > 0:
                 return f"Cannot delete: Product is linked to {purch_count} purchase record(s)."
 
-            # 4. Check Stock Movements
-            cursor.execute('SELECT COUNT(*) FROM "StockMovement" WHERE "ProductId" = %s', [obj.ProductId])
+            # 4. Check Stock Movements (excluding opening stock records)
+            cursor.execute('''
+                SELECT COUNT(*) FROM "StockMovement" 
+                WHERE "ProductId" = %s 
+                  AND "TransactionType" NOT IN ('OPENING_STOCK', 'OPENING_EMPTY')
+            ''', [obj.ProductId])
             sm_count = cursor.fetchone()[0]
             if sm_count > 0:
-                return f"Cannot delete: Product has {sm_count} stock movement transaction(s)."
+                return f"Cannot delete: Product has {sm_count} operational stock transaction(s)."
         return None
 
     def validate_ProductName(self, value):
@@ -543,6 +602,7 @@ class LedgerSerializer(serializers.ModelSerializer):
     group_nature = serializers.CharField(source='Group.Nature', read_only=True)
     delete_block_reason = serializers.SerializerMethodField()
     bills_count = serializers.SerializerMethodField()
+    advance_balance = serializers.SerializerMethodField()
 
     class Meta:
         model = Ledger
@@ -557,6 +617,7 @@ class LedgerSerializer(serializers.ModelSerializer):
             'DebitBalance',
             'CreditBalance',
             'CurrentBalance',
+            'advance_balance',
             'AddressLine1',
             'AddressLine2',
             'AddressLine3',
@@ -590,6 +651,19 @@ class LedgerSerializer(serializers.ModelSerializer):
 
     def get_bills_count(self, obj):
         return obj.ledger_lines.count()
+
+    def get_advance_balance(self, obj):
+        try:
+            from core.models import CustomerAdvance
+            from django.db.models import Sum
+            res = CustomerAdvance.objects.filter(
+                CustomerLedger_id=obj.LedgerId,
+                Status__in=['ACTIVE', 'PARTIALLY_UTILIZED'],
+                RemainingAmount__gt=0
+            ).aggregate(avail=Sum('RemainingAmount'))
+            return float(res['avail'] or 0)
+        except Exception:
+            return 0.0
 
     def get_delete_block_reason(self, obj):
         if obj.IsSystem:
@@ -1065,6 +1139,30 @@ class SalesSerializer(serializers.ModelSerializer):
     customer_phone = serializers.CharField(source='CustomerLedger.Mobile', read_only=True)
     customer_gstin = serializers.CharField(source='CustomerLedger.GSTIN', read_only=True)
     approved_by_name = serializers.CharField(source='ApprovedBy.Username', read_only=True)
+    advance_adjusted = serializers.SerializerMethodField()
+    net_payable = serializers.SerializerMethodField()
+    advance_adjustments = serializers.SerializerMethodField()
+
+    def get_advance_adjusted(self, obj):
+        return sum(float(a.AdjustmentAmount) for a in obj.advance_adjustments.all())
+
+    def get_net_payable(self, obj):
+        adj = self.get_advance_adjusted(obj)
+        gt = float(obj.GrandTotal or 0)
+        return max(0.0, gt - adj)
+
+    def get_advance_adjustments(self, obj):
+        return [
+            {
+                'AdjustmentId': a.AdjustmentId,
+                'AdvanceId': a.Advance_id,
+                'AdvanceNo': a.Advance.AdvanceNo if a.Advance else None,
+                'AdjustmentAmount': float(a.AdjustmentAmount),
+                'AdjustmentDate': str(a.AdjustmentDate),
+                'Narration': a.Narration,
+            }
+            for a in obj.advance_adjustments.all()
+        ]
 
     class Meta:
         model = Sales
@@ -1087,6 +1185,9 @@ class SalesSerializer(serializers.ModelSerializer):
             'TaxAmount',
             'GrandTotal',
             'PaidAmount',
+            'advance_adjusted',
+            'net_payable',
+            'advance_adjustments',
             'RoundOff',
             'TotalDeliveredQty',
             'TotalEmptyQty',
@@ -1149,6 +1250,57 @@ class ConnectionPackageSerializer(serializers.ModelSerializer):
             for item_data in items_data:
                 ConnectionPackageItem.objects.create(Package=instance, **item_data)
         return instance
+
+
+from core.models import Godown
+
+class GodownSerializer(serializers.ModelSerializer):
+    RouteVehicleDriverId = serializers.IntegerField(source='RouteVehicleDriver.RouteVehicleDriverId', read_only=True)
+    live_filled_qty = serializers.SerializerMethodField()
+    live_empty_qty = serializers.SerializerMethodField()
+    live_total_qty = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Godown
+        fields = [
+            'GodownId', 'GodownName', 'GodownCode', 'Location',
+            'IsCentral', 'IsActive', 'RouteVehicleDriverId',
+            'CompanyId', 'CreatedAt', 'UpdatedAt',
+            'live_filled_qty', 'live_empty_qty', 'live_total_qty'
+        ]
+        read_only_fields = ['GodownId', 'CreatedAt', 'UpdatedAt']
+
+    def get_live_filled_qty(self, obj):
+        from core.models import StockMovement
+        from django.db.models import Sum
+        rvd_id = obj.RouteVehicleDriver_id
+        in_qty = StockMovement.objects.filter(
+            RouteVehicleDriverId=rvd_id,
+            TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN']
+        ).aggregate(s=Sum('InQty'))['s'] or 0
+        out_qty = StockMovement.objects.filter(
+            RouteVehicleDriverId=rvd_id,
+            TransactionType__in=['DELIVERY_NOTE', 'PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE']
+        ).aggregate(s=Sum('OutQty'))['s'] or 0
+        return max(0.0, float(in_qty - out_qty))
+
+    def get_live_empty_qty(self, obj):
+        from core.models import StockMovement
+        from django.db.models import Sum
+        rvd_id = obj.RouteVehicleDriver_id
+        in_empty = StockMovement.objects.filter(
+            RouteVehicleDriverId=rvd_id,
+            TransactionType__in=['GODOWN_RETURN_EMPTY', 'VAN_UNLOAD_EMPTY', 'RECEIPT_NOTE_EMPTY_RETURN', 'VAN_EMPTY_RETURN', 'OPENING_EMPTY', 'ADJUSTMENT_EMPTY_IN']
+        ).aggregate(s=Sum('InQty'))['s'] or 0
+        out_empty = StockMovement.objects.filter(
+            RouteVehicleDriverId=rvd_id,
+            TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN']
+        ).aggregate(s=Sum('OutQty'))['s'] or 0
+        return max(0.0, float(in_empty - out_empty))
+
+    def get_live_total_qty(self, obj):
+        return self.get_live_filled_qty(obj) + self.get_live_empty_qty(obj)
+
 
 
 

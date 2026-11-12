@@ -560,8 +560,8 @@ export const AllocationsPage: React.FC = () => {
                     <Table.Th>Driver</Table.Th>
                     <Table.Th>Assignment Date</Table.Th>
                     <Table.Th>Notes</Table.Th>
-                    <Table.Th>Status</Table.Th>
-                    <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
+                    <Table.Th style={{ textAlign: 'center', width: 100, minWidth: 95 }}>Status</Table.Th>
+                    <Table.Th style={{ textAlign: 'right', width: 90, minWidth: 85 }}>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -572,16 +572,21 @@ export const AllocationsPage: React.FC = () => {
                       <Table.Td>{a.DriverName || `Driver #${a.Driver}`}</Table.Td>
                       <Table.Td>{a.AssignmentDate || '-'}</Table.Td>
                       <Table.Td>{a.Narration || '-'}</Table.Td>
-                      <Table.Td>
+                      <Table.Td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <Badge
                           size="sm"
                           variant="outline"
+                          styles={{
+                            root: { overflow: 'visible', paddingLeft: 8, paddingRight: 8 },
+                            label: { overflow: 'visible', textOverflow: 'clip', whiteSpace: 'nowrap' },
+                          }}
                           style={{
                             borderColor: a.IsActive ? '#800020' : '#dc2626',
                             color: a.IsActive ? '#800020' : '#dc2626',
                             backgroundColor: 'transparent',
                             fontWeight: 600,
-                            letterSpacing: '0.4px',
+                            letterSpacing: '0.3px',
+                            minWidth: 72,
                           }}
                         >
                           {a.IsActive ? 'ACTIVE' : 'INACTIVE'}

@@ -37,6 +37,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DateInputDDMMYY, formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 // Clean, concise reference formatter e.g. PUR-20261111-0001 -> PUR-0001, PAY-SAL-... -> PAY-0001
 const formatShortRef = (raw: string | null | undefined): string => {
@@ -255,6 +256,49 @@ export const PayablesReportPage: React.FC = () => {
     window.open(url, '_blank');
   };
 
+  const [isPrintingSummary, setIsPrintingSummary] = useState(false);
+
+  const handlePrintPayablesReport = async () => {
+    try {
+      setIsPrintingSummary(true);
+      const payload = {
+        creditors: filteredCreditors.map((c) => ({
+          name: c.name,
+          phone: c.phone,
+          city: c.city,
+          openingBal: c.openingBal,
+          openingType: c.openingType,
+          purchasesBilled: c.totalBilled,
+          paymentsPaid: c.totalPaid,
+          payableBalance: c.payable,
+        })),
+        summary: {
+          totalCreditors: creditorsList.length,
+          totalOpeningSum,
+          totalPurchasesSum: totalBilledSum,
+          totalPaidSum,
+          totalPayableSum,
+        },
+        search: searchQuery.trim(),
+      };
+
+      const res = await apiClient.post('/ledgers/payables-summary-pdf/', payload, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error Printing Report',
+        message: err?.response?.data?.error || err.message || 'Failed to generate PDF summary.',
+        color: 'red',
+      });
+    } finally {
+      setIsPrintingSummary(false);
+    }
+  };
+
   // Detailed ledger statement transactions for the selected supplier
   const supplierStatementData = useMemo(() => {
     if (!selectedSupplier) return { entries: [], effectiveOpening: 0, totDebit: 0, totCredit: 0, closingBal: 0 };
@@ -443,15 +487,13 @@ export const PayablesReportPage: React.FC = () => {
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Initial Opening Balance
             </Text>
-            <Group align="baseline" gap={6} mt={4}>
-              <Text fw={700} style={{ color: '#475569', fontSize: 18, fontVariantNumeric: 'tabular-nums' }}>
-                ₹{selectedSupplier.openingBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Text>
-              <Badge color="burgundy" variant="light" size="xs">
+            <Text fw={700} style={{ color: '#475569', fontSize: 18, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
+              ₹{selectedSupplier.openingBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+              <Text component="span" size="xs" fw={700} c="#64748b">
                 {selectedSupplier.openingType}
-              </Badge>
-            </Group>
-            <Text size="xs" c="dimmed">Recorded on Day 1</Text>
+              </Text>
+            </Text>
+            <Text size="xs" c="dimmed">Ledger Opening Balance</Text>
           </Paper>
 
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
@@ -468,14 +510,12 @@ export const PayablesReportPage: React.FC = () => {
             <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Net Outstanding Balance
             </Text>
-            <Group align="baseline" gap={6} mt={4}>
-              <Text fw={800} style={{ color: '#800020', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
-                ₹{Math.abs(supplierStatementData.closingBal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Text>
-              <Badge color="burgundy" variant="filled" size="xs" style={{ backgroundColor: '#800020' }}>
+            <Text fw={800} style={{ color: '#800020', fontSize: 20, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
+              ₹{Math.abs(supplierStatementData.closingBal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+              <Text component="span" size="sm" fw={800} c="#800020">
                 {supplierStatementData.closingBal >= 0 ? 'Cr' : 'Dr'}
-              </Badge>
-            </Group>
+              </Text>
+            </Text>
             <Text size="xs" c="#800020" fw={500}>
               {supplierStatementData.closingBal >= 0 ? 'Liability Due to Supplier' : 'Advance Paid'}
             </Text>
@@ -487,20 +527,18 @@ export const PayablesReportPage: React.FC = () => {
           {/* Filter Toolbar */}
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }} wrap="wrap" gap="sm">
             <Group gap="sm" align="center" wrap="wrap">
-              <TextInput
-                type="date"
-                size="sm"
+              <DateInputDDMMYY
                 label="From Date"
+                placeholder="dd/mm/yyyy"
                 value={stmtFromDate}
-                onChange={(e) => setStmtFromDate(e.currentTarget.value)}
+                onChange={(iso) => setStmtFromDate(iso)}
                 style={{ width: 145 }}
               />
-              <TextInput
-                type="date"
-                size="sm"
+              <DateInputDDMMYY
                 label="To Date"
+                placeholder="dd/mm/yyyy"
                 value={stmtToDate}
-                onChange={(e) => setStmtToDate(e.currentTarget.value)}
+                onChange={(iso) => setStmtToDate(iso)}
                 style={{ width: 145 }}
               />
               <TextInput
@@ -593,7 +631,7 @@ export const PayablesReportPage: React.FC = () => {
                   {supplierStatementData.entries.map((entry, idx) => (
                     <Table.Tr key={idx} style={{ height: 46 }}>
                       <Table.Td style={{ fontWeight: 500, color: '#475569' }}>
-                        {entry.date || '—'}
+                        {formatDateDDMMYY(entry.date)}
                       </Table.Td>
                       <Table.Td style={{ fontWeight: 700, color: '#0f172a' }}>
                         {entry.ref}
@@ -612,7 +650,7 @@ export const PayablesReportPage: React.FC = () => {
                           textAlign: 'right',
                           fontVariantNumeric: 'tabular-nums',
                           fontWeight: 700,
-                          color: entry.runningBalance >= 0 ? '#800020' : '#2563eb',
+                          color: '#800020',
                         }}
                       >
                         ₹{Math.abs(entry.runningBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
@@ -715,6 +753,20 @@ export const PayablesReportPage: React.FC = () => {
           </Tooltip>
 
           <Button
+            variant="outline"
+            color="burgundy"
+            radius="md"
+            size="sm"
+            fw={600}
+            loading={isPrintingSummary}
+            leftSection={<IconPrinter size={16} />}
+            onClick={handlePrintPayablesReport}
+            style={{ borderColor: '#800020', color: '#800020' }}
+          >
+            Print Report
+          </Button>
+
+          <Button
             color="burgundy"
             radius="md"
             size="sm"
@@ -786,14 +838,12 @@ export const PayablesReportPage: React.FC = () => {
             </Text>
             <IconWallet size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Group align="baseline" gap={6} mb={4}>
-            <Text fw={700} style={{ color: '#800020', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-              ₹{Math.abs(totalPayableSum).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <Text fw={700} style={{ color: '#800020', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>
+            ₹{Math.abs(totalPayableSum).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+            <Text component="span" size="sm" fw={700} c="#800020">
+              {totalPayableSum >= 0 ? 'Cr' : 'Dr'}
             </Text>
-            <Badge color="burgundy" variant="light" size="xs">
-              {totalPayableSum >= 0 ? 'CR' : 'DR'}
-            </Badge>
-          </Group>
+          </Text>
           <Text size="xs" c="dimmed">
             Current outstanding liability
           </Text>
@@ -902,7 +952,7 @@ export const PayablesReportPage: React.FC = () => {
                     <Table.Td style={{ textAlign: 'right' }}>
                       <Text style={{ fontSize: 13.5, fontWeight: 600, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
                         ₹{creditor.openingBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                        <Text component="span" size="xs" fw={700} c={creditor.openingType === 'CR' ? '#800020' : '#2563eb'}>
+                        <Text component="span" size="xs" fw={700} c="#800020">
                           {creditor.openingType}
                         </Text>
                       </Text>

@@ -41,6 +41,7 @@ import { SalesListPage } from './pages/SalesListPage';
 import { SalesFormPage } from './pages/SalesFormPage';
 import { ConnectionSaleFormPage } from './pages/ConnectionSaleFormPage';
 import { GodownInventoryFormPage } from './pages/GodownInventoryFormPage';
+import { CollectionsPage } from './pages/CollectionsPage';
 
 
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -173,6 +174,7 @@ export const App: React.FC = () => {
               <Route path="/sales" element={<SalesListPage />} />
               <Route path="/sales/new" element={<SalesFormPage />} />
               <Route path="/sales/new-connection" element={<ConnectionSaleFormPage />} />
+              <Route path="/collections" element={<CollectionsPage />} />
 
 
             </Route>

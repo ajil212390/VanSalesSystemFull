@@ -442,6 +442,15 @@ def generate_tax_invoice_pdf(sale):
         paid_amt = Decimal(str(sale.GrandTotal or current_bill_amount))
 
     # Determine Previous Pending and Closing Balance (Point-in-Time as of this invoice):
+    adv_adj = Decimal('0.00')
+    if hasattr(sale, 'advance_adjustments'):
+        try:
+            adv_adj = sum(Decimal(str(a.AmountAdjusted)) for a in sale.advance_adjustments.all())
+        except Exception:
+            adv_adj = Decimal('0.00')
+    if adv_adj == Decimal('0.00') and hasattr(sale, 'AdvanceAdjusted') and sale.AdvanceAdjusted:
+        adv_adj = Decimal(str(sale.AdvanceAdjusted))
+
     if customer:
         op = customer.OpeningBalance or Decimal('0.00')
         op_net = op if (customer.OpeningBalanceType or 'DR').upper() == 'DR' else -op
@@ -470,11 +479,11 @@ def generate_tax_invoice_pdf(sale):
         prior_cr = prior_agg['cr'] or Decimal('0.00')
 
         previous_bill_pending = max(Decimal('0.00'), op_net + prior_dr - prior_cr)
-        closing_balance = previous_bill_pending + current_bill_amount - paid_amt
+        closing_balance = max(Decimal('0.00'), previous_bill_pending + current_bill_amount - adv_adj - paid_amt)
     else:
         # Walk-in customer
         previous_bill_pending = Decimal('0.00')
-        closing_balance = max(Decimal('0.00'), current_bill_amount - paid_amt)
+        closing_balance = max(Decimal('0.00'), current_bill_amount - adv_adj - paid_amt)
 
     # Empty cylinders return narration
     empty_qty_int = int(sale.TotalEmptyQty or 0)
@@ -484,18 +493,27 @@ def generate_tax_invoice_pdf(sale):
 
     # Left Box: Customer Account Summary (Handwritten layout)
     # Right Box: Tax Breakdown (Handwritten layout)
-    cust_summary_table = Table([
+    cust_summary_rows = [
         [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
         [Paragraph("Previous Bill pending :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)],
         [Paragraph("Current Bill :", cell_norm), Paragraph(f"(+) Rs. {current_bill_amount:.2f}", cell_right)],
+    ]
+    if adv_adj > Decimal('0.00'):
+        cust_summary_rows.append([
+            Paragraph("Advance Adjusted :", ParagraphStyle('AdvLbl', parent=cell_bold, textColor=colors.HexColor('#0D9488'))),
+            Paragraph(f"(-) Rs. {adv_adj:.2f}", ParagraphStyle('AdvVal', parent=cell_right_bold, textColor=colors.HexColor('#0D9488')))
+        ])
+    cust_summary_rows.extend([
         [Paragraph("Paid Amount :", cell_norm), Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right)],
         [Paragraph("<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
         [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
-    ], colWidths=[130, 125])
+    ])
+
+    cust_summary_table = Table(cust_summary_rows, colWidths=[130, 125])
     cust_summary_table.setStyle(TableStyle([
         ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
-        ('LINEBELOW', (0, 3), (-1, 3), 1, BORDER_COLOR),
-        ('LINEBELOW', (0, 4), (-1, 4), 1, BORDER_COLOR),
+        ('LINEBELOW', (0, -3), (-1, -3), 1, BORDER_COLOR),
+        ('LINEBELOW', (0, -2), (-1, -2), 1, BORDER_COLOR),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), 3),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
@@ -844,6 +862,16 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
             meta_bold
         ),
     ]
+    try:
+        adv_bal = getattr(customer, 'advance_balance', None)
+        if adv_bal is None and hasattr(customer, 'advances'):
+            adv_bal = sum(a.RemainingBalance for a in customer.advances.filter(Status__in=['OPEN', 'PARTIAL']))
+        if adv_bal and Decimal(str(adv_bal)) > Decimal('0.00'):
+            kpi_box_content.append(
+                Paragraph(f"Customer Advance Balance: <font color='#0D9488'><b>₹{Decimal(str(adv_bal)):,.2f}</b></font>", meta_style)
+            )
+    except Exception:
+        pass
 
     top_grid = Table([
         [cust_box_content, kpi_box_content]
@@ -1237,3 +1265,596 @@ def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company
     doc.build(story)
     return buf.getvalue()
 
+
+def generate_receivables_summary_pdf(debtors_data, company_id=1, summary_stats=None, search_query=''):
+    """
+    Generates a complete, publication-quality A4 PDF summary of customer receivables (Sundry Debtors).
+    Displays executive letterhead, 4 floating KPI summary cards,
+    a structured tabular breakdown of all debtors with contacts, opening balance, sales billed,
+    collections received, net outstanding balance, audit notes, and an official authorization signature block.
+    """
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=25,
+        bottomMargin=25
+    )
+
+    company_name = "FUTURE GAS"
+    company_subtitle = "LPG Commercial & Domestic Distribution Network"
+    company_address = "Civil Station, Kozhikode, Kerala - 673020"
+    company_contact = "Ph: +91 98470 12345 | Email: accounts@futuregas.in"
+    company_gstin = "32AABCF1234F1Z8"
+
+    try:
+        from core.models import Company
+        co = Company.objects.filter(CompanyId=company_id).first()
+        if co:
+            company_name = co.CompanyName or company_name
+            company_address = co.Address or company_address
+            company_gstin = co.GSTIN or company_gstin
+            company_contact = f"Ph: {co.PhoneNumber or co.MobileNumber or '+91 98470 12345'}"
+    except Exception:
+        pass
+
+    title_company = ParagraphStyle('RecCompT', fontName=FONT_BOLD, fontSize=18, leading=22, textColor=PRIMARY_COLOR)
+    sub_company = ParagraphStyle('RecCompS', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=colors.HexColor('#334155'))
+    meta_company = ParagraphStyle('RecCompM', fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=MUTED_COLOR)
+
+    title_box_h = ParagraphStyle('RecBoxH', fontName=FONT_BOLD, fontSize=14, leading=17, textColor=PRIMARY_COLOR, alignment=2)
+    title_box_sub = ParagraphStyle('RecBoxSub', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=colors.HexColor('#475569'), alignment=2)
+    title_box_m = ParagraphStyle('RecBoxM', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=2)
+
+    kpi_label = ParagraphStyle('RecKpiLbl', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=1)
+    kpi_val = ParagraphStyle('RecKpiVal', fontName=FONT_BOLD, fontSize=13, leading=15, textColor=DARK_COLOR, alignment=1)
+    kpi_sub = ParagraphStyle('RecKpiSub', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=1)
+    kpi_val_burg = ParagraphStyle('RecKpiValBurg', fontName=FONT_BOLD, fontSize=13, leading=15, textColor=PRIMARY_COLOR, alignment=1)
+
+    th_left = ParagraphStyle('RecThL', fontName=FONT_BOLD, fontSize=7.5, leading=9, textColor=colors.white)
+    th_right = ParagraphStyle('RecThR', fontName=FONT_BOLD, fontSize=7.5, leading=9, textColor=colors.white, alignment=2)
+    cell_name = ParagraphStyle('RecCellName', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=DARK_COLOR)
+    cell_contact = ParagraphStyle('RecCellCont', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR)
+    cell_right = ParagraphStyle('RecCellR', fontName=FONT_NAME, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)
+    cell_right_bold = ParagraphStyle('RecCellRB', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)
+    cell_right_burg = ParagraphStyle('RecCellRBurg', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=PRIMARY_COLOR, alignment=2)
+
+    story = []
+
+    # 1. Header Block
+    now_str = datetime.now().strftime('%d-%b-%Y %I:%M %p')
+    date_only = datetime.now().strftime('%d-%b-%Y')
+
+    header_left = [
+        Paragraph(company_name, title_company),
+        Paragraph(company_subtitle, sub_company),
+        Paragraph(company_address, meta_company),
+        Paragraph(f"{company_contact} &bull; GSTIN: <b>{company_gstin}</b>", meta_company),
+    ]
+
+    header_right = [
+        Paragraph("RECEIVABLES REPORT", title_box_h),
+        Paragraph("Sundry Debtors Summary Register", title_box_sub),
+        Spacer(1, 2),
+        Paragraph(f"Generated: <b>{now_str}</b>", title_box_m),
+        Paragraph("Period: <b>All Records to Date</b>", title_box_m),
+    ]
+
+    hdr_table = Table([[header_left, header_right]], colWidths=[335, 210])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(hdr_table)
+    story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceBefore=4, spaceAfter=10))
+
+    # Summary Stats computation
+    total_debtors = len(debtors_data)
+    total_opening = Decimal('0.00')
+    total_billed = Decimal('0.00')
+    total_received = Decimal('0.00')
+    total_receivable = Decimal('0.00')
+    total_advance = Decimal('0.00')
+
+    if summary_stats and isinstance(summary_stats, dict):
+        total_debtors = int(summary_stats.get('totalDebtors', total_debtors))
+        total_opening = Decimal(str(summary_stats.get('totalOpeningSum', 0) or 0))
+        total_billed = Decimal(str(summary_stats.get('totalBilledSum', 0) or 0))
+        total_received = Decimal(str(summary_stats.get('totalReceivedSum', 0) or 0))
+        total_receivable = Decimal(str(summary_stats.get('totalReceivableSum', 0) or 0))
+        total_advance = Decimal(str(summary_stats.get('totalAdvanceSum', 0) or 0))
+    else:
+        for d in debtors_data:
+            op = Decimal(str(d.get('openingBal', 0) or 0))
+            op_type = (d.get('openingType', 'DR') or 'DR').upper()
+            total_opening += (op if op_type == 'DR' else -op)
+            total_billed += Decimal(str(d.get('salesBilled', 0) or 0))
+            total_received += Decimal(str(d.get('collectionsReceived', 0) or 0))
+            total_receivable += Decimal(str(d.get('netReceivable', 0) or 0))
+            total_advance += Decimal(str(d.get('advanceBalance', 0) or 0))
+
+    # 2. KPI Dashboard Cards (4 distinct floating cards)
+    op_suffix = 'Dr' if total_opening >= 0 else 'Cr'
+    rec_suffix = 'Dr' if total_receivable >= 0 else 'Cr'
+
+    c1 = [Paragraph("TOTAL DEBTORS", kpi_label), Spacer(1, 2), Paragraph(str(total_debtors), kpi_val), Spacer(1, 1), Paragraph(f"Op: ₹{abs(total_opening):,.2f} {op_suffix}", kpi_sub)]
+    c2 = [Paragraph("TOTAL SALES BILLED", kpi_label), Spacer(1, 2), Paragraph(f"₹{total_billed:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Delivery & Sales Bills", kpi_sub)]
+    c3 = [Paragraph("COLLECTIONS RECEIVED", kpi_label), Spacer(1, 2), Paragraph(f"₹{total_received:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Cash & Bank Receipts", kpi_sub)]
+    c4 = [
+        Paragraph("NET RECEIVABLE", ParagraphStyle('RecKpiLblB', parent=kpi_label, textColor=PRIMARY_COLOR)),
+        Spacer(1, 2),
+        Paragraph(f"₹{abs(total_receivable):,.2f} {rec_suffix}", kpi_val_burg),
+        Spacer(1, 1),
+        Paragraph("Current Outstanding", ParagraphStyle('RecKpiSubB', parent=kpi_sub, textColor=PRIMARY_COLOR))
+    ]
+
+    kpi_data = [[c1, '', c2, '', c3, '', c4]]
+    kpi_table = Table(kpi_data, colWidths=[130, 8, 130, 8, 130, 8, 131])
+    kpi_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
+        ('BOX', (2, 0), (2, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (2, 0), (2, 0), LIGHT_BG),
+        ('BOX', (4, 0), (4, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (4, 0), (4, 0), LIGHT_BG),
+        ('BOX', (6, 0), (6, 0), 1.25, PRIMARY_COLOR),
+        ('BACKGROUND', (6, 0), (6, 0), CARD_BG),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 10))
+
+    # 3. Section Subheader Bar
+    filter_desc = f"Showing <b>{len(debtors_data)}</b> Active Customer Accounts"
+    if search_query:
+        filter_desc = f'Filter: "{search_query}" (<b>{len(debtors_data)}</b> accounts listed)'
+
+    sub_bar_data = [[
+        Paragraph("<b>LIST OF CUSTOMER / DEBTOR ACCOUNTS</b>", ParagraphStyle('RecSbL', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR)),
+        Paragraph(filter_desc, ParagraphStyle('RecSbR', fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=MUTED_COLOR, alignment=2))
+    ]]
+    sub_bar = Table(sub_bar_data, colWidths=[345, 200])
+    sub_bar.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E1')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(sub_bar)
+    story.append(Spacer(1, 4))
+
+    # 4. Data Table (Col Widths: [165, 90, 95, 95, 100] = 545 pt)
+    th_row = [
+        Paragraph("CUSTOMER NAME &amp; CONTACT", th_left),
+        Paragraph("OPENING BAL (₹)", th_right),
+        Paragraph("SALES BILLED (₹)", th_right),
+        Paragraph("COLLECTIONS (₹)", th_right),
+        Paragraph("NET RECEIVABLE (₹)", th_right),
+    ]
+
+    table_rows = [th_row]
+
+    for d in debtors_data:
+        c_name = d.get('name') or d.get('LedgerName') or 'Customer'
+        c_phone = d.get('phone') or d.get('PhoneNumber') or d.get('MobileNumber') or ''
+        c_city = d.get('city') or d.get('City') or ''
+        adv = Decimal(str(d.get('advanceBalance', 0) or 0))
+
+        sub_details = []
+        if c_phone and str(c_phone) != '—':
+            sub_details.append(str(c_phone))
+        if c_city and str(c_city) != '—':
+            sub_details.append(str(c_city))
+        contact_str = " &bull; ".join(sub_details)
+
+        name_content = [Paragraph(c_name, cell_name)]
+        if adv > 0:
+            name_content.append(Paragraph(f"<font size=7 color='#800020'><b>[Advance Balance: ₹{adv:,.2f}]</b></font>", cell_contact))
+        if contact_str:
+            name_content.append(Paragraph(contact_str, cell_contact))
+
+        op_val = Decimal(str(d.get('openingBal', 0) or 0))
+        op_t = (d.get('openingType', 'DR') or 'DR').upper()
+        sales_val = Decimal(str(d.get('salesBilled', 0) or 0))
+        coll_val = Decimal(str(d.get('collectionsReceived', 0) or 0))
+        rec_val = Decimal(str(d.get('netReceivable', 0) or 0))
+
+        table_rows.append([
+            name_content,
+            Paragraph(f"₹{op_val:,.2f} <font size=6.5 color='#64748B'>{op_t}</font>", cell_right),
+            Paragraph(f"₹{sales_val:,.2f}", cell_right),
+            Paragraph(f"₹{coll_val:,.2f}", cell_right),
+            Paragraph(f"₹{abs(rec_val):,.2f} {'Dr' if rec_val >= 0 else 'Cr'}", cell_right_burg if abs(rec_val) > 0 else cell_right),
+        ])
+
+    # Summary Totals Row
+    total_name = Paragraph(f"<b>TOTAL ({len(debtors_data)} DEBTORS)</b>", ParagraphStyle('RecTotLbl', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR))
+    table_rows.append([
+        total_name,
+        Paragraph(f"<b>₹{abs(total_opening):,.2f} {op_suffix}</b>", cell_right_bold),
+        Paragraph(f"<b>₹{total_billed:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>₹{total_received:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>₹{abs(total_receivable):,.2f} {rec_suffix}</b>", cell_right_burg),
+    ])
+
+    report_table = Table(table_rows, colWidths=[165, 90, 95, 95, 100], repeatRows=1)
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#CBD5E1')),
+        ('INNERGRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0, 1), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 7),
+        # Total row styling
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F1F5F9')),
+        ('LINEABOVE', (0, -1), (-1, -1), 1.25, PRIMARY_COLOR),
+    ]
+
+    for r in range(1, len(table_rows) - 1):
+        bg = LIGHT_BG if r % 2 == 1 else colors.white
+        t_style.append(('BACKGROUND', (0, r), (-1, r), bg))
+
+    report_table.setStyle(TableStyle(t_style))
+    story.append(report_table)
+    story.append(Spacer(1, 18))
+
+    # 5. Bottom Panel: Audit Notes (Left) & Signature (Right)
+    notes_content = [
+        Paragraph("<b>STATEMENT RECONCILIATION &amp; AUDIT NOTES:</b>", ParagraphStyle('RecNtH', fontName=FONT_BOLD, fontSize=7.5, leading=10, textColor=PRIMARY_COLOR)),
+        Spacer(1, 3),
+        Paragraph("&bull; This report reflects cumulative customer balances, sales invoices billed, and collections received.", ParagraphStyle('RecNtB1', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph("&bull; Net Receivable Due is calculated on standard accrual accounting: (Opening Balance + Sales - Collections).", ParagraphStyle('RecNtB2', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph("&bull; Customer advances are held on account and automatically FIFO-adjusted against subsequent delivery bills.", ParagraphStyle('RecNtB3', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph("&bull; Generated automatically via Future Gas Cloud ERP. Official commercial financial record.", ParagraphStyle('RecNtB4', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=MUTED_COLOR)),
+    ]
+
+    sig_content = [
+        Paragraph(f"For <b>{company_name}</b>", ParagraphStyle('RecSgC', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)),
+        Paragraph("<font size=7 color='#64748B'>Commercial Accounts Department</font>", ParagraphStyle('RecSgC2', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=2)),
+        Spacer(1, 28),
+        Paragraph("_______________________________________", ParagraphStyle('RecSgL', fontName=FONT_NAME, fontSize=8, leading=10, textColor=colors.HexColor('#94A3B8'), alignment=2)),
+        Paragraph("<b>Authorized Signatory</b>", ParagraphStyle('RecSgA', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)),
+        Paragraph(f"<font size=6.5 color='#64748B'>Date: {date_only}</font>", ParagraphStyle('RecSgD', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR, alignment=2)),
+    ]
+
+    bottom_table = Table([[notes_content, '', sig_content]], colWidths=[315, 20, 210])
+    bottom_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#F8FAFC')),
+        ('BOX', (2, 0), (2, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (2, 0), (2, 0), colors.white),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(KeepTogether(bottom_table))
+    story.append(Spacer(1, 14))
+
+    # 6. Running Footer Bar
+    ftr_data = [[
+        Paragraph(f"<font size=6.5 color='#64748B'>Future Gas Cloud ERP &bull; Official Receivables Register &bull; Printed on {now_str}</font>", ParagraphStyle('RecFtrL', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR)),
+        Paragraph("<font size=6.5 color='#64748B'>Confidential &bull; Internal &amp; Regulatory Financial Record</font>", ParagraphStyle('RecFtrR', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR, alignment=2))
+    ]]
+    ftr_table = Table(ftr_data, colWidths=[345, 200])
+    ftr_table.setStyle(TableStyle([
+        ('LINEABOVE', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(ftr_table)
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def generate_payables_summary_pdf(creditors_data, company_id=1, summary_stats=None, search_query=''):
+    """
+    Generates a complete, publication-quality A4 PDF summary of supplier payables (Sundry Creditors).
+    Displays executive letterhead, 4 floating KPI summary cards,
+    a structured tabular breakdown of all creditors with contacts, opening balance, purchases billed,
+    payments settled, net outstanding liability, audit notes, and an official authorization signature block.
+    """
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=25,
+        bottomMargin=25
+    )
+
+    company_name = "FUTURE GAS"
+    company_subtitle = "LPG Commercial & Domestic Distribution Network"
+    company_address = "Civil Station, Kozhikode, Kerala - 673020"
+    company_contact = "Ph: +91 98470 12345 | Email: accounts@futuregas.in"
+    company_gstin = "32AABCF1234F1Z8"
+
+    try:
+        from core.models import Company
+        co = Company.objects.filter(CompanyId=company_id).first()
+        if co:
+            company_name = co.CompanyName or company_name
+            company_address = co.Address or company_address
+            company_gstin = co.GSTIN or company_gstin
+            company_contact = f"Ph: {co.PhoneNumber or co.MobileNumber or '+91 98470 12345'}"
+    except Exception:
+        pass
+
+    title_company = ParagraphStyle('PayCompT', fontName=FONT_BOLD, fontSize=18, leading=22, textColor=PRIMARY_COLOR)
+    sub_company = ParagraphStyle('PayCompS', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=colors.HexColor('#334155'))
+    meta_company = ParagraphStyle('PayCompM', fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=MUTED_COLOR)
+
+    title_box_h = ParagraphStyle('PayBoxH', fontName=FONT_BOLD, fontSize=14, leading=17, textColor=PRIMARY_COLOR, alignment=2)
+    title_box_sub = ParagraphStyle('PayBoxSub', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=colors.HexColor('#475569'), alignment=2)
+    title_box_m = ParagraphStyle('PayBoxM', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=2)
+
+    kpi_label = ParagraphStyle('PayKpiLbl', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=1)
+    kpi_val = ParagraphStyle('PayKpiVal', fontName=FONT_BOLD, fontSize=13, leading=15, textColor=DARK_COLOR, alignment=1)
+    kpi_sub = ParagraphStyle('PayKpiSub', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=1)
+    kpi_val_burg = ParagraphStyle('PayKpiValBurg', fontName=FONT_BOLD, fontSize=13, leading=15, textColor=PRIMARY_COLOR, alignment=1)
+
+    th_left = ParagraphStyle('PayThL', fontName=FONT_BOLD, fontSize=7.5, leading=9, textColor=colors.white)
+    th_right = ParagraphStyle('PayThR', fontName=FONT_BOLD, fontSize=7.5, leading=9, textColor=colors.white, alignment=2)
+    cell_name = ParagraphStyle('PayCellName', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=DARK_COLOR)
+    cell_contact = ParagraphStyle('PayCellCont', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR)
+    cell_right = ParagraphStyle('PayCellR', fontName=FONT_NAME, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)
+    cell_right_bold = ParagraphStyle('PayCellRB', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)
+    cell_right_burg = ParagraphStyle('PayCellRBurg', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=PRIMARY_COLOR, alignment=2)
+
+    story = []
+
+    # 1. Header Block
+    now_str = datetime.now().strftime('%d-%b-%Y %I:%M %p')
+    date_only = datetime.now().strftime('%d-%b-%Y')
+
+    header_left = [
+        Paragraph(company_name, title_company),
+        Paragraph(company_subtitle, sub_company),
+        Paragraph(company_address, meta_company),
+        Paragraph(f"{company_contact} &bull; GSTIN: <b>{company_gstin}</b>", meta_company),
+    ]
+
+    header_right = [
+        Paragraph("PAYABLES REPORT", title_box_h),
+        Paragraph("Sundry Creditors Summary Register", title_box_sub),
+        Spacer(1, 2),
+        Paragraph(f"Generated: <b>{now_str}</b>", title_box_m),
+        Paragraph("Period: <b>All Records to Date</b>", title_box_m),
+    ]
+
+    hdr_table = Table([[header_left, header_right]], colWidths=[335, 210])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(hdr_table)
+    story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceBefore=4, spaceAfter=10))
+
+    # Summary Stats computation
+    total_creditors = len(creditors_data)
+    total_opening = Decimal('0.00')
+    total_purchases = Decimal('0.00')
+    total_paid = Decimal('0.00')
+    total_payable = Decimal('0.00')
+
+    if summary_stats and isinstance(summary_stats, dict):
+        total_creditors = int(summary_stats.get('totalCreditors', total_creditors))
+        total_opening = Decimal(str(summary_stats.get('totalOpeningSum', 0) or 0))
+        total_purchases = Decimal(str(summary_stats.get('totalPurchasesSum', 0) or 0))
+        total_paid = Decimal(str(summary_stats.get('totalPaidSum', 0) or 0))
+        total_payable = Decimal(str(summary_stats.get('totalPayableSum', 0) or 0))
+    else:
+        for c in creditors_data:
+            op = Decimal(str(c.get('openingBal', 0) or 0))
+            op_type = (c.get('openingType', 'CR') or 'CR').upper()
+            total_opening += (op if op_type == 'CR' else -op)
+            total_purchases += Decimal(str(c.get('purchasesBilled', 0) or 0))
+            total_paid += Decimal(str(c.get('paymentsPaid', 0) or 0))
+            total_payable += Decimal(str(c.get('payableBalance', 0) or 0))
+
+    # 2. KPI Dashboard Cards (4 distinct floating cards)
+    op_suffix = 'Cr' if total_opening >= 0 else 'Dr'
+    pay_suffix = 'Cr' if total_payable >= 0 else 'Dr'
+
+    c1 = [Paragraph("TOTAL CREDITORS", kpi_label), Spacer(1, 2), Paragraph(str(total_creditors), kpi_val), Spacer(1, 1), Paragraph(f"Op: ₹{abs(total_opening):,.2f} {op_suffix}", kpi_sub)]
+    c2 = [Paragraph("TOTAL PURCHASES", kpi_label), Spacer(1, 2), Paragraph(f"₹{total_purchases:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Recorded Invoices", kpi_sub)]
+    c3 = [Paragraph("PAYMENTS SETTLED", kpi_label), Spacer(1, 2), Paragraph(f"₹{total_paid:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Disbursed Vouchers", kpi_sub)]
+    c4 = [
+        Paragraph("NET PAYABLE", ParagraphStyle('PayKpiLblB', parent=kpi_label, textColor=PRIMARY_COLOR)),
+        Spacer(1, 2),
+        Paragraph(f"₹{abs(total_payable):,.2f} {pay_suffix}", kpi_val_burg),
+        Spacer(1, 1),
+        Paragraph("Current Liability", ParagraphStyle('PayKpiSubB', parent=kpi_sub, textColor=PRIMARY_COLOR))
+    ]
+
+    kpi_data = [[c1, '', c2, '', c3, '', c4]]
+    kpi_table = Table(kpi_data, colWidths=[130, 8, 130, 8, 130, 8, 131])
+    kpi_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
+        ('BOX', (2, 0), (2, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (2, 0), (2, 0), LIGHT_BG),
+        ('BOX', (4, 0), (4, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (4, 0), (4, 0), LIGHT_BG),
+        ('BOX', (6, 0), (6, 0), 1.25, PRIMARY_COLOR),
+        ('BACKGROUND', (6, 0), (6, 0), CARD_BG),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 10))
+
+    # 3. Section Subheader Bar
+    filter_desc = f"Showing <b>{len(creditors_data)}</b> Active Supplier Accounts"
+    if search_query:
+        filter_desc = f'Filter: "{search_query}" (<b>{len(creditors_data)}</b> accounts listed)'
+
+    sub_bar_data = [[
+        Paragraph("<b>LIST OF SUPPLIER / CREDITOR ACCOUNTS</b>", ParagraphStyle('PaySbL', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR)),
+        Paragraph(filter_desc, ParagraphStyle('PaySbR', fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=MUTED_COLOR, alignment=2))
+    ]]
+    sub_bar = Table(sub_bar_data, colWidths=[345, 200])
+    sub_bar.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F8FAFC')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E1')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(sub_bar)
+    story.append(Spacer(1, 4))
+
+    # 4. Data Table (Col Widths: [165, 90, 95, 95, 100] = 545 pt)
+    th_row = [
+        Paragraph("SUPPLIER NAME &amp; CONTACT", th_left),
+        Paragraph("OPENING BAL (₹)", th_right),
+        Paragraph("PURCHASES (₹)", th_right),
+        Paragraph("PAYMENTS (₹)", th_right),
+        Paragraph("NET PAYABLE (₹)", th_right),
+    ]
+
+    table_rows = [th_row]
+
+    for c in creditors_data:
+        s_name = c.get('name') or c.get('LedgerName') or 'Supplier'
+        s_phone = c.get('phone') or c.get('PhoneNumber') or c.get('MobileNumber') or ''
+        s_city = c.get('city') or c.get('City') or ''
+
+        sub_details = []
+        if s_phone and str(s_phone) != '—':
+            sub_details.append(str(s_phone))
+        if s_city and str(s_city) != '—':
+            sub_details.append(str(s_city))
+        contact_str = " &bull; ".join(sub_details)
+
+        name_content = [Paragraph(s_name, cell_name)]
+        if contact_str:
+            name_content.append(Paragraph(contact_str, cell_contact))
+
+        op_val = Decimal(str(c.get('openingBal', 0) or 0))
+        op_t = (c.get('openingType', 'CR') or 'CR').upper()
+        pur_val = Decimal(str(c.get('purchasesBilled', 0) or 0))
+        paid_val = Decimal(str(c.get('paymentsPaid', 0) or 0))
+        due_val = Decimal(str(c.get('payableBalance', 0) or 0))
+
+        table_rows.append([
+            name_content,
+            Paragraph(f"₹{op_val:,.2f} <font size=6.5 color='#64748B'>{op_t}</font>", cell_right),
+            Paragraph(f"₹{pur_val:,.2f}", cell_right),
+            Paragraph(f"₹{paid_val:,.2f}", cell_right),
+            Paragraph(f"₹{abs(due_val):,.2f} {'Cr' if due_val >= 0 else 'Dr'}", cell_right_burg if abs(due_val) > 0 else cell_right),
+        ])
+
+    # Summary Totals Row
+    total_name = Paragraph(f"<b>TOTAL ({len(creditors_data)} CREDITORS)</b>", ParagraphStyle('PayTotLbl', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR))
+    table_rows.append([
+        total_name,
+        Paragraph(f"<b>₹{abs(total_opening):,.2f} {op_suffix}</b>", cell_right_bold),
+        Paragraph(f"<b>₹{total_purchases:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>₹{total_paid:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>₹{abs(total_payable):,.2f} {pay_suffix}</b>", cell_right_burg),
+    ])
+
+    report_table = Table(table_rows, colWidths=[165, 90, 95, 95, 100], repeatRows=1)
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#CBD5E1')),
+        ('INNERGRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0, 1), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 7),
+        # Total row styling
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F1F5F9')),
+        ('LINEABOVE', (0, -1), (-1, -1), 1.25, PRIMARY_COLOR),
+    ]
+
+    for r in range(1, len(table_rows) - 1):
+        bg = LIGHT_BG if r % 2 == 1 else colors.white
+        t_style.append(('BACKGROUND', (0, r), (-1, r), bg))
+
+    report_table.setStyle(TableStyle(t_style))
+    story.append(report_table)
+    story.append(Spacer(1, 18))
+
+    # 5. Bottom Panel: Audit Notes (Left) & Signature (Right)
+    notes_content = [
+        Paragraph("<b>STATEMENT RECONCILIATION &amp; AUDIT NOTES:</b>", ParagraphStyle('PayNtH', fontName=FONT_BOLD, fontSize=7.5, leading=10, textColor=PRIMARY_COLOR)),
+        Spacer(1, 3),
+        Paragraph("&bull; This report reflects cumulative balances, recorded purchase bills, and settled payment vouchers.", ParagraphStyle('PayNtB1', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph("&bull; Net Balance Due is calculated on standard accrual accounting: (Opening Balance + Purchases - Payments).", ParagraphStyle('PayNtB2', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph("&bull; For statement reconciliation or voucher discrepancy, submit supporting bills to accounts within 7 business days.", ParagraphStyle('PayNtB3', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph("&bull; Generated automatically via Future Gas Cloud ERP. Official commercial financial record.", ParagraphStyle('PayNtB4', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=MUTED_COLOR)),
+    ]
+
+    sig_content = [
+        Paragraph(f"For <b>{company_name}</b>", ParagraphStyle('PaySgC', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)),
+        Paragraph("<font size=7 color='#64748B'>Commercial Accounts Department</font>", ParagraphStyle('PaySgC2', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=2)),
+        Spacer(1, 28),
+        Paragraph("_______________________________________", ParagraphStyle('PaySgL', fontName=FONT_NAME, fontSize=8, leading=10, textColor=colors.HexColor('#94A3B8'), alignment=2)),
+        Paragraph("<b>Authorized Signatory</b>", ParagraphStyle('PaySgA', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)),
+        Paragraph(f"<font size=6.5 color='#64748B'>Date: {date_only}</font>", ParagraphStyle('PaySgD', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR, alignment=2)),
+    ]
+
+    bottom_table = Table([[notes_content, '', sig_content]], colWidths=[315, 20, 210])
+    bottom_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#F8FAFC')),
+        ('BOX', (2, 0), (2, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (2, 0), (2, 0), colors.white),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(KeepTogether(bottom_table))
+    story.append(Spacer(1, 14))
+
+    # 6. Running Footer Bar
+    ftr_data = [[
+        Paragraph(f"<font size=6.5 color='#64748B'>Future Gas Cloud ERP &bull; Official Payables Register &bull; Printed on {now_str}</font>", ParagraphStyle('PayFtrL', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR)),
+        Paragraph("<font size=6.5 color='#64748B'>Confidential &bull; Internal &amp; Regulatory Financial Record</font>", ParagraphStyle('PayFtrR', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR, alignment=2))
+    ]]
+    ftr_table = Table(ftr_data, colWidths=[345, 200])
+    ftr_table.setStyle(TableStyle([
+        ('LINEABOVE', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(ftr_table)
+
+    doc.build(story)
+    return buf.getvalue()

@@ -905,5 +905,71 @@ class ConnectionPackageItem(models.Model):
         return f"Package {self.Package_id} Item {self.Product_id} x {self.Quantity}"
 
 
+class Godown(models.Model):
+    GodownId = models.AutoField(primary_key=True, db_column='GodownId')
+    GodownName = models.CharField(max_length=150, db_column='GodownName')
+    GodownCode = models.CharField(max_length=50, unique=True, db_column='GodownCode')
+    Location = models.CharField(max_length=200, null=True, blank=True, db_column='Location')
+    IsCentral = models.BooleanField(default=False, db_column='IsCentral')
+    IsActive = models.BooleanField(default=True, db_column='IsActive')
+    RouteVehicleDriver = models.ForeignKey(RouteVehicleDriver, on_delete=models.CASCADE, db_column='RouteVehicleDriverId')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"Godown"'
+        ordering = ['-IsCentral', 'GodownName']
+
+    def __str__(self):
+        return f"{self.GodownName} ({self.GodownCode})"
+
+
+class CustomerAdvance(models.Model):
+    AdvanceId = models.BigAutoField(primary_key=True, db_column='AdvanceId')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+    CustomerLedger = models.ForeignKey(Ledger, on_delete=models.CASCADE, db_column='CustomerLedgerId', related_name='advances')
+    Payment = models.ForeignKey(Payment, on_delete=models.CASCADE, null=True, blank=True, db_column='PaymentId', related_name='advances_created')
+    AdvanceNo = models.CharField(max_length=100, db_column='AdvanceNo')
+    AdvanceDate = models.DateField(db_column='AdvanceDate')
+    TotalAmount = models.DecimalField(max_digits=18, decimal_places=2, db_column='TotalAmount')
+    RemainingAmount = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='RemainingAmount')
+    Status = models.CharField(max_length=50, default='ACTIVE', db_column='Status')  # ACTIVE, FULLY_UTILIZED, CANCELLED
+    Narration = models.CharField(max_length=250, null=True, blank=True, db_column='Narration')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"CustomerAdvance"'
+        ordering = ['AdvanceDate', 'AdvanceId']
+
+    def __str__(self):
+        return f"{self.AdvanceNo}: ₹{self.RemainingAmount} remaining of ₹{self.TotalAmount}"
+
+
+class AdvanceAdjustment(models.Model):
+    AdjustmentId = models.BigAutoField(primary_key=True, db_column='AdjustmentId')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+    Advance = models.ForeignKey(CustomerAdvance, on_delete=models.CASCADE, db_column='AdvanceId', related_name='adjustments')
+    Sales = models.ForeignKey(Sales, on_delete=models.CASCADE, db_column='SalesId', related_name='advance_adjustments')
+    CustomerLedger = models.ForeignKey(Ledger, on_delete=models.CASCADE, db_column='CustomerLedgerId', related_name='advance_adjustments')
+    AdjustmentAmount = models.DecimalField(max_digits=18, decimal_places=2, db_column='AdjustmentAmount')
+    AdjustmentDate = models.DateField(db_column='AdjustmentDate')
+    Narration = models.CharField(max_length=250, null=True, blank=True, db_column='Narration')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"AdvanceAdjustment"'
+        ordering = ['AdjustmentDate', 'AdjustmentId']
+
+    def __str__(self):
+        return f"Adj #{self.AdjustmentId}: ₹{self.AdjustmentAmount} on {self.Sales.SalesNo}"
+
+
+
+
 
 

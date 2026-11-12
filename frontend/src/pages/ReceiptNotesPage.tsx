@@ -76,6 +76,16 @@ export const ReceiptNotesPage: React.FC = () => {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [deleteNote, setDeleteNote] = useState<ReceiptNoteItem | null>(null);
+  const [selectedReceivingGodown, setSelectedReceivingGodown] = useState<string>('1');
+
+  // Fetch Godowns for receiving warehouse selection
+  const { data: godowns = [] } = useQuery<any[]>({
+    queryKey: ['godowns'],
+    queryFn: async () => {
+      const res = await apiClient.get('/godowns/');
+      return Array.isArray(res.data) ? res.data : [];
+    },
+  });
 
   // Form State for "Add Receipt Note"
   const [createAllocation, setCreateAllocation] = useState<string | null>(null);
@@ -242,11 +252,14 @@ export const ReceiptNotesPage: React.FC = () => {
     refetchInterval: 10000,
   });
 
-  // Mutation: Verify and Settle Pending Receipt Note into Central Godown
+  // Mutation: Verify and Settle Pending Receipt Note into Selected Godown
   const verifyNoteMutation = useMutation({
-    mutationFn: async (noteId: number) => {
+    mutationFn: async (payload: number | { noteId: number; godownId?: number }) => {
+      const noteId = typeof payload === 'number' ? payload : payload.noteId;
+      const godownId = typeof payload === 'object' ? payload.godownId : undefined;
       const res = await apiClient.post('/receipt-notes/process_receipt_note/', {
         receipt_note_id: noteId,
+        godown_id: godownId,
       });
       return res.data;
     },
@@ -1240,6 +1253,23 @@ export const ReceiptNotesPage: React.FC = () => {
               </Text>
             )}
 
+            {selectedNote.status === 'pending' && (
+              <Select
+                label="Receiving Godown"
+                description="Accept returned cylinders into this godown location"
+                size="xs"
+                value={selectedReceivingGodown}
+                onChange={(val) => setSelectedReceivingGodown(val || '1')}
+                data={(godowns.length > 0 ? godowns : [
+                  { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
+                  { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
+                ]).map((g: any) => ({
+                  value: String(g.GodownId),
+                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
+                }))}
+              />
+            )}
+
             <Group justify="space-between" mt="sm">
               <Button variant="default" onClick={() => setIsDetailModalOpen(false)}>
                 Close
@@ -1248,7 +1278,10 @@ export const ReceiptNotesPage: React.FC = () => {
                 <Button
                   color="burgundy"
                   leftSection={<IconCheck size={16} />}
-                  onClick={() => verifyNoteMutation.mutate(selectedNote.receiptNoteId || selectedNote.deliveryNoteId || Number(selectedNote.id))}
+                  onClick={() => verifyNoteMutation.mutate({
+                    noteId: selectedNote.receiptNoteId || selectedNote.deliveryNoteId || Number(selectedNote.id),
+                    godownId: Number(selectedReceivingGodown) || 1,
+                  })}
                   loading={verifyNoteMutation.isPending}
                   styles={{ root: { backgroundColor: '#800020', fontWeight: 600 } }}
                 >

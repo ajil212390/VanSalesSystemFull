@@ -19,7 +19,7 @@ import {
   Tooltip,
   Loader,
   Center,
-  Modal,
+  Select,
 } from '@mantine/core';
 import {
   IconSearch,
@@ -32,11 +32,11 @@ import {
   IconClock,
   IconCreditCard,
   IconReceipt,
-  IconAlertTriangle,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 
 interface EndRouteDriverLineItem {
   EndRouteDriverLineId: number;
@@ -86,6 +86,18 @@ export const EndAllocationsPage: React.FC = () => {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<EndRouteDriverItem | null>(null);
 
+  // Per-line receiving godown selection
+  const [lineGodowns, setLineGodowns] = useState<Record<number, string>>({});
+
+  // Fetch Godowns
+  const { data: godowns = [] } = useQuery<any[]>({
+    queryKey: ['godowns'],
+    queryFn: async () => {
+      const res = await apiClient.get('/godowns/');
+      return Array.isArray(res.data) ? res.data : [];
+    },
+  });
+
   // Fetch EndRouteDriver data from backend
   const { data: endRouteDrivers = [], isLoading, isRefetching, refetch } = useQuery<EndRouteDriverItem[]>({
     queryKey: ['end-route-drivers'],
@@ -127,8 +139,19 @@ export const EndAllocationsPage: React.FC = () => {
   });
 
   const settleMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiClient.post(`/end-route-drivers/${id}/settle/`);
+    mutationFn: async ({
+      id,
+      godown_id,
+      godown_splits,
+    }: {
+      id: number;
+      godown_id?: number;
+      godown_splits?: any;
+    }) => {
+      const res = await apiClient.post(`/end-route-drivers/${id}/settle/`, {
+        godown_id,
+        godown_splits,
+      });
       return res.data;
     },
     onSuccess: (data) => {
@@ -197,33 +220,64 @@ export const EndAllocationsPage: React.FC = () => {
   const handleOpenDetail = (item: EndRouteDriverItem) => {
     setSelectedItem(item);
     setIsDetailOpen(true);
+
+    const initialLineGodowns: Record<number, string> = {};
+    (item.lines || []).forEach((l) => {
+      const pid = l.Product || l.EndRouteDriverLineId;
+      initialLineGodowns[pid] = '1'; // Default to Central Godown
+    });
+    setLineGodowns(initialLineGodowns);
   };
 
-  // Helper to extract amounts from remarks or ledger
+  const handleApproveSettlement = () => {
+    if (!selectedItem) return;
+
+    const modalLinesList = selectedItem.lines || [];
+    const splitsPayload: Record<number, any[]> = {};
+
+    for (const line of modalLinesList) {
+      const pid = line.Product || line.EndRouteDriverLineId;
+      const targetGid = Number(lineGodowns[pid] || 1);
+      const totalF = Number(line.FilledQty) || 0;
+      const totalE = Number(line.EmptyQty) || 0;
+
+      splitsPayload[pid] = [
+        {
+          godown_id: targetGid,
+          filled_qty: totalF,
+          empty_qty: totalE,
+        },
+      ];
+    }
+
+    settleMutation.mutate({
+      id: selectedItem.EndRouteDriverId,
+      godown_id: 1,
+      godown_splits: splitsPayload,
+    });
+  };
+
+  // Helper to extract amounts from backend API attributes or fallback remarks
   const parseSettlementAmounts = (item: EndRouteDriverItem | null) => {
     if (!item) return { cash: 0, bank: 0, total: 0 };
+
+    // 1. Single Source of Truth: Direct backend API attributes
+    if (item.cash_amount !== undefined && item.cash_amount !== null) {
+      const cash = Number(item.cash_amount) || 0;
+      const bank = Number(item.bank_amount) || 0;
+      return { cash, bank, total: cash + bank };
+    }
+
+    // 2. Fallback for legacy text remarks ONLY if backend fields are completely absent
     let cash = 0;
     let bank = 0;
     const remarks = item.Remarks || '';
 
-    const cashMatch = remarks.match(/cash.*?₹?\s*([\d,.]+)/i);
-    const bankMatch = remarks.match(/(bank|upi).*?₹?\s*([\d,.]+)/i);
+    const cashMatch = remarks.match(/cash[\s:]*₹?\s*([\d,.]+)/i);
+    const bankMatch = remarks.match(/(?:bank|upi)[\s:]*₹?\s*([\d,.]+)/i);
 
-    if (item.cash_amount != null && item.cash_amount > 0) cash = item.cash_amount;
-    else if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
-
-    if (item.bank_amount != null && item.bank_amount > 0) bank = item.bank_amount;
-    else if (bankMatch) bank = parseFloat(bankMatch[2].replace(/,/g, '')) || 0;
-
-    if (cash === 0 && bank === 0) {
-      // If ledger indicates Cash or Bank
-      const lName = (item.ledger_name || '').toLowerCase();
-      const numMatch = remarks.match(/₹?\s*([\d,.]+)/);
-      const amt = numMatch ? parseFloat(numMatch[1].replace(/,/g, '')) : 0;
-      if (lName.includes('cash')) cash = amt;
-      else if (lName.includes('bank')) bank = amt;
-      else cash = amt;
-    }
+    if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
+    if (bankMatch) bank = parseFloat(bankMatch[1].replace(/,/g, '')) || 0;
 
     return { cash, bank, total: cash + bank };
   };
@@ -561,28 +615,61 @@ export const EndAllocationsPage: React.FC = () => {
                       <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                         <Table.Tr>
                           <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>PRODUCT</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>UNIT</Table.Th>
                           <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>LOADED</Table.Th>
                           <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>DELIVERED</Table.Th>
                           <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>UNSOLD (TO GODOWN)</Table.Th>
                           <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textAlign: 'right' }}>EMPTIES (TO GODOWN)</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, width: 220 }}>GODOWN</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
-                        {modalLines.map((line) => (
-                          <Table.Tr key={line.EndRouteDriverLineId}>
-                            <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{line.product_name}</Table.Td>
-                            <Table.Td style={{ fontSize: 12, color: '#64748b' }}>{line.unit_name || 'Nos'}</Table.Td>
-                            <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{line.LoadedQty ?? '-'}</Table.Td>
-                            <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5, color: '#64748b' }}>{line.DeliveredQty ?? '-'}</Table.Td>
-                            <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a' }}>{line.FilledQty}</Table.Td>
-                            <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#800020' }}>{line.EmptyQty}</Table.Td>
-                          </Table.Tr>
-                        ))}
+                        {modalLines.map((line) => {
+                          const pid = line.Product || line.EndRouteDriverLineId;
+                          return (
+                            <Table.Tr key={line.EndRouteDriverLineId}>
+                              <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{line.product_name}</Table.Td>
+                              <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{line.LoadedQty ?? '-'}</Table.Td>
+                              <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5, color: '#64748b' }}>{line.DeliveredQty ?? '-'}</Table.Td>
+                              <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a' }}>{line.FilledQty}</Table.Td>
+                              <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#800020' }}>{line.EmptyQty}</Table.Td>
+                              <Table.Td style={{ width: 220 }}>
+                                {selectedItem.Status?.toUpperCase() === 'PENDING' ? (
+                                  <Select
+                                    size="xs"
+                                    data={(godowns.length > 0 ? godowns : [
+                                      { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
+                                      { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
+                                    ]).map((g: any) => ({
+                                      value: String(g.GodownId),
+                                      label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
+                                    }))}
+                                    value={lineGodowns[pid] || '1'}
+                                    onChange={(val) => {
+                                      if (val) {
+                                        setLineGodowns((prev) => ({ ...prev, [pid]: val }));
+                                      }
+                                    }}
+                                    styles={{
+                                      input: {
+                                        fontWeight: 600,
+                                        fontSize: 12,
+                                        borderColor: '#800020',
+                                      },
+                                    }}
+                                  />
+                                ) : (
+                                  <Badge variant="light" color="burgundy" size="sm">
+                                    {godowns.find((g: any) => String(g.GodownId) === (lineGodowns[pid] || '1'))?.GodownName || 'Main Godown'}
+                                  </Badge>
+                                )}
+                              </Table.Td>
+                            </Table.Tr>
+                          );
+                        })}
                       </Table.Tbody>
                       <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
                         <Table.Tr>
-                          <Table.Td colSpan={2} style={{ fontWeight: 700, fontSize: 12, color: '#0f172a' }}>TOTALS</Table.Td>
+                          <Table.Td style={{ fontWeight: 700, fontSize: 12, color: '#0f172a' }}>TOTALS</Table.Td>
                           <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
                             {modalLines.reduce((s, l) => s + (l.LoadedQty ?? 0), 0)}
                           </Table.Td>
@@ -595,6 +682,7 @@ export const EndAllocationsPage: React.FC = () => {
                           <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#800020' }}>
                             {modalTotalEmpty}
                           </Table.Td>
+                          <Table.Td />
                         </Table.Tr>
                       </Table.Tfoot>
                     </Table>
@@ -632,7 +720,7 @@ export const EndAllocationsPage: React.FC = () => {
                     radius="sm"
                     leftSection={<IconCheck size={16} />}
                     loading={settleMutation.isPending}
-                    onClick={() => settleMutation.mutate(selectedItem.EndRouteDriverId)}
+                    onClick={handleApproveSettlement}
                     style={{
                       backgroundColor: '#800020',
                       color: '#ffffff',
@@ -970,66 +1058,36 @@ export const EndAllocationsPage: React.FC = () => {
         )}
       </Paper>
 
-      {/* Modern, Clean Delete Settlement Confirmation Modal */}
-      <Modal
+      {/* Standard ERP Delete Confirmation Modal */}
+      <DeleteConfirmModal
         opened={!!deleteConfirmItem}
         onClose={() => setDeleteConfirmItem(null)}
-        title={
-          <Group gap="xs">
-            <IconAlertTriangle size={20} color="#dc2626" />
-            <Text fw={700} style={{ color: '#0f172a', fontSize: 16 }}>
-              Delete Shift Settlement Record?
-            </Text>
-          </Group>
-        }
-        centered
-        radius="md"
-        styles={{
-          header: { borderBottom: '1px solid #f1f5f9', paddingBottom: 12 },
-          body: { paddingTop: 16 },
-        }}
-      >
-        {deleteConfirmItem && (
-          <Stack gap="md">
-            <Text size="sm" c="#475569" style={{ lineHeight: 1.5 }}>
-              Are you sure you want to delete settlement record{' '}
-              <strong style={{ color: '#800020' }}>ERD-{deleteConfirmItem.EndRouteDriverId}</strong> for driver{' '}
-              <strong style={{ color: '#0f172a' }}>{deleteConfirmItem.driver_name}</strong> ({deleteConfirmItem.vehicle_number})?
-            </Text>
-
-            <Paper p="xs" radius="sm" style={{ backgroundColor: '#fdf2f4', border: '1px solid #f5c2cb' }}>
-              <Text size="xs" c="#800020" fw={600}>
-                ⚠️ This will reverse empty and filled cylinder unloads back to the vehicle, and restore the driver&apos;s shift to active state.
+        title="Delete Shift Settlement"
+        itemType="shift settlement"
+        itemName={deleteConfirmItem ? `ERD-${deleteConfirmItem.EndRouteDriverId}` : ''}
+        description={
+          deleteConfirmItem ? (
+            <Stack gap="xs">
+              <Text size="sm" c="#334155" style={{ lineHeight: 1.5 }}>
+                Are you sure you want to delete settlement record{' '}
+                <strong style={{ color: '#800020' }}>ERD-{deleteConfirmItem.EndRouteDriverId}</strong> for driver{' '}
+                <strong style={{ color: '#0f172a' }}>{deleteConfirmItem.driver_name}</strong> ({deleteConfirmItem.vehicle_number})?
               </Text>
-            </Paper>
-
-            <Group justify="flex-end" gap="sm" mt="xs">
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => setDeleteConfirmItem(null)}
-                style={{ borderColor: '#cbd5e1', color: '#475569' }}
-              >
-                Cancel
-              </Button>
-              <Button
-                color="red"
-                size="sm"
-                loading={deleteMutation.isPending}
-                onClick={() => {
-                  deleteMutation.mutate(deleteConfirmItem.EndRouteDriverId, {
-                    onSettled: () => setDeleteConfirmItem(null),
-                  });
-                }}
-                leftSection={<IconTrash size={15} />}
-                style={{ backgroundColor: '#dc2626' }}
-              >
-                Delete Settlement
-              </Button>
-            </Group>
-          </Stack>
-        )}
-      </Modal>
+              <Text size="xs" c="dimmed">
+                This will reverse empty and filled cylinder unloads back to the vehicle, and restore the driver&apos;s shift to active state.
+              </Text>
+            </Stack>
+          ) : undefined
+        }
+        loading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (deleteConfirmItem) {
+            deleteMutation.mutate(deleteConfirmItem.EndRouteDriverId, {
+              onSettled: () => setDeleteConfirmItem(null),
+            });
+          }
+        }}
+      />
 
     </Stack>
   );

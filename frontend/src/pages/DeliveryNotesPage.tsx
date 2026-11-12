@@ -30,6 +30,7 @@ import {
   IconBuildingFactory2,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
@@ -70,6 +71,7 @@ interface DeliveryNote {
 
 export const DeliveryNotesPage: React.FC = () => {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [formOpened, setFormOpened] = useState(false);
   const [editingNote, setEditingNote] = useState<DeliveryNote | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -129,6 +131,14 @@ export const DeliveryNotesPage: React.FC = () => {
     refetchGodownStock();
     setFormOpened(true);
   };
+
+  // Auto-open Load Van form if navigation requested ?action=new
+  React.useEffect(() => {
+    if (searchParams.get('action') === 'new') {
+      handleOpenForm();
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams]);
 
   const handleEdit = (dn: DeliveryNote) => {
     setEditingNote(dn);

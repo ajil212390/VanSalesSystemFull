@@ -48,6 +48,22 @@ body,
   background: transparent !important;
 }
 
+/* Ensure Mantine Status badges never truncate "ACTIVE" / "INACTIVE" to "ACTI..." */
+.mantine-Badge-root {
+  overflow: visible !important;
+}
+.mantine-Badge-label {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+}
+
+/* Ensure SegmentedControl active option with dark burgundy indicator always has crisp white text */
+.mantine-SegmentedControl-label[data-active],
+.mantine-SegmentedControl-label[data-active] * {
+  color: #ffffff !important;
+}
+
 .mantine-ScrollArea-thumb {
   background: #cbd5e1 !important;
   border-radius: 9999px !important;

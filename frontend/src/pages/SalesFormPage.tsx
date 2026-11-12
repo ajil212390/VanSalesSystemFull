@@ -23,6 +23,7 @@ import {
   IconPlus,
   IconTrashX,
   IconReceipt2,
+  IconPackage,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -46,9 +47,12 @@ export const SalesFormPage: React.FC = () => {
     new Date().toISOString().split('T')[0]
   );
   const [routeId, setRouteId] = useState<string>('');
+  const [godownId, setGodownId] = useState<string>('1');
   const [customerId, setCustomerId] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<string>('CREDIT');
+  const [selectedConnectionPackage, setSelectedConnectionPackage] = useState<string | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<string>('CASH');
   const [amountPaidNow, setAmountPaidNow] = useState<number | ''>('');
+  const [isPaidUserEdited, setIsPaidUserEdited] = useState<boolean>(false);
   const [notes, setNotes] = useState<string>('');
   const [totalEmptyQty, setTotalEmptyQty] = useState<number>(0);
   const [customGrandTotal, setCustomGrandTotal] = useState<number | ''>('');
@@ -59,6 +63,24 @@ export const SalesFormPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/routes/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
+    },
+  });
+
+  // 1b. Fetch Godowns (to select dispensing warehouse depot)
+  const { data: godowns = [] } = useQuery<any[]>({
+    queryKey: ['godowns'],
+    queryFn: async () => {
+      const res = await apiClient.get('/godowns/');
+      return Array.isArray(res.data) ? res.data : [];
+    },
+  });
+
+  // 1c. Fetch Connection Packages
+  const { data: connectionPackages = [] } = useQuery<any[]>({
+    queryKey: ['connection-packages'],
+    queryFn: async () => {
+      const res = await apiClient.get('/connection-packages/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     },
   });
 
@@ -101,19 +123,6 @@ export const SalesFormPage: React.FC = () => {
     return map;
   }, [customerSpecialPrices]);
 
-  const selectedCustomerObj = useMemo(() => {
-    return ledgers.find((l: any) => String(l.LedgerId) === String(customerId));
-  }, [ledgers, customerId]);
-
-  // Credit Movement Term (Days)
-  const creditDays = Number(selectedCustomerObj?.CreditPeriodDays) || 15;
-  const dueDateStr = useMemo(() => {
-    if (!salesDate) return '';
-    const d = new Date(salesDate);
-    d.setDate(d.getDate() + creditDays);
-    return d.toLocaleDateString('en-GB'); // DD/MM/YYYY
-  }, [salesDate, creditDays]);
-
   // Product map
   const productMap = useMemo(() => {
     const map = new Map<number, any>();
@@ -143,7 +152,7 @@ export const SalesFormPage: React.FC = () => {
     }
   }, [routes, routeId]);
 
-  // Customer options
+  // Customer options (Direct customer ledgers only - no walk-in item)
   const customerOptions = useMemo(() => {
     const debtors = ledgers.filter((l: any) => {
       const gName = (l.group_name || l.GroupName || '').toLowerCase();
@@ -151,14 +160,64 @@ export const SalesFormPage: React.FC = () => {
       return gid === 21 || gName.includes('debtor') || gName.includes('customer');
     });
 
-    const list = debtors.map((c: any) => ({
+    return debtors.map((c: any) => ({
       value: String(c.LedgerId),
       label: `${c.LedgerName}${c.Mobile ? ` (${c.Mobile})` : ''}`,
     }));
-
-    // Prepend Walk-in Cash Customer
-    return [{ value: '', label: 'Walk-in Cash Customer' }, ...list];
   }, [ledgers]);
+
+  // Handle applying a Connection Package into line items
+  const handleApplyConnectionPackage = (pkgId: string | null) => {
+    setSelectedConnectionPackage(pkgId);
+    if (!pkgId) return;
+
+    const pkg = connectionPackages.find((p: any) => String(p.PackageId) === pkgId);
+    if (!pkg) return;
+
+    const newLines: SaleLineItem[] = [];
+
+    // 1. Primary Cylinder
+    if (pkg.CylinderProduct) {
+      const cProd = productMap.get(Number(pkg.CylinderProduct));
+      const cRate = Number(pkg.CylinderRate || cProd?.SalesPrice || 0);
+      const cQty = Number(pkg.CylinderQty || 1);
+      newLines.push({
+        Product: String(pkg.CylinderProduct),
+        Quantity: cQty,
+        EmptyQuantity: 0,
+        SalesPrice: cRate,
+        TaxPercent: Number(cProd?.GSTPercentage || 0),
+        Total: Number((cQty * cRate).toFixed(2)),
+      });
+    }
+
+    // 2. Bundled Accessories
+    (pkg.items || []).forEach((it: any) => {
+      const aProd = productMap.get(Number(it.Product));
+      const aRate = Number(it.UnitPrice || aProd?.SalesPrice || 0);
+      const aQty = Number(it.Quantity || 1);
+      newLines.push({
+        Product: String(it.Product),
+        Quantity: aQty,
+        EmptyQuantity: 0,
+        SalesPrice: aRate,
+        TaxPercent: Number(aProd?.GSTPercentage || 0),
+        Total: Number((aQty * aRate).toFixed(2)),
+      });
+    });
+
+    if (newLines.length > 0) {
+      setLines(newLines);
+      if (!notes) {
+        setNotes(`New Connection: ${pkg.PackageName}`);
+      }
+      notifications.show({
+        title: 'Connection Package Applied',
+        message: `Loaded ${pkg.PackageName} (${newLines.length} items) at ₹${Number(pkg.TotalAmount || 0).toFixed(2)}.`,
+        color: 'burgundy',
+      });
+    }
+  };
 
   // Product options (incorporating Customer-Specific Rates naturally)
   const productOptions = useMemo(() => {
@@ -316,23 +375,33 @@ export const SalesFormPage: React.FC = () => {
     };
   }, [lines]);
 
+  // Fetch Customer Available Advance Balance
+  const { data: customerAdvanceData } = useQuery({
+    queryKey: ['customer-advance', customerId],
+    queryFn: async () => {
+      if (!customerId) return { available_advance: 0 };
+      const res = await apiClient.get(`/ledgers/${customerId}/advance-balance/`);
+      return res.data;
+    },
+    enabled: !!customerId,
+  });
+
+  const availableAdvance = Number(customerAdvanceData?.available_advance || 0);
   const finalGrandTotal = customGrandTotal !== '' ? Number(customGrandTotal) : autoGrandTotal;
+
   const paidVal = Number(amountPaidNow !== '' ? amountPaidNow : (paymentMethod === 'CREDIT' ? 0 : finalGrandTotal));
   const balanceDue = Math.max(0, finalGrandTotal - paidVal);
 
   useEffect(() => {
-    if (paymentMethod !== 'CREDIT') {
-      if (finalGrandTotal > 0) {
-        setAmountPaidNow(finalGrandTotal);
+    // Auto-sync amountPaidNow to finalGrandTotal if CASH and user hasn't manually edited
+    if (!isPaidUserEdited) {
+      if (paymentMethod !== 'CREDIT') {
+        setAmountPaidNow(finalGrandTotal > 0 ? finalGrandTotal : '');
       } else {
-        setAmountPaidNow('');
-      }
-    } else {
-      if (amountPaidNow === 0) {
-        setAmountPaidNow('');
+        setAmountPaidNow(0);
       }
     }
-  }, [finalGrandTotal, paymentMethod]);
+  }, [finalGrandTotal, paymentMethod, isPaidUserEdited]);
 
   // Mutation: Create Sale
   const createSaleMutation = useMutation({
@@ -342,6 +411,12 @@ export const SalesFormPage: React.FC = () => {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['godowns'] });
+      queryClient.invalidateQueries({ queryKey: ['van-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-advance', customerId] });
       notifications.show({
         title: 'Sale Invoice Created',
         message: `Invoice #${data.InvoiceNo || data.SalesNo} generated successfully.`,
@@ -370,16 +445,17 @@ export const SalesFormPage: React.FC = () => {
       return;
     }
 
-    const paidAmountToSend = paymentMethod === 'CREDIT'
-      ? Number(amountPaidNow || 0)
-      : (amountPaidNow !== '' ? Number(amountPaidNow) : finalGrandTotal);
+    const paidNowAmount = amountPaidNow !== '' ? Number(amountPaidNow) : (paymentMethod === 'CREDIT' ? 0 : finalGrandTotal);
 
     const payload = {
       SalesDate: salesDate,
       RouteId: routeId ? Number(routeId) : 1,
+      godown_id: Number(godownId) || 1,
       CustomerLedger: customerId ? Number(customerId) : null,
       PaymentMethod: paymentMethod,
-      PaidAmount: paidAmountToSend,
+      advance_to_adjust: 0,
+      PaidNow: paidNowAmount,
+      PaidAmount: paidNowAmount,
       Notes: notes.trim(),
       TotalEmptyQty: totalEmptyQty,
       GrandTotal: finalGrandTotal,
@@ -430,13 +506,28 @@ export const SalesFormPage: React.FC = () => {
         <Stack gap="md">
           {/* ── Top Parameters Card ── */}
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-            <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
+            <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
               <TextInput
                 label="Sales Date"
                 type="date"
                 required
                 value={salesDate}
                 onChange={(e) => setSalesDate(e.currentTarget.value)}
+              />
+
+              <Select
+                label="Dispensing Godown"
+               
+                data={(godowns.length > 0 ? godowns : [
+                  { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
+                  { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
+                ]).map((g: any) => ({
+                  value: String(g.GodownId),
+                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
+                }))}
+                value={godownId}
+                onChange={(val) => val && setGodownId(val)}
+                required
               />
 
               <Select
@@ -451,27 +542,21 @@ export const SalesFormPage: React.FC = () => {
 
               <Select
                 label="Customer / Buyer"
-                placeholder="Walk-in Cash Customer (Direct)"
+                placeholder="Search & select customer..."
                 data={customerOptions}
                 value={customerId}
                 onChange={(val) => {
                   setCustomerId(val);
-                  if (val) {
-                    setPaymentMethod('CREDIT');
-                    setAmountPaidNow('');
-                  } else {
-                    setPaymentMethod('CASH');
-                    setAmountPaidNow(finalGrandTotal > 0 ? finalGrandTotal : '');
-                  }
+                  setIsPaidUserEdited(false);
                 }}
                 searchable
                 clearable
+                required
               />
 
               <Select
-                label="Payment Method / Terms"
+                label="Payment Method"
                 data={[
-                  { value: 'CREDIT', label: 'Credit / Bill Later (On Account)' },
                   { value: 'CASH', label: 'Cash Payment' },
                   { value: 'UPI', label: 'UPI / Bank Transfer' },
                 ]}
@@ -479,47 +564,65 @@ export const SalesFormPage: React.FC = () => {
                 onChange={(val) => {
                   if (val) {
                     setPaymentMethod(val);
-                    if (val === 'CREDIT') {
-                      setAmountPaidNow('');
-                    } else {
-                      setAmountPaidNow(finalGrandTotal > 0 ? finalGrandTotal : '');
-                    }
                   }
                 }}
                 required
               />
             </SimpleGrid>
 
-            {/* Credit Movement Deadline & Special Rates Notice */}
-            {paymentMethod === 'CREDIT' && selectedCustomerObj && (
-              <Box
-                mt="sm"
-                p="xs"
-                style={{
-                  backgroundColor: '#fcf8f9',
-                  borderRadius: 8,
-                  border: '1px solid #f7d6dc',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: 8,
-                }}
-              >
-                <Group gap="xs">
-                  <Badge variant="filled" color="burgundy" size="sm">
-                    Credit Movement Term: {creditDays} Days
-                  </Badge>
-                  <Text size="xs" fw={600} c="#800020">
-                    Payment Deadline: {dueDateStr}
+            {availableAdvance > 0 && (
+              <Paper p="xs" px="sm" radius="sm" withBorder mt="sm" style={{ backgroundColor: '#fdf8f9', borderColor: '#f2ccd3' }}>
+                <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+                  <Group gap="xs">
+                    <Badge color="burgundy" variant="light" size="sm">Available Advance</Badge>
+                    <Text size="xs" fw={700} c="#800020">
+                      Customer has ₹{availableAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} unallocated advance balance.
+                    </Text>
+                  </Group>
+                  <Text size="xs" c="dimmed">
+                    Advance can be adjusted against bills in Receipt Entry / Bill Allocation.
                   </Text>
                 </Group>
-              </Box>
+              </Paper>
             )}
           </Paper>
 
           {/* ── Line Items Card ── */}
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+            {/* Quick Connection Package Autofill Banner */}
+            {connectionPackages.length > 0 && (
+              <Paper p="xs" px="sm" radius="sm" withBorder mb="md" style={{ backgroundColor: '#fcf8f9', borderColor: '#f7d6dc' }}>
+                <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+                  <Group gap="xs">
+                    <IconPackage size={17} color="#800020" />
+                    <div>
+                      <Text size="xs" fw={700} c="#800020">
+                        Select Connection Package Bundle:
+                      </Text>
+                      <Text size="11px" c="dimmed">
+                        Auto-fills cylinder and bundled accessories at tariff price
+                      </Text>
+                    </div>
+                  </Group>
+                  <Select
+                    size="xs"
+                    placeholder="Choose connection package to auto-fill..."
+                    data={connectionPackages
+                      .filter((p: any) => p.IsActive !== false)
+                      .map((pkg: any) => ({
+                        value: String(pkg.PackageId),
+                        label: `${pkg.PackageName} (₹${Number(pkg.TotalAmount || 0).toFixed(2)})`,
+                      }))}
+                    value={selectedConnectionPackage}
+                    onChange={handleApplyConnectionPackage}
+                    clearable
+                    searchable
+                    style={{ minWidth: 280 }}
+                  />
+                </Group>
+              </Paper>
+            )}
+
             <Group justify="space-between" align="center" mb="sm">
               <Text fw={700} size="sm" c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
                 Delivered Products &amp; Cylinders ({lines.length})
@@ -680,9 +783,6 @@ export const SalesFormPage: React.FC = () => {
                     onChange={(val) => {
                       const nextVal = val !== '' ? Number(val) : '';
                       setCustomGrandTotal(nextVal);
-                      if (paymentMethod !== 'CREDIT') {
-                        setAmountPaidNow(typeof nextVal === 'number' && nextVal > 0 ? nextVal : '');
-                      }
                     }}
                     style={{ width: 160 }}
                     styles={{
@@ -705,10 +805,12 @@ export const SalesFormPage: React.FC = () => {
                     size="sm"
                     decimalScale={2}
                     min={0}
-                    max={finalGrandTotal}
                     placeholder="0.00"
                     value={amountPaidNow !== '' ? amountPaidNow : ''}
-                    onChange={(val) => setAmountPaidNow(val !== '' ? Number(val) : '')}
+                    onChange={(val) => {
+                      setIsPaidUserEdited(true);
+                      setAmountPaidNow(val !== '' ? Number(val) : '');
+                    }}
                     style={{ width: 160 }}
                     styles={{
                       input: {

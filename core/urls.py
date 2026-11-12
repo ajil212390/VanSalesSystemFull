@@ -8,11 +8,12 @@ from core.views import (
     CategoryViewSet, UnitViewSet, ProductViewSet,
     GroupViewSet, LedgerViewSet, ProductPriceAuditViewSet, CustomerProductPriceViewSet,
     PurchaseViewSet, PaymentViewSet, LedgerLineViewSet, DeliveryNoteViewSet, ReceiptNoteViewSet,
-    EndRouteDriverViewSet, SalesViewSet, ConnectionPackageViewSet
+    EndRouteDriverViewSet, SalesViewSet, ConnectionPackageViewSet, GodownViewSet
 )
 
 
 router = DefaultRouter()
+router.register(r'godowns', GodownViewSet, basename='godown')
 router.register(r'drivers', DriverViewSet, basename='driver')
 router.register(r'vehicles', VehicleViewSet, basename='vehicle')
 router.register(r'routes', RouteViewSet, basename='route')

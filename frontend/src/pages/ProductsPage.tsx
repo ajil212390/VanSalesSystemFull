@@ -52,6 +52,10 @@ interface ProductItem {
   UpdatedAt: string;
   CompanyId: number;
   delete_block_reason?: string | null;
+  opening_filled?: number;
+  opening_empty?: number;
+  opening_rate?: number;
+  opening_amount?: number;
 }
 
 interface CategoryOption {
@@ -78,6 +82,9 @@ interface ProductFormValues {
   PurchasePrice: number | string;
   MRP: number | string;
   IsActive: boolean;
+  opening_filled_qty: number | string;
+  opening_empty_qty: number | string;
+  opening_cost_rate: number | string;
 }
 
 const defaultProductValues: ProductFormValues = {
@@ -94,6 +101,9 @@ const defaultProductValues: ProductFormValues = {
   PurchasePrice: '',
   MRP: '',
   IsActive: true,
+  opening_filled_qty: '',
+  opening_empty_qty: '',
+  opening_cost_rate: '',
 };
 
 export const ProductsPage: React.FC = () => {
@@ -139,10 +149,17 @@ export const ProductsPage: React.FC = () => {
     handleSubmit,
     control,
     reset,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ProductFormValues>({
     defaultValues: defaultProductValues,
   });
+
+  const [watchFilled, watchCostRate] = watch([
+    'opening_filled_qty',
+    'opening_cost_rate',
+  ]);
+  const liveOpeningValue = (Number(watchFilled) || 0) * (Number(watchCostRate) || 0);
 
   // Save / Update mutation
   const saveMutation = useMutation({
@@ -160,6 +177,9 @@ export const ProductsPage: React.FC = () => {
         SalesPrice: data.SalesPrice !== '' && data.SalesPrice !== null ? Number(data.SalesPrice) : 0,
         PurchasePrice: data.PurchasePrice !== '' && data.PurchasePrice !== null ? Number(data.PurchasePrice) : 0,
         MRP: data.MRP !== '' && data.MRP !== null ? Number(data.MRP) : 0,
+        opening_filled_qty: data.opening_filled_qty !== '' && data.opening_filled_qty !== null ? Number(data.opening_filled_qty) : 0,
+        opening_empty_qty: data.opening_empty_qty !== '' && data.opening_empty_qty !== null ? Number(data.opening_empty_qty) : 0,
+        opening_cost_rate: data.opening_cost_rate !== '' && data.opening_cost_rate !== null ? Number(data.opening_cost_rate) : 0,
         IsActive: data.IsActive,
       };
 
@@ -260,6 +280,9 @@ export const ProductsPage: React.FC = () => {
       PurchasePrice: product.PurchasePrice !== null && product.PurchasePrice !== undefined ? Number(product.PurchasePrice) : '',
       MRP: product.MRP !== null && product.MRP !== undefined ? Number(product.MRP) : '',
       IsActive: product.IsActive,
+      opening_filled_qty: product.opening_filled !== undefined && product.opening_filled > 0 ? product.opening_filled : '',
+      opening_empty_qty: product.opening_empty !== undefined && product.opening_empty > 0 ? product.opening_empty : '',
+      opening_cost_rate: product.opening_rate !== undefined && product.opening_rate > 0 ? product.opening_rate : (product.PurchasePrice || ''),
     });
     setFormOpened(true);
   };
@@ -586,7 +609,88 @@ export const ProductsPage: React.FC = () => {
                   />
                 </SimpleGrid>
 
-                {/* Row 5: Status Switch on Left, Action Buttons on Right */}
+                {/* Row 5: Initial Godown Inventory (Opening Stock) */}
+                <Paper
+                  p="sm"
+                  radius="sm"
+                  withBorder
+                  style={{
+                    backgroundColor: '#fafbfc',
+                    borderColor: '#e2e8f0',
+                  }}
+                >
+                  <Group justify="space-between" align="center" mb="xs">
+                    <div>
+                      <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Initial Godown Inventory (Opening Stock)
+                      </Text>
+                      <Text size="xs" c="dimmed">
+                        Set beginning physical stock in Central Godown. Generates opening ledger stock movements automatically.
+                      </Text>
+                    </div>
+                    {liveOpeningValue > 0 && (
+                      <Badge variant="light" color="burgundy" size="md">
+                        Total Value: ₹{liveOpeningValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Badge>
+                    )}
+                  </Group>
+
+                  <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                    <Controller
+                      name="opening_filled_qty"
+                      control={control}
+                      render={({ field }) => (
+                        <NumberInput
+                          label="Opening Filled Qty (Godown)"
+                          placeholder="0"
+                          min={0}
+                          decimalScale={0}
+                          hideControls
+                          value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
+                          onChange={(val) => field.onChange(val === '' ? '' : val)}
+                          description="Full cylinders ready in warehouse"
+                        />
+                      )}
+                    />
+
+                    <Controller
+                      name="opening_empty_qty"
+                      control={control}
+                      render={({ field }) => (
+                        <NumberInput
+                          label="Opening Empty Qty (Godown)"
+                          placeholder="0"
+                          min={0}
+                          decimalScale={0}
+                          hideControls
+                          value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
+                          onChange={(val) => field.onChange(val === '' ? '' : val)}
+                          description="Empty cylinders on hand in godown"
+                        />
+                      )}
+                    />
+
+                    <Controller
+                      name="opening_cost_rate"
+                      control={control}
+                      render={({ field }) => (
+                        <NumberInput
+                          label="Cost Rate per Unit (₹)"
+                          placeholder="0.00"
+                          min={0}
+                          decimalScale={2}
+                          prefix="₹ "
+                          hideControls
+                          value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
+                          onChange={(val) => field.onChange(val === '' ? '' : val)}
+                          description="Inward inventory valuation rate"
+                        />
+                      )}
+                    />
+                  </SimpleGrid>
+                </Paper>
+
+                {/* Row 6: Status Switch on Left, Action Buttons on Right */}
                 <Group justify="space-between" align="center" wrap="wrap" gap="md" mt="xs">
                   <Controller
                     name="IsActive"

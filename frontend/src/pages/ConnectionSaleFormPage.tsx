@@ -37,6 +37,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
   );
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [routeId, setRouteId] = useState<string>('');
+  const [godownId, setGodownId] = useState<string>('1');
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<string>('CASH');
   const [notes, setNotes] = useState<string>('');
@@ -51,7 +52,16 @@ export const ConnectionSaleFormPage: React.FC = () => {
     },
   });
 
-  // 2. Fetch Routes (POS)
+  // 2. Fetch Godowns
+  const { data: godowns = [] } = useQuery<any[]>({
+    queryKey: ['godowns'],
+    queryFn: async () => {
+      const res = await apiClient.get('/godowns/');
+      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+    },
+  });
+
+  // 3. Fetch Routes (POS)
   const { data: routes = [] } = useQuery<any[]>({
     queryKey: ['routes'],
     queryFn: async () => {
@@ -60,7 +70,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
     },
   });
 
-  // 3. Fetch Customers (Sundry Debtors)
+  // 4. Fetch Customers (Sundry Debtors)
   const { data: ledgers = [] } = useQuery<any[]>({
     queryKey: ['ledgers'],
     queryFn: async () => {
@@ -114,7 +124,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
     }));
   }, [routes]);
 
-  // Customer dropdown options
+  // Customer dropdown options (Registered customer accounts only - no generic walk-in)
   const customerOptions = useMemo(() => {
     const debtors = ledgers.filter((l: any) => {
       const gName = (l.group_name || l.GroupName || '').toLowerCase();
@@ -122,12 +132,10 @@ export const ConnectionSaleFormPage: React.FC = () => {
       return gid === 21 || gName.includes('debtor') || gName.includes('customer');
     });
 
-    const list = debtors.map((c: any) => ({
+    return debtors.map((c: any) => ({
       value: String(c.LedgerId),
       label: `${c.LedgerName}${c.Mobile ? ` (${c.Mobile})` : ''}`,
     }));
-
-    return [{ value: '', label: 'Walk-in Cash Customer' }, ...list];
   }, [ledgers]);
 
   // Mutation: Create Connection Sale
@@ -140,9 +148,14 @@ export const ConnectionSaleFormPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['sales'] });
       queryClient.invalidateQueries({ queryKey: ['ledgers'] });
       queryClient.invalidateQueries({ queryKey: ['connection-packages'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['godowns'] });
+      queryClient.invalidateQueries({ queryKey: ['van-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
       notifications.show({
         title: 'New Connection Sale Completed',
-        message: `Invoice ${data.InvoiceNo || data.SalesNo} recorded. Stock decremented for cylinder & accessories.`,
+        message: `Invoice ${data.InvoiceNo || data.SalesNo} recorded. Stock decremented from ${godowns.find((g: any) => String(g.GodownId) === godownId)?.GodownName || 'Main Godown'}.`,
         color: 'teal',
       });
       navigate('/sales');
@@ -162,6 +175,15 @@ export const ConnectionSaleFormPage: React.FC = () => {
       notifications.show({
         title: 'Package Required',
         message: 'Please select a Connection Package to sell.',
+        color: 'red',
+      });
+      return;
+    }
+
+    if (!customerId) {
+      notifications.show({
+        title: 'Customer Required',
+        message: 'Please choose a customer account to register this new connection.',
         color: 'red',
       });
       return;
@@ -195,6 +217,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
     const payload = {
       SalesDate: salesDate,
       RouteId: routeId ? Number(routeId) : undefined,
+      godown_id: Number(godownId) || 1,
       CustomerLedger: customerId ? Number(customerId) : null,
       PaymentMethod: paymentMethod,
       Notes: `New Connection: ${activePackage.PackageName}${notes ? ` | ${notes}` : ''}`,
@@ -267,8 +290,62 @@ export const ConnectionSaleFormPage: React.FC = () => {
               )}
             </Group>
 
+            {/* Visual Package Quick-Select Cards */}
+            {packages.length > 0 && (
+              <Box mb="md">
+                <Text size="xs" fw={600} c="dimmed" mb={6}>
+                  Quick Select Package:
+                </Text>
+                <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="sm">
+                  {packages
+                    .filter((p: any) => p.IsActive !== false)
+                    .map((pkg: any) => {
+                      const isSelected = String(pkg.PackageId) === selectedPackageId;
+                      return (
+                        <Paper
+                          key={pkg.PackageId}
+                          p="sm"
+                          radius="md"
+                          withBorder
+                          onClick={() => setSelectedPackageId(String(pkg.PackageId))}
+                          style={{
+                            cursor: 'pointer',
+                            borderColor: isSelected ? '#800020' : '#e2e8f0',
+                            borderWidth: isSelected ? 2 : 1,
+                            backgroundColor: isSelected ? '#fdf2f4' : '#fafafa',
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          <Group justify="space-between" align="flex-start" wrap="nowrap">
+                            <Group gap="xs" wrap="nowrap">
+                              <IconFlame size={20} color={isSelected ? '#800020' : '#64748b'} />
+                              <div>
+                                <Text size="xs" fw={700} style={{ color: isSelected ? '#800020' : '#1e293b' }}>
+                                  {pkg.PackageName}
+                                </Text>
+                                <Text size="11px" c="dimmed">
+                                  {pkg.cylinder_name || 'Gas Cylinder Bundle'}
+                                </Text>
+                              </div>
+                            </Group>
+                            <Badge
+                              size="sm"
+                              variant={isSelected ? 'filled' : 'light'}
+                              color="burgundy"
+                              style={isSelected ? { backgroundColor: '#800020' } : undefined}
+                            >
+                              ₹{Number(pkg.TotalAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Badge>
+                          </Group>
+                        </Paper>
+                      );
+                    })}
+                </SimpleGrid>
+              </Box>
+            )}
+
             <Select
-              label="Connection Package"
+              label="Or Search Connection Package"
               placeholder={isLoadingPackages ? 'Loading packages...' : 'Choose connection package to issue...'}
               data={packageOptions}
               value={selectedPackageId}
@@ -369,13 +446,28 @@ export const ConnectionSaleFormPage: React.FC = () => {
               2. Transaction &amp; Customer Details
             </Text>
 
-            <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
+            <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
               <TextInput
                 label="Sales Date"
                 type="date"
                 required
                 value={salesDate}
                 onChange={(e) => setSalesDate(e.currentTarget.value)}
+              />
+
+              <Select
+                label="Dispensing Godown"
+                
+                data={(godowns.length > 0 ? godowns : [
+                  { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
+                  { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
+                ]).map((g: any) => ({
+                  value: String(g.GodownId),
+                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
+                }))}
+                value={godownId}
+                onChange={(val) => val && setGodownId(val)}
+                required
               />
 
               <Select
@@ -395,7 +487,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
                 value={customerId}
                 onChange={(val) => setCustomerId(val)}
                 searchable
-                clearable
+                required
               />
 
               <Select

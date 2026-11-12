@@ -16,6 +16,7 @@ import {
   Divider,
   Box,
   Modal,
+  Badge,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -381,6 +382,40 @@ export const ReceiptFormPage: React.FC = () => {
         }
       });
 
+      const rowAmount = Number(row.amount) || 0;
+      const totalPending = mapped.reduce(
+        (acc, b) => acc + (b.BillReference !== 'CUSTOMER ADVANCE' ? b.PendingBalance : 0),
+        0
+      );
+
+      // Add or sync Customer Advance row if receipt amount exceeds pending bills, or if party has no bills
+      if (rowAmount > totalPending || mapped.length === 0 || existingAllocMap.has('CUSTOMER ADVANCE')) {
+        const excess = Math.max(0, rowAmount - totalPending);
+        const existingAdv = existingAllocMap.get('CUSTOMER ADVANCE');
+        const advAlloc = existingAdv !== undefined ? existingAdv : excess;
+
+        const advRowIdx = mapped.findIndex((m) => m.BillReference === 'CUSTOMER ADVANCE');
+        const advItem: BillAllocationItem = {
+          PurchaseId: 0,
+          SalesId: 0,
+          BillReference: 'CUSTOMER ADVANCE',
+          BillDate: new Date().toISOString().split('T')[0],
+          BillType: 'ADVANCE',
+          InvoiceNo: 'Customer Advance / Unallocated Advance',
+          GrandTotal: excess || rowAmount,
+          AllocatedSoFar: 0,
+          PendingBalance: Math.max(excess, rowAmount, advAlloc),
+          AllocatedAmount: advAlloc,
+          PaymentHistory: [],
+        };
+
+        if (advRowIdx >= 0) {
+          mapped[advRowIdx] = advItem;
+        } else {
+          mapped.push(advItem);
+        }
+      }
+
       setModalAllocations(mapped);
     } catch {
       notifications.show({
@@ -419,7 +454,7 @@ export const ReceiptFormPage: React.FC = () => {
     });
   };
 
-  // Auto Fill (F12) — Allocates voucher line amount to bills in FIFO order
+  // Auto Fill (F12) — Allocates voucher line amount to bills in FIFO order; any excess goes to Customer Advance
   const handleAutoFill = () => {
     const rowAmount = activeRowIndex !== null ? Number(rows[activeRowIndex].amount) || 0 : 0;
     if (rowAmount <= 0) {
@@ -433,7 +468,8 @@ export const ReceiptFormPage: React.FC = () => {
 
     setModalAllocations((prev) => {
       let remaining = rowAmount;
-      const updated = prev.map((bill) => {
+      const nonAdvance = prev.filter((b) => b.BillReference !== 'CUSTOMER ADVANCE');
+      const updatedNonAdvance = nonAdvance.map((bill) => {
         if (remaining <= 0) {
           return { ...bill, AllocatedAmount: 0 };
         }
@@ -441,7 +477,34 @@ export const ReceiptFormPage: React.FC = () => {
         remaining = Math.max(0, remaining - alloc);
         return { ...bill, AllocatedAmount: alloc };
       });
-      return updated;
+
+      // Customer Advance gets any remaining excess!
+      if (remaining > 0 || prev.some((b) => b.BillReference === 'CUSTOMER ADVANCE')) {
+        const existingAdv = prev.find((b) => b.BillReference === 'CUSTOMER ADVANCE');
+        const advAlloc = remaining;
+        const advRow: BillAllocationItem = existingAdv
+          ? {
+              ...existingAdv,
+              PendingBalance: Math.max(existingAdv.PendingBalance, advAlloc),
+              AllocatedAmount: advAlloc,
+            }
+          : {
+              PurchaseId: 0,
+              SalesId: 0,
+              BillReference: 'CUSTOMER ADVANCE',
+              BillDate: new Date().toISOString().split('T')[0],
+              BillType: 'ADVANCE',
+              InvoiceNo: 'Customer Advance / Unallocated Advance',
+              GrandTotal: advAlloc,
+              AllocatedSoFar: 0,
+              PendingBalance: advAlloc,
+              AllocatedAmount: advAlloc,
+              PaymentHistory: [],
+            };
+        return [...updatedNonAdvance, advRow];
+      }
+
+      return updatedNonAdvance;
     });
   };
 
@@ -465,7 +528,7 @@ export const ReceiptFormPage: React.FC = () => {
     const validAllocations = modalAllocations.filter((a) => a.AllocatedAmount > 0);
     const sumAllocated = validAllocations.reduce((acc, a) => acc + a.AllocatedAmount, 0);
 
-    if (modalAllocations.some((b) => b.AllocatedAmount > b.PendingBalance)) {
+    if (modalAllocations.some((b) => b.BillReference !== 'CUSTOMER ADVANCE' && b.AllocatedAmount > b.PendingBalance)) {
       notifications.show({
         title: 'Amount Exceeded',
         message: 'One or more allocated amounts exceed the bill pending balance.',
@@ -509,7 +572,9 @@ export const ReceiptFormPage: React.FC = () => {
     const totalAllocated = modalAllocations.reduce((sum, r) => sum + r.AllocatedAmount, 0);
     const rowAmt = activeRowIndex !== null ? Number(rows[activeRowIndex].amount) || 0 : 0;
     const remaining = rowAmt - totalAllocated;
-    const hasOverBalance = modalAllocations.some((b) => b.AllocatedAmount > b.PendingBalance);
+    const hasOverBalance = modalAllocations.some(
+      (b) => b.BillReference !== 'CUSTOMER ADVANCE' && b.AllocatedAmount > b.PendingBalance
+    );
     const hasOverRowAmt = rowAmt > 0 && totalAllocated > rowAmt;
     const hasError = hasOverBalance || hasOverRowAmt;
 
@@ -1130,17 +1195,17 @@ export const ReceiptFormPage: React.FC = () => {
             <Box style={{ width: '100%' }}>
               <Table verticalSpacing={2} horizontalSpacing="xs" highlightOnHover>
                 <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
-                  <Table.Tr style={{ height: 28 }}>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, width: 45 }}>SL NO</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, width: 105 }}>BILL REF NO</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, width: 105 }}>BILL DATE</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 125 }}>TOTAL BILL (₹)</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 125 }}>PAID (₹)</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 125 }}>PENDING (₹)</Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 135 }}>
+                  <Table.Tr style={{ height: 30 }}>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, width: 55, fontWeight: 700 }}>SL NO</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, width: 175, fontWeight: 700 }}>BILL REF NO</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, width: 105, fontWeight: 700 }}>BILL DATE</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 120, fontWeight: 700 }}>TOTAL BILL (₹)</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 110, fontWeight: 700 }}>PAID (₹)</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 120, fontWeight: 700 }}>PENDING (₹)</Table.Th>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'right', width: 130, fontWeight: 700 }}>
                       ALLOCATE (₹)
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'center', width: 95 }}>
+                    <Table.Th style={{ color: '#475569', fontSize: 11, textAlign: 'center', width: 85, fontWeight: 700 }}>
                       ACTION
                     </Table.Th>
                   </Table.Tr>
@@ -1149,59 +1214,115 @@ export const ReceiptFormPage: React.FC = () => {
                   {modalAllocations.map((bill, bIdx) => {
                     const hasHistory = bill.PaymentHistory && bill.PaymentHistory.length > 0;
                     const isExpanded = expandedBillRef === bill.BillReference;
+                    const isAdvanceRow = bill.BillReference === 'CUSTOMER ADVANCE';
 
                     return (
                       <React.Fragment key={`${bill.BillReference}_${bIdx}`}>
-                        <Table.Tr style={{ height: 32 }}>
+                        <Table.Tr
+                          style={{
+                            height: 34,
+                            backgroundColor: isAdvanceRow ? '#fdf8f9' : undefined,
+                            borderLeft: isAdvanceRow ? '3px solid #800020' : undefined,
+                          }}
+                        >
                           <Table.Td>
-                            <Text size="xs" c="dimmed">
-                              {bIdx + 1}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td>
-                            <Text size="xs" fw={600} c="#1e293b">
-                              {bill.BillReference}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td>
-                            <Text size="xs" c="#475569">
-                              {bill.BillDate}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td style={{ textAlign: 'right' }}>
-                            <Text size="xs" fw={600} c="#0f172a">
-                              ₹{bill.GrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </Text>
-                          </Table.Td>
-                          <Table.Td style={{ textAlign: 'right' }}>
-                            <Group gap={4} justify="flex-end" align="center" wrap="nowrap">
-                              <Text size="xs" fw={600} c={bill.AllocatedSoFar > 0 ? '#15803d' : '#64748b'}>
-                                ₹{bill.AllocatedSoFar.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            {isAdvanceRow ? (
+                              <Badge
+                                size="xs"
+                                variant="outline"
+                                color="burgundy"
+                                radius="sm"
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  height: 19,
+                                  borderColor: '#e2cbd0',
+                                  color: '#800020',
+                                  padding: '0 5px',
+                                }}
+                              >
+                                ADV
+                              </Badge>
+                            ) : (
+                              <Text size="xs" c="dimmed">
+                                {bIdx + 1}
                               </Text>
-                              {bill.AllocatedSoFar > 0 && (
-                                <Box
-                                  component="button"
-                                  type="button"
-                                  onClick={() => setExpandedBillRef(isExpanded ? null : bill.BillReference)}
+                            )}
+                          </Table.Td>
+                          <Table.Td>
+                            {isAdvanceRow ? (
+                              <Group gap={6} align="center" wrap="nowrap">
+                                <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                                  Customer Advance
+                                </Text>
+                                <Badge
+                                  size="xs"
+                                  variant="light"
+                                  color="burgundy"
+                                  radius="sm"
                                   style={{
-                                    border: 'none',
-                                    background: 'transparent',
-                                    cursor: 'pointer',
-                                    padding: '2px 4px',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
+                                    fontSize: 9.5,
+                                    fontWeight: 600,
+                                    height: 18,
+                                    backgroundColor: '#f5e6e8',
                                     color: '#800020',
+                                    border: '1px solid #e8c5cb',
+                                    textTransform: 'none',
+                                    padding: '0 5px',
                                   }}
-                                  title="View Payment Breakdown"
                                 >
-                                  {isExpanded ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
-                                </Box>
-                              )}
-                            </Group>
+                                  Unallocated
+                                </Badge>
+                              </Group>
+                            ) : (
+                              <Text size="xs" fw={600} c="#1e293b">
+                                {bill.BillReference}
+                              </Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td>
+                            <Text size="xs" c={isAdvanceRow ? '#800020' : '#475569'} fw={isAdvanceRow ? 600 : 400}>
+                              {isAdvanceRow ? 'On Account' : bill.BillDate}
+                            </Text>
                           </Table.Td>
                           <Table.Td style={{ textAlign: 'right' }}>
-                            <Text size="xs" fw={700} c="#800020">
-                              ₹{bill.PendingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            <Text size="xs" fw={600} c={isAdvanceRow ? 'dimmed' : '#0f172a'}>
+                              {isAdvanceRow ? '—' : `₹${bill.GrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
+                            </Text>
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            {isAdvanceRow ? (
+                              <Text size="xs" c="dimmed">—</Text>
+                            ) : (
+                              <Group gap={4} justify="flex-end" align="center" wrap="nowrap">
+                                <Text size="xs" fw={600} c={bill.AllocatedSoFar > 0 ? '#15803d' : '#64748b'}>
+                                  ₹{bill.AllocatedSoFar.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </Text>
+                                {bill.AllocatedSoFar > 0 && (
+                                  <Box
+                                    component="button"
+                                    type="button"
+                                    onClick={() => setExpandedBillRef(isExpanded ? null : bill.BillReference)}
+                                    style={{
+                                      border: 'none',
+                                      background: 'transparent',
+                                      cursor: 'pointer',
+                                      padding: '2px 4px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      color: '#800020',
+                                    }}
+                                    title="View Payment Breakdown"
+                                  >
+                                    {isExpanded ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
+                                  </Box>
+                                )}
+                              </Group>
+                            )}
+                          </Table.Td>
+                          <Table.Td style={{ textAlign: 'right' }}>
+                            <Text size="xs" fw={700} c={isAdvanceRow ? '#800020' : '#800020'}>
+                              {isAdvanceRow ? '—' : `₹${bill.PendingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
                             </Text>
                           </Table.Td>
                           <Table.Td style={{ textAlign: 'right', paddingRight: 4 }}>
@@ -1209,7 +1330,7 @@ export const ReceiptFormPage: React.FC = () => {
                               size="xs"
                               radius="sm"
                               min={0}
-                              max={bill.PendingBalance}
+                              max={isAdvanceRow ? undefined : bill.PendingBalance}
                               decimalScale={2}
                               hideControls
                               prefix="₹ "
@@ -1218,24 +1339,29 @@ export const ReceiptFormPage: React.FC = () => {
                               onChange={(val) => handleModalAllocChange(bIdx, val)}
                               styles={{
                                 input: {
-                                  height: 24,
-                                  minHeight: 24,
+                                  height: 25,
+                                  minHeight: 25,
                                   fontWeight: 600,
                                   fontSize: 12,
                                   textAlign: 'right',
                                   borderColor:
-                                    bill.AllocatedAmount > bill.PendingBalance
+                                    !isAdvanceRow && bill.AllocatedAmount > bill.PendingBalance
                                       ? '#dc2626'
                                       : bill.AllocatedAmount > 0
-                                      ? '#16a34a'
+                                      ? '#800020'
                                       : '#cbd5e1',
                                   backgroundColor:
-                                    bill.AllocatedAmount > bill.PendingBalance
+                                    !isAdvanceRow && bill.AllocatedAmount > bill.PendingBalance
                                       ? '#fef2f2'
                                       : bill.AllocatedAmount > 0
-                                      ? '#f0fdf4'
+                                      ? '#fdf2f4'
                                       : '#ffffff',
-                                  color: bill.AllocatedAmount > bill.PendingBalance ? '#dc2626' : '#0f172a',
+                                  color:
+                                    !isAdvanceRow && bill.AllocatedAmount > bill.PendingBalance
+                                      ? '#dc2626'
+                                      : bill.AllocatedAmount > 0
+                                      ? '#800020'
+                                      : '#0f172a',
                                 },
                               }}
                             />

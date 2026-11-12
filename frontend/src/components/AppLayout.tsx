@@ -41,6 +41,7 @@ import {
   IconChevronDown,
   IconExternalLink,
   IconReceipt,
+  IconCash,
   IconCreditCard,
   IconChartBar,
   IconBell,
@@ -157,6 +158,8 @@ export const AppLayout: React.FC = () => {
         return { section: 'Receipt', title: 'Receipt Vouchers' };
       case '/receipts/new':
         return { section: 'Receipt', title: 'New Receipt' };
+      case '/collections':
+        return { section: 'Finance', title: 'Collections & Inflow' };
       case '/delivery-notes':
         return { section: 'Operations', title: 'Delivery Notes' };
       case '/receipt-notes':
@@ -970,6 +973,7 @@ export const AppLayout: React.FC = () => {
         {renderDirectNavItem('Purchase', '/purchases', IconShoppingCart, location.pathname.startsWith('/purchases'))}
         {renderDirectNavItem('Payment', '/payments', IconCreditCard, location.pathname.startsWith('/payments'))}
         {renderDirectNavItem('Receipt', '/receipts', IconReceipt, location.pathname.startsWith('/receipts'))}
+        {renderDirectNavItem('Collections', '/collections', IconCash, location.pathname.startsWith('/collections'))}
         {renderDirectNavItem('Delivery Notes', '/delivery-notes', IconClipboardList, location.pathname === '/delivery-notes')}
         {renderDirectNavItem('Receipt Notes', '/receipt-notes', IconPackageImport, location.pathname === '/receipt-notes')}
         {renderDirectNavItem('Stock Analysis', '/stock-analysis', IconChartBar, location.pathname === '/stock-analysis')}

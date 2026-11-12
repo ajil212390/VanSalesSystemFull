@@ -9,6 +9,7 @@ import {
   Button,
   Modal,
   TextInput,
+  SegmentedControl,
 } from '@mantine/core';
 import {
   IconReceipt,
@@ -119,12 +120,12 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
       onMouseLeave={() => setIsHovered(false)}
       style={{
         backgroundColor: '#ffffff',
-        border: `1px solid ${isHovered ? '#f5b5c2' : '#eef2f6'}`,
+        border: `1px solid ${isHovered ? '#cbd5e1' : '#eef2f6'}`,
         borderRadius: '18px',
         cursor: 'pointer',
         padding: '20px 22px',
         boxShadow: isHovered
-          ? '0 16px 30px -4px rgba(128, 0, 32, 0.09), 0 6px 14px -2px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(128, 0, 32, 0.16)'
+          ? '0 12px 24px -4px rgba(15, 23, 42, 0.08), 0 4px 8px -2px rgba(15, 23, 42, 0.04)'
           : '0 4px 14px 0 rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.03)',
         transform: isHovered ? 'translateY(-3px)' : 'none',
         transition: 'transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms ease',
@@ -133,9 +134,10 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
         flexDirection: 'column',
         justifyContent: 'space-between',
         minHeight: 148,
+        outline: 'none',
       }}
     >
-      {/* Card Header: Title + Soft Tinted Icon Pill */}
+      {/* Card Header: Title + Icon */}
       <Group justify="space-between" align="center" mb="xs" wrap="nowrap">
         <Text
           size="xs"
@@ -148,17 +150,12 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
         </Text>
         <Box
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: 12,
-            backgroundColor: isHovered ? '#fae8eb' : '#fdf2f4',
-            color: '#800020',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             flexShrink: 0,
-            transform: isHovered ? 'scale(1.05)' : 'none',
-            transition: 'all 200ms ease',
+            transform: isHovered ? 'scale(1.08)' : 'none',
+            transition: 'transform 200ms ease',
           }}
         >
           {icon}
@@ -238,7 +235,7 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
 export const DashboardPage: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
-  const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'quarter' | 'custom'>('all');
+  const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
   const [customDates, setCustomDates] = useState<{ from: string; to: string }>({
     from: new Date().toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0],
@@ -374,16 +371,6 @@ export const DashboardPage: React.FC = () => {
       };
     }
 
-    if (timeFilter === 'quarter') {
-      const qMonth = Math.floor(now.getMonth() / 3) * 3;
-      const start = new Date(now.getFullYear(), qMonth, 1);
-      return {
-        start: start.toISOString().split('T')[0],
-        end: todayStr,
-        label: 'This Quarter',
-      };
-    }
-
     if (timeFilter === 'custom') {
       return {
         start: customDates.from || '2000-01-01',
@@ -430,6 +417,20 @@ export const DashboardPage: React.FC = () => {
   }, [customerReceipts, dateRange]);
 
   // Row 1 Calculations: Purchases & Payables
+  const totalSupplierOpeningPayable = useMemo(() => {
+    return ledgers
+      .filter((l: any) => {
+        const gName = (l.group_name || l.GroupName || '').toLowerCase();
+        const gid = Number(l.GroupId ?? l.Group ?? 0);
+        return gid === 20 || gName.includes('creditor') || gName.includes('supplier');
+      })
+      .reduce((sum: number, l: any) => {
+        const op = Number(l.OpeningBalance || 0);
+        const opType = (l.OpeningBalanceType || 'CR').toUpperCase();
+        return sum + (opType === 'CR' ? op : -op);
+      }, 0);
+  }, [ledgers]);
+
   const totalPurchase = useMemo(() => {
     return filteredPurchases.reduce((sum: number, p: any) => sum + Number(p.GrandTotal || 0), 0);
   }, [filteredPurchases]);
@@ -438,9 +439,34 @@ export const DashboardPage: React.FC = () => {
     return filteredSupplierPayments.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
   }, [filteredSupplierPayments]);
 
-  const payableBalance = totalPurchase - totalSupplierPayments;
+  const payableBalance = totalSupplierOpeningPayable + totalPurchase - totalSupplierPayments;
 
   // Row 2 Calculations: Sales & Receivables
+  const totalCustomerOpeningReceivable = useMemo(() => {
+    return ledgers
+      .filter((l: any) => {
+        const gName = (l.group_name || l.GroupName || '').toLowerCase();
+        const gid = Number(l.GroupId ?? l.Group ?? 0);
+        const lName = (l.LedgerName || '').trim().toLowerCase();
+        if (
+          gid === 22 ||
+          gid === 16 ||
+          gid === 17 ||
+          gName.includes('duties') ||
+          gName.includes('tax') ||
+          /^(cgst|sgst|igst|gst|tax|round off)/i.test(lName)
+        ) {
+          return false;
+        }
+        return gid === 21 || gName.includes('debtor') || gName.includes('customer');
+      })
+      .reduce((sum: number, l: any) => {
+        const op = Number(l.OpeningBalance || 0);
+        const opType = (l.OpeningBalanceType || 'DR').toUpperCase();
+        return sum + (opType === 'DR' ? op : -op);
+      }, 0);
+  }, [ledgers]);
+
   const totalSales = useMemo(() => {
     return filteredSales.reduce((sum: number, s: any) => sum + Number(s.GrandTotal || 0), 0);
   }, [filteredSales]);
@@ -450,14 +476,29 @@ export const DashboardPage: React.FC = () => {
   }, [filteredSales]);
 
   // Collections = Payment receipts + payments collected on sales in this period
+  // Deduct receipt allocations from sales PaidAmount to avoid double counting
+  const totalReceiptAllocatedToSales = useMemo(() => {
+    let allocSum = 0;
+    filteredCustomerReceipts.forEach((p: any) => {
+      (p.lines || []).forEach((l: any) => {
+        (l.allocations || []).forEach((a: any) => {
+          allocSum += Number(a.AllocatedAmount || 0);
+        });
+      });
+    });
+    return allocSum;
+  }, [filteredCustomerReceipts]);
+
   const salesPaidTotal = useMemo(() => {
     return filteredSales.reduce((sum: number, s: any) => sum + Number(s.PaidAmount || 0), 0);
   }, [filteredSales]);
 
+  const netSalesPaid = Math.max(0, salesPaidTotal - totalReceiptAllocatedToSales);
+
   const totalCustomerReceipts = useMemo(() => {
     const directReceipts = filteredCustomerReceipts.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
-    return directReceipts + salesPaidTotal;
-  }, [filteredCustomerReceipts, salesPaidTotal]);
+    return directReceipts + netSalesPaid;
+  }, [filteredCustomerReceipts, netSalesPaid]);
 
   // Direct collections received on sales invoices (Cash, UPI, etc.)
   const salesWithPaidCount = useMemo(() => {
@@ -468,7 +509,7 @@ export const DashboardPage: React.FC = () => {
     return filteredCustomerReceipts.length + salesWithPaidCount;
   }, [filteredCustomerReceipts.length, salesWithPaidCount]);
 
-  const receivableBalance = totalSales - totalCustomerReceipts;
+  const receivableBalance = totalCustomerOpeningReceivable + totalSales - totalCustomerReceipts;
 
   // Row 3 Calculations: Inventory & Van Operations
   const stockProducts = stockAnalysis?.products || [];
@@ -549,208 +590,160 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <Stack gap="lg" style={{ width: '100%' }}>
-      {/* ── 1. Top Header: Greeting on Left & Workable Time Filter Tab on Top Right ── */}
-      <Box pt={4} pb={2}>
-        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-          <div>
-            <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
+      {/* ── 1. Top Header: Title on Left (Centered Vertically) & Filters + Actions on Right ── */}
+      <Box pt={6} pb={6}>
+        <Group justify="space-between" align="center" wrap="wrap" gap="md">
+          {/* Left: FUTURE GAS Branding & Overview (Centered Vertically in Header Section) */}
+          <Box style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Title
+              order={2}
+              style={{
+                color: '#800020',
+                fontWeight: 900,
+                fontSize: 26,
+                letterSpacing: '0.01em',
+                fontFamily: "",
+              }}
+            >
               {user?.company_name || 'Future Gas'}
             </Title>
-            <Text size="xs" c="dimmed" mt={2}>
+            <Text size="xs" c="dimmed" mt={2} fw={500}>
               {todayFormatted} &bull; Executive Operations &amp; Commercial Overview &bull; Showing {dateRange.label}
             </Text>
-          </div>
-
-          {/* Workable Time Filter Pill Tabs */}
-          <Box
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              backgroundColor: '#f1f5f9',
-              borderRadius: 9999,
-              padding: 3,
-              border: '1px solid #e2e8f0',
-            }}
-          >
-            {(
-              [
-                { id: 'all', label: 'All', hasIcon: false },
-                { id: 'today', label: 'Today', hasIcon: false },
-                { id: 'week', label: 'This Week', hasIcon: false },
-                { id: 'month', label: 'This Month', hasIcon: false },
-                { id: 'quarter', label: 'Quarter', hasIcon: false },
-                { id: 'custom', label: 'Custom', hasIcon: true },
-              ] as const
-            ).map((tab) => {
-              const isActive = timeFilter === tab.id;
-              return (
-                <Box
-                  key={tab.id}
-                  component="button"
-                  type="button"
-                  onClick={() => {
-                    if (tab.id === 'custom') {
-                      setCustomModalOpened(true);
-                    } else {
-                      setTimeFilter(tab.id);
-                    }
-                  }}
-                  style={{
-                    background: isActive ? '#800020' : 'transparent',
-                    color: isActive ? '#ffffff' : '#64748b',
-                    border: 'none',
-                    borderRadius: 9999,
-                    padding: '5px 14px',
-                    fontSize: 12,
-                    fontWeight: isActive ? 700 : 500,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    transition: 'all 150ms ease',
-                  }}
-                >
-                  {tab.hasIcon && <IconCalendar size={13} />}
-                  {tab.label}
-                </Box>
-              );
-            })}
           </Box>
-        </Group>
 
-        {/* Action Buttons Row: 4 Properly Formatted Pills */}
-        <Group justify="flex-end" gap="sm" wrap="wrap" mt="sm">
-          {/* 1. New Sale (White Pill with Soft Rose Icon Circle) */}
-          <Button
-            variant="default"
-            size="sm"
-            radius="xl"
-            leftSection={
-              <Box
-                style={{
-                  width: 24,
-                  height: 24,
+          {/* Right: Smooth Sliding Filter Tabs & Action Pills Stacked and Aligned */}
+          <Stack gap="xs" align="flex-end">
+            {/* Smooth SegmentedControl Time Filter */}
+            <SegmentedControl
+              value={timeFilter}
+              onChange={(val) => {
+                if (val === 'custom') {
+                  setCustomModalOpened(true);
+                } else {
+                  setTimeFilter(val as any);
+                }
+              }}
+              color="burgundy"
+              radius="xl"
+              size="xs"
+              transitionDuration={250}
+              transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+              data={[
+                { label: 'All', value: 'all' },
+                { label: 'Today', value: 'today' },
+                { label: 'This Week', value: 'week' },
+                { label: 'This Month', value: 'month' },
+                {
+                  label: (
+                    <Group gap={4} wrap="nowrap" align="center" style={{ display: 'inline-flex' }}>
+                      <IconCalendar size={13} />
+                      <span>Custom</span>
+                    </Group>
+                  ),
+                  value: 'custom',
+                },
+              ]}
+              styles={{
+                root: {
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  padding: 3,
+                },
+                control: {
+                  border: 'none',
+                },
+                indicator: {
+                  backgroundColor: '#800020',
                   borderRadius: 9999,
-                  backgroundColor: '#fdf2f4',
-                  color: '#800020',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <IconReceipt size={14} stroke={2.2} />
-              </Box>
-            }
-            style={{
-              borderColor: '#e2e8f0',
-              backgroundColor: '#ffffff',
-              color: '#1e293b',
-              fontWeight: 600,
-              padding: '8px 16px',
-            }}
-            onClick={() => navigate('/sales/new')}
-          >
-            New Sale
-          </Button>
+                  boxShadow: 'none',
+                  border: 'none',
+                  outline: 'none',
+                },
+                label: {
+                  fontSize: 12,
+                  fontWeight: 500,
+                  padding: '4px 14px',
+                  transition: 'color 150ms ease, font-weight 150ms ease',
+                },
+              }}
+            />
 
-          {/* 2. Record Receipt (White Pill with Soft Rose Icon Circle) */}
-          <Button
-            variant="default"
-            size="sm"
-            radius="xl"
-            leftSection={
-              <Box
+            {/* Action Buttons Row: Clean White Pills */}
+            <Group justify="flex-end" gap="sm" wrap="wrap">
+              {/* 1. New Sale */}
+              <Button
+                variant="default"
+                size="sm"
+                radius="xl"
+                leftSection={<IconReceipt size={16} stroke={1.8} color="#800020" />}
                 style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 9999,
-                  backgroundColor: '#fdf2f4',
-                  color: '#800020',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  borderColor: '#e2e8f0',
+                  backgroundColor: '#ffffff',
+                  color: '#1e293b',
+                  fontWeight: 600,
+                  padding: '8px 16px',
                 }}
+                onClick={() => navigate('/sales/new')}
               >
-                <IconCoins size={14} stroke={2.2} />
-              </Box>
-            }
-            style={{
-              borderColor: '#e2e8f0',
-              backgroundColor: '#ffffff',
-              color: '#1e293b',
-              fontWeight: 600,
-              padding: '8px 16px',
-            }}
-            onClick={() => navigate('/receipts/new')}
-          >
-            Record Receipt
-          </Button>
+                New Sale
+              </Button>
 
-          {/* 3. New Purchase (White Pill with Soft Rose Icon Circle) */}
-          <Button
-            variant="default"
-            size="sm"
-            radius="xl"
-            leftSection={
-              <Box
+              {/* 2. Record Receipt */}
+              <Button
+                variant="default"
+                size="sm"
+                radius="xl"
+                leftSection={<IconCoins size={16} stroke={1.8} color="#800020" />}
                 style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 9999,
-                  backgroundColor: '#fdf2f4',
-                  color: '#800020',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  borderColor: '#e2e8f0',
+                  backgroundColor: '#ffffff',
+                  color: '#1e293b',
+                  fontWeight: 600,
+                  padding: '8px 16px',
                 }}
+                onClick={() => navigate('/receipts/new')}
               >
-                <IconPackage size={14} stroke={2.2} />
-              </Box>
-            }
-            style={{
-              borderColor: '#e2e8f0',
-              backgroundColor: '#ffffff',
-              color: '#1e293b',
-              fontWeight: 600,
-              padding: '8px 16px',
-            }}
-            onClick={() => navigate('/purchases/new')}
-          >
-            New Purchase
-          </Button>
+                Record Receipt
+              </Button>
 
-          {/* 4. Load Van (White Pill with Soft Rose Icon Circle) */}
-          <Button
-            variant="default"
-            size="sm"
-            radius="xl"
-            leftSection={
-              <Box
+              {/* 3. New Purchase */}
+              <Button
+                variant="default"
+                size="sm"
+                radius="xl"
+                leftSection={<IconPackage size={16} stroke={1.8} color="#800020" />}
                 style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 9999,
-                  backgroundColor: '#fdf2f4',
-                  color: '#800020',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  borderColor: '#e2e8f0',
+                  backgroundColor: '#ffffff',
+                  color: '#1e293b',
+                  fontWeight: 600,
+                  padding: '8px 16px',
                 }}
+                onClick={() => navigate('/purchases/new')}
               >
-                <IconTruckDelivery size={14} stroke={2.2} />
-              </Box>
-            }
-            style={{
-              borderColor: '#e2e8f0',
-              backgroundColor: '#ffffff',
-              color: '#1e293b',
-              fontWeight: 600,
-              padding: '8px 16px',
-            }}
-            onClick={() => navigate('/van-management')}
-          >
-            Load Van
-          </Button>
+                New Purchase
+              </Button>
+
+              {/* 4. Load Van (Navigates to Delivery Notes / Add New Delivery Note) */}
+              <Button
+                variant="default"
+                size="sm"
+                radius="xl"
+                leftSection={<IconTruckDelivery size={16} stroke={1.8} color="#800020" />}
+                style={{
+                  borderColor: '#e2e8f0',
+                  backgroundColor: '#ffffff',
+                  color: '#1e293b',
+                  fontWeight: 600,
+                  padding: '8px 16px',
+                }}
+                onClick={() => navigate('/delivery-notes?action=new')}
+              >
+                Load Van
+              </Button>
+            </Group>
+          </Stack>
         </Group>
       </Box>
 
@@ -768,7 +761,7 @@ export const DashboardPage: React.FC = () => {
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
             <DashboardMetricCard
               title="Total Purchase"
-              icon={<IconReceipt size={22} stroke={1.75} />}
+              icon={<IconReceipt size={22} color='#800020'/>}
               value={<CountUp value={totalPurchase} prefix="₹" decimals={2} />}
               subtitle={`${filteredPurchases.length} Invoice${filteredPurchases.length !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/purchases')}
@@ -776,7 +769,7 @@ export const DashboardPage: React.FC = () => {
 
             <DashboardMetricCard
               title="Supplier Payments"
-              icon={<IconCreditCard size={22} stroke={1.75} />}
+              icon={<IconCreditCard size={22} color='#800020' />}
               value={<CountUp value={totalSupplierPayments} prefix="₹" decimals={2} />}
               subtitle={`${filteredSupplierPayments.length} Voucher${filteredSupplierPayments.length !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/payments')}
@@ -784,7 +777,7 @@ export const DashboardPage: React.FC = () => {
 
             <DashboardMetricCard
               title="Payable"
-              icon={<IconWallet size={22} stroke={1.75} />}
+              icon={<IconWallet size={22} color='#800020' />}
               value={
                 <Text
                   fw={800}
@@ -820,7 +813,7 @@ export const DashboardPage: React.FC = () => {
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
             <DashboardMetricCard
               title="Sales"
-              icon={<IconFileInvoice size={22} stroke={1.75} />}
+              icon={<IconFileInvoice size={22} color='#800020' />}
               value={<CountUp value={totalSales} prefix="₹" decimals={2} />}
               subtitle={`${validSalesCount} Bill${validSalesCount !== 1 ? 's' : ''} (${dateRange.label})`}
               onClick={() => navigate('/sales')}
@@ -828,15 +821,15 @@ export const DashboardPage: React.FC = () => {
 
             <DashboardMetricCard
               title="Collections"
-              icon={<IconCash size={22} stroke={1.75} />}
+              icon={<IconCash size={22} color='#800020' />}
               value={<CountUp value={totalCustomerReceipts} prefix="₹" decimals={2} />}
               subtitle={`${totalCollectionsCount} Collection${totalCollectionsCount !== 1 ? 's' : ''} (${dateRange.label})`}
-              onClick={() => navigate('/receipts')}
+              onClick={() => navigate('/collections')}
             />
 
             <DashboardMetricCard
               title="Receivable"
-              icon={<IconCoins size={22} stroke={1.75} />}
+              icon={<IconCoins size={22} color='#800020' />}
               value={
                 <Text
                   fw={800}
@@ -872,7 +865,7 @@ export const DashboardPage: React.FC = () => {
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
             <DashboardMetricCard
               title="Inventory by Product"
-              icon={<IconPackage size={22} stroke={1.75} />}
+              icon={<IconPackage size={22} color='#800020' />}
               value={
                 <Group align="baseline" gap={6}>
                   <Text
@@ -887,7 +880,7 @@ export const DashboardPage: React.FC = () => {
                   >
                     <CountUp value={totalProductFilled} decimals={0} />
                   </Text>
-                  <Text size="sm" fw={600} c="#64748b">
+                  <Text size="sm" fw={600}>
                     filled
                   </Text>
                 </Group>
@@ -898,7 +891,7 @@ export const DashboardPage: React.FC = () => {
 
             <DashboardMetricCard
               title="Inventory by Location"
-              icon={<IconBuildingFactory2 size={22} stroke={1.75} />}
+              icon={<IconBuildingFactory2 size={22} color='#800020' />}
               value={
                 <Group align="baseline" gap={6}>
                   <Text
@@ -913,7 +906,7 @@ export const DashboardPage: React.FC = () => {
                   >
                     <CountUp value={stockLocations.length} decimals={0} />
                   </Text>
-                  <Text size="sm" fw={600} c="#64748b">
+                  <Text size="sm" fw={600} >
                     locations
                   </Text>
                 </Group>
@@ -924,7 +917,7 @@ export const DashboardPage: React.FC = () => {
 
             <DashboardMetricCard
               title="Van Management"
-              icon={<IconTruckDelivery size={22} stroke={1.75} />}
+              icon={<IconTruckDelivery size={22} color='#800020' />}
               value={`${activeRoutesCount} Active Route${activeRoutesCount !== 1 ? 's' : ''}`}
               subtitle="Live delivery fleet &amp; route operations"
               onClick={() => navigate('/van-management')}

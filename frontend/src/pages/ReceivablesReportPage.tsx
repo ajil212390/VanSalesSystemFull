@@ -19,6 +19,7 @@ import {
   Divider,
   Box,
   Checkbox,
+  NumberInput,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -37,6 +38,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DateInputDDMMYY, formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 // Clean, concise reference formatter e.g. SAL-20261111-0001 -> INV-0001, PAY-SAL-... -> PAY-0001
 const formatShortRef = (raw: string | null | undefined): string => {
@@ -77,6 +79,33 @@ export const ReceivablesReportPage: React.FC = () => {
   const [stmtFromDate, setStmtFromDate] = useState('');
   const [stmtToDate, setStmtToDate] = useState('');
   const [stmtSearch, setStmtSearch] = useState('');
+
+  // Quick edit movement term modal
+  const [termModalOpen, setTermModalOpen] = useState(false);
+  const [editingTermDays, setEditingTermDays] = useState<number>(15);
+
+  const handleSaveMovementTerm = async () => {
+    if (!selectedCustomer) return;
+    try {
+      await apiClient.patch(`/ledgers/${selectedCustomer.id}/`, {
+        CreditPeriodDays: editingTermDays,
+      });
+      setSelectedCustomer((prev: any) => ({ ...prev, creditPeriod: editingTermDays }));
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
+      notifications.show({
+        title: 'Updated',
+        message: `Cylinder movement deadline updated to ${editingTermDays} days.`,
+        color: 'teal',
+      });
+      setTermModalOpen(false);
+    } catch {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to update movement deadline.',
+        color: 'red',
+      });
+    }
+  };
 
   // 1. Fetch Ledgers
   const {
@@ -145,6 +174,35 @@ export const ReceivablesReportPage: React.FC = () => {
 
   // Filter for Sundry Debtors (Customers) with Opening Balance included
   const debtorsList = useMemo(() => {
+    // Map customer collections and allocations from payments
+    const receiptsMap = new Map<number, number>();
+    const receiptAllocBySale = new Map<string | number, number>();
+    const receiptAllocByCustomer = new Map<number, number>();
+
+    payments.forEach((p: any) => {
+      const pId = Number(p.PartyLedgerId);
+      if (p.voucher_type === 'RECEIPT' && pId) {
+        receiptsMap.set(pId, (receiptsMap.get(pId) || 0) + Number(p.Amount || 0));
+      }
+      (p.lines || []).forEach((l: any) => {
+        (l.allocations || []).forEach((a: any) => {
+          const amt = Number(a.AllocatedAmount || 0);
+          if (amt > 0) {
+            if (a.ReferenceId) {
+              receiptAllocBySale.set(Number(a.ReferenceId), (receiptAllocBySale.get(Number(a.ReferenceId)) || 0) + amt);
+            }
+            if (a.BillReference) {
+              const bRef = String(a.BillReference).trim().toUpperCase();
+              receiptAllocBySale.set(bRef, (receiptAllocBySale.get(bRef) || 0) + amt);
+            }
+            if (pId) {
+              receiptAllocByCustomer.set(pId, (receiptAllocByCustomer.get(pId) || 0) + amt);
+            }
+          }
+        });
+      });
+    });
+
     // Map sales by CustomerLedger ID
     const salesMap = new Map<number, number>();
     const salesPaidMap = new Map<number, number>();
@@ -154,17 +212,6 @@ export const ReceivablesReportPage: React.FC = () => {
         if (cId) {
           salesMap.set(cId, (salesMap.get(cId) || 0) + Number(s.GrandTotal || 0));
           salesPaidMap.set(cId, (salesPaidMap.get(cId) || 0) + Number(s.PaidAmount || 0));
-        }
-      }
-    });
-
-    // Map customer collections by PartyLedgerId
-    const receiptsMap = new Map<number, number>();
-    payments.forEach((p) => {
-      if (p.voucher_type === 'RECEIPT') {
-        const pId = Number(p.PartyLedgerId);
-        if (pId) {
-          receiptsMap.set(pId, (receiptsMap.get(pId) || 0) + Number(p.Amount || 0));
         }
       }
     });
@@ -196,10 +243,12 @@ export const ReceivablesReportPage: React.FC = () => {
         const openingType = (l.OpeningBalanceType || 'DR').toUpperCase();
         const totalBilled = salesMap.has(l.LedgerId) ? salesMap.get(l.LedgerId)! : Number(l.DebitBalance || 0);
 
-        // Sum payment receipts + payments collected directly on sales
+        // Sum payment receipts + payments collected directly on sales (excluding allocations from receipts to prevent double counting)
         const directReceipts = receiptsMap.get(l.LedgerId) || 0;
-        const salesPaid = salesPaidMap.get(l.LedgerId) || 0;
-        const totalReceived = Math.max(directReceipts + salesPaid, Number(l.CreditBalance || 0));
+        const rawSalesPaid = salesPaidMap.get(l.LedgerId) || 0;
+        const allocatedFromReceipts = receiptAllocByCustomer.get(l.LedgerId) || 0;
+        const netCounterPaid = Math.max(0, rawSalesPaid - allocatedFromReceipts);
+        const totalReceived = Math.max(directReceipts + netCounterPaid, Number(l.CreditBalance || 0));
 
         // Effective opening: DR is positive receivable, CR is customer advance
         const opDebit = openingType === 'DR' ? openingBal : -openingBal;
@@ -218,6 +267,7 @@ export const ReceivablesReportPage: React.FC = () => {
           totalBilled,
           totalReceived,
           receivable,
+          advanceBalance: Number(l.advance_balance || 0),
           creditPeriod: Number(l.CreditPeriodDays) || 15,
           deleteBlockReason: l.delete_block_reason || null,
         };
@@ -257,6 +307,55 @@ export const ReceivablesReportPage: React.FC = () => {
     return debtorsList.reduce((sum, d) => sum + d.receivable, 0);
   }, [debtorsList]);
 
+  const totalAdvanceSum = useMemo(() => {
+    return debtorsList.reduce((sum, d) => sum + (d.advanceBalance || 0), 0);
+  }, [debtorsList]);
+
+  const [isPrintingSummary, setIsPrintingSummary] = useState(false);
+
+  const handlePrintReceivablesReport = async () => {
+    try {
+      setIsPrintingSummary(true);
+      const payload = {
+        debtors: filteredDebtors.map((d) => ({
+          name: d.name,
+          phone: d.phone,
+          city: d.city,
+          openingBal: d.openingBal,
+          openingType: d.openingType,
+          salesBilled: d.totalBilled,
+          collectionsReceived: d.totalReceived,
+          netReceivable: d.receivable,
+          advanceBalance: d.advanceBalance || 0,
+        })),
+        summary: {
+          totalDebtors: debtorsList.length,
+          totalOpeningSum,
+          totalBilledSum,
+          totalReceivedSum,
+          totalReceivableSum,
+          totalAdvanceSum,
+        },
+        search: searchQuery.trim(),
+      };
+
+      const res = await apiClient.post('/ledgers/receivables-summary-pdf/', payload, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error Printing Report',
+        message: err?.response?.data?.error || err.message || 'Failed to generate PDF summary.',
+        color: 'red',
+      });
+    } finally {
+      setIsPrintingSummary(false);
+    }
+  };
+
   const handlePrintStatement = (customerId: number, fromDate?: string, toDate?: string) => {
     let url = `${apiClient.defaults.baseURL}/sales/customer-statement-pdf/?customer_id=${customerId}`;
     if (fromDate) url += `&from_date=${fromDate}`;
@@ -273,6 +372,25 @@ export const ReceivablesReportPage: React.FC = () => {
     );
     const custReceipts = payments.filter((pm: any) => Number(pm.PartyLedgerId) === selectedCustomer.id);
 
+    // Build allocation map for this customer to distinguish counter payments from receipt vouchers
+    const receiptAllocBySale = new Map<string | number, number>();
+    custReceipts.forEach((r: any) => {
+      (r.lines || []).forEach((l: any) => {
+        (l.allocations || []).forEach((a: any) => {
+          const amt = Number(a.AllocatedAmount || 0);
+          if (amt > 0) {
+            if (a.ReferenceId) {
+              receiptAllocBySale.set(Number(a.ReferenceId), (receiptAllocBySale.get(Number(a.ReferenceId)) || 0) + amt);
+            }
+            if (a.BillReference) {
+              const bRef = String(a.BillReference).trim().toUpperCase();
+              receiptAllocBySale.set(bRef, (receiptAllocBySale.get(bRef) || 0) + amt);
+            }
+          }
+        });
+      });
+    });
+
     // Initial Ledger Opening Balance
     const initOpBal = selectedCustomer.openingBal;
     const initOpType = selectedCustomer.openingType;
@@ -284,6 +402,8 @@ export const ReceivablesReportPage: React.FC = () => {
     // Sales (Debit entries - customer owes money)
     custSales.forEach((s: any) => {
       const dt = String(s.SalesDate || '');
+      const sId = Number(s.SalesId);
+      const sRef = String(s.InvoiceNo || s.SalesNo || '').trim().toUpperCase();
       const creditDays = selectedCustomer.creditPeriod || 15;
       let dueDate = '';
       let isOverdue = false;
@@ -300,32 +420,39 @@ export const ReceivablesReportPage: React.FC = () => {
 
       const rawRef = s.InvoiceNo || s.SalesNo || `INV-${s.SalesId}`;
       const shortRef = formatShortRef(rawRef);
+      // Use exact timestamp so morning sales sort before afternoon receipts
+      const sCreated = s.CreatedAt ? new Date(s.CreatedAt).toISOString() : `${dt}T00:00:00.000Z`;
 
       allTx.push({
         date: dt,
         ref: shortRef,
         rawRef: rawRef,
-        particulars: `Sales Invoice (${s.PaymentMethod || 'CASH'})`,
+        particulars: s.advance_adjusted && Number(s.advance_adjusted) > 0
+          ? `Sales Invoice (Adv Adj: ₹${Number(s.advance_adjusted).toFixed(2)})`
+          : 'Sales Invoice',
         debit: Number(s.GrandTotal || 0),
         credit: 0,
-        sortKey: `${dt}_1_${s.SalesId}`,
+        sortKey: `${dt}_1_${sCreated}_${String(s.SalesId).padStart(8, '0')}`,
         dueDate,
         isOverdue,
         overdueDays,
         isSale: true,
       });
 
-      // If customer paid on this sale, record the payment received credit line
-      const paidOnSale = Number(s.PaidAmount || 0);
-      if (paidOnSale > 0) {
+      // Amount paid directly on the sale counter (exclude amounts allocated from separate receipt vouchers and advance adjustments)
+      const allocatedFromReceipt = (receiptAllocBySale.get(sId) || 0) || (receiptAllocBySale.get(sRef) || 0);
+      const adjFromAdvance = Number(s.advance_adjusted || 0);
+      const counterPaidOnSale = Math.max(0, Number(s.PaidAmount || 0) - allocatedFromReceipt - adjFromAdvance);
+
+      if (counterPaidOnSale > 0) {
         allTx.push({
           date: dt,
           ref: formatShortRef(`PAY-${rawRef}`),
           rawRef: `PAY-${rawRef}`,
-          particulars: `Payment Received on Sale (${s.PaymentMethod || 'CASH'})`,
+          particulars: 'Payment Received on Sale',
           debit: 0,
-          credit: paidOnSale,
-          sortKey: `${dt}_1_paid_${s.SalesId}`,
+          credit: counterPaidOnSale,
+          sortKey: `${dt}_2_${sCreated}_${String(s.SalesId).padStart(8, '0')}`,
         });
       }
     });
@@ -334,14 +461,26 @@ export const ReceivablesReportPage: React.FC = () => {
     custReceipts.forEach((r: any) => {
       const dt = String(r.payment_date || r.CreatedAt?.split('T')[0] || r.VoucherDate || '');
       const rawRecRef = r.PaymentNo || `REC-${r.PaymentId}`;
+      const rCreated = r.CreatedAt ? new Date(r.CreatedAt).toISOString() : `${dt}T23:59:59.000Z`;
+
+      let rParticulars = `Collection Receipt (${r.primary_mode || r.PaymentMode || 'CASH'})`;
+      if (r.lines) {
+        const advAlloc = r.lines
+          .flatMap((l: any) => l.allocations || [])
+          .find((a: any) => a.BillReference === 'CUSTOMER ADVANCE' || a.BillType === 'ADVANCE');
+        if (advAlloc && Number(advAlloc.AllocatedAmount) > 0) {
+          rParticulars = `Collection Receipt (Advance: ₹${Number(advAlloc.AllocatedAmount).toFixed(2)})`;
+        }
+      }
+
       allTx.push({
         date: dt,
         ref: formatShortRef(rawRecRef),
         rawRecRef: rawRecRef,
-        particulars: `Collection Receipt (${r.PaymentMode || 'CASH'})`,
+        particulars: rParticulars,
         debit: 0,
         credit: Number(r.Amount || 0),
-        sortKey: `${dt}_2_${r.PaymentId}`,
+        sortKey: `${dt}_3_${rCreated}_${String(r.PaymentId).padStart(8, '0')}`,
       });
     });
 
@@ -468,16 +607,27 @@ export const ReceivablesReportPage: React.FC = () => {
           </Group>
         </Box>
 
-        {/* 4 Summary / KPI Cards */}
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+        {/* 5 Summary / KPI Cards */}
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} spacing="md">
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
             <Group justify="space-between" align="baseline">
               <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                 Contact Details
               </Text>
-              <Badge variant="light" color="burgundy" size="xs">
-                Term: {selectedCustomer.creditPeriod || 15} Days
-              </Badge>
+              <Tooltip label="Click to edit cylinder movement deadline" withArrow position="top">
+                <Badge
+                  variant="light"
+                  color="burgundy"
+                  size="xs"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => {
+                    setEditingTermDays(selectedCustomer.creditPeriod || 15);
+                    setTermModalOpen(true);
+                  }}
+                >
+                  Movement: {selectedCustomer.creditPeriod || 15} Days ✎
+                </Badge>
+              </Tooltip>
             </Group>
             <Text fw={700} style={{ color: '#0f172a', fontSize: 18, marginTop: 4 }}>
               {selectedCustomer.phone}
@@ -491,15 +641,13 @@ export const ReceivablesReportPage: React.FC = () => {
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Initial Opening Balance
             </Text>
-            <Group align="baseline" gap={6} mt={4}>
-              <Text fw={700} style={{ color: '#475569', fontSize: 18, fontVariantNumeric: 'tabular-nums' }}>
-                ₹{selectedCustomer.openingBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Text>
-              <Badge color="burgundy" variant="light" size="xs">
+            <Text fw={700} style={{ color: '#475569', fontSize: 18, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
+              ₹{selectedCustomer.openingBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+              <Text component="span" size="xs" fw={700} c="#64748b">
                 {selectedCustomer.openingType}
-              </Badge>
-            </Group>
-            <Text size="xs" c="dimmed">Recorded on Day 1</Text>
+              </Text>
+            </Text>
+            <Text size="xs" c="dimmed">Ledger Opening Balance</Text>
           </Paper>
 
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
@@ -512,18 +660,28 @@ export const ReceivablesReportPage: React.FC = () => {
             <Text size="xs" c="dimmed">Invoiced Bills (Dr)</Text>
           </Paper>
 
+          <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#f0fdfa', borderColor: '#99f6e4', boxShadow: '0 1px 3px rgba(13,148,136,0.05)' }}>
+            <Text size="xs" fw={700} c="teal.8" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+              Available Advance
+            </Text>
+            <Text fw={800} style={{ color: '#0f766e', fontSize: 20, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
+              ₹{selectedCustomer.advanceBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+            <Text size="xs" c="teal.7" fw={500}>
+              Unallocated on Account
+            </Text>
+          </Paper>
+
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#fdf2f4', borderColor: '#f5c2cb', boxShadow: '0 1px 3px rgba(128,0,32,0.05)' }}>
             <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Net Outstanding Balance
             </Text>
-            <Group align="baseline" gap={6} mt={4}>
-              <Text fw={800} style={{ color: '#800020', fontSize: 20, fontVariantNumeric: 'tabular-nums' }}>
-                ₹{Math.abs(customerStatementData.closingBal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </Text>
-              <Badge color="burgundy" variant="filled" size="xs" style={{ backgroundColor: '#800020' }}>
+            <Text fw={800} style={{ color: '#800020', fontSize: 20, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
+              ₹{Math.abs(customerStatementData.closingBal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+              <Text component="span" size="sm" fw={800} c="#800020">
                 {customerStatementData.closingBal >= 0 ? 'Dr' : 'Cr'}
-              </Badge>
-            </Group>
+              </Text>
+            </Text>
             <Text size="xs" c="#800020" fw={500}>
               {customerStatementData.closingBal >= 0 ? 'Outstanding from Customer' : 'Advance Balance'}
             </Text>
@@ -535,20 +693,18 @@ export const ReceivablesReportPage: React.FC = () => {
           {/* Filter Toolbar */}
           <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }} wrap="wrap" gap="sm">
             <Group gap="sm" align="center" wrap="wrap">
-              <TextInput
-                type="date"
-                size="sm"
+              <DateInputDDMMYY
                 label="From Date"
+                placeholder="dd/mm/yyyy"
                 value={stmtFromDate}
-                onChange={(e) => setStmtFromDate(e.currentTarget.value)}
+                onChange={(iso) => setStmtFromDate(iso)}
                 style={{ width: 145 }}
               />
-              <TextInput
-                type="date"
-                size="sm"
+              <DateInputDDMMYY
                 label="To Date"
+                placeholder="dd/mm/yyyy"
                 value={stmtToDate}
-                onChange={(e) => setStmtToDate(e.currentTarget.value)}
+                onChange={(iso) => setStmtToDate(iso)}
                 style={{ width: 145 }}
               />
               <TextInput
@@ -641,25 +797,13 @@ export const ReceivablesReportPage: React.FC = () => {
                   {customerStatementData.entries.map((entry, idx) => (
                     <Table.Tr key={idx} style={{ height: 46 }}>
                       <Table.Td style={{ fontWeight: 500, color: '#475569' }}>
-                        {entry.date || '—'}
+                        {formatDateDDMMYY(entry.date)}
                       </Table.Td>
                       <Table.Td style={{ fontWeight: 700, color: '#0f172a' }}>
                         {entry.ref}
                       </Table.Td>
                       <Table.Td style={{ color: entry.isOpening ? '#800020' : '#334155', fontWeight: entry.isOpening ? 700 : 400 }}>
-                        <Group gap={6} align="center" wrap="wrap">
-                          <span>{entry.particulars}</span>
-                          {entry.isSale && entry.dueDate && (
-                            <Badge
-                              size="xs"
-                              variant={entry.isOverdue ? 'filled' : 'light'}
-                              color={entry.isOverdue ? 'red' : 'gray'}
-                              style={{ fontSize: 10, height: 18 }}
-                            >
-                              {entry.isOverdue ? `Overdue by ${entry.overdueDays}d` : `Due: ${entry.dueDate}`}
-                            </Badge>
-                          )}
-                        </Group>
+                        {entry.particulars}
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: entry.debit > 0 ? 600 : 400, color: '#0f172a' }}>
                         {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
@@ -672,7 +816,7 @@ export const ReceivablesReportPage: React.FC = () => {
                           textAlign: 'right',
                           fontVariantNumeric: 'tabular-nums',
                           fontWeight: 700,
-                          color: entry.runningBalance >= 0 ? '#800020' : '#2563eb',
+                          color: '#800020',
                         }}
                       >
                         ₹{Math.abs(entry.runningBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
@@ -756,7 +900,7 @@ export const ReceivablesReportPage: React.FC = () => {
             Receivables Report (Sundry Debtors)
           </Title>
           <Text size="sm" c="dimmed">
-            Detailed breakdown of customer receivables, opening balance, delivery sales invoiced, collections received, and outstanding balances.
+            Detailed breakdown of customer receivables.
           </Text>
         </div>
 
@@ -773,6 +917,20 @@ export const ReceivablesReportPage: React.FC = () => {
               <IconRefresh size={18} color="#475569" />
             </ActionIcon>
           </Tooltip>
+
+          <Button
+            variant="outline"
+            color="burgundy"
+            radius="md"
+            size="sm"
+            fw={600}
+            loading={isPrintingSummary}
+            leftSection={<IconPrinter size={16} />}
+            onClick={handlePrintReceivablesReport}
+            style={{ borderColor: '#800020', color: '#800020' }}
+          >
+            Print Report
+          </Button>
 
           <Button
             color="burgundy"
@@ -846,14 +1004,12 @@ export const ReceivablesReportPage: React.FC = () => {
             </Text>
             <IconCoins size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Group align="baseline" gap={6} mb={4}>
-            <Text fw={700} style={{ color: '#800020', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-              ₹{Math.abs(totalReceivableSum).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          <Text fw={700} style={{ color: '#800020', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>
+            ₹{Math.abs(totalReceivableSum).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+            <Text component="span" size="sm" fw={700} c="#800020">
+              {totalReceivableSum >= 0 ? 'Dr' : 'Cr'}
             </Text>
-            <Badge color="burgundy" variant="light" size="xs">
-              {totalReceivableSum >= 0 ? 'DR' : 'CR'}
-            </Badge>
-          </Group>
+          </Text>
           <Text size="xs" c="dimmed">
             Current outstanding from customers
           </Text>
@@ -949,9 +1105,16 @@ export const ReceivablesReportPage: React.FC = () => {
                     {/* Customer Name & Contact */}
                     <Table.Td>
                       <Stack gap={2}>
-                        <Text size="sm" fw={700} c="#0f172a">
-                          {debtor.name}
-                        </Text>
+                        <Group gap={6} align="center">
+                          <Text size="sm" fw={700} c="#0f172a">
+                            {debtor.name}
+                          </Text>
+                          {debtor.advanceBalance > 0 && (
+                            <Badge color='burgundy' size="xs" variant="light">
+                              Adv: ₹{debtor.advanceBalance.toFixed(2)}
+                            </Badge>
+                          )}
+                        </Group>
                         <Text size="xs" c="dimmed">
                           {debtor.phone} {debtor.city !== '—' ? `• ${debtor.city}` : ''}
                         </Text>
@@ -962,7 +1125,7 @@ export const ReceivablesReportPage: React.FC = () => {
                     <Table.Td style={{ textAlign: 'right' }}>
                       <Text style={{ fontSize: 13.5, fontWeight: 600, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
                         ₹{debtor.openingBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                        <Text component="span" size="xs" fw={700} c={debtor.openingType === 'DR' ? '#800020' : '#2563eb'}>
+                        <Text component="span" size="xs" fw={700} c="#800020">
                           {debtor.openingType}
                         </Text>
                       </Text>
@@ -1153,6 +1316,43 @@ export const ReceivablesReportPage: React.FC = () => {
             )}
           </Stack>
         )}
+      </Modal>
+      {/* ── Cylinder Movement Term Edit Modal ── */}
+      <Modal
+        opened={termModalOpen}
+        onClose={() => setTermModalOpen(false)}
+        title={
+          <Group gap="xs">
+            <IconRefresh size={18} color="#800020" />
+            <Text fw={700} style={{ color: '#800020' }}>
+              Customer Cylinder Movement Term
+            </Text>
+          </Group>
+        }
+        size="sm"
+        radius="md"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="#475569">
+            Set the cylinder movement deadline (rotation/return cycle) for <b>{selectedCustomer?.name}</b>:
+          </Text>
+          <NumberInput
+            label="Movement Cycle (Days)"
+            description="Number of days from billing before cylinders are expected back"
+            min={1}
+            max={365}
+            value={editingTermDays}
+            onChange={(val) => setEditingTermDays(Number(val) || 15)}
+          />
+          <Group justify="flex-end" gap="sm">
+            <Button variant="default" size="sm" onClick={() => setTermModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button color="burgundy" size="sm" onClick={handleSaveMovementTerm}>
+              Save Term
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </Stack>
   );

@@ -43,7 +43,8 @@ from core.models import (
     Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
     Payment, PaymentLine, BillwiseAllocation, LedgerLine, RouteExpense,
     DeliveryNote, DeliveryNoteLine,
-    SaleEditHistory, ConnectionPackage, ConnectionPackageItem
+    SaleEditHistory, ConnectionPackage, ConnectionPackageItem,
+    CustomerAdvance, AdvanceAdjustment
 )
 
 
@@ -1115,7 +1116,8 @@ class ProductViewSet(viewsets.ModelViewSet):
         )
 
     def perform_create(self, serializer):
-        serializer.save(CompanyId=self.request.user.CompanyId)
+        product = serializer.save(CompanyId=self.request.user.CompanyId)
+        self._sync_opening_stock(product, serializer.validated_data)
 
     def perform_update(self, serializer):
         instance = serializer.instance
@@ -1137,6 +1139,78 @@ class ProductViewSet(viewsets.ModelViewSet):
                 Role_id=role_id,
                 CompanyId=company_id
             )
+        self._sync_opening_stock(updated_instance, serializer.validated_data)
+
+    def _sync_opening_stock(self, product, validated_data):
+        from core.models import StockMovement
+        from datetime import date
+        from decimal import Decimal
+
+        if 'opening_filled_qty' not in validated_data and 'opening_empty_qty' not in validated_data:
+            return
+
+        filled_qty = Decimal(str(validated_data.get('opening_filled_qty') or 0))
+        empty_qty = Decimal(str(validated_data.get('opening_empty_qty') or 0))
+        rate = Decimal(str(validated_data.get('opening_cost_rate') or product.PurchasePrice or 0))
+        company_id = product.CompanyId or 1
+
+        # Central Godown is RouteVehicleDriverId=1
+        sm_filled = StockMovement.objects.filter(
+            Product=product,
+            TransactionType='OPENING_STOCK'
+        ).first()
+
+        if filled_qty > 0:
+            amount = filled_qty * rate
+            if sm_filled:
+                sm_filled.InQty = filled_qty
+                sm_filled.InCostRate = rate
+                sm_filled.InCostAmount = amount
+                sm_filled.save(update_fields=['InQty', 'InCostRate', 'InCostAmount'])
+            else:
+                StockMovement.objects.create(
+                    CompanyId=company_id,
+                    Product=product,
+                    Unit=product.Unit,
+                    ReferenceId=product.ProductId,
+                    TransactionType='OPENING_STOCK',
+                    TransactionNo=f"OP-STK-{product.ProductId}",
+                    TransactionDate=product.CreatedAt.date() if product.CreatedAt else date.today(),
+                    InQty=filled_qty,
+                    InCostRate=rate,
+                    InCostAmount=amount,
+                    RouteVehicleDriverId=1,
+                    Narration=f"Initial Opening Stock: {product.ProductName}"
+                )
+        elif sm_filled:
+            sm_filled.delete()
+
+        sm_empty = StockMovement.objects.filter(
+            Product=product,
+            TransactionType='OPENING_EMPTY'
+        ).first()
+
+        if empty_qty > 0:
+            if sm_empty:
+                sm_empty.InQty = empty_qty
+                sm_empty.save(update_fields=['InQty'])
+            else:
+                StockMovement.objects.create(
+                    CompanyId=company_id,
+                    Product=product,
+                    Unit=product.Unit,
+                    ReferenceId=product.ProductId,
+                    TransactionType='OPENING_EMPTY',
+                    TransactionNo=f"OP-EMP-{product.ProductId}",
+                    TransactionDate=product.CreatedAt.date() if product.CreatedAt else date.today(),
+                    InQty=empty_qty,
+                    InCostRate=Decimal('0.00'),
+                    InCostAmount=Decimal('0.00'),
+                    RouteVehicleDriverId=1,
+                    Narration=f"Initial Empty Cylinders Opening: {product.ProductName}"
+                )
+        elif sm_empty:
+            sm_empty.delete()
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -1145,6 +1219,8 @@ class ProductViewSet(viewsets.ModelViewSet):
         if block_reason:
             return Response({"detail": block_reason}, status=status.HTTP_400_BAD_REQUEST)
         try:
+            from core.models import StockMovement
+            StockMovement.objects.filter(Product=instance, TransactionType__in=['OPENING_STOCK', 'OPENING_EMPTY']).delete()
             return super().destroy(request, *args, **kwargs)
         except Exception:
             return Response(
@@ -1243,10 +1319,10 @@ class LedgerViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_permissions(self):
-        if self.action in ['customers', 'suppliers', 'list'] and (
+        if self.action in ['customers', 'suppliers', 'list', 'receivables_summary_pdf', 'payables_summary_pdf'] and (
             self.request.query_params.get('AccountType', '').upper() in ('CUSTOMER', 'DEBTOR', 'SUNDRY_DEBTOR')
             or self.request.query_params.get('is_customer')
-            or self.action in ['customers', 'suppliers']
+            or self.action in ['customers', 'suppliers', 'receivables_summary_pdf', 'payables_summary_pdf']
         ):
             return [AllowAny()]
         return super().get_permissions()
@@ -1359,6 +1435,60 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 'BalanceType': 'DR' if (l.CurrentBalance or 0) > 0 else ('CR' if (l.CurrentBalance or 0) < 0 else '')
             })
         return Response(data)
+
+    @action(detail=True, methods=['get'], url_path='advance-balance', permission_classes=[AllowAny])
+    def advance_balance(self, request, pk=None):
+        ledger = self.get_object()
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        from core.models import CustomerAdvance, AdvanceAdjustment
+        from django.db.models import Sum
+
+        active_advances = CustomerAdvance.objects.filter(
+            CompanyId=company_id,
+            CustomerLedger=ledger,
+            Status__in=['ACTIVE', 'PARTIALLY_UTILIZED'],
+            RemainingAmount__gt=0
+        ).order_by('AdvanceDate', 'AdvanceId')
+
+        avail = sum(Decimal(str(a.RemainingAmount or 0)) for a in active_advances)
+        tot = CustomerAdvance.objects.filter(
+            CompanyId=company_id,
+            CustomerLedger=ledger
+        ).exclude(Status='CANCELLED').aggregate(t=Sum('TotalAmount'))['t'] or Decimal('0.00')
+
+        recent_adjustments = AdvanceAdjustment.objects.filter(
+            CompanyId=company_id,
+            CustomerLedger=ledger
+        ).select_related('Sales', 'Advance').order_by('-AdjustmentDate', '-AdjustmentId')[:20]
+
+        return Response({
+            'customer_id': ledger.LedgerId,
+            'customer_name': ledger.LedgerName,
+            'available_advance': float(avail),
+            'total_advance_recorded': float(tot),
+            'active_advances': [
+                {
+                    'advance_id': a.AdvanceId,
+                    'advance_no': a.AdvanceNo,
+                    'date': str(a.AdvanceDate),
+                    'total_amount': float(a.TotalAmount),
+                    'remaining_amount': float(a.RemainingAmount),
+                    'status': a.Status,
+                }
+                for a in active_advances
+            ],
+            'recent_utilizations': [
+                {
+                    'adjustment_id': adj.AdjustmentId,
+                    'sales_id': adj.Sales_id,
+                    'sales_no': adj.Sales.SalesNo if adj.Sales else '-',
+                    'amount': float(adj.AdjustmentAmount),
+                    'date': str(adj.AdjustmentDate),
+                    'advance_no': adj.Advance.AdvanceNo if adj.Advance else '-',
+                }
+                for adj in recent_adjustments
+            ]
+        })
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -1675,6 +1805,174 @@ class LedgerViewSet(viewsets.ModelViewSet):
             'total_bills_count': total_bills_count,
             'errors': errors
         }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get', 'post'], url_path='receivables-summary-pdf', permission_classes=[AllowAny])
+    def receivables_summary_pdf(self, request):
+        """
+        Generates and streams an official Receivables Summary (Sundry Debtors) Report PDF.
+        Supports POST with filtered debtors list directly from frontend,
+        as well as GET query params with dynamic database aggregation.
+        """
+        try:
+            from core.invoice_generator import generate_receivables_summary_pdf
+            company_id = 1
+            if hasattr(request, 'user') and getattr(request.user, 'CompanyId', None):
+                company_id = request.user.CompanyId
+
+            if request.method == 'POST':
+                data = request.data or {}
+                debtors = data.get('debtors', [])
+                summary_stats = data.get('summary', None)
+                search_query = data.get('search', '')
+            else:
+                search_query = request.query_params.get('search', '')
+                debtors = []
+                all_debtors = Ledger.objects.filter(
+                    CompanyId=company_id
+                ).filter(
+                    Q(Group__GroupName__icontains='debtor') | Q(Group__GroupName__icontains='customer')
+                ).select_related('Group').order_by('LedgerName')
+
+                from core.models import Sales, Payment, CustomerAdvance
+                from django.db.models import Sum
+
+                for d in all_debtors:
+                    if search_query:
+                        sq = search_query.lower()
+                        if (sq not in (d.LedgerName or '').lower() and
+                            sq not in (getattr(d, 'MobileNumber', '') or '').lower() and
+                            sq not in (getattr(d, 'PhoneNumber', '') or '').lower() and
+                            sq not in (getattr(d, 'City', '') or '').lower()):
+                            continue
+
+                    op_bal = float(d.OpeningBalance or 0)
+                    op_type = (d.OpeningBalanceType or 'DR').upper()
+                    sales_billed = float(
+                        Sales.objects.filter(CustomerLedger=d).exclude(Status='CANCELLED').aggregate(t=Sum('GrandTotal'))['t'] or 0
+                    )
+                    collections = float(
+                        Payment.objects.filter(PartyLedger=d).aggregate(t=Sum('Amount'))['t'] or 0
+                    )
+                    sales_paid = float(
+                        Sales.objects.filter(CustomerLedger=d).exclude(Status='CANCELLED').aggregate(t=Sum('PaidAmount'))['t'] or 0
+                    )
+                    total_collections = collections + sales_paid
+                    adv_bal = float(
+                        CustomerAdvance.objects.filter(CustomerLedger=d, Status__in=['ACTIVE', 'PARTIALLY_UTILIZED']).aggregate(t=Sum('RemainingAmount'))['t'] or 0
+                    )
+                    op_net = op_bal if op_type == 'DR' else -op_bal
+                    net_receivable = op_net + sales_billed - total_collections
+
+                    debtors.append({
+                        'name': d.LedgerName,
+                        'phone': getattr(d, 'MobileNumber', '') or getattr(d, 'PhoneNumber', '') or '',
+                        'city': getattr(d, 'City', '') or '',
+                        'openingBal': op_bal,
+                        'openingType': op_type,
+                        'salesBilled': sales_billed,
+                        'collectionsReceived': total_collections,
+                        'netReceivable': net_receivable,
+                        'advanceBalance': adv_bal,
+                    })
+                summary_stats = None
+
+            pdf_bytes = generate_receivables_summary_pdf(
+                debtors_data=debtors,
+                company_id=company_id,
+                summary_stats=summary_stats,
+                search_query=search_query
+            )
+
+            date_str = datetime.now().strftime('%Y%m%d_%H%M')
+            filename = f"Receivables_Report_{date_str}.pdf"
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            return response
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['get', 'post'], url_path='payables-summary-pdf', permission_classes=[AllowAny])
+    def payables_summary_pdf(self, request):
+        """
+        Generates and streams an official Payables Summary (Sundry Creditors) Report PDF.
+        Supports POST with filtered creditors list directly from frontend,
+        as well as GET query params with dynamic database aggregation.
+        """
+        try:
+            from core.invoice_generator import generate_payables_summary_pdf
+            company_id = 1
+            if hasattr(request, 'user') and getattr(request.user, 'CompanyId', None):
+                company_id = request.user.CompanyId
+
+            if request.method == 'POST':
+                data = request.data or {}
+                creditors = data.get('creditors', [])
+                summary_stats = data.get('summary', None)
+                search_query = data.get('search', '')
+            else:
+                search_query = request.query_params.get('search', '')
+                creditors = []
+                all_creditors = Ledger.objects.filter(
+                    CompanyId=company_id
+                ).filter(
+                    Q(Group__GroupName__icontains='creditor') | Q(Group_id__in=[16, 17, 24, 25])
+                ).exclude(
+                    Q(Group_id=21) | Q(Group__GroupName__icontains='debtor') | Q(Group__GroupName__icontains='customer')
+                ).select_related('Group').order_by('LedgerName')
+
+                from core.models import Purchase, Payment
+                from django.db.models import Sum
+
+                for c in all_creditors:
+                    if search_query:
+                        sq = search_query.lower()
+                        if (sq not in (c.LedgerName or '').lower() and
+                            sq not in (getattr(c, 'MobileNumber', '') or '').lower() and
+                            sq not in (getattr(c, 'PhoneNumber', '') or '').lower() and
+                            sq not in (getattr(c, 'City', '') or '').lower()):
+                            continue
+
+                    op_bal = float(c.OpeningBalance or 0)
+                    op_type = (c.OpeningBalanceType or 'CR').upper()
+                    purchases_billed = float(
+                        Purchase.objects.filter(SupplierLedger=c).aggregate(t=Sum('GrandTotal'))['t'] or 0
+                    )
+                    payments_paid = float(
+                        Payment.objects.filter(PartyLedger=c).aggregate(t=Sum('Amount'))['t'] or 0
+                    )
+                    op_net = op_bal if op_type == 'CR' else -op_bal
+                    net_payable = op_net + purchases_billed - payments_paid
+
+                    creditors.append({
+                        'name': c.LedgerName,
+                        'phone': getattr(c, 'MobileNumber', '') or getattr(c, 'PhoneNumber', '') or '',
+                        'city': getattr(c, 'City', '') or '',
+                        'openingBal': op_bal,
+                        'openingType': op_type,
+                        'purchasesBilled': purchases_billed,
+                        'paymentsPaid': payments_paid,
+                        'payableBalance': net_payable,
+                    })
+                summary_stats = None
+
+            pdf_bytes = generate_payables_summary_pdf(
+                creditors_data=creditors,
+                company_id=company_id,
+                summary_stats=summary_stats,
+                search_query=search_query
+            )
+
+            date_str = datetime.now().strftime('%Y%m%d_%H%M')
+            filename = f"Payables_Report_{date_str}.pdf"
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            return response
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class PurchaseViewSet(viewsets.ModelViewSet):
@@ -2049,7 +2347,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                         TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN']
                     ).aggregate(tot_in=Sum('InQty'))['tot_in'] or Decimal('0.00')
                     f_out = g_movs.filter(
-                        TransactionType__in=['DELIVERY_NOTE', 'PURCHASE_RETURN']
+                        TransactionType__in=['DELIVERY_NOTE', 'PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE']
                     ).aggregate(tot_out=Sum('OutQty'))['tot_out'] or Decimal('0.00')
                     current_godown_stock = max(Decimal('0.00'), f_in - f_out)
                     if diff > current_godown_stock:
@@ -2314,7 +2612,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
                 TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN']
             ).aggregate(tot_in=Sum('InQty'))['tot_in'] or Decimal('0.00')
             f_out = g_movs.filter(
-                TransactionType__in=['DELIVERY_NOTE', 'PURCHASE_RETURN']
+                TransactionType__in=['DELIVERY_NOTE', 'PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE']
             ).aggregate(tot_out=Sum('OutQty'))['tot_out'] or Decimal('0.00')
             current_godown_stock = max(Decimal('0.00'), f_in - f_out)
 
@@ -2952,18 +3250,27 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 )
 
             alloc_instances = []
+            bill_alloc_sum = Decimal('0.00')
+            explicit_adv_sum = Decimal('0.00')
+
             for alloc in allocations_data:
                 alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
                 if alloc_amt > 0:
                     b_ref = alloc.get('BillReference')
                     b_type = alloc.get('BillType')
-                    if not b_type:
-                        if b_ref == 'OPENING' or alloc.get('PurchaseId') == 0 or LedgerLine.objects.filter(Ledger_id=party_id, BillNo=b_ref).exists():
-                            b_type = 'OPENING'
-                        elif is_customer_receipt or Sales.objects.filter(CustomerLedger_id=party_id, SalesNo=b_ref).exists():
-                            b_type = 'SALES'
-                        else:
-                            b_type = 'PURCHASE'
+                    if b_ref == 'CUSTOMER ADVANCE' or b_type == 'ADVANCE':
+                        explicit_adv_sum += alloc_amt
+                        b_type = 'ADVANCE'
+                        b_ref = 'CUSTOMER ADVANCE'
+                    else:
+                        bill_alloc_sum += alloc_amt
+                        if not b_type:
+                            if b_ref == 'OPENING' or alloc.get('PurchaseId') == 0 or LedgerLine.objects.filter(Ledger_id=party_id, BillNo=b_ref).exists():
+                                b_type = 'OPENING'
+                            elif is_customer_receipt or Sales.objects.filter(CustomerLedger_id=party_id, SalesNo=b_ref).exists():
+                                b_type = 'SALES'
+                            else:
+                                b_type = 'PURCHASE'
 
                     ba = BillwiseAllocation.objects.create(
                         PaymentLine=primary_line,
@@ -2974,16 +3281,70 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         BillReference=b_ref,
                         BillDate=alloc.get('BillDate') or None,
                         DueDate=alloc.get('DueDate') or None,
-                        AllocationType=alloc.get('AllocationType', 'Against Reference'),
+                        AllocationType=alloc.get('AllocationType', 'Advance' if b_type == 'ADVANCE' else 'Against Reference'),
                         AllocatedAmount=alloc_amt,
                         CompanyId=company_id,
                     )
                     alloc_instances.append((ba, b_type, b_ref, alloc_amt))
 
+            # Auto-calculate Customer Advance for any unallocated receipt balance
+            advance_amt = Decimal('0.00')
+            if is_customer_receipt:
+                if explicit_adv_sum > Decimal('0.00'):
+                    advance_amt = explicit_adv_sum
+                elif amount > bill_alloc_sum:
+                    advance_amt = amount - bill_alloc_sum
+
+                # If advance amount exists and was not already explicitly allocated
+                if advance_amt > Decimal('0.00') and explicit_adv_sum <= Decimal('0.00'):
+                    ba = BillwiseAllocation.objects.create(
+                        PaymentLine=primary_line,
+                        ReceiptLineId=None,
+                        ReferenceTable='Receipt',
+                        ReferenceId=payment.PaymentId,
+                        BillType='ADVANCE',
+                        BillReference='CUSTOMER ADVANCE',
+                        BillDate=payment.CreatedAt.date(),
+                        DueDate=None,
+                        AllocationType='Advance',
+                        AllocatedAmount=advance_amt,
+                        CompanyId=company_id,
+                    )
+                    alloc_instances.append((ba, 'ADVANCE', 'CUSTOMER ADVANCE', advance_amt))
+
+                if advance_amt > Decimal('0.00'):
+                    # Synchronize sequence for CustomerAdvance
+                    try:
+                        from django.db import connection
+                        with connection.cursor() as cursor:
+                            cursor.execute('SELECT COALESCE(MAX("AdvanceId"), 0) FROM "CustomerAdvance"')
+                            m = cursor.fetchone()[0]
+                            if m > 0:
+                                cursor.execute(f'SELECT setval(\'"CustomerAdvance_AdvanceId_seq"\', {m}, true);')
+                            else:
+                                cursor.execute('SELECT setval(\'"CustomerAdvance_AdvanceId_seq"\', 1, false);')
+                    except Exception:
+                        pass
+
+                    CustomerAdvance.objects.create(
+                        CompanyId=company_id,
+                        CustomerLedger=party,
+                        Payment=payment,
+                        AdvanceNo=f"ADV-{payment.PaymentId:04d}",
+                        AdvanceDate=payment.CreatedAt.date(),
+                        TotalAmount=advance_amt,
+                        RemainingAmount=advance_amt,
+                        Status='ACTIVE',
+                        Narration=f"Advance from {party.LedgerName} via Receipt #{payment.PaymentId}",
+                    )
+
             # Build narrative string detailing allocated bills
             alloc_narr_parts = []
             for _, b_type, b_ref, b_amt in alloc_instances:
-                alloc_narr_parts.append(f"Agst Ref: {b_ref} (₹{b_amt:,.2f})")
+                if b_type == 'ADVANCE' or b_ref == 'CUSTOMER ADVANCE':
+                    alloc_narr_parts.append(f"Customer Advance (₹{b_amt:,.2f})")
+                else:
+                    alloc_narr_parts.append(f"Agst Ref: {b_ref} (₹{b_amt:,.2f})")
             alloc_summary = f" [{', '.join(alloc_narr_parts)}]" if alloc_narr_parts else ""
 
             # 4. Generate Accounting Voucher
@@ -3045,7 +3406,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     ba.ReceiptLineId = cust_vl.VoucherLineId
                     ba.save(update_fields=['ReceiptLineId'])
 
-                    if b_type == 'SALES' or b_ref:
+                    if (b_type == 'SALES' or b_ref) and b_ref not in ['CUSTOMER ADVANCE', 'ADVANCE']:
                         matched_sale = Sales.objects.filter(
                             CompanyId=company_id, CustomerLedger_id=party_id
                         ).filter(
@@ -3212,18 +3573,27 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 )
 
             alloc_instances = []
+            bill_alloc_sum = Decimal('0.00')
+            explicit_adv_sum = Decimal('0.00')
+
             for alloc in allocations_data:
                 alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
                 if alloc_amt > 0:
                     b_ref = alloc.get('BillReference')
                     b_type = alloc.get('BillType')
-                    if not b_type:
-                        if b_ref == 'OPENING' or alloc.get('PurchaseId') == 0 or LedgerLine.objects.filter(Ledger_id=party_id, BillNo=b_ref).exists():
-                            b_type = 'OPENING'
-                        elif is_customer_receipt or Sales.objects.filter(CustomerLedger_id=party_id, SalesNo=b_ref).exists():
-                            b_type = 'SALES'
-                        else:
-                            b_type = 'PURCHASE'
+                    if b_ref == 'CUSTOMER ADVANCE' or b_type == 'ADVANCE':
+                        explicit_adv_sum += alloc_amt
+                        b_type = 'ADVANCE'
+                        b_ref = 'CUSTOMER ADVANCE'
+                    else:
+                        bill_alloc_sum += alloc_amt
+                        if not b_type:
+                            if b_ref == 'OPENING' or alloc.get('PurchaseId') == 0 or LedgerLine.objects.filter(Ledger_id=party_id, BillNo=b_ref).exists():
+                                b_type = 'OPENING'
+                            elif is_customer_receipt or Sales.objects.filter(CustomerLedger_id=party_id, SalesNo=b_ref).exists():
+                                b_type = 'SALES'
+                            else:
+                                b_type = 'PURCHASE'
 
                     ba = BillwiseAllocation.objects.create(
                         PaymentLine=primary_line,
@@ -3234,16 +3604,66 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         BillReference=b_ref,
                         BillDate=alloc.get('BillDate') or None,
                         DueDate=alloc.get('DueDate') or None,
-                        AllocationType=alloc.get('AllocationType', 'Against Reference'),
+                        AllocationType=alloc.get('AllocationType', 'Advance' if b_type == 'ADVANCE' else 'Against Reference'),
                         AllocatedAmount=alloc_amt,
                         CompanyId=company_id,
                     )
                     alloc_instances.append((ba, b_type, b_ref, alloc_amt))
 
+            # Auto-calculate Customer Advance for any unallocated receipt balance in update
+            advance_amt = Decimal('0.00')
+            if is_customer_receipt:
+                if explicit_adv_sum > Decimal('0.00'):
+                    advance_amt = explicit_adv_sum
+                elif amount > bill_alloc_sum:
+                    advance_amt = amount - bill_alloc_sum
+
+                if advance_amt > Decimal('0.00') and explicit_adv_sum <= Decimal('0.00'):
+                    ba = BillwiseAllocation.objects.create(
+                        PaymentLine=primary_line,
+                        ReceiptLineId=None,
+                        ReferenceTable='Receipt',
+                        ReferenceId=instance.PaymentId,
+                        BillType='ADVANCE',
+                        BillReference='CUSTOMER ADVANCE',
+                        BillDate=instance.CreatedAt.date(),
+                        DueDate=None,
+                        AllocationType='Advance',
+                        AllocatedAmount=advance_amt,
+                        CompanyId=company_id,
+                    )
+                    alloc_instances.append((ba, 'ADVANCE', 'CUSTOMER ADVANCE', advance_amt))
+
+                existing_adv = CustomerAdvance.objects.filter(Payment=instance).first()
+                if existing_adv:
+                    utilized = existing_adv.TotalAmount - existing_adv.RemainingAmount
+                    if advance_amt < utilized:
+                        raise ValueError(f"Cannot reduce receipt: ₹{utilized:,.2f} of advance already adjusted against sales.")
+                    existing_adv.TotalAmount = advance_amt
+                    existing_adv.RemainingAmount = advance_amt - utilized
+                    existing_adv.Status = 'ACTIVE' if existing_adv.RemainingAmount > Decimal('0.00') else 'UTILIZED'
+                    existing_adv.CustomerLedger = party
+                    existing_adv.save()
+                elif advance_amt > Decimal('0.00'):
+                    CustomerAdvance.objects.create(
+                        CompanyId=company_id,
+                        CustomerLedger=party,
+                        Payment=instance,
+                        AdvanceNo=f"ADV-{instance.PaymentId:04d}",
+                        AdvanceDate=instance.CreatedAt.date(),
+                        TotalAmount=advance_amt,
+                        RemainingAmount=advance_amt,
+                        Status='ACTIVE',
+                        Narration=f"Advance from {party.LedgerName} via Receipt #{instance.PaymentId}",
+                    )
+
             # Build narrative string detailing allocated bills
             alloc_narr_parts = []
             for _, b_type, b_ref, b_amt in alloc_instances:
-                alloc_narr_parts.append(f"Agst Ref: {b_ref} (₹{b_amt:,.2f})")
+                if b_type == 'ADVANCE' or b_ref == 'CUSTOMER ADVANCE':
+                    alloc_narr_parts.append(f"Customer Advance (₹{b_amt:,.2f})")
+                else:
+                    alloc_narr_parts.append(f"Agst Ref: {b_ref} (₹{b_amt:,.2f})")
             alloc_summary = f" [{', '.join(alloc_narr_parts)}]" if alloc_narr_parts else ""
 
             # Recreate Accounting Voucher
@@ -3299,7 +3719,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     ba.ReceiptLineId = cust_vl.VoucherLineId
                     ba.save(update_fields=['ReceiptLineId'])
 
-                    if b_type == 'SALES' or b_ref:
+                    if (b_type == 'SALES' or b_ref) and b_ref not in ['CUSTOMER ADVANCE', 'ADVANCE']:
                         matched_sale = Sales.objects.filter(
                             CompanyId=company_id, CustomerLedger_id=party_id
                         ).filter(
@@ -3341,6 +3761,20 @@ class PaymentViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         company_id = getattr(request.user, 'CompanyId', 1) or (instance.PartyLedger.CompanyId if instance.PartyLedger else 1) or 1
+
+        # Guard: Check if payment has customer advance that has already been utilized
+        advances = CustomerAdvance.objects.filter(Payment=instance)
+        if advances.exists():
+            utilized = sum((adv.TotalAmount - adv.RemainingAmount) for adv in advances)
+            if utilized > Decimal('0.00'):
+                return Response(
+                    {
+                        'detail': f'Cannot delete this receipt because ₹{utilized:,.2f} of its customer advance has already been adjusted against sales invoices. Please delete or cancel those sales invoices first.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            advances.delete()
+
         with transaction.atomic():
             party_id = instance.PartyLedger_id
             payment_ledger_ids = list(instance.lines.values_list('Ledger_id', flat=True))
@@ -3502,7 +3936,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN']
             ).aggregate(tot_in=Sum('InQty'))['tot_in'] or Decimal('0.00')
             f_out = g_movs.filter(
-                TransactionType__in=['DELIVERY_NOTE', 'PURCHASE_RETURN', 'ADJUSTMENT_OUT']
+                TransactionType__in=['DELIVERY_NOTE', 'PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE']
             ).aggregate(tot_out=Sum('OutQty'))['tot_out'] or Decimal('0.00')
             filled_available = max(Decimal('0.00'), f_in - f_out)
 
@@ -3727,15 +4161,23 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         """
         company_id = getattr(request.user, 'CompanyId', 1) or 1
         products = Product.objects.filter(CompanyId=company_id, IsActive=True).select_related('Unit')
+
+        from core.models import Godown
+        godowns_list_qs = list(Godown.objects.filter(CompanyId=company_id, IsActive=True).select_related('RouteVehicleDriver'))
+        godown_rvd_ids = {g.RouteVehicleDriver_id for g in godowns_list_qs if g.RouteVehicleDriver_id}
+        godown_rvd_ids.add(1)
+        godown_vehicle_ids = {g.RouteVehicleDriver.Vehicle_id for g in godowns_list_qs if g.RouteVehicleDriver and g.RouteVehicleDriver.Vehicle_id}
+        godown_vehicle_ids.add(1)
+
         allocations_qs = RouteVehicleDriver.objects.filter(
             CompanyId=company_id, IsActive=True
-        ).exclude(RouteVehicleDriverId=1).select_related('Route', 'Vehicle', 'Driver')
+        ).exclude(RouteVehicleDriverId__in=godown_rvd_ids).select_related('Route', 'Vehicle', 'Driver')
 
-        # Also find any other registered active vehicles (excluding Godown and Office)
+        # Also find any other registered active vehicles (excluding Godown depots and Office)
         allocated_vehicle_ids = set(allocations_qs.values_list('Vehicle_id', flat=True))
         all_active_vehicles = Vehicle.objects.filter(
             CompanyId=company_id, IsActive=True
-        ).exclude(VehicleId=1).exclude(VehicleNumber__in=['Godown Stock', 'OFFICE'])
+        ).exclude(VehicleId__in=godown_vehicle_ids).exclude(VehicleNumber__in=['Godown Stock', 'OFFICE'])
 
         all_movements = StockMovement.objects.filter(CompanyId=company_id)
 
@@ -3816,19 +4258,53 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             p_n = p.ProductName.lower()
             is_cylinder = ('cylinder' in cat_n) or ('cylinder' in p_n) or ('kg' in p_n) or ('lpg' in p_n)
 
-            # Central Godown Filled Stock
-            g_in = all_movements.filter(
-                Product=p,
-                RouteVehicleDriverId=1,
-                TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN']
-            ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
-            g_out = all_movements.filter(
-                Product=p,
-                RouteVehicleDriverId=1,
-                TransactionType__in=['DELIVERY_NOTE', 'PURCHASE_RETURN', 'ADJUSTMENT_OUT']
-            ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
-            g_qty = max(Decimal('0.00'), g_in - g_out)
-            total_godown_filled += g_qty
+            # Multi-Godown Stock Computation
+            prod_godowns = []
+            p_godown_filled = Decimal('0.00')
+            p_godown_empty = Decimal('0.00')
+
+            for g in godowns_list_qs:
+                g_rvd = g.RouteVehicleDriver_id
+                g_in = all_movements.filter(
+                    Product=p,
+                    RouteVehicleDriverId=g_rvd,
+                    TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN']
+                ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
+                g_out = all_movements.filter(
+                    Product=p,
+                    RouteVehicleDriverId=g_rvd,
+                    TransactionType__in=['DELIVERY_NOTE', 'PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE']
+                ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
+                g_qty_val = max(Decimal('0.00'), g_in - g_out)
+                p_godown_filled += g_qty_val
+
+                # Empty
+                g_emp_in = all_movements.filter(
+                    Product=p,
+                    RouteVehicleDriverId=g_rvd,
+                    TransactionType__in=['GODOWN_RETURN_EMPTY', 'VAN_UNLOAD_EMPTY', 'RECEIPT_NOTE_EMPTY_RETURN', 'VAN_EMPTY_RETURN', 'OPENING_EMPTY', 'ADJUSTMENT_EMPTY_IN']
+                ).aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+                g_emp_out = all_movements.filter(
+                    Product=p,
+                    RouteVehicleDriverId=g_rvd,
+                    TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN']
+                ).aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+                g_empty_bal_val = max(Decimal('0.00'), g_emp_in - g_emp_out) if is_cylinder else Decimal('0.00')
+                p_godown_empty += g_empty_bal_val
+
+                prod_godowns.append({
+                    'GodownId': g.GodownId,
+                    'GodownName': g.GodownName,
+                    'GodownCode': g.GodownCode,
+                    'Location': g.Location or '',
+                    'IsCentral': g.IsCentral,
+                    'FilledQty': float(g_qty_val),
+                    'EmptyQty': float(g_empty_bal_val),
+                    'TotalQty': float(g_qty_val + g_empty_bal_val),
+                })
+
+            g_qty = p_godown_filled
+            total_godown_filled += p_godown_filled
 
             p_allocated = Decimal('0.00')
             p_vans = []
@@ -3920,21 +4396,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
             # Total Empty Cylinders in System: Van empties + Godown empties
             p_empty = sum(v['EmptyQty'] for v in p_vans)
-            g_empty = all_movements.filter(
-                Product=p,
-                RouteVehicleDriverId=1,
-                TransactionType__in=['GODOWN_RETURN_EMPTY', 'VAN_UNLOAD_EMPTY', 'RECEIPT_NOTE_EMPTY_RETURN', 'VAN_EMPTY_RETURN', 'OPENING_EMPTY', 'ADJUSTMENT_EMPTY_IN']
-            ).aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
-            g_empty_out = all_movements.filter(
-                Product=p,
-                RouteVehicleDriverId=1,
-                TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN']
-            ).aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
-            g_empty_bal = max(Decimal('0.00'), g_empty - g_empty_out) if is_cylinder else Decimal('0.00')
-            total_empty = float(p_empty) + float(g_empty_bal) if is_cylinder else 0.0
+            total_empty = float(p_empty) + float(p_godown_empty) if is_cylinder else 0.0
 
             if is_cylinder:
-                total_godown_empty += g_empty_bal
+                total_godown_empty += p_godown_empty
                 total_allocated_filled += p_allocated
                 total_allocated_empty += Decimal(str(p_empty))
             else:
@@ -3954,7 +4419,8 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'Rate': float(purch_rate),
                 'GodownQty': float(g_qty),
                 'GodownFilledQty': float(g_qty),
-                'GodownEmptyQty': float(g_empty_bal),
+                'GodownEmptyQty': float(p_godown_empty),
+                'Godowns': prod_godowns,
                 'AllocatedQty': float(p_allocated),
                 'FilledQty': float(total_p_qty),
                 'EmptyQty': total_empty,
@@ -4178,6 +4644,22 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         # Last sync time (time this live stock snapshot was fetched)
         last_sync_str = datetime.now().strftime('%I:%M %p')
 
+        godowns_summary = []
+        for idx, g in enumerate(godowns_list_qs):
+            g_f = sum(p['Godowns'][idx]['FilledQty'] for p in product_analysis if len(p.get('Godowns', [])) > idx)
+            g_e = sum(p['Godowns'][idx]['EmptyQty'] for p in product_analysis if len(p.get('Godowns', [])) > idx)
+            godowns_summary.append({
+                'GodownId': g.GodownId,
+                'GodownName': g.GodownName,
+                'GodownCode': g.GodownCode,
+                'Location': g.Location or '',
+                'IsCentral': g.IsCentral,
+                'RouteVehicleDriverId': g.RouteVehicleDriver_id,
+                'FilledQty': float(g_f),
+                'EmptyQty': float(g_e),
+                'TotalQty': float(g_f + g_e),
+            })
+
         return Response({
             'summary': {
                 'total_system_cylinders': float(total_system),
@@ -4197,6 +4679,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'last_sync_time': last_sync_str,
             },
             'products': product_analysis,
+            'godowns': godowns_summary,
             'all_vans': list(alloc_van_map.values()),
             'active_vans': active_vans,
             'idle_vans': empty_vans,
@@ -5973,10 +6456,35 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
         company_id = getattr(request.user, 'CompanyId', 1) or 1
         alloc_id = rn.RouteVehicleDriver_id
 
+        from core.models import Godown
+        godowns = list(Godown.objects.filter(CompanyId=company_id, IsActive=True))
+        godowns_by_id = {g.GodownId: g for g in godowns}
+        central_godown = next((g for g in godowns if g.IsCentral), None) or (godowns[0] if godowns else None)
+
+        target_godown_id = request.data.get('godown_id')
+        default_target_godown = godowns_by_id.get(int(target_godown_id)) if target_godown_id else central_godown
+        default_rvd_id = default_target_godown.RouteVehicleDriver_id if default_target_godown else 1
+        default_godown_name = default_target_godown.GodownName if default_target_godown else 'Main Godown'
+
+        raw_splits = request.data.get('godown_splits') or {}
+        splits_by_prod = {}
+        if isinstance(raw_splits, dict):
+            for k, v in raw_splits.items():
+                try:
+                    splits_by_prod[int(k)] = v
+                except:
+                    pass
+        elif isinstance(raw_splits, list):
+            for item in raw_splits:
+                pid = item.get('product_id') or item.get('ProductId')
+                if pid:
+                    splits_by_prod[int(pid)] = item.get('splits', [])
+
         with transaction.atomic():
             for line in rn.lines.all():
                 qty = line.Quantity
                 if qty > 0:
+                    # 1. Van Outward
                     StockMovement.objects.create(
                         CompanyId=company_id,
                         Product=line.Product,
@@ -5991,27 +6499,54 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
                         OutQty=qty,
                         Narration=f"Shift Return to Godown: {rn.ReceiptNoteNo}"
                     )
-                    StockMovement.objects.create(
-                        CompanyId=company_id,
-                        Product=line.Product,
-                        Unit=line.Unit,
-                        RouteVehicleDriverId=1,
-                        TransactionType='RECEIPT_NOTE_RETURN',
-                        ReferenceId=rn.ReceiptNoteId,
-                        ReferenceLineId=line.ReceiptNoteLineId,
-                        TransactionNo=rn.ReceiptNoteNo,
-                        TransactionDate=rn.ReceiptDate,
-                        InQty=qty,
-                        OutQty=Decimal('0.00'),
-                        Narration=f"Shift Return from Van {rn.RouteVehicleDriver.Vehicle.VehicleNumber if rn.RouteVehicleDriver and rn.RouteVehicleDriver.Vehicle else ''}"
-                    )
+
+                    # 2. Godown Inward (Split or Direct)
+                    prod_splits = splits_by_prod.get(line.Product_id) if line.Product_id else None
+                    if prod_splits and len(prod_splits) > 0:
+                        for sp in prod_splits:
+                            sp_gid = int(sp.get('godown_id') or 1)
+                            sp_g = godowns_by_id.get(sp_gid) or central_godown
+                            target_rvd = sp_g.RouteVehicleDriver_id if sp_g else 1
+                            target_name = sp_g.GodownName if sp_g else 'Godown'
+                            sp_qty = Decimal(str(sp.get('qty') or sp.get('empty_qty') or sp.get('quantity') or 0))
+
+                            if sp_qty > 0:
+                                StockMovement.objects.create(
+                                    CompanyId=company_id,
+                                    Product=line.Product,
+                                    Unit=line.Unit,
+                                    RouteVehicleDriverId=target_rvd,
+                                    TransactionType='RECEIPT_NOTE_RETURN',
+                                    ReferenceId=rn.ReceiptNoteId,
+                                    ReferenceLineId=line.ReceiptNoteLineId,
+                                    TransactionNo=rn.ReceiptNoteNo,
+                                    TransactionDate=rn.ReceiptDate,
+                                    InQty=sp_qty,
+                                    OutQty=Decimal('0.00'),
+                                    Narration=f"Split Return ({sp_qty}) to {target_name} from Van {rn.RouteVehicleDriver.Vehicle.VehicleNumber if rn.RouteVehicleDriver and rn.RouteVehicleDriver.Vehicle else ''}"
+                                )
+                    else:
+                        StockMovement.objects.create(
+                            CompanyId=company_id,
+                            Product=line.Product,
+                            Unit=line.Unit,
+                            RouteVehicleDriverId=default_rvd_id,
+                            TransactionType='RECEIPT_NOTE_RETURN',
+                            ReferenceId=rn.ReceiptNoteId,
+                            ReferenceLineId=line.ReceiptNoteLineId,
+                            TransactionNo=rn.ReceiptNoteNo,
+                            TransactionDate=rn.ReceiptDate,
+                            InQty=qty,
+                            OutQty=Decimal('0.00'),
+                            Narration=f"Shift Return to {default_godown_name} from Van {rn.RouteVehicleDriver.Vehicle.VehicleNumber if rn.RouteVehicleDriver and rn.RouteVehicleDriver.Vehicle else ''}"
+                        )
 
             rn.Status = 'SETTLED'
             rn.save(update_fields=['Status'])
 
         return Response({
             'success': True,
-            'message': f'Receipt Note {rn.ReceiptNoteNo} processed. Stock successfully transferred to Central Godown.'
+            'message': f'Receipt Note {rn.ReceiptNoteNo} processed. Stock successfully transferred to {default_godown_name}.'
         })
 
     @action(detail=False, methods=['get'], url_path='allocated-products')
@@ -6361,17 +6896,15 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
             sales_qs = Sales.objects.filter(
                 CompanyId=company_id,
                 RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
-                CreatedAt__gte=dn.CreatedAt
+                SalesDate=dn.DeliveryNoteDate
             ).exclude(Status='CANCELLED')
-            if next_dn and next_dn.CreatedAt:
-                sales_qs = sales_qs.filter(CreatedAt__lt=next_dn.CreatedAt)
 
             if not sales_qs.exists():
                 sales_qs = Sales.objects.filter(
                     RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
                     CompanyId=company_id,
-                    Status='PENDING_APPROVAL'
-                )
+                    Status__in=['PENDING', 'PENDING_APPROVAL', 'LIVE']
+                ).exclude(Status='CANCELLED')
 
             sales_qs.update(
                 Status='COMPLETED',
@@ -6379,6 +6912,10 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 ApprovedBy=request.user if request.user.is_authenticated else None,
                 ApprovedAt=timezone.now()
             )
+
+            # Ensure double-entry accounting vouchers are generated for all approved shift sales
+            for s_rec in sales_qs:
+                post_sale_voucher(s_rec, company_id)
 
             # 3. Empty the van completely: Transfer ALL remaining unsold filled cylinders & customer empty returns to Central Godown (RouteVehicleDriverId=1)
             # Safeguard: If this shift was already unloaded (e.g. by end_shift), do not duplicate GODOWN_RETURN_FULL / GODOWN_RETURN_EMPTY
@@ -6389,6 +6926,30 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
             ).exists()
 
             if not already_unloaded:
+                from core.models import Godown
+                godowns = list(Godown.objects.filter(CompanyId=company_id, IsActive=True))
+                godowns_by_id = {g.GodownId: g for g in godowns}
+                central_godown = next((g for g in godowns if g.IsCentral), None) or (godowns[0] if godowns else None)
+                
+                target_godown_id = request.data.get('godown_id')
+                default_target_godown = godowns_by_id.get(int(target_godown_id)) if target_godown_id else central_godown
+                default_rvd_id = default_target_godown.RouteVehicleDriver_id if default_target_godown else 1
+                default_godown_name = default_target_godown.GodownName if default_target_godown else 'Main Godown'
+
+                raw_splits = request.data.get('godown_splits') or {}
+                splits_by_prod = {}
+                if isinstance(raw_splits, dict):
+                    for k, v in raw_splits.items():
+                        try:
+                            splits_by_prod[int(k)] = v
+                        except:
+                            pass
+                elif isinstance(raw_splits, list):
+                    for item in raw_splits:
+                        pid = item.get('product_id') or item.get('ProductId')
+                        if pid:
+                            splits_by_prod[int(pid)] = item.get('splits', [])
+
                 allocated_prod_ids = set(
                     StockMovement.objects.filter(
                         CompanyId=company_id,
@@ -6430,7 +6991,7 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     empty_out = v_movs.filter(TransactionType='VAN_UNLOAD_EMPTY').aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
                     bal_empty = max(Decimal('0.00'), empty_in - empty_out)
 
-                    # Return remaining unsold full cylinders to Godown (RouteVehicleDriverId=1)
+                    # 1. Unload from Van
                     if bal_full > 0:
                         StockMovement.objects.create(
                             CompanyId=company_id,
@@ -6445,21 +7006,7 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                             OutQty=bal_full,
                             Narration=f"Shift Return Unsold Full from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
                         )
-                        StockMovement.objects.create(
-                            CompanyId=company_id,
-                            Product=prod,
-                            Unit_id=prod.Unit_id or 1,
-                            RouteVehicleDriverId=1,
-                            TransactionType='GODOWN_RETURN_FULL',
-                            ReferenceId=dn.DeliveryNoteId,
-                            TransactionNo=f"ERD-{dn.DeliveryNoteId}",
-                            TransactionDate=shift_date,
-                            InQty=bal_full,
-                            OutQty=Decimal('0.00'),
-                            Narration=f"Shift Return Full to Godown from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
-                        )
 
-                    # Return empty cylinders collected from customers to Godown (RouteVehicleDriverId=1)
                     if bal_empty > 0:
                         StockMovement.objects.create(
                             CompanyId=company_id,
@@ -6474,19 +7021,76 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                             OutQty=bal_empty,
                             Narration=f"Shift Return Empty from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
                         )
-                        StockMovement.objects.create(
-                            CompanyId=company_id,
-                            Product=prod,
-                            Unit_id=prod.Unit_id or 1,
-                            RouteVehicleDriverId=1,
-                            TransactionType='GODOWN_RETURN_EMPTY',
-                            ReferenceId=dn.DeliveryNoteId,
-                            TransactionNo=f"ERD-{dn.DeliveryNoteId}",
-                            TransactionDate=shift_date,
-                            InQty=bal_empty,
-                            OutQty=Decimal('0.00'),
-                            Narration=f"Shift Return Empty to Godown from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
-                        )
+
+                    # 2. Inward to Target Godowns (Split or Direct)
+                    prod_splits = splits_by_prod.get(p_id)
+                    if prod_splits and len(prod_splits) > 0:
+                        for sp in prod_splits:
+                            sp_gid = int(sp.get('godown_id') or 1)
+                            sp_g = godowns_by_id.get(sp_gid) or central_godown
+                            target_rvd = sp_g.RouteVehicleDriver_id if sp_g else 1
+                            target_name = sp_g.GodownName if sp_g else 'Godown'
+                            sp_full = Decimal(str(sp.get('filled_qty') or 0))
+                            sp_empty = Decimal(str(sp.get('empty_qty') or 0))
+
+                            if sp_full > 0:
+                                StockMovement.objects.create(
+                                    CompanyId=company_id,
+                                    Product=prod,
+                                    Unit_id=prod.Unit_id or 1,
+                                    RouteVehicleDriverId=target_rvd,
+                                    TransactionType='GODOWN_RETURN_FULL',
+                                    ReferenceId=dn.DeliveryNoteId,
+                                    TransactionNo=f"ERD-{dn.DeliveryNoteId}",
+                                    TransactionDate=shift_date,
+                                    InQty=sp_full,
+                                    OutQty=Decimal('0.00'),
+                                    Narration=f"Split Return Full to {target_name} from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
+                                )
+                            if sp_empty > 0:
+                                StockMovement.objects.create(
+                                    CompanyId=company_id,
+                                    Product=prod,
+                                    Unit_id=prod.Unit_id or 1,
+                                    RouteVehicleDriverId=target_rvd,
+                                    TransactionType='GODOWN_RETURN_EMPTY',
+                                    ReferenceId=dn.DeliveryNoteId,
+                                    TransactionNo=f"ERD-{dn.DeliveryNoteId}",
+                                    TransactionDate=shift_date,
+                                    InQty=sp_empty,
+                                    OutQty=Decimal('0.00'),
+                                    Narration=f"Split Return Empty to {target_name} from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
+                                )
+                    else:
+                        # Direct 100% to selected godown
+                        if bal_full > 0:
+                            StockMovement.objects.create(
+                                CompanyId=company_id,
+                                Product=prod,
+                                Unit_id=prod.Unit_id or 1,
+                                RouteVehicleDriverId=default_rvd_id,
+                                TransactionType='GODOWN_RETURN_FULL',
+                                ReferenceId=dn.DeliveryNoteId,
+                                TransactionNo=f"ERD-{dn.DeliveryNoteId}",
+                                TransactionDate=shift_date,
+                                InQty=bal_full,
+                                OutQty=Decimal('0.00'),
+                                Narration=f"Shift Return Full to {default_godown_name} from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
+                            )
+                        if bal_empty > 0:
+                            StockMovement.objects.create(
+                                CompanyId=company_id,
+                                Product=prod,
+                                Unit_id=prod.Unit_id or 1,
+                                RouteVehicleDriverId=default_rvd_id,
+                                TransactionType='GODOWN_RETURN_EMPTY',
+                                ReferenceId=dn.DeliveryNoteId,
+                                TransactionNo=f"ERD-{dn.DeliveryNoteId}",
+                                TransactionDate=shift_date,
+                                InQty=bal_empty,
+                                OutQty=Decimal('0.00'),
+                                Narration=f"Shift Return Empty to {default_godown_name} from Van {alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else ''}"
+                            )
 
             # 5. Generate Double-Entry Accounting Vouchers for Shift & Customer Accounts
             affected_ledgers = {24, 56, 20, 22, 23, 35}
@@ -6773,6 +7377,21 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
 
 
 
+def rollback_sale_advance_adjustments(sale):
+    """
+    Rolls back any customer advances adjusted against this sale invoice.
+    Restores the advance remaining amount and sets its status back to ACTIVE.
+    """
+    adjustments = AdvanceAdjustment.objects.filter(Sales=sale).select_related('Advance')
+    for adj in adjustments:
+        adv = adj.Advance
+        if adv:
+            adv.RemainingAmount += adj.AdjustmentAmount
+            adv.Status = 'ACTIVE'
+            adv.save(update_fields=['RemainingAmount', 'Status', 'UpdatedAt'])
+    adjustments.delete()
+
+
 def post_sale_voucher(sale, company_id=1):
     """
     Creates or updates the double-entry accounting voucher for an approved sale.
@@ -6873,17 +7492,20 @@ def post_sale_voucher(sale, company_id=1):
                     )
                     line_no += 1
 
-        if paid_amt > 0 and cash_or_bank:
+        adj_from_advance = AdvanceAdjustment.objects.filter(Sales=sale).aggregate(tot=Sum('AdjustmentAmount'))['tot'] or Decimal('0.00')
+        cash_paid_spot = max(Decimal('0.00'), paid_amt - adj_from_advance)
+
+        if cash_paid_spot > 0 and cash_or_bank:
             affected_ledgers.add(cash_or_bank.LedgerId)
             VoucherLine.objects.create(
                 Voucher=voucher, LineNo=line_no, Ledger=cash_or_bank,
-                DebitAmount=paid_amt, CreditAmount=Decimal('0.00'),
+                DebitAmount=cash_paid_spot, CreditAmount=Decimal('0.00'),
                 Narration=f"Payment for {sale.SalesNo} ({pm})"
             )
             line_no += 1
             cust_vl = VoucherLine.objects.create(
                 Voucher=voucher, LineNo=line_no, Ledger=customer,
-                DebitAmount=Decimal('0.00'), CreditAmount=paid_amt,
+                DebitAmount=Decimal('0.00'), CreditAmount=cash_paid_spot,
                 Narration=f"Payment Received ({pm})"
             )
             line_no += 1
@@ -7003,16 +7625,31 @@ class SalesViewSet(viewsets.ModelViewSet):
         customer_id = data.get('CustomerLedger') or data.get('CustomerLedgerId')
         customer = Ledger.objects.filter(LedgerId=customer_id).first() if customer_id else None
 
-        rvd_id = data.get('RouteVehicleDriver') or data.get('RouteVehicleDriverId')
+        # 1. Resolve Dispensing Godown for physical stock movement
+        from core.models import Godown
+        godown_id = data.get('GodownId') or data.get('godown_id')
+        g_obj = None
+        if godown_id:
+            g_obj = Godown.objects.filter(GodownId=godown_id, CompanyId=company_id).first()
+        if not g_obj:
+            g_obj = Godown.objects.filter(CompanyId=company_id, IsCentral=True).first() or Godown.objects.filter(CompanyId=company_id).first()
+
+        godown_rvd_id = g_obj.RouteVehicleDriver_id if (g_obj and g_obj.RouteVehicleDriver_id) else 1
+
+        # 2. Resolve Sale RouteVehicleDriver attribution (keeps selected Route/POS intact)
         rvd = None
+        rvd_id = data.get('RouteVehicleDriver') or data.get('RouteVehicleDriverId')
         if rvd_id:
             rvd = RouteVehicleDriver.objects.filter(RouteVehicleDriverId=rvd_id).first()
         if not rvd:
             route_id = data.get('RouteId') or data.get('route_id')
             if route_id:
                 rvd = RouteVehicleDriver.objects.filter(Route_id=route_id, IsActive=True).first()
-            if not rvd:
-                rvd = RouteVehicleDriver.objects.filter(Route_id=1).first() or RouteVehicleDriver.objects.first()
+        if not rvd:
+            if g_obj and g_obj.RouteVehicleDriver:
+                rvd = g_obj.RouteVehicleDriver
+            else:
+                rvd = RouteVehicleDriver.objects.filter(RouteVehicleDriverId=1).first() or RouteVehicleDriver.objects.first()
 
         pm = (data.get('PaymentMethod') or 'CASH').upper()
         notes = data.get('Notes', '')
@@ -7122,13 +7759,13 @@ class SalesViewSet(viewsets.ModelViewSet):
                     CompanyId=company_id
                 )
 
-                # Stock Movement: SALE OUT
+                # Stock Movement: SALE OUT directly from the dispensing Godown
                 StockMovement.objects.create(
                     CompanyId=company_id,
                     Product=prod,
                     Unit=prod.Unit,
-                    RouteVehicleDriverId=rvd.RouteVehicleDriverId if rvd else 1,
-                    TransactionType='VAN_SALE',
+                    RouteVehicleDriverId=godown_rvd_id,
+                    TransactionType='DIRECT_SALE',
                     ReferenceId=int(customer.LedgerId if customer else 0),
                     TransactionNo=sale.SalesNo,
                     TransactionDate=sale.SalesDate,
@@ -7136,7 +7773,7 @@ class SalesViewSet(viewsets.ModelViewSet):
                     OutQty=qty,
                     OutCostRate=unit_taxable,
                     OutCostAmount=line_gross,
-                    Narration=f"Office Sale to {customer.LedgerName if customer else 'Customer'} | {pm} | Amount: {line_gross}"
+                    Narration=f"Sale to {customer.LedgerName if customer else 'Customer'} | {pm} | Amount: {line_gross}"
                 )
 
                 if empty_qty > 0:
@@ -7144,8 +7781,8 @@ class SalesViewSet(viewsets.ModelViewSet):
                         CompanyId=company_id,
                         Product=prod,
                         Unit=prod.Unit,
-                        RouteVehicleDriverId=rvd.RouteVehicleDriverId if rvd else 1,
-                        TransactionType='VAN_EMPTY_RETURN',
+                        RouteVehicleDriverId=godown_rvd_id,
+                        TransactionType='GODOWN_RETURN_EMPTY',
                         ReferenceId=int(customer.LedgerId if customer else 0),
                         TransactionNo=sale.SalesNo,
                         TransactionDate=sale.SalesDate,
@@ -7153,7 +7790,7 @@ class SalesViewSet(viewsets.ModelViewSet):
                         OutQty=Decimal('0.00'),
                         InCostRate=Decimal('0.00'),
                         InCostAmount=Decimal('0.00'),
-                        Narration=f"Empty Return from {customer.LedgerName if customer else 'Customer'}"
+                        Narration=f"Empty cylinder returned on sale #{sale.SalesNo} | From {customer.LedgerName if customer else 'Customer'}"
                     )
 
             custom_total = Decimal(str(data.get('GrandTotal') or 0))
@@ -7163,21 +7800,86 @@ class SalesViewSet(viewsets.ModelViewSet):
             sale.TotalDeliveredQty = tot_deliv
             sale.TotalEmptyQty = tot_empty
 
-            # Payment method & Paid Amount handling
+            # Payment method & Paid Amount handling with Customer Advance Adjustment
+            advance_to_adjust = Decimal(str(data.get('advance_to_adjust') or data.get('AdvanceAdjusted') or 0))
+            if advance_to_adjust < Decimal('0.00'):
+                advance_to_adjust = Decimal('0.00')
+
+            actual_advance_adjusted = Decimal('0.00')
+            if customer and advance_to_adjust > Decimal('0.00'):
+                active_advances = CustomerAdvance.objects.filter(
+                    CustomerLedger=customer,
+                    Status='ACTIVE',
+                    RemainingAmount__gt=0
+                ).order_by('AdvanceDate', 'AdvanceId').select_for_update()
+
+                total_avail = sum(adv.RemainingAmount for adv in active_advances)
+                needed_advance = min(advance_to_adjust, total_avail, sale.GrandTotal)
+
+                if needed_advance > Decimal('0.00'):
+                    # Synchronize sequence for AdvanceAdjustment
+                    try:
+                        from django.db import connection
+                        with connection.cursor() as cursor:
+                            cursor.execute('SELECT COALESCE(MAX("AdjustmentId"), 0) FROM "AdvanceAdjustment"')
+                            m = cursor.fetchone()[0]
+                            if m > 0:
+                                cursor.execute(f'SELECT setval(\'"AdvanceAdjustment_AdjustmentId_seq"\', {m}, true);')
+                            else:
+                                cursor.execute('SELECT setval(\'"AdvanceAdjustment_AdjustmentId_seq"\', 1, false);')
+                    except Exception:
+                        pass
+
+                    for adv in active_advances:
+                        if needed_advance <= Decimal('0.00'):
+                            break
+                        take = min(adv.RemainingAmount, needed_advance)
+                        adv.RemainingAmount -= take
+                        if adv.RemainingAmount <= Decimal('0.00'):
+                            adv.Status = 'UTILIZED'
+                        adv.save(update_fields=['RemainingAmount', 'Status', 'UpdatedAt'])
+
+                        AdvanceAdjustment.objects.create(
+                            CompanyId=company_id,
+                            Advance=adv,
+                            Sales=sale,
+                            CustomerLedger=customer,
+                            AdjustmentAmount=take,
+                            AdjustmentDate=sale.SalesDate,
+                            Narration=f"Adjusted advance {adv.AdvanceNo} against invoice {sale.SalesNo}"
+                        )
+                        actual_advance_adjusted += take
+                        needed_advance -= take
+
             pm = (data.get('PaymentMethod') or 'CREDIT').upper()
             sale.PaymentMethod = pm
-            paid_input = data.get('PaidAmount')
-            if paid_input is not None:
-                try:
-                    p_amt = Decimal(str(paid_input))
-                    sale.PaidAmount = max(Decimal('0.00'), min(p_amt, sale.GrandTotal))
-                except Exception:
-                    sale.PaidAmount = Decimal('0.00')
-            elif pm in ['CASH', 'UPI', 'BANK']:
-                sale.PaidAmount = sale.GrandTotal
-            else:  # CREDIT, ON_ACCOUNT, etc.
-                sale.PaidAmount = Decimal('0.00')
 
+            paid_now_input = data.get('PaidNow') or data.get('paid_now') or data.get('CashPaid')
+            if paid_now_input is not None:
+                cash_paid = max(Decimal('0.00'), Decimal(str(paid_now_input)))
+            else:
+                raw_paid = data.get('PaidAmount')
+                if raw_paid is not None:
+                    try:
+                        p_val = Decimal(str(raw_paid))
+                        # If raw_paid includes advance, subtract actual_advance_adjusted to get cash paid
+                        if p_val >= (sale.GrandTotal - actual_advance_adjusted) and pm in ['CASH', 'UPI', 'BANK']:
+                            cash_paid = max(Decimal('0.00'), sale.GrandTotal - actual_advance_adjusted)
+                        elif p_val > actual_advance_adjusted:
+                            cash_paid = p_val - actual_advance_adjusted
+                        elif p_val == actual_advance_adjusted:
+                            cash_paid = Decimal('0.00')
+                        else:
+                            cash_paid = p_val
+                    except Exception:
+                        cash_paid = Decimal('0.00')
+                elif pm in ['CASH', 'UPI', 'BANK']:
+                    cash_paid = max(Decimal('0.00'), sale.GrandTotal - actual_advance_adjusted)
+                else:
+                    cash_paid = Decimal('0.00')
+
+            total_paid = cash_paid + actual_advance_adjusted
+            sale.PaidAmount = min(sale.GrandTotal, total_paid)
             sale.save()
 
             post_sale_voucher(sale, company_id)
@@ -7221,6 +7923,7 @@ class SalesViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         sale = serializer.save()
         if sale.Status == 'CANCELLED':
+            rollback_sale_advance_adjustments(sale)
             BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
         elif sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
             sync_sales_billwise_allocation(sale, None)
@@ -7228,6 +7931,8 @@ class SalesViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         company_id = instance.CompanyId or 1
         cust_id = instance.CustomerLedger_id
+        # Rollback advance adjustments
+        rollback_sale_advance_adjustments(instance)
         # Delete billwise allocations
         BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=instance.SalesId).delete()
         # Delete vouchers and lines
@@ -7344,6 +8049,85 @@ class SalesViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'detail': f'Error generating statement PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    @action(detail=False, methods=['get', 'post'], url_path='collections-statement-pdf', permission_classes=[AllowAny])
+    def collections_statement_pdf(self, request):
+        """
+        Generates and streams an official Collections & Cash Inflow Statement PDF.
+        Supports POST with filtered records payload directly from frontend,
+        as well as GET query params (type, preset, from_date, to_date, mode).
+        """
+        try:
+            from core.invoice_generator import generate_collections_statement_pdf
+            company_id = 1
+            if hasattr(request, 'user') and getattr(request.user, 'CompanyId', None):
+                company_id = request.user.CompanyId
+
+            if request.method == 'POST':
+                data = request.data or {}
+                records = data.get('records', [])
+                source_type = data.get('source_type', 'ALL')
+                period_text = data.get('period_label', 'All Records to Date')
+                summary_stats = data.get('summary_stats', None)
+            else:
+                source_type = request.query_params.get('type', 'ALL')
+                period_text = request.query_params.get('period_label') or 'All Records to Date'
+                from_date = request.query_params.get('from_date') or None
+                to_date = request.query_params.get('to_date') or None
+
+                records = []
+                if source_type in ('ALL', 'SALE'):
+                    s_qs = Sales.objects.exclude(Status='CANCELLED').filter(PaidAmount__gt=0)
+                    if from_date:
+                        s_qs = s_qs.filter(SalesDate__gte=from_date)
+                    if to_date:
+                        s_qs = s_qs.filter(SalesDate__lte=to_date)
+                    for s in s_qs.order_by('-SalesDate', '-SalesId')[:500]:
+                        records.append({
+                            'date': str(s.SalesDate or ''),
+                            'ref': s.InvoiceNo or s.SalesNo or f"INV-{s.SalesId}",
+                            'source': 'SALE',
+                            'party_name': getattr(s.CustomerLedger, 'LedgerName', None) or s.CustomerName or 'Direct Buyer',
+                            'route_name': s.RouteName or 'Office',
+                            'payment_mode': (s.PaymentMethod or 'CASH').upper(),
+                            'amount': float(s.PaidAmount or 0),
+                        })
+
+                if source_type in ('ALL', 'RECEIPT'):
+                    p_qs = Payment.objects.filter(PartyLedger__isnull=False)
+                    if from_date:
+                        p_qs = p_qs.filter(CreatedAt__date__gte=from_date)
+                    if to_date:
+                        p_qs = p_qs.filter(CreatedAt__date__lte=to_date)
+                    for p in p_qs.order_by('-CreatedAt', '-PaymentId')[:500]:
+                        p_date = p.CreatedAt.strftime('%Y-%m-%d') if p.CreatedAt else ''
+                        records.append({
+                            'date': p_date,
+                            'ref': p.PaymentNo or p.VoucherNo or f"REC-{p.PaymentId}",
+                            'source': 'RECEIPT',
+                            'party_name': getattr(p.PartyLedger, 'LedgerName', None) or 'Customer',
+                            'route_name': getattr(p, 'RouteName', None) or 'Office',
+                            'payment_mode': (getattr(p, 'PaymentMode', None) or 'CASH').upper(),
+                            'amount': float(p.Amount or 0),
+                        })
+
+                summary_stats = None
+
+            pdf_bytes = generate_collections_statement_pdf(
+                records=records,
+                source_type=source_type,
+                period_text=period_text,
+                company_id=company_id,
+                summary_stats=summary_stats,
+            )
+
+            response = HttpResponse(pdf_bytes, content_type='application/pdf')
+            clean_type = source_type.lower()
+            filename = f"Collections_Statement_{clean_type}_{date.today().strftime('%Y%m%d')}.pdf"
+            response['Content-Disposition'] = f'inline; filename="{filename}"'
+            return response
+        except Exception as e:
+            return Response({'detail': f'Error generating collections statement PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 class ConnectionPackageViewSet(viewsets.ModelViewSet):
@@ -7376,4 +8160,22 @@ class ConnectionPackageViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         company_id = getattr(self.request.user, 'CompanyId', 1) or 1
         serializer.save(CompanyId=company_id)
+
+
+from core.models import Godown
+from core.serializers import GodownSerializer
+
+class GodownViewSet(viewsets.ModelViewSet):
+    serializer_class = GodownSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        company_id = getattr(self.request.user, 'CompanyId', 1) or 1
+        return Godown.objects.filter(CompanyId=company_id, IsActive=True).select_related('RouteVehicleDriver')
+
+    def perform_create(self, serializer):
+        company_id = getattr(self.request.user, 'CompanyId', 1) or 1
+        serializer.save(CompanyId=company_id)
+
 
