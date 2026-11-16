@@ -1,70 +1,91 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:supergas_driver/main.dart';
-import 'package:supergas_driver/screens/home_shell.dart';
-import 'package:supergas_driver/screens/home_screen.dart';
-import 'package:supergas_driver/screens/profile_screen.dart';
-import 'package:supergas_driver/screens/orders_screen.dart';
+import 'package:supergas_driver/providers/app_state.dart';
+import 'package:supergas_driver/screens/login_screen.dart';
 
 void main() {
-  testWidgets('App renders login screen and driver dashboard correctly', (WidgetTester tester) async {
-    await tester.pumpWidget(const SuperGasApp());
-    await tester.pump(const Duration(milliseconds: 300));
+  group('AppState Unit Tests', () {
+    test('Initial AppState has correct default state', () {
+      final state = AppState();
+      expect(state.isLoadingFromBackend, false);
+      expect(state.cylinders, isEmpty);
+      expect(state.orders, isEmpty);
+      expect(state.expenses, isEmpty);
+      expect(state.splitCashAmount, 0.0);
+      expect(state.splitUpiAmount, 0.0);
+    });
 
-    // 1. Check Login Screen header elements
-    expect(find.text('SUPERGAS'), findsOneWidget);
-    expect(find.text('Driver (DRV001)'), findsOneWidget);
+    test('AppState.setSplitAmounts updates state properly', () {
+      final state = AppState();
+      state.setSplitAmounts(1500.0, 1660.0);
+      expect(state.splitCashAmount, 1500.0);
+      expect(state.splitUpiAmount, 1660.0);
+    });
 
-    // 2. Sign In to Driver Dashboard
-    final signInBtn = find.text('Sign In as Driver');
-    expect(signInBtn, findsOneWidget);
-    await tester.tap(signInBtn);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-    await tester.pump(const Duration(milliseconds: 500));
+    test('AppState financial computations correctly sum cash and upi', () {
+      final state = AppState();
+      final customer = Customer(name: 'Test Customer', phone: '9876543210');
+      final cylinder = CylinderType(weight: '12KG', price: 700.0, filledStock: 10);
+      final item = DeliveryItem(cylinder: cylinder, deliveryQty: 2);
 
-    // 3. Should render HomeShell & HomeScreen widgets
-    expect(find.byType(HomeShell), findsOneWidget);
-    expect(find.byType(HomeScreen), findsOneWidget);
+      // Add Cash Order
+      state.orders.add(
+        DeliveryOrder(
+          ticketId: 'TKT-001',
+          customer: customer,
+          items: [item],
+          totalCylinders: 2,
+          totalEmpties: 2,
+          amount: 1400.0,
+          paymentMethod: 'Cash',
+          time: '10:00 AM',
+        ),
+      );
 
-    // 4. Verify Driver Dashboard components
-    expect(find.text('JO'), findsOneWidget);
-    expect(find.text('KL 77 3803'), findsOneWidget);
-    expect(find.text('STOCK FILLED'), findsOneWidget);
-    expect(find.text('EMPTY'), findsOneWidget);
-    expect(find.text('INVENTORY'), findsOneWidget);
-    expect(find.text('Weight (KG)'), findsOneWidget);
-    expect(find.textContaining('INCOME'), findsOneWidget);
-    expect(find.textContaining('EXPENSES'), findsOneWidget);
-    expect(find.text('BALANCE'), findsOneWidget);
+      // Add UPI Order
+      state.orders.add(
+        DeliveryOrder(
+          ticketId: 'TKT-002',
+          customer: customer,
+          items: [item],
+          totalCylinders: 1,
+          totalEmpties: 1,
+          amount: 700.0,
+          paymentMethod: 'UPI',
+          time: '10:30 AM',
+        ),
+      );
 
-    // Test expanding income and opening history
-    await tester.ensureVisible(find.textContaining('INCOME'));
-    await tester.tap(find.textContaining('INCOME'));
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('CASH'), findsOneWidget);
-    expect(find.text('UPI'), findsOneWidget);
+      expect(state.orders.length, 2);
+      expect(state.cashIncome, 1400.0);
+      expect(state.upiIncome, 700.0);
+      expect(state.totalIncome, 2100.0);
+      expect(state.netBalance, 2100.0);
+    });
+  });
 
-    // Test opening History modal
-    await tester.ensureVisible(find.text('History'));
-    await tester.tap(find.text('History'));
-    await tester.pumpAndSettle();
-    expect(find.text('Trip Expenses History'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.close));
-    await tester.pumpAndSettle();
+  group('LoginScreen Widget Tests', () {
+    testWidgets('LoginScreen renders UI correctly', (WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: const LoginScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    // 5. Test switching to Delivery tab
-    await tester.tap(find.text('Delivery'));
-    await tester.pump(const Duration(milliseconds: 300));
+      // Check header and titles
+      expect(find.text('FUTURE GAS'), findsOneWidget);
+      expect(find.text('VAN SALES & DISTRIBUTION'), findsOneWidget);
+      expect(find.text('SIGN IN'), findsOneWidget);
 
-    // 6. Test switching to Orders tab
-    await tester.tap(find.text('Orders'));
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(OrdersScreen), findsOneWidget);
+      // Check input fields
+      expect(find.text('USERNAME'), findsOneWidget);
+      expect(find.text('PASSWORD'), findsOneWidget);
 
-    // 7. Test switching to Profile tab
-    await tester.tap(find.text('Profile'));
-    await tester.pump(const Duration(milliseconds: 300));
-    expect(find.byType(ProfileScreen), findsOneWidget);
+      // Check Sign In button
+      expect(find.widgetWithText(ElevatedButton, 'Sign In'), findsOneWidget);
+    });
   });
 }

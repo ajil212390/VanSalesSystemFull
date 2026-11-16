@@ -20,6 +20,7 @@ import {
     Tooltip,
 } from '@mantine/core';
 import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -48,6 +49,7 @@ interface VehicleFormValues {
 }
 
 export const VehiclesPage: React.FC = () => {
+    const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [formOpened, setFormOpened] = useState(false);
     const [editingVehicle, setEditingVehicle] = useState<VehicleItem | null>(null);

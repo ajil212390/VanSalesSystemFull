@@ -20,6 +20,7 @@ import {
   IconPackages,
   IconShoppingBag,
   IconFlame,
+  IconArrowLeft,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -88,6 +89,18 @@ export const ConnectionPackagesPage: React.FC = () => {
       <Box pt={4} pb={2}>
         <Group justify="space-between" align="center" wrap="wrap">
           <div>
+            <Group gap="xs" align="center" mb={6}>
+              <Button
+                variant="subtle"
+                color="gray"
+                size="xs"
+                leftSection={<IconArrowLeft size={16} />}
+                onClick={() => navigate('/')}
+                styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+              >
+                Back to Dashboard
+              </Button>
+            </Group>
             <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
               Connection Packages
             </Title>

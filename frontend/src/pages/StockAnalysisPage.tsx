@@ -1007,14 +1007,20 @@ export const StockAnalysisPage: React.FC = () => {
               <SegmentedControl
                 value={categoryFilter}
                 onChange={(val) => setCategoryFilter(val as any)}
+                color="burgundy"
+                radius="xl"
+                size="xs"
+                transitionDuration={250}
+                transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
                 data={[
                   {
                     label: (
                       <span
                         style={{
-                          color: categoryFilter === 'all' ? '#800020' : '#475569',
-                          fontWeight: categoryFilter === 'all' ? 700 : 500,
+                          color: categoryFilter === 'all' ? '#ffffff' : '#64748b',
+                          fontWeight: categoryFilter === 'all' ? 700 : 600,
                           fontSize: 12,
+                          display: 'inline-block',
                           transition: 'color 150ms ease',
                         }}
                       >
@@ -1027,9 +1033,10 @@ export const StockAnalysisPage: React.FC = () => {
                     label: (
                       <span
                         style={{
-                          color: categoryFilter === 'cylinders' ? '#800020' : '#475569',
-                          fontWeight: categoryFilter === 'cylinders' ? 700 : 500,
+                          color: categoryFilter === 'cylinders' ? '#ffffff' : '#64748b',
+                          fontWeight: categoryFilter === 'cylinders' ? 700 : 600,
                           fontSize: 12,
+                          display: 'inline-block',
                           transition: 'color 150ms ease',
                         }}
                       >
@@ -1042,9 +1049,10 @@ export const StockAnalysisPage: React.FC = () => {
                     label: (
                       <span
                         style={{
-                          color: categoryFilter === 'other' ? '#800020' : '#475569',
-                          fontWeight: categoryFilter === 'other' ? 700 : 500,
+                          color: categoryFilter === 'other' ? '#ffffff' : '#64748b',
+                          fontWeight: categoryFilter === 'other' ? 700 : 600,
                           fontSize: 12,
+                          display: 'inline-block',
                           transition: 'color 150ms ease',
                         }}
                       >
@@ -1054,21 +1062,17 @@ export const StockAnalysisPage: React.FC = () => {
                     value: 'other',
                   },
                 ]}
-                radius="sm"
-                size="xs"
-                transitionDuration={250}
-                transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
                 styles={{
                   root: {
                     backgroundColor: '#f1f5f9',
                     padding: 3,
-                    borderRadius: 8,
+                    borderRadius: 9999,
                     border: '1px solid #e2e8f0',
                   },
                   indicator: {
-                    backgroundColor: '#ffffff',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
-                    borderRadius: 6,
+                    backgroundColor: '#800020',
+                    boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
+                    borderRadius: 9999,
                   },
                   label: {
                     padding: '4px 12px',
@@ -1278,6 +1282,18 @@ export const StockAnalysisPage: React.FC = () => {
       {/* 1. Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Group gap="xs" align="center" mb={6}>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/')}
+              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+            >
+              Back to Dashboard
+            </Button>
+          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Stock Analysis
           </Title>

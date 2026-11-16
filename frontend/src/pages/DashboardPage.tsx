@@ -515,37 +515,58 @@ export const DashboardPage: React.FC = () => {
   const stockProducts = stockAnalysis?.products || [];
 
   const stockLocations = useMemo(() => {
-    const godownProducts = stockProducts
-      .filter((product: any) => {
-        const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
-        const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
-        return (product.GodownQty || 0) > 0 || emptyInGodown > 0;
-      })
-      .map((product: any) => {
-        const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
-        const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
-        const filled = product.GodownQty || 0;
+    // If backend returns dynamic godowns list, map all of them (Central + Secondary Godowns)
+    const godownList = (stockAnalysis?.godowns && stockAnalysis.godowns.length > 0) ? stockAnalysis.godowns : [];
+    let godownEntries: any[] = [];
+
+    if (godownList.length > 0) {
+      godownEntries = godownList.map((g: any) => {
+        const filled = Number(g.FilledQty || 0);
+        const empty = Number(g.EmptyQty || 0);
         return {
-          ProductId: product.ProductId,
-          ProductName: product.ProductName,
-          ProductCode: product.ProductCode,
-          filled: filled,
-          empty: isCyl ? emptyInGodown : 0,
-          Qty: filled + (isCyl ? emptyInGodown : 0),
+          id: `godown-${g.GodownId}`,
+          rawId: g.GodownId,
+          name: g.GodownName || (g.IsCentral ? 'Central Godown' : 'Secondary Godown'),
+          type: 'godown',
+          filledQuantity: filled,
+          emptyQuantity: empty,
+          emptyCylinders: empty,
+          quantity: filled + empty,
         };
       });
+    } else {
+      const godownProducts = stockProducts
+        .filter((product: any) => {
+          const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
+          const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
+          return (product.GodownQty || 0) > 0 || emptyInGodown > 0;
+        })
+        .map((product: any) => {
+          const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
+          const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
+          const filled = product.GodownQty || 0;
+          return {
+            ProductId: product.ProductId,
+            ProductName: product.ProductName,
+            ProductCode: product.ProductCode,
+            filled: filled,
+            empty: isCyl ? emptyInGodown : 0,
+            Qty: filled + (isCyl ? emptyInGodown : 0),
+          };
+        });
 
-    const godownFilled = godownProducts.reduce((total: number, p: any) => total + (p.filled || 0), 0);
-    const godownEmpty = godownProducts.reduce((total: number, p: any) => total + (p.empty || 0), 0);
-    const godown = {
-      id: 'godown',
-      name: 'Central Godown',
-      type: 'godown',
-      filledQuantity: godownFilled,
-      emptyQuantity: godownEmpty,
-      emptyCylinders: godownEmpty,
-      quantity: godownFilled + godownEmpty,
-    };
+      const godownFilled = godownProducts.reduce((total: number, p: any) => total + (p.filled || 0), 0);
+      const godownEmpty = godownProducts.reduce((total: number, p: any) => total + (p.empty || 0), 0);
+      godownEntries = [{
+        id: 'godown',
+        name: 'Central Godown',
+        type: 'godown',
+        filledQuantity: godownFilled,
+        emptyQuantity: godownEmpty,
+        emptyCylinders: godownEmpty,
+        quantity: godownFilled + godownEmpty,
+      }];
+    }
 
     const activeVansList = (stockAnalysis?.active_vans || []).map((van: any) => {
       const vanFilled = (van.BalanceCylinders ?? van.TotalCylinders ?? 0) + (van.OtherProductsBalance ?? 0);
@@ -560,8 +581,8 @@ export const DashboardPage: React.FC = () => {
       };
     });
 
-    return [godown, ...activeVansList];
-  }, [stockProducts, stockAnalysis?.active_vans]);
+    return [...godownEntries, ...activeVansList];
+  }, [stockProducts, stockAnalysis?.godowns, stockAnalysis?.active_vans]);
 
   const totalProductFilled = useMemo(() => {
     return stockProducts.reduce((sum: number, p: any) => sum + (Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0), 0);
@@ -911,7 +932,7 @@ export const DashboardPage: React.FC = () => {
                   </Text>
                 </Group>
               }
-              subtitle={`${godownCount} godown • ${vanCount} vans`}
+              subtitle={`${godownCount} godown${godownCount !== 1 ? 's' : ''} • ${vanCount} van${vanCount !== 1 ? 's' : ''}`}
               onClick={() => navigate('/inventory/locations')}
             />
 

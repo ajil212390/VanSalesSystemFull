@@ -17,6 +17,7 @@ import {
   Card,
   Box,
   Badge,
+  Modal,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -24,6 +25,9 @@ import {
   IconTrashX,
   IconReceipt2,
   IconPackage,
+  IconPrinter,
+  IconCheck,
+  IconCash,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -56,6 +60,10 @@ export const SalesFormPage: React.FC = () => {
   const [notes, setNotes] = useState<string>('');
   const [totalEmptyQty, setTotalEmptyQty] = useState<number>(0);
   const [customGrandTotal, setCustomGrandTotal] = useState<number | ''>('');
+
+  // Post-sale completion modal state
+  const [completionModalOpened, setCompletionModalOpened] = useState(false);
+  const [createdSaleData, setCreatedSaleData] = useState<any | null>(null);
 
   // 1. Fetch Routes (to select Point of Sale, defaults to Office Sale Point)
   const { data: routes = [] } = useQuery<any[]>({
@@ -101,6 +109,23 @@ export const SalesFormPage: React.FC = () => {
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
   });
+
+  // 3b. Fetch Live Stock based on selected Godown
+  const { data: dispensingStock = [] } = useQuery<any[]>({
+    queryKey: ['godown-stock', godownId],
+    queryFn: async () => {
+      const res = await apiClient.get(`/delivery-notes/godown-stock/?godown_id=${godownId}`);
+      return Array.isArray(res.data) ? res.data : [];
+    },
+  });
+
+  const stockByProductMap = useMemo(() => {
+    const map = new Map<number, number>();
+    dispensingStock.forEach((item: any) => {
+      map.set(Number(item.ProductId), Number(item.AvailableGodownQty || 0));
+    });
+    return map;
+  }, [dispensingStock]);
 
   // 4. Fetch Customer Special Prices if customer is selected
   const { data: customerSpecialPrices = [] } = useQuery<any[]>({
@@ -219,7 +244,7 @@ export const SalesFormPage: React.FC = () => {
     }
   };
 
-  // Product options (incorporating Customer-Specific Rates naturally)
+  // Product options (incorporating Customer-Specific Rates & Live Stock)
   const productOptions = useMemo(() => {
     return products
       .filter((p: any) => p.IsActive !== false)
@@ -227,15 +252,18 @@ export const SalesFormPage: React.FC = () => {
         const specialRate = customerPriceMap.get(p.ProductId);
         const hasSpecial = specialRate !== undefined && specialRate > 0;
         const effectiveRate = hasSpecial ? specialRate : Number(p.SalesPrice || 0);
+        const availStock = stockByProductMap.get(p.ProductId) ?? 0;
 
         return {
           value: String(p.ProductId),
-          label: `${p.ProductName} (Rate: ₹${effectiveRate.toFixed(2)})`,
+          label: p.ProductName,
+          displayLabel: `${p.ProductName} • ₹${effectiveRate.toFixed(2)} (Stock: ${availStock})`,
           price: effectiveRate,
           tax: Number(p.GSTPercentage || 0),
+          stock: availStock,
         };
       });
-  }, [products, customerPriceMap]);
+  }, [products, customerPriceMap, stockByProductMap]);
 
   // Dynamic Line Items (starts unselected / empty by default)
   const [lines, setLines] = useState<SaleLineItem[]>([
@@ -422,12 +450,9 @@ export const SalesFormPage: React.FC = () => {
         message: `Invoice #${data.InvoiceNo || data.SalesNo} generated successfully.`,
         color: 'teal',
       });
-      // Optionally prompt to print
-      if (window.confirm('Sale recorded successfully! Would you like to view/print the GST Tax Invoice now?')) {
-        const url = `${apiClient.defaults.baseURL}/sales/${data.SalesId}/invoice-pdf/`;
-        window.open(url, '_blank');
-      }
-      navigate('/sales');
+      // Store created sale and open post-action modal instead of window.confirm
+      setCreatedSaleData(data);
+      setCompletionModalOpened(true);
     },
     onError: (err: any) => {
       notifications.show({
@@ -486,10 +511,19 @@ export const SalesFormPage: React.FC = () => {
                 color="gray"
                 size="compact-sm"
                 leftSection={<IconArrowLeft size={16} />}
-                onClick={() => navigate('/sales')}
+                onClick={() => navigate('/')}
                 style={{ paddingLeft: 0 }}
               >
-                Back to Sales
+                Back to Dashboard
+              </Button>
+              <Text size="xs" c="dimmed">•</Text>
+              <Button
+                variant="subtle"
+                color="gray"
+                size="compact-sm"
+                onClick={() => navigate('/sales')}
+              >
+                Sales
               </Button>
             </Group>
             <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
@@ -658,11 +692,67 @@ export const SalesFormPage: React.FC = () => {
                       <Table.Td>
                         <Select
                           placeholder="Select product..."
-                          data={productOptions}
+                          data={productOptions.map((opt) => ({
+                            value: opt.value,
+                            label: opt.label,
+                          }))}
                           value={ln.Product}
                           onChange={(val) => val && handleProductChange(idx, val)}
                           searchable
                           size="xs"
+                          renderOption={({ option }) => {
+                            const opt = productOptions.find((p) => p.value === option.value);
+                            const stock = opt?.stock ?? 0;
+                            const price = opt?.price ?? 0;
+                            return (
+                              <Group justify="space-between" wrap="nowrap" style={{ width: '100%' }}>
+                                <Text size="xs" fw={600}>{option.label}</Text>
+                                <Group gap={8} wrap="nowrap">
+                                  <Text size="xs" c="dimmed">₹{price.toFixed(2)}</Text>
+                                  <Badge
+                                    size="xs"
+                                    variant="light"
+                                    color={stock > 0 ? 'burgundy' : 'gray'}
+                                    styles={{
+                                      root: {
+                                        backgroundColor: stock > 0 ? '#fdf2f4' : '#f1f5f9',
+                                        color: stock > 0 ? '#800020' : '#94a3b8',
+                                        fontWeight: 700,
+                                      },
+                                    }}
+                                  >
+                                    Stock: {stock}
+                                  </Badge>
+                                </Group>
+                              </Group>
+                            );
+                          }}
+                          rightSection={
+                            ln.Product ? (
+                              <Group gap={6} mr="xs" wrap="nowrap">
+                                <Text size="11px" c="dimmed">
+                                  ₹{(productOptions.find((p) => p.value === ln.Product)?.price ?? 0).toFixed(2)}
+                                </Text>
+                                <Badge
+                                  size="xs"
+                                  variant="light"
+                                  styles={{
+                                    root: {
+                                      backgroundColor: '#fdf2f4',
+                                      color: '#800020',
+                                      fontWeight: 700,
+                                      padding: '0 6px',
+                                      height: 18,
+                                    },
+                                  }}
+                                >
+                                  Stock: {stockByProductMap.get(Number(ln.Product)) ?? 0}
+                                </Badge>
+                              </Group>
+                            ) : null
+                          }
+                          rightSectionWidth={ln.Product ? 145 : undefined}
+                          rightSectionPointerEvents="none"
                         />
                       </Table.Td>
                       <Table.Td>
@@ -855,6 +945,152 @@ export const SalesFormPage: React.FC = () => {
           </SimpleGrid>
         </Stack>
       </form>
+
+      {/* Post-Sale Action Modal */}
+      <Modal
+        opened={completionModalOpened}
+        onClose={() => {
+          setCompletionModalOpened(false);
+          navigate('/sales');
+        }}
+        title={
+          <Group gap={8}>
+            <Box
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                backgroundColor: '#fdf2f4',
+                color: '#800020',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <IconCheck size={18} stroke={2.5} />
+            </Box>
+            <Text fw={700} size="md" c="#800020">
+              Sale Recorded Successfully
+            </Text>
+          </Group>
+        }
+        centered
+        radius="md"
+        padding="lg"
+        overlayProps={{ blur: 2, backgroundOpacity: 0.35 }}
+      >
+        <Stack gap="md">
+          <Paper p="sm" radius="md" style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+            <Group justify="space-between" mb={4}>
+              <Text size="xs" c="dimmed">Invoice Reference</Text>
+              <Text size="xs" fw={700} c="#0f172a">
+                {createdSaleData?.InvoiceNo || createdSaleData?.SalesNo || 'INV-NEW'}
+              </Text>
+            </Group>
+            <Group justify="space-between" mb={4}>
+              <Text size="xs" c="dimmed">Customer</Text>
+              <Text size="xs" fw={700} c="#0f172a">
+                {customerOptions.find((c) => c.value === String(customerId))?.label || 'Selected Customer'}
+              </Text>
+            </Group>
+            <Group justify="space-between" mb={4}>
+              <Text size="xs" c="dimmed">Invoice Total</Text>
+              <Text size="xs" fw={700} c="#0f172a">
+                ₹{Number(createdSaleData?.GrandTotal || finalGrandTotal).toFixed(2)}
+              </Text>
+            </Group>
+            <Group justify="space-between">
+              <Text size="xs" c="dimmed">Balance Due</Text>
+              <Text
+                size="xs"
+                fw={800}
+                c={
+                  Number(createdSaleData?.BalanceAmount ?? (finalGrandTotal - (amountPaidNow !== '' ? Number(amountPaidNow) : 0))) > 0
+                    ? '#800020'
+                    : 'teal.7'
+                }
+              >
+                ₹{Number(createdSaleData?.BalanceAmount ?? (finalGrandTotal - (amountPaidNow !== '' ? Number(amountPaidNow) : 0))).toFixed(2)}
+              </Text>
+            </Group>
+          </Paper>
+
+          <Text size="xs" c="dimmed">
+            Choose your next action for this transaction:
+          </Text>
+
+          <Stack gap="xs">
+            {/* Action 1: Record Receipt Now */}
+            <Button
+              variant="light"
+              color="burgundy"
+              fullWidth
+              leftSection={<IconCash size={16} />}
+              styles={{
+                root: {
+                  backgroundColor: '#fdf2f4',
+                  color: '#800020',
+                  borderColor: '#fce7ec',
+                  fontWeight: 600,
+                  height: 42,
+                },
+              }}
+              onClick={() => {
+                setCompletionModalOpened(false);
+                const custParam = customerId ? `&party_id=${customerId}` : '';
+                const saleParam = createdSaleData?.SalesId ? `&sale_id=${createdSaleData.SalesId}` : '';
+                navigate(`/receipts/new?return_to=sales${custParam}${saleParam}`);
+              }}
+            >
+              Add Receipt Now
+            </Button>
+
+            {/* Action 2: View / Print GST Invoice */}
+            <Button
+              variant="outline"
+              color="gray"
+              fullWidth
+              leftSection={<IconPrinter size={16} />}
+              styles={{
+                root: {
+                  color: '#0f172a',
+                  borderColor: '#cbd5e1',
+                  fontWeight: 600,
+                  height: 42,
+                },
+              }}
+              onClick={() => {
+                if (createdSaleData?.SalesId) {
+                  const url = `${apiClient.defaults.baseURL}/sales/${createdSaleData.SalesId}/invoice-pdf/`;
+                  window.open(url, '_blank');
+                }
+              }}
+            >
+              Generate GST Invoice PDF
+            </Button>
+
+            {/* Action 3: Close / Done */}
+            <Button
+              variant="subtle"
+              color="gray"
+              fullWidth
+              styles={{
+                root: {
+                  color: '#64748b',
+                  fontWeight: 500,
+                  height: 36,
+                },
+              }}
+              onClick={() => {
+                setCompletionModalOpened(false);
+                navigate('/sales');
+              }}
+            >
+              Close &amp; Return to Sales
+            </Button>
+          </Stack>
+        </Stack>
+      </Modal>
     </Stack>
   );
 };

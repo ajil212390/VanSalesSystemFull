@@ -121,8 +121,10 @@ export const ReceiptFormPage: React.FC = () => {
   const { id } = useParams<{ id?: string }>();
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
-  const isEditing = Boolean(id);
+  const isEditing = Boolean(id) && id !== 'new' && id !== 'create';
   const prefillPartyId = searchParams.get('party_id') || searchParams.get('customer_id');
+  const returnTo = searchParams.get('return_to');
+  const saleId = searchParams.get('sale_id');
 
   // Top Voucher Header State
   const [receiptNo, setReceiptNo] = useState('');
@@ -700,7 +702,11 @@ export const ReceiptFormPage: React.FC = () => {
           : 'Receipt voucher and allocations posted successfully.',
         color: 'teal',
       });
-      navigate('/receipts');
+      if (returnTo === 'sales') {
+        navigate(saleId ? `/sales?open_sale_id=${saleId}` : '/sales');
+      } else {
+        navigate('/receipts');
+      }
     },
     onError: (err: any) => {
       const msg = err.response?.data?.detail || err.message || 'Failed to save receipt.';
@@ -731,6 +737,17 @@ export const ReceiptFormPage: React.FC = () => {
       {/* 1. Top Header */}
       <Group justify="space-between" align="center" style={{ minHeight: 28 }}>
         <Group gap={6} align="center">
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={14} />}
+            onClick={() => navigate('/')}
+            styles={{ root: { paddingLeft: 4, paddingRight: 6, height: 26, fontSize: 11 } }}
+          >
+            Dashboard
+          </Button>
+          <Text size="xs" c="dimmed">•</Text>
           <ActionIcon
             variant="subtle"
             color="gray"
@@ -921,7 +938,7 @@ export const ReceiptFormPage: React.FC = () => {
                             <Button
                               size="compact-xs"
                               variant={hasAllocations ? 'filled' : 'light'}
-                              color={hasAllocations ? 'teal' : isSundryParty ? 'burgundy' : 'gray'}
+                              color="burgundy"
                               leftSection={<IconReceipt size={13} />}
                               disabled={!row.amount || Number(row.amount) <= 0}
                               onClick={() => handleOpenAllocationModal(index)}
@@ -934,7 +951,7 @@ export const ReceiptFormPage: React.FC = () => {
                                 !row.amount || Number(row.amount) <= 0
                                   ? { backgroundColor: '#f1f5f9', color: '#94a3b8', cursor: 'not-allowed' }
                                   : hasAllocations
-                                  ? {}
+                                  ? { backgroundColor: '#800020', color: '#ffffff', fontWeight: 600 }
                                   : isSundryParty
                                   ? { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 600 }
                                   : { backgroundColor: '#f8fafc', color: '#64748b' }

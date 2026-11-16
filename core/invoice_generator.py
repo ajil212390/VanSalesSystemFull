@@ -196,6 +196,21 @@ def generate_tax_invoice_pdf(sale):
     # 1. HEADER (Company Branding on Left, Tax Invoice Title on Right)
     # -------------------------------------------------------------
     date_formatted = sale.SalesDate.strftime('%d/%m/%Y') if sale.SalesDate else datetime.now().strftime('%d/%m/%Y')
+    pm_upper = (sale.PaymentMethod or 'CASH').upper()
+    payment_mode_display = f"<b>Payment Mode:</b> {pm_upper}<br/>"
+    if pm_upper == 'SPLIT':
+        c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+        u_m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+        c_str = f"Rs. {float(c_m.group(1).replace(',', '')):.2f}" if c_m else ''
+        u_str = f"Rs. {float(u_m.group(1).replace(',', '')):.2f}" if u_m else ''
+        if c_str or u_str:
+            payment_mode_display = (
+                f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
+                f"&nbsp;&bull; Cash: {c_str} &nbsp;|&nbsp; UPI: {u_str}<br/>"
+            )
+        else:
+            payment_mode_display = f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
+
     header_data = [
         [
             Paragraph(f"<b>{company_name}</b>", c_title),
@@ -212,7 +227,7 @@ def generate_tax_invoice_pdf(sale):
             Paragraph(
                 f"<b>Invoice No:</b> {sale.SalesNo}<br/>"
                 f"<b>Date:</b> {date_formatted}<br/>"
-                f"<b>Payment Mode:</b> {sale.PaymentMethod.upper()}<br/>"
+                f"{payment_mode_display}"
                 f"<b>Vehicle No:</b> {sale.VehicleName or 'Van Delivery'}<br/>"
                 f"<b>Driver:</b> {sale.DriverName or 'Van Driver'}",
                 inv_meta
@@ -1841,10 +1856,261 @@ def generate_payables_summary_pdf(creditors_data, company_id=1, summary_stats=No
     story.append(KeepTogether(bottom_table))
     story.append(Spacer(1, 14))
 
-    # 6. Running Footer Bar
+    doc.build(story)
+    return buf.getvalue()
+
+
+def generate_collections_statement_pdf(records, source_type='ALL', period_text='All Records to Date', company_id=1, summary_stats=None):
+    """
+    Generates a clean commercial PDF for Collections & Cash Inflow Register.
+    """
+    from core.models import Company
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=25,
+        bottomMargin=20,
+    )
+
+    company = Company.objects.filter(CompanyId=company_id).first()
+    company_name = company.Name if company else "FUTURE GAS"
+    phone_str = company.Phone if company and company.Phone else "+91 98470 12345"
+    email_str = company.Email if company and company.Email else "accounts@futuregas.in"
+    gstin_str = company.GstNo if company and company.GstNo else "32AABCF1234F1Z8"
+    address_str = company.AddressLine1 if company and company.AddressLine1 else "Civil Station, Kozhikode, Kerala - 673020"
+
+    now = datetime.now()
+    now_str = now.strftime('%d-%b-%Y %I:%M %p')
+    date_only = now.strftime('%d-%b-%Y')
+
+    story = []
+
+    # 1. Header Box
+    hdr_left = [
+        Paragraph(f"<b>{company_name}</b>", ParagraphStyle('ColHdrCo', fontName=FONT_BOLD, fontSize=16, leading=19, textColor=PRIMARY_COLOR)),
+        Paragraph("LPG Commercial & Domestic Distribution Network", ParagraphStyle('ColHdrSub', fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=MUTED_COLOR)),
+        Spacer(1, 4),
+        Paragraph(address_str, ParagraphStyle('ColHdrAddr', fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=DARK_COLOR)),
+        Paragraph(f"Ph: {phone_str} | Email: {email_str} | GSTIN: {gstin_str}", ParagraphStyle('ColHdrMeta', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=MUTED_COLOR)),
+    ]
+
+    title_suffix = "ALL COLLECTIONS & RECEIPTS"
+    if source_type == 'SALE':
+        title_suffix = "SALES COUNTER COLLECTIONS"
+    elif source_type == 'RECEIPT':
+        title_suffix = "RECEIPT VOUCHERS / DIRECT COLLECTIONS"
+
+    hdr_right = [
+        Paragraph("<b>COLLECTIONS STATEMENT</b>", ParagraphStyle('ColHdrTitle', fontName=FONT_BOLD, fontSize=14, leading=17, textColor=PRIMARY_COLOR, alignment=2)),
+        Paragraph(f"<font size=8 color='#64748B'>{title_suffix}</font>", ParagraphStyle('ColHdrType', fontName=FONT_NAME, fontSize=8, leading=11, textColor=MUTED_COLOR, alignment=2)),
+        Spacer(1, 4),
+        Paragraph(f"Period: <b>{period_text}</b>", ParagraphStyle('ColHdrPrd', fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=DARK_COLOR, alignment=2)),
+        Paragraph(f"Generated: {now_str}", ParagraphStyle('ColHdrGen', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=MUTED_COLOR, alignment=2)),
+    ]
+
+    header_table = Table([[hdr_left, hdr_right]], colWidths=[310, 235])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LINEBELOW', (0, 0), (-1, -1), 1.5, PRIMARY_COLOR),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 10))
+
+    # 2. KPI Summary Cards
+    tot_count = len(records)
+    tot_amt = sum(Decimal(str(r.get('amount') or 0)) for r in records)
+    cash_amt = sum(Decimal(str(r.get('amount') or 0)) for r in records if str(r.get('paymentMode') or r.get('payment_mode') or '').upper() == 'CASH')
+    bank_amt = tot_amt - cash_amt
+
+    if summary_stats:
+        try:
+            tot_count = int(summary_stats.get('totalCount') or tot_count)
+            tot_amt = Decimal(str(summary_stats.get('totalAmount') or tot_amt))
+            cash_amt = Decimal(str(summary_stats.get('cashTotal') or cash_amt))
+            bank_amt = Decimal(str(summary_stats.get('bankTotal') or bank_amt))
+        except Exception:
+            pass
+
+    kpi_card_style = TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.75, colors.HexColor('#E2E8F0')),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#FFFFFF')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ])
+
+    kpi_1 = Table([
+        [Paragraph("TOTAL TRANSACTIONS", ParagraphStyle('KpiLbl1', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=MUTED_COLOR))],
+        [Paragraph(f"<b>{tot_count}</b>", ParagraphStyle('KpiVal1', fontName=FONT_BOLD, fontSize=15, leading=18, textColor=DARK_COLOR))],
+        [Paragraph(f"<font size=6.5 color='#64748B'>Entries recorded</font>", ParagraphStyle('KpiSub1', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR))],
+    ], colWidths=[125])
+    kpi_1.setStyle(kpi_card_style)
+
+    kpi_2 = Table([
+        [Paragraph("CASH COLLECTIONS", ParagraphStyle('KpiLbl2', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=MUTED_COLOR))],
+        [Paragraph(f"<b>₹{cash_amt:,.2f}</b>", ParagraphStyle('KpiVal2', fontName=FONT_BOLD, fontSize=14, leading=17, textColor=DARK_COLOR))],
+        [Paragraph(f"<font size=6.5 color='#64748B'>Direct cash inflow</font>", ParagraphStyle('KpiSub2', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR))],
+    ], colWidths=[130])
+    kpi_2.setStyle(kpi_card_style)
+
+    kpi_3 = Table([
+        [Paragraph("UPI & BANK INFLOW", ParagraphStyle('KpiLbl3', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=MUTED_COLOR))],
+        [Paragraph(f"<b>₹{bank_amt:,.2f}</b>", ParagraphStyle('KpiVal3', fontName=FONT_BOLD, fontSize=14, leading=17, textColor=DARK_COLOR))],
+        [Paragraph(f"<font size=6.5 color='#64748B'>Digital / Bank transfers</font>", ParagraphStyle('KpiSub3', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR))],
+    ], colWidths=[130])
+    kpi_3.setStyle(kpi_card_style)
+
+    kpi_card_burgundy_style = TableStyle([
+        ('BOX', (0, 0), (-1, -1), 1.25, PRIMARY_COLOR),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#FFFFFF')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ])
+
+    kpi_4 = Table([
+        [Paragraph("TOTAL COLLECTED (₹)", ParagraphStyle('KpiLbl4', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=PRIMARY_COLOR))],
+        [Paragraph(f"<b>₹{tot_amt:,.2f}</b>", ParagraphStyle('KpiVal4', fontName=FONT_BOLD, fontSize=15, leading=18, textColor=PRIMARY_COLOR))],
+        [Paragraph(f"<font size=6.5 color='#64748B'>Net collected revenue</font>", ParagraphStyle('KpiSub4', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR))],
+    ], colWidths=[135])
+    kpi_4.setStyle(kpi_card_burgundy_style)
+
+    kpi_grid = Table([[kpi_1, kpi_2, kpi_3, kpi_4]], colWidths=[132, 137, 137, 139])
+    kpi_grid.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(kpi_grid)
+    story.append(Spacer(1, 12))
+
+    # 3. Table Header
+    hdr_cell = ParagraphStyle('ColTh', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=colors.white)
+    hdr_cell_r = ParagraphStyle('ColThR', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=colors.white, alignment=2)
+    cell_norm = ParagraphStyle('ColTd', fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=DARK_COLOR)
+    cell_bold = ParagraphStyle('ColTdB', fontName=FONT_BOLD, fontSize=7.5, leading=10, textColor=DARK_COLOR)
+    cell_right = ParagraphStyle('ColTdR', fontName=FONT_NAME, fontSize=7.5, leading=10, textColor=DARK_COLOR, alignment=2)
+    cell_right_bold = ParagraphStyle('ColTdRB', fontName=FONT_BOLD, fontSize=7.5, leading=10, textColor=DARK_COLOR, alignment=2)
+    cell_right_burg = ParagraphStyle('ColTdRBg', fontName=FONT_BOLD, fontSize=8, leading=10.5, textColor=PRIMARY_COLOR, alignment=2)
+
+    table_rows = [[
+        Paragraph("DATE &amp; REF", hdr_cell),
+        Paragraph("CUSTOMER / PARTY", hdr_cell),
+        Paragraph("ROUTE / VEHICLE", hdr_cell),
+        Paragraph("MODE", hdr_cell),
+        Paragraph("AMOUNT (₹)", hdr_cell_r),
+    ]]
+
+    for rec in records:
+        r_date = str(rec.get('date') or '')
+        r_ref = str(rec.get('ref') or '')
+        r_party = str(rec.get('partyName') or rec.get('party_name') or 'Customer')
+        r_mobile = str(rec.get('partyMobile') or rec.get('party_mobile') or '')
+        r_route = str(rec.get('routeName') or rec.get('route_name') or 'Office')
+        r_mode = str(rec.get('paymentMode') or rec.get('payment_mode') or 'CASH').upper()
+        r_amt = Decimal(str(rec.get('amount') or 0))
+
+        date_ref_p = [
+            Paragraph(f"<b>{r_ref}</b>", cell_bold),
+            Paragraph(f"<font size=6.5 color='#64748B'>{r_date}</font>", cell_norm),
+        ]
+
+        party_p = [
+            Paragraph(f"<b>{r_party}</b>", cell_bold),
+        ]
+        if r_mobile and r_mobile != '—':
+            party_p.append(Paragraph(f"<font size=6.5 color='#64748B'>{r_mobile}</font>", cell_norm))
+
+        table_rows.append([
+            date_ref_p,
+            party_p,
+            Paragraph(r_route, cell_norm),
+            Paragraph(f"<b>{r_mode}</b>", cell_norm),
+            Paragraph(f"₹{r_amt:,.2f}", cell_right_bold),
+        ])
+
+    table_rows.append([
+        Paragraph(f"<b>TOTAL ({len(records)} ENTRIES)</b>", cell_bold),
+        Paragraph("", cell_norm),
+        Paragraph("", cell_norm),
+        Paragraph("", cell_norm),
+        Paragraph(f"<b>₹{tot_amt:,.2f}</b>", cell_right_burg),
+    ])
+
+    col_widths = [95, 175, 125, 60, 90]
+    report_table = Table(table_rows, colWidths=col_widths, repeatRows=1)
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#CBD5E1')),
+        ('INNERGRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0, 1), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F1F5F9')),
+        ('LINEABOVE', (0, -1), (-1, -1), 1.25, PRIMARY_COLOR),
+    ]
+
+    for r in range(1, len(table_rows) - 1):
+        bg = LIGHT_BG if r % 2 == 1 else colors.white
+        t_style.append(('BACKGROUND', (0, r), (-1, r), bg))
+
+    report_table.setStyle(TableStyle(t_style))
+    story.append(report_table)
+    story.append(Spacer(1, 16))
+
+    # 4. Signature & Running Footer
+    notes_content = [
+        Paragraph("<b>COLLECTIONS AUDIT &amp; CASH DESK NOTES:</b>", ParagraphStyle('ColNtH', fontName=FONT_BOLD, fontSize=7.5, leading=10, textColor=PRIMARY_COLOR)),
+        Spacer(1, 3),
+        Paragraph("&bull; This register accounts for cash counter collections, delivery sales remittances, and bank receipt allocations.", ParagraphStyle('ColNtB1', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph("&bull; All collections are posted to respective cash/bank ledgers and party account statements in real time.", ParagraphStyle('ColNtB2', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph("&bull; Official system register generated via Future Gas Cloud ERP.", ParagraphStyle('ColNtB3', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=MUTED_COLOR)),
+    ]
+
+    sig_content = [
+        Paragraph(f"For <b>{company_name}</b>", ParagraphStyle('ColSgC', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)),
+        Paragraph("<font size=7 color='#64748B'>Cash &amp; Banking Department</font>", ParagraphStyle('ColSgC2', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=2)),
+        Spacer(1, 26),
+        Paragraph("_______________________________________", ParagraphStyle('ColSgL', fontName=FONT_NAME, fontSize=8, leading=10, textColor=colors.HexColor('#94A3B8'), alignment=2)),
+        Paragraph("<b>Authorized Cashier / Accounts Signatory</b>", ParagraphStyle('ColSgA', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)),
+        Paragraph(f"<font size=6.5 color='#64748B'>Date: {date_only}</font>", ParagraphStyle('ColSgD', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR, alignment=2)),
+    ]
+
+    bottom_table = Table([[notes_content, '', sig_content]], colWidths=[315, 20, 210])
+    bottom_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#F8FAFC')),
+        ('BOX', (2, 0), (2, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (2, 0), (2, 0), colors.white),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(KeepTogether(bottom_table))
+    story.append(Spacer(1, 14))
+
     ftr_data = [[
-        Paragraph(f"<font size=6.5 color='#64748B'>Future Gas Cloud ERP &bull; Official Payables Register &bull; Printed on {now_str}</font>", ParagraphStyle('PayFtrL', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR)),
-        Paragraph("<font size=6.5 color='#64748B'>Confidential &bull; Internal &amp; Regulatory Financial Record</font>", ParagraphStyle('PayFtrR', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR, alignment=2))
+        Paragraph(f"<font size=6.5 color='#64748B'>Future Gas Cloud ERP &bull; Collections &amp; Inflow Register &bull; Printed on {now_str}</font>", ParagraphStyle('ColFtrL', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR)),
+        Paragraph("<font size=6.5 color='#64748B'>Internal Financial Reconciliation Record</font>", ParagraphStyle('ColFtrR', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR, alignment=2))
     ]]
     ftr_table = Table(ftr_data, colWidths=[345, 200])
     ftr_table.setStyle(TableStyle([

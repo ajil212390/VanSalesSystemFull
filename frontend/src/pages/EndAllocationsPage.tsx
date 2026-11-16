@@ -32,7 +32,9 @@ import {
   IconClock,
   IconCreditCard,
   IconReceipt,
+  IconArrowLeft,
 } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
@@ -79,6 +81,7 @@ interface EndRouteDriverItem {
 }
 
 export const EndAllocationsPage: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
@@ -292,6 +295,18 @@ export const EndAllocationsPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Group gap="xs" align="center" mb={6}>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/')}
+              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+            >
+              Back to Dashboard
+            </Button>
+          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             End Allocation
           </Title>

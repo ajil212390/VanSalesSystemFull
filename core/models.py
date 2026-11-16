@@ -59,6 +59,26 @@ class Company(models.Model):
         return self.Name
 
 
+class FinancialYear(models.Model):
+    FinancialYearId = models.BigAutoField(primary_key=True, db_column='FinancialYearId')
+    Company = models.ForeignKey(Company, on_delete=models.CASCADE, null=True, blank=True, db_column='CompanyId', related_name='financial_years')
+    YearName = models.CharField(max_length=50, db_column='YearName')
+    StartDate = models.DateField(db_column='StartDate')
+    EndDate = models.DateField(db_column='EndDate')
+    IsActive = models.BooleanField(default=False, db_column='IsActive')
+    IsClosed = models.BooleanField(default=False, db_column='IsClosed')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"FinancialYear"'
+        ordering = ['StartDate']
+
+    def __str__(self):
+        return self.YearName
+
+
 class CustomUserManager(BaseUserManager):
     def create_user(self, Username, password=None, **extra_fields):
         if not Username:
@@ -386,6 +406,14 @@ class Purchase(models.Model):
     GrandTotal = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='GrandTotal')
     RoundOff = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_column='RoundOff')
     CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    FinancialYear = models.ForeignKey(
+        FinancialYear,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='FinancialYearId',
+        related_name='purchases'
+    )
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
     UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
 
@@ -492,6 +520,14 @@ class Sales(models.Model):
     EditedAt = models.DateTimeField(null=True, blank=True, db_column='EditedAt')
     EditReason = models.CharField(max_length=500, null=True, blank=True, db_column='EditReason')
     CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    FinancialYear = models.ForeignKey(
+        FinancialYear,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='FinancialYearId',
+        related_name='sales_records'
+    )
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
     UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
 
@@ -596,6 +632,14 @@ class VoucherLine(models.Model):
 class Payment(models.Model):
     PaymentId = models.BigAutoField(primary_key=True, db_column='PaymentId')
     PartyLedger = models.ForeignKey(Ledger, on_delete=models.PROTECT, db_column='PartyLedgerId', related_name='payments')
+    FinancialYear = models.ForeignKey(
+        FinancialYear,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column='FinancialYearId',
+        related_name='payments'
+    )
     Amount = models.DecimalField(max_digits=18, decimal_places=2, db_column='Amount')
     Narration = models.CharField(max_length=500, null=True, blank=True, db_column='Narration')
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')

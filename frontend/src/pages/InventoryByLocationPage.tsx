@@ -17,7 +17,6 @@ import {
   ActionIcon,
 } from '@mantine/core';
 import {
-  IconArrowLeft,
   IconSearch,
   IconBuildingFactory2,
   IconTruck,
@@ -58,41 +57,72 @@ export const InventoryByLocationPage: React.FC = () => {
     return stockAnalysis?.active_vans || [];
   }, [stockAnalysis]);
 
-  // Compute Locations List (Central Godown + All Active Vans)
+  // Compute Locations List (All Godowns + All Active Vans)
   const locations = useMemo(() => {
-    const godownProducts = stockProducts
-      .filter((product: any) => {
-        const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
-        const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
-        return (product.GodownQty || 0) > 0 || emptyInGodown > 0;
-      })
-      .map((product: any) => {
-        const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
-        const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
-        const filled = product.GodownQty || 0;
+    const godownList = (stockAnalysis?.godowns && stockAnalysis.godowns.length > 0) ? stockAnalysis.godowns : [];
+    let godownEntries: any[] = [];
+
+    if (godownList.length > 0) {
+      godownEntries = godownList.map((g: any) => {
+        let filled = Number(g.FilledQty || 0);
+        let empty = Number(g.EmptyQty || 0);
+        if (filled === 0 && empty === 0 && stockProducts.length > 0) {
+          filled = stockProducts.reduce((sum: number, p: any) => {
+            const mg = (p.Godowns || []).find((pg: any) => pg.GodownId === g.GodownId);
+            return sum + (mg ? Number(mg.FilledQty || 0) : 0);
+          }, 0);
+          empty = stockProducts.reduce((sum: number, p: any) => {
+            const mg = (p.Godowns || []).find((pg: any) => pg.GodownId === g.GodownId);
+            return sum + (mg ? Number(mg.EmptyQty || 0) : 0);
+          }, 0);
+        }
         return {
-          ProductId: product.ProductId,
-          ProductName: product.ProductName,
-          ProductCode: product.ProductCode,
-          filled: filled,
-          empty: isCyl ? emptyInGodown : 0,
-          Qty: filled + (isCyl ? emptyInGodown : 0),
+          id: `godown-${g.GodownId}`,
+          rawId: g.GodownId,
+          name: g.GodownName || (g.IsCentral ? 'Main Godown (Central)' : 'Secondary Godown'),
+          type: 'godown',
+          routeName: g.IsCentral ? 'Primary Storage Hub' : (g.Location || 'Regional Sub-Godown'),
+          driverName: g.IsCentral ? 'Warehouse Keeper' : 'Depot Manager',
+          filledQuantity: filled,
+          emptyQuantity: empty,
+          quantity: filled + empty,
         };
       });
+    } else {
+      const godownProducts = stockProducts
+        .filter((product: any) => {
+          const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
+          const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
+          return (product.GodownQty || 0) > 0 || emptyInGodown > 0;
+        })
+        .map((product: any) => {
+          const isCyl = product.IsCylinder !== false && (product.IsCylinder === true || /cylinder|lpg|kg/i.test(product.ProductName || ''));
+          const emptyInGodown = product.GodownEmptyQty ?? (isCyl && (!product.Vans || product.Vans.every((v: any) => (v.EmptyQty || 0) === 0)) ? (product.EmptyQty || 0) : 0);
+          const filled = product.GodownQty || 0;
+          return {
+            ProductId: product.ProductId,
+            ProductName: product.ProductName,
+            ProductCode: product.ProductCode,
+            filled: filled,
+            empty: isCyl ? emptyInGodown : 0,
+            Qty: filled + (isCyl ? emptyInGodown : 0),
+          };
+        });
 
-    const godownFilled = godownProducts.reduce((total: number, p: any) => total + (p.filled || 0), 0);
-    const godownEmpty = godownProducts.reduce((total: number, p: any) => total + (p.empty || 0), 0);
+      const godownFilled = godownProducts.reduce((total: number, p: any) => total + (p.filled || 0), 0);
+      const godownEmpty = godownProducts.reduce((total: number, p: any) => total + (p.empty || 0), 0);
 
-    const godown = {
-      id: 'godown',
-      name: 'Central Godown',
-      type: 'godown',
-      routeName: 'Primary Storage Hub',
-      driverName: 'Warehouse Keeper',
-      filledQuantity: godownFilled,
-      emptyQuantity: godownEmpty,
-      quantity: godownFilled + godownEmpty,
-    };
+      godownEntries = [{
+        id: 'godown',
+        name: 'Central Godown',
+        type: 'godown',
+        routeName: 'Primary Storage Hub',
+        driverName: 'Warehouse Keeper',
+        filledQuantity: godownFilled,
+        emptyQuantity: godownEmpty,
+        quantity: godownFilled + godownEmpty,
+      }];
+    }
 
     const vansList = activeVans.map((van: any) => {
       const vanFilled = (van.BalanceCylinders ?? van.TotalCylinders ?? 0) + (van.OtherProductsBalance ?? 0);
@@ -110,8 +140,8 @@ export const InventoryByLocationPage: React.FC = () => {
       };
     });
 
-    return [godown, ...vansList];
-  }, [stockProducts, activeVans]);
+    return [...godownEntries, ...vansList];
+  }, [stockProducts, activeVans, stockAnalysis?.godowns]);
 
   // Filter Locations
   const filteredLocations = useMemo(() => {
@@ -130,8 +160,9 @@ export const InventoryByLocationPage: React.FC = () => {
   const vanCount = useMemo(() => locations.filter((l) => l.type === 'vehicle').length, [locations]);
 
   const godownFilled = useMemo(() => {
-    const g = locations.find((l) => l.type === 'godown');
-    return g ? g.filledQuantity : 0;
+    return locations
+      .filter((l) => l.type === 'godown')
+      .reduce((sum, g) => sum + (Number(g.filledQuantity) || 0), 0);
   }, [locations]);
 
   const vansFilled = useMemo(() => {
@@ -146,26 +177,14 @@ export const InventoryByLocationPage: React.FC = () => {
 
   return (
     <Stack gap="lg" style={{ width: '100%' }}>
-      {/* 1. Header with Back Button and Quick Actions */}
+      {/* 1. Header and Quick Actions */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             Inventory by Location
           </Title>
           <Text size="sm" c="dimmed">
-            Live stock distribution between Central Godown and active delivery fleet vans.
+            Live stock distribution across warehouses (Central &amp; Sub-Godowns) and active delivery fleet vans.
           </Text>
         </div>
 
@@ -231,7 +250,7 @@ export const InventoryByLocationPage: React.FC = () => {
             </Text>
           </Group>
           <Text size="xs" c="dimmed">
-            {godownCount} godown · {vanCount} delivery van{vanCount !== 1 ? 's' : ''}
+            {godownCount} godown{godownCount !== 1 ? 's' : ''} · {vanCount} delivery van{vanCount !== 1 ? 's' : ''}
           </Text>
         </Paper>
 
@@ -261,7 +280,7 @@ export const InventoryByLocationPage: React.FC = () => {
             </Text>
           </Group>
           <Text size="xs" c="dimmed">
-            Available in central warehouse storage
+            Available across all warehouse godowns
           </Text>
         </Paper>
 
@@ -421,7 +440,7 @@ export const InventoryByLocationPage: React.FC = () => {
                       style={{ cursor: 'pointer', height: 48 }}
                       onClick={() => {
                         if (isGodown) {
-                          navigate('/stock-analysis?location=godown');
+                          navigate(`/stock-analysis?location=${location.id}`);
                         } else {
                           navigate('/van-management');
                         }

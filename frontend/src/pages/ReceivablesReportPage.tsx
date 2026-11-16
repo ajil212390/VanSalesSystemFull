@@ -20,6 +20,7 @@ import {
   Box,
   Checkbox,
   NumberInput,
+  SegmentedControl,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -71,6 +72,7 @@ export const ReceivablesReportPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
+  const [debtorFilter, setDebtorFilter] = useState<'ALL' | 'REGULAR' | 'DEFAULTERS'>('ALL');
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [forceDelete, setForceDelete] = useState(false);
@@ -80,7 +82,7 @@ export const ReceivablesReportPage: React.FC = () => {
   const [stmtToDate, setStmtToDate] = useState('');
   const [stmtSearch, setStmtSearch] = useState('');
 
-  // Quick edit movement term modal
+  // Quick edit delivery frequency modal
   const [termModalOpen, setTermModalOpen] = useState(false);
   const [editingTermDays, setEditingTermDays] = useState<number>(15);
 
@@ -93,18 +95,37 @@ export const ReceivablesReportPage: React.FC = () => {
       setSelectedCustomer((prev: any) => ({ ...prev, creditPeriod: editingTermDays }));
       queryClient.invalidateQueries({ queryKey: ['ledgers'] });
       notifications.show({
-        title: 'Updated',
-        message: `Cylinder movement deadline updated to ${editingTermDays} days.`,
+        title: 'Delivery Frequency Updated',
+        message: `${selectedCustomer.name}'s delivery frequency set to every ${editingTermDays} days.`,
         color: 'teal',
       });
       setTermModalOpen(false);
     } catch {
       notifications.show({
         title: 'Error',
-        message: 'Failed to update movement deadline.',
+        message: 'Failed to update delivery frequency.',
         color: 'red',
       });
     }
+  };
+
+  // Helper: compute last delivery date and next expected delivery date for a customer
+  const getDeliverySchedule = (customerId: number, frequencyDays: number) => {
+    const custSalesSorted = sales
+      .filter((s: any) => Number(s.CustomerLedger) === customerId && s.Status !== 'CANCELLED' && s.SalesDate)
+      .sort((a: any, b: any) => b.SalesDate.localeCompare(a.SalesDate));
+    const lastSale = custSalesSorted[0];
+    if (!lastSale) return { lastDelivery: null, nextDue: null, status: 'no-data' };
+    const lastDate = new Date(lastSale.SalesDate);
+    const nextDate = new Date(lastDate);
+    nextDate.setDate(nextDate.getDate() + frequencyDays);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    let status: 'overdue' | 'due-today' | 'upcoming' | 'no-data' = 'upcoming';
+    if (diffDays < 0) status = 'overdue';
+    else if (diffDays === 0) status = 'due-today';
+    return { lastDelivery: lastDate, nextDue: nextDate, daysUntil: diffDays, status };
   };
 
   // 1. Fetch Ledgers
@@ -254,6 +275,26 @@ export const ReceivablesReportPage: React.FC = () => {
         const opDebit = openingType === 'DR' ? openingBal : -openingBal;
         const receivable = opDebit + totalBilled - totalReceived;
 
+        // Defaulter detection: last sale date + delivery frequency < today
+        const custLastSale = sales
+          .filter((s: any) => Number(s.CustomerLedger) === l.LedgerId && s.Status !== 'CANCELLED' && s.SalesDate)
+          .sort((a: any, b: any) => b.SalesDate.localeCompare(a.SalesDate))[0];
+        let isDefaulter = false;
+        let overdueDays = 0;
+        let nextDueDate: Date | null = null;
+        const lastPurchaseDate = custLastSale?.SalesDate || null;
+        if (custLastSale?.SalesDate) {
+          const freq = Number(l.CreditPeriodDays) || 15;
+          nextDueDate = new Date(custLastSale.SalesDate);
+          nextDueDate.setDate(nextDueDate.getDate() + freq);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          if (nextDueDate < today) {
+            isDefaulter = true;
+            overdueDays = Math.ceil((today.getTime() - nextDueDate.getTime()) / (1000 * 60 * 60 * 24));
+          }
+        }
+
         return {
           id: l.LedgerId,
           name: l.LedgerName,
@@ -270,22 +311,38 @@ export const ReceivablesReportPage: React.FC = () => {
           advanceBalance: Number(l.advance_balance || 0),
           creditPeriod: Number(l.CreditPeriodDays) || 15,
           deleteBlockReason: l.delete_block_reason || null,
+          isDefaulter,
+          overdueDays,
+          nextDueDate,
+          lastPurchaseDate,
         };
       })
       .sort((a, b) => b.receivable - a.receivable);
   }, [ledgers, sales, payments]);
 
+  // Defaulters & Regular Counts
+  const defaultersCount = useMemo(() => debtorsList.filter((d) => d.isDefaulter).length, [debtorsList]);
+  const regularCount = useMemo(() => debtorsList.filter((d) => !d.isDefaulter).length, [debtorsList]);
+
   // Filtered Debtors
   const filteredDebtors = useMemo(() => {
+    let list = debtorsList;
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return debtorsList;
-    return debtorsList.filter(
-      (d) =>
-        d.name.toLowerCase().includes(q) ||
-        d.phone.toLowerCase().includes(q) ||
-        d.city.toLowerCase().includes(q)
-    );
-  }, [debtorsList, searchQuery]);
+    if (q) {
+      list = list.filter(
+        (d) =>
+          d.name.toLowerCase().includes(q) ||
+          d.phone.toLowerCase().includes(q) ||
+          d.city.toLowerCase().includes(q)
+      );
+    }
+    if (debtorFilter === 'DEFAULTERS') {
+      list = list.filter((d) => d.isDefaulter);
+    } else if (debtorFilter === 'REGULAR') {
+      list = list.filter((d) => !d.isDefaulter);
+    }
+    return list;
+  }, [debtorsList, searchQuery, debtorFilter]);
 
   // Summary Totals
   const totalOpeningSum = useMemo(() => {
@@ -404,13 +461,12 @@ export const ReceivablesReportPage: React.FC = () => {
       const dt = String(s.SalesDate || '');
       const sId = Number(s.SalesId);
       const sRef = String(s.InvoiceNo || s.SalesNo || '').trim().toUpperCase();
-      const creditDays = selectedCustomer.creditPeriod || 15;
       let dueDate = '';
       let isOverdue = false;
       let overdueDays = 0;
       if (dt) {
         const d = new Date(dt);
-        d.setDate(d.getDate() + creditDays);
+        d.setDate(d.getDate() + (selectedCustomer.creditPeriod || 15));
         dueDate = d.toISOString().split('T')[0];
         const now = new Date();
         const diffMs = now.getTime() - d.getTime();
@@ -608,13 +664,13 @@ export const ReceivablesReportPage: React.FC = () => {
         </Box>
 
         {/* 5 Summary / KPI Cards */}
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }} spacing="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 6 }} spacing="md">
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
             <Group justify="space-between" align="baseline">
               <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
                 Contact Details
               </Text>
-              <Tooltip label="Click to edit cylinder movement deadline" withArrow position="top">
+              <Tooltip label="Click to edit delivery frequency" withArrow position="top">
                 <Badge
                   variant="light"
                   color="burgundy"
@@ -625,7 +681,7 @@ export const ReceivablesReportPage: React.FC = () => {
                     setTermModalOpen(true);
                   }}
                 >
-                  Movement: {selectedCustomer.creditPeriod || 15} Days ✎
+                  Every {selectedCustomer.creditPeriod || 15} Days ✎
                 </Badge>
               </Tooltip>
             </Group>
@@ -660,14 +716,48 @@ export const ReceivablesReportPage: React.FC = () => {
             <Text size="xs" c="dimmed">Invoiced Bills (Dr)</Text>
           </Paper>
 
-          <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#f0fdfa', borderColor: '#99f6e4', boxShadow: '0 1px 3px rgba(13,148,136,0.05)' }}>
-            <Text size="xs" fw={700} c="teal.8" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+          {/* Delivery Schedule Card */}
+          {(() => {
+            const freq = selectedCustomer.creditPeriod || 15;
+            const schedule = getDeliverySchedule(selectedCustomer.id, freq);
+            const statusColor = schedule.status === 'overdue' ? '#800020' : schedule.status === 'due-today' ? '#92400e' : '#475569';
+            const statusBg = schedule.status === 'overdue' ? '#fdf2f4' : schedule.status === 'due-today' ? '#fffbeb' : '#f8fafc';
+            const statusBorder = schedule.status === 'overdue' ? '#f5c2cb' : schedule.status === 'due-today' ? '#fde68a' : '#e2e8f0';
+            const statusLabel = schedule.status === 'overdue'
+              ? `Overdue by ${Math.abs(schedule.daysUntil!)} day(s)`
+              : schedule.status === 'due-today'
+              ? 'Due Today'
+              : `Due in ${schedule.daysUntil} day(s)`;
+            return (
+              <Paper p="md" radius="md" withBorder style={{ backgroundColor: statusBg, borderColor: statusBorder, boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                  Delivery Schedule
+                </Text>
+                <Text fw={800} style={{ color: statusColor, fontSize: 15, marginTop: 4 }}>
+                  {schedule.lastDelivery
+                    ? `Last: ${schedule.lastDelivery.toLocaleDateString('en-GB')}`
+                    : 'No deliveries yet'}
+                </Text>
+                {schedule.nextDue && (
+                  <Text size="xs" c={statusColor} fw={600} mt={2}>
+                    Next: {schedule.nextDue.toLocaleDateString('en-GB')}
+                  </Text>
+                )}
+                <Text size="xs" fw={700} style={{ color: statusColor, marginTop: 2 }}>
+                  {schedule.status !== 'no-data' ? statusLabel : '—'}
+                </Text>
+              </Paper>
+            );
+          })()}
+
+          <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#fdf2f4', borderColor: '#f5c2cb', boxShadow: '0 1px 3px rgba(128,0,32,0.03)' }}>
+            <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Available Advance
             </Text>
-            <Text fw={800} style={{ color: '#0f766e', fontSize: 20, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
+            <Text fw={800} style={{ color: '#800020', fontSize: 20, fontVariantNumeric: 'tabular-nums', marginTop: 4 }}>
               ₹{selectedCustomer.advanceBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
-            <Text size="xs" c="teal.7" fw={500}>
+            <Text size="xs" c="dimmed" fw={500}>
               Unallocated on Account
             </Text>
           </Paper>
@@ -1020,16 +1110,57 @@ export const ReceivablesReportPage: React.FC = () => {
       <Paper radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {/* Table Filter Toolbar */}
         <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }} wrap="wrap" gap="sm">
-          <TextInput
-            placeholder="Search customer name, phone, city..."
-            size="sm"
-            radius="md"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            leftSection={<IconSearch size={15} color="#64748b" />}
-            rightSection={searchQuery ? <CloseButton size="xs" onClick={() => setSearchQuery('')} /> : null}
-            style={{ minWidth: 260, flexGrow: 1, maxWidth: 380 }}
-          />
+          <Group gap="sm" style={{ flexGrow: 1 }} wrap="wrap">
+            <TextInput
+              placeholder="Search customer name, phone, city..."
+              size="sm"
+              radius="md"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+              leftSection={<IconSearch size={15} color="#64748b" />}
+              rightSection={searchQuery ? <CloseButton size="xs" onClick={() => setSearchQuery('')} /> : null}
+              style={{ minWidth: 260, maxWidth: 360 }}
+            />
+
+            {/* Defaulter / Regular Filter Tabs */}
+            <SegmentedControl
+              value={debtorFilter}
+              onChange={(v: any) => setDebtorFilter(v)}
+              color="burgundy"
+              radius="xl"
+              size="xs"
+              styles={{
+                root: {
+                  backgroundColor: '#f1f5f9',
+                  padding: 3,
+                  border: '1px solid #e2e8f0',
+                  boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+                },
+                indicator: {
+                  boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                  borderRadius: 9999,
+                },
+                label: {
+                  fontWeight: 600,
+                  fontSize: 12,
+                  padding: '5px 12px',
+                  transition: 'color 150ms ease',
+                },
+              }}
+              data={[
+                { label: `All (${debtorsList.length})`, value: 'ALL' },
+                { label: `Regular (${regularCount})`, value: 'REGULAR' },
+                {
+                  label: (
+                    <Group gap={4} wrap="nowrap">
+                      <span>Defaulters ({defaultersCount})</span>
+                    </Group>
+                  ),
+                  value: 'DEFAULTERS',
+                },
+              ]}
+            />
+          </Group>
 
           <Badge
             variant="light"
@@ -1094,7 +1225,12 @@ export const ReceivablesReportPage: React.FC = () => {
                 {filteredDebtors.map((debtor) => (
                   <Table.Tr
                     key={debtor.id}
-                    style={{ cursor: 'pointer', height: 48 }}
+                    style={{
+                      cursor: 'pointer',
+                      height: 48,
+                      backgroundColor: debtor.isDefaulter ? '#fff8f8' : undefined,
+                      borderLeft: debtor.isDefaulter ? '3px solid #800020' : undefined,
+                    }}
                     onClick={() => {
                       setSelectedCustomer(debtor);
                       setStmtFromDate('');
@@ -1114,10 +1250,31 @@ export const ReceivablesReportPage: React.FC = () => {
                               Adv: ₹{debtor.advanceBalance.toFixed(2)}
                             </Badge>
                           )}
+                          {debtor.isDefaulter && (
+                            <Badge
+                              size="xs"
+                              variant="light"
+                              styles={{
+                                root: {
+                                  backgroundColor: '#fdf2f4',
+                                  color: '#800020',
+                                  borderColor: '#f5c2cb',
+                                  fontWeight: 600,
+                                },
+                              }}
+                            >
+                              Overdue {debtor.overdueDays}d
+                            </Badge>
+                          )}
                         </Group>
-                        <Text size="xs" c="dimmed">
-                          {debtor.phone} {debtor.city !== '—' ? `• ${debtor.city}` : ''}
-                        </Text>
+                        <Group gap={8} align="center">
+                          <Text size="xs" c="dimmed">
+                            {debtor.phone} {debtor.city !== '—' ? `• ${debtor.city}` : ''}
+                          </Text>
+                          <Text size="xs" c={debtor.lastPurchaseDate ? '#64748b' : '#94a3b8'} fw={500}>
+                            • Last Sale: {debtor.lastPurchaseDate ? formatDateDDMMYY(debtor.lastPurchaseDate) : 'Never'}
+                          </Text>
+                        </Group>
                       </Stack>
                     </Table.Td>
 
@@ -1317,7 +1474,7 @@ export const ReceivablesReportPage: React.FC = () => {
           </Stack>
         )}
       </Modal>
-      {/* ── Cylinder Movement Term Edit Modal ── */}
+      {/* ── Delivery Frequency Edit Modal ── */}
       <Modal
         opened={termModalOpen}
         onClose={() => setTermModalOpen(false)}
@@ -1325,7 +1482,7 @@ export const ReceivablesReportPage: React.FC = () => {
           <Group gap="xs">
             <IconRefresh size={18} color="#800020" />
             <Text fw={700} style={{ color: '#800020' }}>
-              Customer Cylinder Movement Term
+              Customer Delivery Frequency
             </Text>
           </Group>
         }
@@ -1334,22 +1491,25 @@ export const ReceivablesReportPage: React.FC = () => {
       >
         <Stack gap="md">
           <Text size="sm" c="#475569">
-            Set the cylinder movement deadline (rotation/return cycle) for <b>{selectedCustomer?.name}</b>:
+            Set the refill / delivery frequency (cycle) for <b>{selectedCustomer?.name}</b>:
           </Text>
           <NumberInput
-            label="Movement Cycle (Days)"
-            description="Number of days from billing before cylinders are expected back"
+            label="Delivery Frequency (Days)"
+            description="How often this customer typically orders a refill (e.g. every 7 days = weekly, every 30 days = monthly)"
             min={1}
             max={365}
             value={editingTermDays}
             onChange={(val) => setEditingTermDays(Number(val) || 15)}
           />
+          <Text size="xs" c="dimmed">
+            Next Expected Delivery = Last Delivery Date + Frequency Days
+          </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="default" size="sm" onClick={() => setTermModalOpen(false)}>
               Cancel
             </Button>
             <Button color="burgundy" size="sm" onClick={handleSaveMovementTerm}>
-              Save Term
+              Save Frequency
             </Button>
           </Group>
         </Stack>

@@ -28,9 +28,10 @@ import {
   IconSearch,
   IconPackage,
   IconBuildingFactory2,
+  IconArrowLeft,
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
@@ -70,6 +71,7 @@ interface DeliveryNote {
 }
 
 export const DeliveryNotesPage: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [formOpened, setFormOpened] = useState(false);
@@ -78,6 +80,7 @@ export const DeliveryNotesPage: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; no: string } | null>(null);
 
   // Form State for Delivery Note
+  const [selectedGodownId, setSelectedGodownId] = useState<string>('1');
   const [selectedAllocation, setSelectedAllocation] = useState<string | null>(null);
   const [deliveryDate, setDeliveryDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [remarks, setRemarks] = useState('');
@@ -89,6 +92,15 @@ export const DeliveryNotesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/delivery-notes/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    },
+  });
+
+  // 1b. Fetch Godowns
+  const { data: godowns = [] } = useQuery<any[]>({
+    queryKey: ['godowns'],
+    queryFn: async () => {
+      const res = await apiClient.get('/godowns/');
+      return Array.isArray(res.data) ? res.data : [];
     },
   });
 
@@ -105,9 +117,9 @@ export const DeliveryNotesPage: React.FC = () => {
 
   // 3. Fetch Live Available Stock in Godown
   const { data: godownStock = [], refetch: refetchGodownStock } = useQuery<any[]>({
-    queryKey: ['godown-stock'],
+    queryKey: ['godown-stock', selectedGodownId],
     queryFn: async () => {
-      const res = await apiClient.get('/delivery-notes/godown-stock/');
+      const res = await apiClient.get(`/delivery-notes/godown-stock/?godown_id=${selectedGodownId}`);
       return res.data || [];
     },
   });
@@ -237,6 +249,7 @@ export const DeliveryNotesPage: React.FC = () => {
         RouteVehicleDriver: Number(selectedAllocation),
         DeliveryDate: deliveryDate,
         Remarks: remarks,
+        godown_id: Number(selectedGodownId) || 1,
         lines: validLines.map((l) => ({
           ProductId: l.ProductId,
           UnitId: l.UnitId,
@@ -320,6 +333,18 @@ export const DeliveryNotesPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Group gap="xs" align="center" mb={6}>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/')}
+              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+            >
+              Back to Dashboard
+            </Button>
+          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Delivery Notes
           </Title>
@@ -387,7 +412,24 @@ export const DeliveryNotesPage: React.FC = () => {
           </Group>
 
           <Stack gap="md">
-            <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+            <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="sm">
+              <Select
+                label="Dispatch From Godown"
+                data={(godowns.length > 0 ? godowns : [
+                  { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
+                  { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
+                ]).map((g: any) => ({
+                  value: String(g.GodownId),
+                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
+                }))}
+                value={selectedGodownId}
+                onChange={(val) => {
+                  if (val) {
+                    setSelectedGodownId(val);
+                  }
+                }}
+                required
+              />
               <Select
                 label="Select location"
                 placeholder="Pick Vehicle • Driver (Route)"

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
+import '../services/api_service.dart';
 import 'success_screen.dart';
 
 class AddDeliveryScreen extends StatefulWidget {
@@ -14,6 +15,8 @@ class AddDeliveryScreen extends StatefulWidget {
 
 class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   final _amountController = TextEditingController();
+  final _splitCashController = TextEditingController();
+  final _splitUpiController = TextEditingController();
   final _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -34,16 +37,26 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   @override
   void dispose() {
     _amountController.dispose();
+    _splitCashController.dispose();
+    _splitUpiController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
   Future<void> _submitDelivery(AppState state) async {
-    final enteredAmount = double.tryParse(_amountController.text.replaceAll(',', '').trim()) ?? 0;
-    if (enteredAmount > 0) {
-      state.setCollectedAmount(enteredAmount);
-    } else if (state.collectedAmount == 0 && state.totalBillAmount > 0) {
-      state.setCollectedAmount(state.totalBillAmount);
+    if (state.paymentMethod.toLowerCase() == 'split') {
+      final cashVal = double.tryParse(_splitCashController.text.replaceAll(',', '').trim()) ?? 0;
+      final upiVal = double.tryParse(_splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
+      final splitSum = cashVal + upiVal;
+      state.setSplitAmounts(cashVal, upiVal);
+      state.setCollectedAmount(splitSum > 0 ? splitSum : state.totalBillAmount);
+    } else {
+      final enteredAmount = double.tryParse(_amountController.text.replaceAll(',', '').trim()) ?? 0;
+      if (enteredAmount > 0) {
+        state.setCollectedAmount(enteredAmount);
+      } else if (state.collectedAmount == 0 && state.totalBillAmount > 0) {
+        state.setCollectedAmount(state.totalBillAmount);
+      }
     }
 
     // Launch modern half-screen animated submission & PDF preparation modal
@@ -85,7 +98,14 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       state.paymentMethod = 'Cash';
     }
 
-    final enteredAmount = double.tryParse(_amountController.text.replaceAll(',', '').trim()) ?? 0;
+    final isSplit = state.paymentMethod.toLowerCase() == 'split';
+    final splitCash = double.tryParse(_splitCashController.text.replaceAll(',', '').trim()) ?? 0;
+    final splitUpi = double.tryParse(_splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
+    final splitSum = splitCash + splitUpi;
+
+    final enteredAmount = isSplit
+        ? splitSum
+        : (double.tryParse(_amountController.text.replaceAll(',', '').trim()) ?? 0);
     final effectiveAmount = enteredAmount > 0
         ? enteredAmount
         : (state.collectedAmount > 0 ? state.collectedAmount : state.totalBillAmount);
@@ -114,6 +134,38 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         titleSpacing: 20,
         toolbarHeight: 76,
         automaticallyImplyLeading: false,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: InkWell(
+              onTap: () => _showNewConnectionModal(context, state),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFDF2F4),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF800020), width: 1.2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.add_link_rounded, size: 16, color: Color(0xFF800020)),
+                    const SizedBox(width: 5),
+                    Text(
+                      'New Connection',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF800020),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
         title: Padding(
           padding: const EdgeInsets.only(right: 16),
           child: Column(
@@ -1097,6 +1149,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final methods = [
       {'key': 'Cash', 'title': 'Cash', 'icon': Icons.payments_outlined},
       {'key': 'UPI', 'title': 'Bank', 'icon': Icons.qr_code_2_rounded},
+      {'key': 'Split', 'title': 'Split', 'icon': Icons.call_split_rounded},
     ];
 
     return Container(
@@ -1137,11 +1190,21 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   child: GestureDetector(
                     onTap: () {
                       state.setPaymentMethod(m['key'] as String);
+                      if (m['key'] == 'Split' && state.totalBillAmount > 0) {
+                        if (_splitCashController.text.isEmpty && _splitUpiController.text.isEmpty) {
+                          _splitCashController.text = (state.totalBillAmount / 2).toStringAsFixed(0);
+                          _splitUpiController.text = (state.totalBillAmount - (state.totalBillAmount / 2)).toStringAsFixed(0);
+                          state.setSplitAmounts(
+                            double.tryParse(_splitCashController.text) ?? 0,
+                            double.tryParse(_splitUpiController.text) ?? 0,
+                          );
+                        }
+                      }
                       setState(() {});
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
-                      margin: EdgeInsets.only(right: m['key'] != 'UPI' ? 10 : 0),
+                      margin: EdgeInsets.only(right: m['key'] != 'Split' ? 8 : 0),
                       padding: const EdgeInsets.symmetric(vertical: 11),
                       decoration: BoxDecoration(
                         color: isSelected ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
@@ -1183,6 +1246,120 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 );
               }).toList(),
             ),
+
+            if (state.paymentMethod == 'Split') ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFDF2F4),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF5C2CB)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'SPLIT PAYMENT AMOUNTS',
+                          style: GoogleFonts.inter(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF800020),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        if (state.totalBillAmount > 0)
+                          Text(
+                            'Bill Total: \u20B9${state.totalBillAmount.toStringAsFixed(0)}',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF475569),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Cash (\u20B9)',
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF475569)),
+                              ),
+                              const SizedBox(height: 4),
+                              TextField(
+                                controller: _splitCashController,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
+                                decoration: InputDecoration(
+                                  hintText: '0',
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5)),
+                                ),
+                                onChanged: (val) {
+                                  final c = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                  if (state.totalBillAmount > 0 && c <= state.totalBillAmount) {
+                                    final rem = (state.totalBillAmount - c).clamp(0.0, state.totalBillAmount);
+                                    _splitUpiController.text = rem > 0 ? rem.toStringAsFixed(0) : '0';
+                                  }
+                                  final u = double.tryParse(_splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
+                                  state.setSplitAmounts(c, u);
+                                  setState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Bank / UPI (\u20B9)',
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF475569)),
+                              ),
+                              const SizedBox(height: 4),
+                              TextField(
+                                controller: _splitUpiController,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
+                                decoration: InputDecoration(
+                                  hintText: '0',
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5)),
+                                ),
+                                onChanged: (val) {
+                                  final u = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                  final c = double.tryParse(_splitCashController.text.replaceAll(',', '').trim()) ?? 0;
+                                  state.setSplitAmounts(c, u);
+                                  setState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1348,6 +1525,685 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showNewConnectionModal(BuildContext context, AppState state) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _NewConnectionSheet(parentState: state),
+    );
+  }
+}
+
+class _NewConnectionSheet extends StatefulWidget {
+  final AppState parentState;
+  const _NewConnectionSheet({required this.parentState});
+
+  @override
+  State<_NewConnectionSheet> createState() => _NewConnectionSheetState();
+}
+
+class _NewConnectionSheetState extends State<_NewConnectionSheet> {
+  List<Map<String, dynamic>> _packages = [];
+  Map<String, dynamic>? _selectedPackage;
+  Customer? _selectedCustomer;
+  String _paymentMode = 'Cash';
+  final _cashController = TextEditingController();
+  final _upiController = TextEditingController();
+  final _searchCustController = TextEditingController();
+  bool _isLoadingPackages = true;
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedCustomer = widget.parentState.selectedCustomer;
+    _fetchPackages();
+  }
+
+  @override
+  void dispose() {
+    _cashController.dispose();
+    _upiController.dispose();
+    _searchCustController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchPackages() async {
+    setState(() => _isLoadingPackages = true);
+    try {
+      final pkgs = await ApiService.getConnectionPackages();
+      if (mounted) {
+        setState(() {
+          _packages = pkgs;
+          _selectedPackage = null;
+          _isLoadingPackages = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _isLoadingPackages = false);
+      }
+    }
+  }
+
+  void _syncSplitAmounts() {
+    if (_selectedPackage == null) return;
+    final total = safeDouble(_selectedPackage!['TotalAmount']);
+    if (_paymentMode == 'Split') {
+      final half = (total / 2).roundToDouble();
+      _cashController.text = half.toStringAsFixed(0);
+      _upiController.text = (total - half).toStringAsFixed(0);
+    }
+  }
+
+  Future<void> _submitPackageDelivery() async {
+    if (_selectedCustomer == null) {
+      AppToast.warning(context, 'Please select or add a customer');
+      return;
+    }
+    if (_selectedPackage == null) {
+      AppToast.warning(context, 'Please select a connection package');
+      return;
+    }
+
+    final total = safeDouble(_selectedPackage!['TotalAmount']);
+    double cashAmt = 0.0;
+    double upiAmt = 0.0;
+
+    if (_paymentMode == 'Split') {
+      cashAmt = double.tryParse(_cashController.text.replaceAll(',', '').trim()) ?? 0;
+      upiAmt = double.tryParse(_upiController.text.replaceAll(',', '').trim()) ?? 0;
+      if (cashAmt + upiAmt <= 0) {
+        AppToast.warning(context, 'Please enter valid split cash and UPI amounts');
+        return;
+      }
+    } else if (_paymentMode == 'Cash') {
+      cashAmt = total;
+    } else {
+      upiAmt = total;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final order = await widget.parentState.recordPackageDelivery(
+        customer: _selectedCustomer!,
+        package: _selectedPackage!,
+        paymentMode: _paymentMode,
+        totalAmount: total,
+        cashAmount: cashAmt,
+        upiAmount: upiAmt,
+      );
+
+      if (!mounted) return;
+      Navigator.pop(context); // Close bottom sheet
+
+      if (order != null) {
+        SuccessScreen.show(context, order: order);
+      } else {
+        AppToast.success(context, 'New connection recorded successfully');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+        AppToast.error(context, 'Failed to record connection: $e');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final totalAmount = safeDouble(_selectedPackage?['TotalAmount']);
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.9,
+      ),
+      padding: EdgeInsets.fromLTRB(18, 16, 18, 16 + bottomInset),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Drag handle
+          Center(
+            child: Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFCBD5E1),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF2F4),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.add_link_rounded, size: 20, color: Color(0xFF800020)),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'New Gas Connection',
+                        style: GoogleFonts.inter(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      
+                    ],
+                  ),
+                ],
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Scrollable fields
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 1. Customer Selector
+                  _buildCustomerSection(),
+
+                  const SizedBox(height: 14),
+
+                  // 2. Package Selector
+                  _buildPackageSection(),
+
+                  const SizedBox(height: 14),
+
+                  // 3. Payment Method
+                  _buildPaymentSection(totalAmount),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // Submit Button
+          ElevatedButton(
+            onPressed: (_isSubmitting || _isLoadingPackages || _selectedPackage == null)
+                ? null
+                : _submitPackageDelivery,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF800020),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+            child: _isSubmitting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : Text(
+                    _selectedPackage == null
+                        ? 'Select Connection Package'
+                        : 'Confirm Connection \u2022 \u20B9${totalAmount.toStringAsFixed(0)}',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomerSection() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.person_outline_rounded, size: 15, color: Color(0xFF800020)),
+              const SizedBox(width: 6),
+              Text(
+                'CUSTOMER',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF800020),
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_selectedCustomer != null) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedCustomer!.name,
+                        style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
+                      ),
+                      if (_selectedCustomer!.phone.isNotEmpty)
+                        Text(
+                          _selectedCustomer!.phone,
+                          style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF64748B)),
+                        ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    setState(() => _selectedCustomer = null);
+                  },
+                  child: Text('Change', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF800020))),
+                ),
+              ],
+            ),
+          ] else ...[
+            TextField(
+              controller: _searchCustController,
+              decoration: InputDecoration(
+                hintText: 'Search or type customer name...',
+                hintStyle: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF94A3B8)),
+                prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            if (_searchCustController.text.trim().isNotEmpty) ...[
+              const SizedBox(height: 6),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 140),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    ...widget.parentState.customers
+                        .where((c) => c.name.toLowerCase().contains(_searchCustController.text.toLowerCase()) ||
+                            c.phone.contains(_searchCustController.text))
+                        .map((c) => ListTile(
+                              dense: true,
+                              title: Text(c.name, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600)),
+                              subtitle: Text(c.phone, style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B))),
+                              onTap: () {
+                                setState(() {
+                                  _selectedCustomer = c;
+                                  _searchCustController.clear();
+                                });
+                              },
+                            )),
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.add, size: 16, color: Color(0xFF800020)),
+                      title: Text(
+                        'Add "${_searchCustController.text.trim()}" as Direct Customer',
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF800020)),
+                      ),
+                      onTap: () {
+                        setState(() {
+                          _selectedCustomer = Customer(
+                            name: _searchCustController.text.trim(),
+                            phone: '',
+                            address: '',
+                            type: 'Direct',
+                          );
+                          _searchCustController.clear();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPackageSection() {
+    if (_isLoadingPackages) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        alignment: Alignment.center,
+        child: const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF800020)),
+        ),
+      );
+    }
+
+    if (_packages.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: Text(
+          'No connection packages found. Please create packages in the Web ERP first.',
+          style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF92400E)),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.inventory_2_outlined, size: 15, color: Color(0xFF800020)),
+              const SizedBox(width: 6),
+              Text(
+                'CONNECTION PACKAGE',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF800020),
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Dropdown
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFCBD5E1)),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                isExpanded: true,
+                value: _selectedPackage != null ? safeInt(_selectedPackage!['PackageId']) : null,
+                hint: Text(
+                  'Select connection package...',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: const Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                items: _packages.map((pkg) {
+                  return DropdownMenuItem<int>(
+                    value: safeInt(pkg['PackageId']),
+                    child: Text(
+                      '${pkg['PackageName']} (\u20B9${safeDouble(pkg['TotalAmount']).toStringAsFixed(0)})',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (pkgId) {
+                  if (pkgId != null) {
+                    setState(() {
+                      _selectedPackage = _packages.firstWhere((p) => safeInt(p['PackageId']) == pkgId);
+                      _syncSplitAmounts();
+                    });
+                  }
+                },
+              ),
+            ),
+          ),
+
+          if (_selectedPackage != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                     
+                      Text(
+                        '${_selectedPackage!['cylinder_name'] ?? 'LPG Cylinder'} \u00D7 ${_selectedPackage!['CylinderQty'] ?? 1}',
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  if ((_selectedPackage!['items'] as List<dynamic>? ?? []).isNotEmpty) ...[
+                    Text(
+                      'Included Accessories:',
+                      style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF64748B)),
+                    ),
+                    const SizedBox(height: 2),
+                    ...(_selectedPackage!['items'] as List<dynamic>).map((it) => Padding(
+                          padding: const EdgeInsets.only(left: 8, bottom: 2),
+                          child: Text(
+                            '\u2022 ${it['ProductName'] ?? it['product_name'] ?? 'Accessory'} \u00D7 ${it['Quantity'] ?? 1}',
+                            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF334155)),
+                          ),
+                        )),
+                  ],
+                  const Divider(height: 12, color: Color(0xFFF1F5F9)),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total Package Cost:',
+                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
+                      ),
+                      Text(
+                        '\u20B9${safeDouble(_selectedPackage!['TotalAmount']).toStringAsFixed(0)}',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF800020)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentSection(double totalAmount) {
+    final modes = [
+      {'key': 'Cash', 'title': 'Cash', 'icon': Icons.payments_outlined},
+      {'key': 'UPI', 'title': 'Bank', 'icon': Icons.qr_code_2_rounded},
+      {'key': 'Split', 'title': 'Split', 'icon': Icons.call_split_rounded},
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.payment_rounded, size: 15, color: Color(0xFF800020)),
+              const SizedBox(width: 6),
+              Text(
+                'PAYMENT METHOD',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF800020),
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          Row(
+            children: modes.map((m) {
+              final isSel = _paymentMode == m['key'];
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _paymentMode = m['key'] as String;
+                      _syncSplitAmounts();
+                    });
+                  },
+                  child: Container(
+                    margin: EdgeInsets.only(right: m['key'] != 'Split' ? 8 : 0),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSel ? const Color(0xFFFDF2F4) : Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isSel ? const Color(0xFF800020) : const Color(0xFFCBD5E1),
+                        width: isSel ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Icon(m['icon'] as IconData, size: 18, color: isSel ? const Color(0xFF800020) : const Color(0xFF64748B)),
+                        const SizedBox(height: 3),
+                        Text(
+                          m['title'] as String,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                            color: isSel ? const Color(0xFF800020) : const Color(0xFF475569),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+
+          if (_paymentMode == 'Split') ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Cash (\u20B9)', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF475569))),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: _cashController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700),
+                        decoration: InputDecoration(
+                          hintText: '0',
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5)),
+                        ),
+                        onChanged: (val) {
+                          final c = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                          if (totalAmount > 0 && c <= totalAmount) {
+                            final rem = (totalAmount - c).clamp(0.0, totalAmount);
+                            _upiController.text = rem.toStringAsFixed(0);
+                          }
+                          setState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Bank / UPI (\u20B9)', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF475569))),
+                      const SizedBox(height: 4),
+                      TextField(
+                        controller: _upiController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700),
+                        decoration: InputDecoration(
+                          hintText: '0',
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5)),
+                        ),
+                        onChanged: (val) {
+                          final u = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                          if (totalAmount > 0 && u <= totalAmount) {
+                            final rem = (totalAmount - u).clamp(0.0, totalAmount);
+                            _cashController.text = rem.toStringAsFixed(0);
+                          }
+                          setState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

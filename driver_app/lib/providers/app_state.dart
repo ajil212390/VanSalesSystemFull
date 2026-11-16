@@ -2,6 +2,34 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_service.dart';
 
+/// Robust numeric parsing helpers to prevent TypeError between num, int, double, and string
+double safeDouble(dynamic val, [double fallback = 0.0]) {
+  if (val == null) return fallback;
+  if (val is double) return val;
+  if (val is int) return val.toDouble();
+  return double.tryParse(val.toString()) ?? fallback;
+}
+
+int safeInt(dynamic val, [int fallback = 0]) {
+  if (val == null) return fallback;
+  if (val is int) return val;
+  if (val is double) return val.toInt();
+  final s = val.toString().trim();
+  final d = double.tryParse(s);
+  if (d != null) return d.toInt();
+  return int.tryParse(s) ?? fallback;
+}
+
+int? safeIntNullable(dynamic val) {
+  if (val == null) return null;
+  return safeInt(val);
+}
+
+double? safeDoubleNullable(dynamic val) {
+  if (val == null) return null;
+  return safeDouble(val);
+}
+
 /// Data models and app state management
 class CylinderType {
   final int? productId;
@@ -95,6 +123,8 @@ class DeliveryOrder {
   final int totalEmpties;
   final double amount;
   final String paymentMethod;
+  final double? cashAmount;
+  final double? upiAmount;
   final String time;
   final String status;
   final int stopNumber;
@@ -108,6 +138,8 @@ class DeliveryOrder {
     required this.totalEmpties,
     required this.amount,
     required this.paymentMethod,
+    this.cashAmount,
+    this.upiAmount,
     required this.time,
     this.status = 'Delivered',
     this.stopNumber = 1,
@@ -339,6 +371,8 @@ class AppState extends ChangeNotifier {
   Map<String, int> otherDeliveryQty = {};
   String paymentMethod = 'Cash';
   double collectedAmount = 0;
+  double splitCashAmount = 0;
+  double splitUpiAmount = 0;
 
   AppState() {
     _initDeliveryItems();
@@ -380,11 +414,11 @@ class AppState extends ChangeNotifier {
       if (backendCustomers.isNotEmpty) {
         customers.clear();
         for (final c in backendCustomers) {
-          final balance = (c['CurrentBalance'] as num?)?.toDouble() ?? 0.0;
+          final balance = safeDouble(c['CurrentBalance']);
           final phone = (c['Phone'] ?? c['MobileNumber'] ?? c['PhoneNumber'] ?? '').toString().trim();
           final addr = (c['AddressLine1'] ?? c['Address'] ?? '').toString().trim();
           customers.add(Customer(
-            ledgerId: c['LedgerId'] as int?,
+            ledgerId: safeIntNullable(c['LedgerId']),
             name: (c['LedgerName'] ?? '').toString().trim(),
             phone: phone,
             address: addr,
@@ -435,13 +469,21 @@ class AppState extends ChangeNotifier {
 
     try {
       final user = await ApiService.getSavedUser();
-      final dId = driverIdParam ?? (user != null ? (user['driver_id'] ?? user['DriverId']) as int? : null);
+      final role = user?['role']?.toString().toLowerCase() ?? '';
+      final isAdmin = role.contains('admin') || role.contains('manager');
+      final dId = driverIdParam ?? (user != null ? safeIntNullable(user['driver_id'] ?? user['DriverId']) : null);
+
       if (user != null) {
         final uname = user['username']?.toString().trim();
         if (uname != null && uname.isNotEmpty) {
           loggedInUsername = uname;
           fullName = uname;
         }
+      }
+
+      // If Admin or Manager, hydrate depot & fleet analytics authoritative from backend
+      if (isAdmin || dId == null) {
+        await fetchAdminData();
       }
 
       if (dId != null && dId > 0) {
@@ -451,7 +493,7 @@ class AppState extends ChangeNotifier {
 
       final alloc = await ApiService.getDriverAllocation(dId);
       if (alloc != null) {
-        currentAllocationId = (alloc['RouteVehicleDriverId'] ?? alloc['id']) as int?;
+        currentAllocationId = safeIntNullable(alloc['RouteVehicleDriverId'] ?? alloc['id']);
 
         final vNum = alloc['VehicleNumber'] ?? alloc['vehicle_number'] ?? alloc['Vehicle_number'];
         if (vNum != null && vNum.toString().trim().isNotEmpty) {
@@ -488,33 +530,33 @@ class AppState extends ChangeNotifier {
 
             // Load cylinders strictly from backend DB van-stock with live allocated, delivered, balance, empty
             cylinders = cylItems.map((s) => CylinderType(
-              productId: s['ProductId'] as int?,
+              productId: safeInt(s['ProductId']),
               weight: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
                   ? s['AppProductName'].toString().trim()
                   : (s['ProductName'] ?? '').toString(),
-              price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
-              gstPercentage: (s['GSTPercentage'] as num?)?.toDouble() ?? 0.0,
+              price: safeDouble(s['SalesPrice']),
+              gstPercentage: safeDouble(s['GSTPercentage']),
               hsnCode: s['HSNCode']?.toString() ?? '271109',
-              initialFilledStock: (s['AllocatedQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
-              filledStock: (s['BalanceQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
-              emptyStock: (s['EmptyQty'] as num?)?.toInt() ?? 0,
+              initialFilledStock: safeInt(s['AllocatedQty'] ?? s['OnboardQty']),
+              filledStock: safeInt(s['BalanceQty'] ?? s['OnboardQty']),
+              emptyStock: safeInt(s['EmptyQty']),
             )).toList();
             _initDeliveryItems();
 
             // Load Other Products allocated to this vehicle
             otherProducts = otherItems
-                .where((s) => (((s['AllocatedQty'] ?? s['OnboardQty'] ?? 0) as num).toInt()) > 0)
+                .where((s) => safeInt(s['AllocatedQty'] ?? s['OnboardQty']) > 0)
                 .map((s) => OtherProductItem(
-                  productId: s['ProductId'] as int?,
+                  productId: safeInt(s['ProductId']),
                   name: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
                       ? s['AppProductName'].toString().trim()
                       : (s['ProductName'] ?? '').toString(),
-                  price: (s['SalesPrice'] as num?)?.toDouble() ?? 0.0,
-                  gstPercentage: (s['GSTPercentage'] as num?)?.toDouble() ?? 0.0,
+                  price: safeDouble(s['SalesPrice']),
+                  gstPercentage: safeDouble(s['GSTPercentage']),
                   categoryName: (s['CategoryName'] ?? 'Other Items').toString(),
-                  initialStock: (s['AllocatedQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
-                  deliveredStock: (s['DeliveredQty'] as num?)?.toInt() ?? 0,
-                  balanceStock: (s['BalanceQty'] as num?)?.toInt() ?? (s['OnboardQty'] as num?)?.toInt() ?? 0,
+                  initialStock: safeInt(s['AllocatedQty'] ?? s['OnboardQty']),
+                  deliveredStock: safeInt(s['DeliveredQty']),
+                  balanceStock: safeInt(s['BalanceQty'] ?? s['OnboardQty']),
                 ))
                 .toList();
           }
@@ -536,20 +578,20 @@ class AppState extends ChangeNotifier {
                   (c) => c.weight.trim().toUpperCase() == w.toUpperCase() ||
                          (w.isNotEmpty && c.weight.toUpperCase().contains(w.toUpperCase())),
                   orElse: () => CylinderType(
-                    productId: it['productId'] as int?,
+                    productId: safeInt(it['productId']),
                     weight: w,
-                    price: (it['rate'] as num?)?.toDouble() ?? 0.0,
+                    price: safeDouble(it['rate']),
                     filledStock: 0,
                   ),
                 );
                 return DeliveryItem(
                   cylinder: matchedCyl,
-                  deliveryQty: (it['deliveryQty'] as num?)?.toInt() ?? 0,
-                  emptyReturnQty: (it['emptyReturnQty'] as num?)?.toInt() ?? 0,
+                  deliveryQty: safeInt(it['deliveryQty']),
+                  emptyReturnQty: safeInt(it['emptyReturnQty']),
                 );
               }).toList();
 
-              final cLedgerId = cData['ledgerId'] as int?;
+              final cLedgerId = safeIntNullable(cData['ledgerId']);
               final cName = cData['name'] ?? 'Customer';
               final cPhoneRaw = (cData['phone'] ?? '').toString().trim();
 
@@ -568,9 +610,12 @@ class AppState extends ChangeNotifier {
               }
               final resolvedPhone = cPhoneRaw.isNotEmpty ? cPhoneRaw : matchedCust.phone;
 
+              final paidAmt = safeDouble(s['paidAmount']);
+              final billAmt = safeDouble(s['amount']);
+
               newOrders.add(DeliveryOrder(
                 ticketId: s['ticketId'] ?? 'DT-ORD',
-                salesId: s['salesId'] as int?,
+                salesId: safeIntNullable(s['salesId']),
                 customer: Customer(
                   ledgerId: cLedgerId,
                   name: cName,
@@ -579,12 +624,12 @@ class AppState extends ChangeNotifier {
                   type: matchedCust.type,
                 ),
                 items: itemsList,
-                totalCylinders: (s['totalCylinders'] as num?)?.toInt() ?? 0,
-                totalEmpties: (s['totalEmpties'] as num?)?.toInt() ?? 0,
-                amount: (s['paidAmount'] != null && (s['paidAmount'] as num) > 0)
-                    ? (s['paidAmount'] as num).toDouble()
-                    : ((s['amount'] as num?)?.toDouble() ?? 0.0),
+                totalCylinders: safeInt(s['totalCylinders']),
+                totalEmpties: safeInt(s['totalEmpties']),
+                amount: paidAmt > 0 ? paidAmt : billAmt,
                 paymentMethod: s['paymentMethod'] ?? 'Cash',
+                cashAmount: s['cashAmount'] != null ? safeDouble(s['cashAmount']) : null,
+                upiAmount: s['upiAmount'] != null ? safeDouble(s['upiAmount']) : null,
                 time: s['time'] ?? '10:00 AM',
                 status: s['status'] ?? 'Delivered',
               ));
@@ -603,7 +648,7 @@ class AppState extends ChangeNotifier {
               expenses.add(DriverExpense(
                 id: (exp['id'] ?? exp['expense_id'] ?? '').toString(),
                 title: (exp['category'] ?? exp['title'] ?? 'Expense').toString(),
-                amount: (exp['amount'] as num?)?.toDouble() ?? 0.0,
+                amount: safeDouble(exp['amount']),
                 paymentMethod: (exp['payment_mode'] ?? exp['paymentMethod'] ?? 'Cash').toString(),
                 time: (exp['time'] ?? '').toString(),
               ));
@@ -666,12 +711,12 @@ class AppState extends ChangeNotifier {
 
         if (cylCatalog.isNotEmpty) {
           cylinders = cylCatalog.map((p) => CylinderType(
-            productId: p['ProductId'],
+            productId: safeInt(p['ProductId']),
             weight: (p['AppProductName'] != null && p['AppProductName'].toString().trim().isNotEmpty)
                 ? p['AppProductName'].toString().trim()
                 : (p['ProductName'] ?? ''),
-            price: (p['SalesPrice'] as num?)?.toDouble() ?? 0.0,
-            gstPercentage: (p['GSTPercentage'] as num?)?.toDouble() ?? 0.0,
+            price: safeDouble(p['SalesPrice']),
+            gstPercentage: safeDouble(p['GSTPercentage']),
             hsnCode: p['HSNCode']?.toString() ?? '271109',
             filledStock: 0,
             emptyStock: 0,
@@ -709,6 +754,12 @@ class AppState extends ChangeNotifier {
 
   void setPaymentMethod(String method) {
     paymentMethod = method;
+    notifyListeners();
+  }
+
+  void setSplitAmounts(double cash, double upi) {
+    splitCashAmount = cash;
+    splitUpiAmount = upi;
     notifyListeners();
   }
 
@@ -783,6 +834,10 @@ class AppState extends ChangeNotifier {
 
     final ticketId = _generateTicketId();
 
+    final isSplit = paymentMethod.toLowerCase() == 'split';
+    final effCash = isSplit ? splitCashAmount : (paymentMethod.toLowerCase() == 'cash' ? collectedAmount : 0.0);
+    final effUpi = isSplit ? splitUpiAmount : (paymentMethod.toLowerCase().contains('upi') ? collectedAmount : 0.0);
+
     final newOrder = DeliveryOrder(
       ticketId: ticketId,
       customer: selectedCustomer!,
@@ -797,6 +852,8 @@ class AppState extends ChangeNotifier {
       totalEmpties: totalEmpties,
       amount: collectedAmount,
       paymentMethod: paymentMethod,
+      cashAmount: effCash,
+      upiAmount: effUpi,
       time: timeStr,
       stopNumber: _stopCounter,
     );
@@ -864,6 +921,8 @@ class AppState extends ChangeNotifier {
           items: allBackendItems,
           paymentMethod: paymentMethod,
           amountCollected: collectedAmount,
+          cashAmount: effCash,
+          upiAmount: effUpi,
           ticketId: ticketId,
         );
         if (res['success'] == true) {
@@ -886,6 +945,148 @@ class AppState extends ChangeNotifier {
     }
 
     return true;
+  }
+
+  Future<DeliveryOrder?> recordPackageDelivery({
+    required Customer customer,
+    required Map<String, dynamic> package,
+    required String paymentMode,
+    required double totalAmount,
+    double? cashAmount,
+    double? upiAmount,
+  }) async {
+    final ticketId = 'PK-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    final now = DateTime.now();
+    final timeStr = "${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}";
+
+    final allBackendItems = <Map<String, dynamic>>[];
+
+    // 1. Cylinder item
+    final cylinderProductId = package['CylinderProduct'];
+    final cylinderQty = safeInt(package['CylinderQty'], 1);
+    final cylinderRate = safeDouble(package['CylinderRate'], 0.0);
+    final cylinderName = (package['cylinder_name'] ?? 'LPG Cylinder').toString();
+
+    if (cylinderProductId != null) {
+      allBackendItems.add({
+        'product_id': cylinderProductId,
+        'weight': cylinderName,
+        'qty': cylinderQty,
+        'empty_qty': 0,
+        'rate': cylinderRate,
+        'gst_pct': 5,
+      });
+
+      // Deduct from local van stock if matching cylinder found
+      for (final it in deliveryItems) {
+        if (it.cylinder.productId == cylinderProductId) {
+          it.cylinder.filledStock = (it.cylinder.filledStock - cylinderQty).clamp(0, 9999);
+        }
+      }
+    }
+
+    // 2. Accessories items
+    final items = package['items'] as List<dynamic>? ?? [];
+    for (final it in items) {
+      final pid = it['Product'] ?? it['product_id'];
+      final pName = (it['ProductName'] ?? it['product_name'] ?? 'Accessory').toString();
+      final q = safeInt(it['Quantity'], 1);
+      final r = safeDouble(it['Rate'], 0.0);
+
+      allBackendItems.add({
+        'product_id': pid,
+        'weight': pName,
+        'qty': q,
+        'empty_qty': 0,
+        'rate': r,
+        'gst_pct': 18,
+      });
+
+      // Deduct from local accessories stock
+      final prod = otherProducts.firstWhere(
+        (p) => p.productId == pid || p.name.toLowerCase() == pName.toLowerCase(),
+        orElse: () => OtherProductItem(name: pName, price: r, initialStock: 0),
+      );
+      prod.deliveredStock += q;
+      prod.balanceStock = (prod.initialStock - prod.deliveredStock).clamp(0, 9999);
+    }
+
+    // 3. Labor / Installation charge if any
+    final laborCharge = safeDouble(package['LaborCharge'], 0.0);
+    if (laborCharge > 0) {
+      allBackendItems.add({
+        'product_id': null,
+        'weight': package['LaborDescription'] ?? 'Installation & Fitting',
+        'qty': 1,
+        'empty_qty': 0,
+        'rate': laborCharge,
+        'gst_pct': 18,
+      });
+    }
+
+    final isSplit = paymentMode.toLowerCase() == 'split';
+    final effCash = isSplit ? (cashAmount ?? 0.0) : (paymentMode.toLowerCase() == 'cash' ? totalAmount : 0.0);
+    final effUpi = isSplit ? (upiAmount ?? 0.0) : (paymentMode.toLowerCase().contains('upi') ? totalAmount : 0.0);
+
+    final newOrder = DeliveryOrder(
+      ticketId: ticketId,
+      customer: customer,
+      items: [
+        DeliveryItem(
+          cylinder: CylinderType(
+            weight: '$cylinderName (${package['PackageName']})',
+            filledStock: 0,
+            emptyStock: 0,
+            price: totalAmount,
+          ),
+          deliveryQty: 1,
+          emptyReturnQty: 0,
+        )
+      ],
+      totalCylinders: cylinderQty,
+      totalEmpties: 0,
+      amount: totalAmount,
+      paymentMethod: paymentMode,
+      cashAmount: effCash,
+      upiAmount: effUpi,
+      time: timeStr,
+      stopNumber: ++_stopCounter,
+    );
+    orders.insert(0, newOrder);
+    lastSyncTime = DateTime.now();
+    notifyListeners();
+
+    if (currentAllocationId != null && currentAllocationId! > 0) {
+      try {
+        final res = await ApiService.createSale(
+          allocationId: currentAllocationId!,
+          customerLedgerId: customer.ledgerId ?? 0,
+          items: allBackendItems,
+          paymentMethod: paymentMode,
+          amountCollected: totalAmount,
+          cashAmount: effCash,
+          upiAmount: effUpi,
+          ticketId: ticketId,
+        );
+        if (res['success'] == true) {
+          final returnedTicket = res['ticket_id']?.toString();
+          if (returnedTicket != null && returnedTicket.isNotEmpty) {
+            newOrder.ticketId = returnedTicket;
+          }
+          final sid = res['sales_id'];
+          if (sid is int) {
+            newOrder.salesId = sid;
+          } else if (sid != null) {
+            newOrder.salesId = int.tryParse(sid.toString());
+          }
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint('Package sale sync error: $e');
+      }
+    }
+
+    return newOrder;
   }
 
   Future<void> deleteOrder(DeliveryOrder order) async {
@@ -1172,12 +1373,26 @@ class AppState extends ChangeNotifier {
   bool get isSettledShift => endShiftStatus.toUpperCase() == 'SETTLED';
 
   double get cashIncome => isSettledShift ? 0.0 : orders
-      .where((o) => o.paymentMethod.toLowerCase() == 'cash')
-      .fold(0.0, (sum, o) => sum + o.amount);
+      .fold(0.0, (sum, o) {
+        final pm = o.paymentMethod.toLowerCase();
+        if (pm == 'split') {
+          return sum + (o.cashAmount ?? 0.0);
+        } else if (pm == 'cash') {
+          return sum + o.amount;
+        }
+        return sum;
+      });
 
   double get upiIncome => isSettledShift ? 0.0 : orders
-      .where((o) => o.paymentMethod.toLowerCase().contains('upi') || o.paymentMethod.toLowerCase().contains('bank'))
-      .fold(0.0, (sum, o) => sum + o.amount);
+      .fold(0.0, (sum, o) {
+        final pm = o.paymentMethod.toLowerCase();
+        if (pm == 'split') {
+          return sum + (o.upiAmount ?? 0.0);
+        } else if (pm.contains('upi') || pm.contains('bank')) {
+          return sum + o.amount;
+        }
+        return sum;
+      });
 
   double get totalIncome => cashIncome + upiIncome;
 
@@ -1201,6 +1416,15 @@ class AppState extends ChangeNotifier {
   double get bankBalance => upiBalance;
 
   // ================= ADMIN DEPOT STATE & ACTIONS =================
+  Map<String, dynamic> adminSummary = {};
+  List<Map<String, dynamic>> adminGodowns = [];
+  List<Map<String, dynamic>> adminVans = [];
+  List<Map<String, dynamic>> adminRecentNotes = [];
+  List<Map<String, dynamic>> adminAllocations = [];
+  List<Map<String, dynamic>> adminCatalogProducts = [];
+  double adminSalesToday = 0.0;
+  double adminCashToday = 0.0;
+  double adminUpiToday = 0.0;
   List<AdminDriver> fleetDrivers = [];
 
   // Helper getters for driver-specific revenue & expenses
@@ -1237,21 +1461,237 @@ class AppState extends ChangeNotifier {
     return getDriverTotalIncome(driver) - getDriverTotalExpense(driver);
   }
 
-  // Depot wide total revenue calculations
+  // Depot wide total revenue calculations (live backend sales first, fallback to drivers)
   double get adminTotalRevenueToday {
+    if (adminSalesToday > 0) return adminSalesToday;
     return fleetDrivers.where((d) => d.active).fold(0.0, (sum, d) => sum + getDriverTotalIncome(d));
   }
 
   double get adminTotalCashToday {
+    if (adminCashToday > 0) return adminCashToday;
     return fleetDrivers.where((d) => d.active).fold(0.0, (sum, d) => sum + getDriverCashIncome(d));
   }
 
   double get adminTotalUpiToday {
+    if (adminUpiToday > 0) return adminUpiToday;
     return fleetDrivers.where((d) => d.active).fold(0.0, (sum, d) => sum + getDriverUpiIncome(d));
   }
 
   double get adminTotalExpensesToday {
     return fleetDrivers.where((d) => d.active).fold(0.0, (sum, d) => sum + getDriverTotalExpense(d));
+  }
+
+  List<WarehouseItem> warehouseItems = [];
+
+  int get totalWarehouseFilled {
+    if (adminSummary.containsKey('total_godown_filled')) {
+      return safeInt(adminSummary['total_godown_filled']);
+    }
+    return warehouseItems.fold(0, (sum, i) => sum + i.filledStock);
+  }
+
+  int get totalWarehouseEmpty {
+    if (adminSummary.containsKey('total_godown_empty')) {
+      return safeInt(adminSummary['total_godown_empty']);
+    }
+    return warehouseItems.fold(0, (sum, i) => sum + i.emptyStock);
+  }
+
+  int get totalVansOnboardFilled {
+    if (adminSummary.containsKey('total_allocated_filled')) {
+      return safeInt(adminSummary['total_allocated_filled']);
+    }
+    return adminVans.fold(0, (sum, v) => sum + safeInt(v['TotalCylinders'] ?? v['AllocatedCylinders']));
+  }
+
+  int get totalActiveVansCount {
+    if (adminSummary.containsKey('active_vans_count')) {
+      return safeInt(adminSummary['active_vans_count']);
+    }
+    return adminVans.where((v) => safeInt(v['TotalCylinders']) > 0).length;
+  }
+
+  int get totalRegisteredVansCount {
+    if (adminSummary.containsKey('total_registered_vans')) {
+      return safeInt(adminSummary['total_registered_vans']);
+    }
+    return vehicles.isNotEmpty ? vehicles.length : 6;
+  }
+
+  int get totalActiveDrivers => fleetDrivers.where((d) => d.active).length;
+
+  /// Authoritative backend sync for Admin & Manager logins
+  Future<void> fetchAdminData() async {
+    isLoadingFromBackend = true;
+    notifyListeners();
+
+    try {
+      // 1. Fetch live Stock Analysis (Godowns, Active Vans, and System Summary)
+      final analysis = await ApiService.getStockAnalysis();
+      if (analysis != null) {
+        adminSummary = analysis['summary'] as Map<String, dynamic>? ?? {};
+        adminGodowns = List<Map<String, dynamic>>.from(analysis['godowns'] as List? ?? []);
+        adminVans = List<Map<String, dynamic>>.from(analysis['all_vans'] as List? ?? []);
+        adminRecentNotes = List<Map<String, dynamic>>.from(analysis['recent_notes'] as List? ?? []);
+
+        final products = analysis['products'] as List? ?? [];
+        warehouseItems = products.map((p) {
+          final w = (p['AppProductName'] != null && p['AppProductName'].toString().trim().isNotEmpty)
+              ? p['AppProductName'].toString().trim()
+              : (p['ProductName'] ?? '').toString();
+          return WarehouseItem(
+            weight: w,
+            title: (p['ProductName'] ?? '').toString(),
+            filledStock: safeInt(p['InGodown']),
+            emptyStock: 0,
+            price: safeDouble(p['SalesPrice']),
+          );
+        }).toList();
+      }
+
+      // 2. Fetch live Allocations
+      final rawAllocations = await ApiService.getAllocations();
+      adminAllocations = rawAllocations.where((a) {
+        final rName = (a['RouteName'] ?? a['route_name'] ?? '').toString().toLowerCase();
+        final vPlate = (a['VehicleNumber'] ?? a['vehicle_number'] ?? '').toString().toLowerCase();
+        return !rName.contains('godown') && !rName.contains('depot') && !vPlate.contains('godown') && !vPlate.contains('central');
+      }).toList();
+
+      // 3. Fetch live Vehicles
+      final rawVehicles = await ApiService.getVehicles();
+      availableVehicles.clear();
+      vehicles.clear();
+      for (final v in rawVehicles) {
+        final plate = (v['VehicleNumber'] ?? v['plate_number'] ?? '').toString().trim().toUpperCase();
+        if (plate.isNotEmpty && !plate.toLowerCase().contains('godown') && !availableVehicles.contains(plate)) {
+          availableVehicles.add(plate);
+
+          final alloc = adminAllocations.firstWhere(
+            (a) => (a['VehicleNumber'] ?? a['vehicle_number'] ?? '').toString().trim().toUpperCase() == plate,
+            orElse: () => {},
+          );
+          vehicles.add(DepotVehicle(
+            plateNumber: plate,
+            model: (v['Model'] ?? v['VehicleType'] ?? 'Delivery Van').toString(),
+            assignedDriverName: (alloc['DriverName'] ?? alloc['driver_name'] ?? 'Unassigned').toString(),
+            assignedDriverId: alloc['Driver'] != null ? 'DRV${alloc['Driver']}' : '',
+            route: (alloc['RouteName'] ?? alloc['route_name'] ?? 'No Route').toString(),
+            status: alloc.isNotEmpty ? 'Active Route' : 'Ready in Depot',
+          ));
+        }
+      }
+
+      // 4. Fetch live Drivers
+      final rawDrivers = await ApiService.getDrivers();
+      fleetDrivers.clear();
+      for (final d in rawDrivers) {
+        final dId = d['DriverId'] ?? d['id'];
+        final dName = (d['DriverName'] ?? d['name'] ?? 'Driver').toString().trim();
+        final dPhone = (d['Phone'] ?? d['phone'] ?? '').toString().trim();
+
+        final alloc = adminAllocations.firstWhere(
+          (a) => (a['Driver'] == dId) || ((a['DriverName'] ?? '').toString().trim().toLowerCase() == dName.toLowerCase()),
+          orElse: () => {},
+        );
+
+        final plate = (alloc['VehicleNumber'] ?? alloc['vehicle_number'] ?? '').toString().trim().toUpperCase();
+        final route = (alloc['RouteName'] ?? alloc['route_name'] ?? '').toString().trim();
+
+        int onboardCount = 0;
+        final matchedVan = adminVans.firstWhere(
+          (v) => (v['VehicleNumber'] ?? '').toString().trim().toUpperCase() == plate,
+          orElse: () => {},
+        );
+        if (matchedVan.isNotEmpty) {
+          onboardCount = safeInt(matchedVan['TotalCylinders']);
+        }
+
+        fleetDrivers.add(AdminDriver(
+          id: 'DRV$dId',
+          name: dName,
+          phone: dPhone,
+          vehicle: plate,
+          route: route.isNotEmpty ? route : 'Unassigned',
+          cylindersOnboard: onboardCount,
+          active: d['IsActive'] == true,
+        ));
+      }
+
+      // 5. Fetch live Catalog Products
+      final rawProducts = await ApiService.getProducts();
+      adminCatalogProducts = rawProducts.where((p) {
+        final name = (p['ProductName'] ?? '').toString().toLowerCase();
+        return name.contains('cylinder') || name.contains('kg') || name.contains('lpg');
+      }).toList();
+
+      // 6. Fetch live Fleet Sales for Today
+      final allSales = await ApiService.getFleetSales();
+      final now = DateTime.now();
+      final todayStr = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+
+      double totalTodayRevenue = 0.0;
+      double totalTodayCash = 0.0;
+      double totalTodayUpi = 0.0;
+
+      for (final s in allSales) {
+        final sDate = (s['SalesDate'] ?? s['date'] ?? '').toString();
+        if (sDate.startsWith(todayStr)) {
+          final amt = safeDouble(s['PaidAmount'] ?? s['TotalAmount'] ?? s['GrandTotal']);
+          final pMethod = (s['PaymentMode'] ?? s['PaymentMethod'] ?? '').toString().toUpperCase();
+          totalTodayRevenue += amt;
+          if (pMethod == 'SPLIT') {
+            final cAmt = safeDouble(s['cash_amount']);
+            final uAmt = safeDouble(s['upi_amount'] ?? s['bank_amount']);
+            if (cAmt > 0 || uAmt > 0) {
+              totalTodayCash += cAmt;
+              totalTodayUpi += uAmt;
+            } else {
+              final notes = (s['Notes'] ?? '').toString();
+              final cashMatch = RegExp(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)').firstMatch(notes);
+              final upiMatch = RegExp(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)').firstMatch(notes);
+              final cVal = cashMatch != null ? safeDouble(cashMatch.group(1)!.replaceAll(',', '')) : amt / 2;
+              final uVal = upiMatch != null ? safeDouble(upiMatch.group(1)!.replaceAll(',', '')) : amt - cVal;
+              totalTodayCash += cVal;
+              totalTodayUpi += uVal;
+            }
+          } else if (pMethod.contains('CASH')) {
+            totalTodayCash += amt;
+          } else {
+            totalTodayUpi += amt;
+          }
+        }
+      }
+
+      adminSalesToday = totalTodayRevenue;
+      adminCashToday = totalTodayCash;
+      adminUpiToday = totalTodayUpi;
+    } catch (e) {
+      debugPrint('Error fetching admin data: $e');
+    } finally {
+      isLoadingFromBackend = false;
+      lastSyncTime = DateTime.now();
+      notifyListeners();
+    }
+  }
+
+  /// Authoritative backend Delivery Note creation from mobile app
+  Future<Map<String, dynamic>> submitVehicleAllocation({
+    required int allocationId,
+    int godownId = 1,
+    required List<Map<String, dynamic>> lines,
+    String? remarks,
+  }) async {
+    final res = await ApiService.createDeliveryNote(
+      allocationId: allocationId,
+      godownId: godownId,
+      lines: lines,
+      remarks: remarks,
+    );
+
+    if (res['success'] == true) {
+      await fetchAdminData();
+    }
+    return res;
   }
 
   void addNewVehicle({
@@ -1300,12 +1740,6 @@ class AppState extends ChangeNotifier {
     );
     notifyListeners();
   }
-
-  List<WarehouseItem> warehouseItems = [];
-
-  int get totalWarehouseFilled => warehouseItems.fold(0, (sum, i) => sum + i.filledStock);
-  int get totalWarehouseEmpty => warehouseItems.fold(0, (sum, i) => sum + i.emptyStock);
-  int get totalActiveDrivers => fleetDrivers.where((d) => d.active).length;
 
   void reloadTruckStock(String weight, int qty) {
     if (warehouseItems.isEmpty || cylinders.isEmpty) return;

@@ -29,20 +29,24 @@ import {
   IconUserCheck,
   IconTrash,
   IconPackage,
+  IconArrowLeft,
 } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 
 export const SalesListPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>('ALL');
   const [typeFilter, setTypeFilter] = useState<string | null>('ALL');
   const [viewingSale, setViewingSale] = useState<any | null>(null);
+
+  const openSaleId = searchParams.get('open_sale_id');
 
   // 1. Fetch Sales List
   const { data: sales = [], isLoading } = useQuery<any[]>({
@@ -52,6 +56,25 @@ export const SalesListPage: React.FC = () => {
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
   });
+
+  // Automatically reopen sale details modal if open_sale_id is provided in URL
+  React.useEffect(() => {
+    if (openSaleId && sales.length > 0 && !viewingSale) {
+      const match = sales.find((s: any) => String(s.SalesId) === String(openSaleId));
+      if (match) {
+        setViewingSale(match);
+      }
+    }
+  }, [openSaleId, sales]);
+
+  const handleCloseViewingModal = () => {
+    setViewingSale(null);
+    if (searchParams.has('open_sale_id')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('open_sale_id');
+      setSearchParams(nextParams, { replace: true });
+    }
+  };
 
   const isPackageSale = (s: any) => {
     return Boolean(
@@ -169,6 +192,18 @@ export const SalesListPage: React.FC = () => {
       <Box pt={4} pb={2}>
         <Group justify="space-between" align="center" wrap="wrap">
           <div>
+            <Group gap="xs" align="center" mb={6}>
+              <Button
+                variant="subtle"
+                color="gray"
+                size="xs"
+                leftSection={<IconArrowLeft size={16} />}
+                onClick={() => navigate('/')}
+                styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+              >
+                Back to Dashboard
+              </Button>
+            </Group>
             <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
               Sales &amp; Invoices
             </Title>
@@ -534,7 +569,7 @@ export const SalesListPage: React.FC = () => {
       {/* ── View Sale Details Modal ── */}
       <Modal
         opened={!!viewingSale}
-        onClose={() => setViewingSale(null)}
+        onClose={handleCloseViewingModal}
         title={
           <Group gap="xs">
             <IconReceipt2 size={20} color="#800020" />

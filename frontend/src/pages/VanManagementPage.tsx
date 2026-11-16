@@ -98,10 +98,18 @@ export const VanManagementPage: React.FC = () => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return validRoutes;
     return validRoutes.filter(
-      (r) =>
-        r.route_name.toLowerCase().includes(q) ||
-        (r.vehicle_number && r.vehicle_number.toLowerCase().includes(q)) ||
-        (r.driver_name && r.driver_name.toLowerCase().includes(q))
+      (r) => {
+        const rName = (r.route_name || '').toLowerCase();
+        const vNum = (r.vehicle_number || (r as any).vehicle?.vehicle_number || '').toLowerCase();
+        const dName = (r.driver_name || (r as any).driver?.name || '').toLowerCase();
+        const status = (r.status || '').toLowerCase();
+        return (
+          rName.includes(q) ||
+          vNum.includes(q) ||
+          dName.includes(q) ||
+          status.includes(q)
+        );
+      }
     );
   }, [validRoutes, searchQuery]);
 
@@ -150,21 +158,6 @@ export const VanManagementPage: React.FC = () => {
 
         {/* Search bar & Refresh action */}
         <Group gap="sm" align="center" wrap="wrap">
-          <TextInput
-            placeholder="Search route, vehicle, driver..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            leftSection={<IconSearch size={15} color="#64748b" />}
-            rightSection={
-              searchQuery ? (
-                <CloseButton size="sm" aria-label="Clear search" onClick={() => setSearchQuery('')} />
-              ) : null
-            }
-            radius="md"
-            size="sm"
-            style={{ width: 260 }}
-          />
-
           <ActionIcon
             variant="default"
             size="lg"
@@ -297,7 +290,7 @@ export const VanManagementPage: React.FC = () => {
           boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
         }}
       >
-        <Group justify="space-between" align="center" p="md" px="lg" style={{ borderBottom: '1px solid #f1f5f9' }}>
+        <Group justify="space-between" align="center" p="md" px="lg" style={{ borderBottom: '1px solid #f1f5f9' }} wrap="wrap" gap="sm">
           <div>
             <Text fw={700} style={{ color: '#0f172a', fontSize: 16, letterSpacing: '-0.01em' }}>
               Routes &amp; Fleet Operations ({filteredRoutes.length})
@@ -306,9 +299,27 @@ export const VanManagementPage: React.FC = () => {
               Click any route row to view live vehicle tracking, cylinder stocks, customer deliveries &amp; trip expenses
             </Text>
           </div>
-          <Badge size="xs" variant="outline" color="gray" radius="sm">
-            Auto-refreshes every 15s
-          </Badge>
+
+          <Group gap="sm" align="center" wrap="wrap">
+            <TextInput
+              placeholder="Search route, vehicle, driver..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+              leftSection={<IconSearch size={15} color="#64748b" />}
+              rightSection={
+                searchQuery ? (
+                  <CloseButton size="sm" aria-label="Clear search" onClick={() => setSearchQuery('')} />
+                ) : null
+              }
+              radius="md"
+              size="sm"
+              style={{ width: 280 }}
+            />
+
+            <Badge size="xs" variant="outline" color="gray" radius="sm">
+              Auto-refreshes every 15s
+            </Badge>
+          </Group>
         </Group>
 
         {isLoading ? (

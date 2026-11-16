@@ -336,10 +336,19 @@ export const ConnectionPackageFormPage: React.FC = () => {
                   color="gray"
                   size="compact-sm"
                   leftSection={<IconArrowLeft size={16} />}
-                  onClick={() => navigate('/connection-packages')}
+                  onClick={() => navigate('/')}
                   style={{ paddingLeft: 0 }}
                 >
-                  Back to Connection Packages
+                  Back to Dashboard
+                </Button>
+                <Text size="xs" c="dimmed">•</Text>
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  size="compact-sm"
+                  onClick={() => navigate('/connection-packages')}
+                >
+                  Connection Packages
                 </Button>
               </Group>
               <Title

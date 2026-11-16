@@ -8,7 +8,7 @@ from core.models import (
     Category, Unit, Product, Group, Ledger, ProductPriceAudit, CustomerProductPrice,
     Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
     Payment, PaymentLine, BillwiseAllocation, LedgerLine,
-    SaleEditHistory, ConnectionPackage, ConnectionPackageItem
+    SaleEditHistory, ConnectionPackage, ConnectionPackageItem, FinancialYear
 )
 
 from core.services import register_company
@@ -218,6 +218,16 @@ class CompanySerializer(serializers.ModelSerializer):
             setattr(instance, attr, value)
         instance.save()
         return instance
+
+
+class FinancialYearSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FinancialYear
+        fields = [
+            'FinancialYearId', 'Company', 'YearName', 'StartDate', 'EndDate',
+            'IsActive', 'IsClosed', 'CreatedAt', 'UpdatedAt'
+        ]
+        read_only_fields = ['FinancialYearId', 'CreatedAt', 'UpdatedAt']
 class DriverSerializer(serializers.ModelSerializer):
     delete_block_reason = serializers.SerializerMethodField()
 
@@ -1142,6 +1152,32 @@ class SalesSerializer(serializers.ModelSerializer):
     advance_adjusted = serializers.SerializerMethodField()
     net_payable = serializers.SerializerMethodField()
     advance_adjustments = serializers.SerializerMethodField()
+    cash_amount = serializers.SerializerMethodField()
+    upi_amount = serializers.SerializerMethodField()
+    bank_amount = serializers.SerializerMethodField()
+
+    def get_cash_amount(self, obj):
+        pm = (obj.PaymentMethod or '').upper()
+        if pm == 'CASH':
+            return float(obj.PaidAmount if obj.PaidAmount is not None else obj.GrandTotal or 0)
+        elif pm == 'SPLIT' and obj.Notes:
+            m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', obj.Notes)
+            if m:
+                return float(m.group(1).replace(',', ''))
+        return 0.0
+
+    def get_upi_amount(self, obj):
+        pm = (obj.PaymentMethod or '').upper()
+        if pm in ['UPI', 'BANK', 'ONLINE']:
+            return float(obj.PaidAmount if obj.PaidAmount is not None else obj.GrandTotal or 0)
+        elif pm == 'SPLIT' and obj.Notes:
+            m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', obj.Notes)
+            if m:
+                return float(m.group(1).replace(',', ''))
+        return 0.0
+
+    def get_bank_amount(self, obj):
+        return self.get_upi_amount(obj)
 
     def get_advance_adjusted(self, obj):
         return sum(float(a.AdjustmentAmount) for a in obj.advance_adjustments.all())
@@ -1188,6 +1224,9 @@ class SalesSerializer(serializers.ModelSerializer):
             'advance_adjusted',
             'net_payable',
             'advance_adjustments',
+            'cash_amount',
+            'upi_amount',
+            'bank_amount',
             'RoundOff',
             'TotalDeliveredQty',
             'TotalEmptyQty',

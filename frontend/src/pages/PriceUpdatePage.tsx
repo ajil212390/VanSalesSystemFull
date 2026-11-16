@@ -305,6 +305,16 @@ export const PriceUpdatePage: React.FC = () => {
               color="gray"
               size="xs"
               leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/')}
+              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+            >
+              Back to Dashboard
+            </Button>
+            <Text size="xs" c="dimmed">•</Text>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
               onClick={() => navigate('/products')}
               styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
             >
@@ -398,9 +408,9 @@ export const PriceUpdatePage: React.FC = () => {
                   <Text size="sm" fw={600} c="#1e293b">{selectedCustomerObj.MobileNumber || selectedCustomerObj.PhoneNumber || 'No Phone'}</Text>
                 </Box>
                 <Box>
-                  <Text size="xs" c="dimmed">Credit Movement Term</Text>
+                  <Text size="xs" c="dimmed">Delivery Frequency</Text>
                   <Badge variant="light" color="burgundy" size="sm">
-                    {selectedCustomerObj.CreditPeriodDays || 15} Days
+                    Every {selectedCustomerObj.CreditPeriodDays || 15} Days
                   </Badge>
                 </Box>
                 <Box>

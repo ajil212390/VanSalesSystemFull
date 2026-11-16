@@ -36,6 +36,7 @@ import {
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
@@ -264,7 +265,12 @@ export const CollectionsPage: React.FC = () => {
       if (modeFilter !== 'ALL') {
         const itemMode = item.paymentMode.toLowerCase();
         const target = modeFilter.toLowerCase();
-        if (target === 'bank' && !itemMode.includes('bank') && !itemMode.includes('upi') && !itemMode.includes('card')) {
+        if (itemMode === 'split') {
+          // Split payment includes both Cash and Bank/UPI components
+          if (target !== 'cash' && target !== 'bank' && target !== 'upi') {
+            return false;
+          }
+        } else if (target === 'bank' && !itemMode.includes('bank') && !itemMode.includes('upi') && !itemMode.includes('card')) {
           return false;
         } else if (target !== 'bank' && !itemMode.includes(target)) {
           return false;
@@ -316,7 +322,23 @@ export const CollectionsPage: React.FC = () => {
         receiptCount++;
       }
 
-      if (c.paymentMode.includes('CASH')) {
+      if (c.paymentMode === 'SPLIT') {
+        const raw = c.raw || {};
+        const cVal = Number(raw.cash_amount ?? 0);
+        const uVal = Number(raw.upi_amount ?? raw.bank_amount ?? 0);
+        if (cVal > 0 || uVal > 0) {
+          cashAmt += cVal;
+          digitalAmt += uVal;
+        } else {
+          const notes = c.notes || '';
+          const cM = /Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
+          const uM = /UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
+          const cashSplit = cM ? Number(cM[1].replace(/,/g, '')) : c.amount / 2;
+          const upiSplit = uM ? Number(uM[1].replace(/,/g, '')) : c.amount - cashSplit;
+          cashAmt += cashSplit;
+          digitalAmt += upiSplit;
+        }
+      } else if (c.paymentMode.includes('CASH')) {
         cashAmt += c.amount;
       } else {
         digitalAmt += c.amount;
@@ -406,7 +428,11 @@ export const CollectionsPage: React.FC = () => {
       window.open(fileURL, '_blank');
     } catch (err: any) {
       console.error('Error generating collections statement PDF:', err);
-      alert('Failed to generate PDF statement. Please try again.');
+      notifications.show({
+        title: 'Error Generating PDF',
+        message: 'Failed to generate collections statement PDF. Please try again.',
+        color: 'red',
+      });
     } finally {
       setIsGeneratingPdf(false);
     }

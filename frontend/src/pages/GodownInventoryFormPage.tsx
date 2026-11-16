@@ -128,10 +128,20 @@ export const GodownInventoryFormPage: React.FC = () => {
               color="gray"
               size="sm"
               leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/')}
+              style={{ fontWeight: 600, color: '#475569' }}
+            >
+              Dashboard
+            </Button>
+            <Divider orientation="vertical" h={20} />
+            <Button
+              variant="subtle"
+              color="gray"
+              size="sm"
               onClick={() => navigate('/stock-analysis')}
               style={{ fontWeight: 600, color: '#475569' }}
             >
-              Back to Stock Analysis
+              Stock Analysis
             </Button>
             <Divider orientation="vertical" h={20} />
             <div>

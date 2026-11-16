@@ -49,6 +49,7 @@ import {
   IconPackageImport,
   IconPackages,
   IconFileInvoice,
+  IconCalendar,
 } from '@tabler/icons-react';
 
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
@@ -69,6 +70,27 @@ export const AppLayout: React.FC = () => {
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Financial Years
+  const { data: financialYears = [], refetch: refetchYears } = useQuery<any[]>({
+    queryKey: ['financial-years'],
+    queryFn: async () => {
+      const res = await apiClient.get('/financial-years/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    },
+  });
+
+  const activeYear = financialYears.find((y: any) => y.IsActive) || financialYears[0];
+
+  const handleSwitchYear = async (year: any) => {
+    try {
+      await apiClient.post(`/financial-years/${year.FinancialYearId}/set-active/`);
+      refetchYears();
+      window.location.reload();
+    } catch (e) {
+      console.error('Failed to switch financial year', e);
+    }
+  };
 
   const { data: endRouteDrivers = [] } = useQuery<any[]>({
     queryKey: ['end-route-drivers'],
@@ -371,6 +393,57 @@ export const AppLayout: React.FC = () => {
 
           {/* Right: Notifications & User Profile */}
           <Group gap="sm" wrap="nowrap">
+            {/* Financial Year Switcher Pill */}
+            {financialYears.length > 0 && (
+              <Menu shadow="md" width={180} position="bottom-end" radius="md">
+                <Menu.Target>
+                  <Tooltip label="Active Financial Year (Click to switch)" withArrow position="bottom">
+                    <Button
+                      variant="light"
+                      size="xs"
+                      radius="xl"
+                      leftSection={<IconCalendar size={14} color="#800020" />}
+                      rightSection={<IconChevronDown size={12} color="#800020" />}
+                      styles={{
+                        root: {
+                          backgroundColor: '#fdf2f4',
+                          color: '#800020',
+                          border: '1px solid #f5c2cb',
+                          fontWeight: 700,
+                          height: 32,
+                          padding: '0 10px',
+                        },
+                      }}
+                    >
+                      FY {activeYear?.YearName || '2026-2027'}
+                    </Button>
+                  </Tooltip>
+                </Menu.Target>
+                <Menu.Dropdown p="xs">
+                  <Text size="10px" fw={700} c="dimmed" tt="uppercase" px="xs" py={4}>
+                    Financial Years
+                  </Text>
+                  {financialYears.map((fy: any) => (
+                    <Menu.Item
+                      key={fy.FinancialYearId}
+                      onClick={() => handleSwitchYear(fy)}
+                      style={{
+                        borderRadius: 6,
+                        fontWeight: fy.IsActive ? 700 : 500,
+                        color: fy.IsActive ? '#800020' : '#1e293b',
+                        backgroundColor: fy.IsActive ? '#fdf2f4' : undefined,
+                      }}
+                    >
+                      <Group justify="space-between">
+                        <span>{fy.YearName}</span>
+                        {fy.IsActive && <Badge size="xs" color="burgundy" variant="filled">Active</Badge>}
+                      </Group>
+                    </Menu.Item>
+                  ))}
+                </Menu.Dropdown>
+              </Menu>
+            )}
+
             {/* Notification Bell Icon for Receipt Notes */}
             <Menu shadow="lg" width={320} position="bottom-end" radius="md">
               <Menu.Target>

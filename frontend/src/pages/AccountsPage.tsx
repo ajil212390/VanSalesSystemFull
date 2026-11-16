@@ -30,7 +30,9 @@ import {
   IconTrash,
   IconChevronDown,
   IconFileSpreadsheet,
+  IconArrowLeft,
 } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { notifications } from '@mantine/notifications';
@@ -154,6 +156,7 @@ const defaultLedgerValues: LedgerFormValues = {
 };
 
 export const AccountsPage: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
@@ -497,6 +500,18 @@ export const AccountsPage: React.FC = () => {
       {/* Page Header matching Products Page */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Group gap="xs" align="center" mb={6}>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/')}
+              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+            >
+              Back to Dashboard
+            </Button>
+          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Accounts
           </Title>
@@ -813,8 +828,8 @@ export const AccountsPage: React.FC = () => {
                         control={control}
                         render={({ field }) => (
                           <NumberInput
-                            label="Credit Period"
-                            placeholder="0"
+                            label="Delivery Frequency (Days)"
+                            placeholder="e.g. 7 = weekly, 30 = monthly"
                             min={0}
                             hideControls
                             value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}

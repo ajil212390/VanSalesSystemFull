@@ -617,6 +617,17 @@ export const PurchaseFormPage: React.FC = () => {
       {/* 1. Ultra-Compact Top Header — minimal height, maximum screen space */}
       <Group justify="space-between" align="center" wrap="wrap" gap={4}>
         <Group gap={6} align="center">
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={14} />}
+            onClick={() => navigate('/')}
+            styles={{ root: { paddingLeft: 4, paddingRight: 6, height: 26, fontSize: 11 } }}
+          >
+            Dashboard
+          </Button>
+          <Text size="xs" c="dimmed">•</Text>
           <ActionIcon
             variant="subtle"
             color="gray"

@@ -267,6 +267,28 @@ export const RouteDetailsPage: React.FC = () => {
               <IconArrowLeft size={20} />
             </ActionIcon>
             <div>
+              <Group gap="xs" align="center" mb={2}>
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  size="xs"
+                  leftSection={<IconArrowLeft size={14} />}
+                  onClick={() => navigate('/')}
+                  styles={{ root: { paddingLeft: 0, paddingRight: 6, height: 22, fontSize: 11 } }}
+                >
+                  Dashboard
+                </Button>
+                <Text size="xs" c="dimmed">•</Text>
+                <Button
+                  variant="subtle"
+                  color="gray"
+                  size="xs"
+                  onClick={() => navigate('/van-management')}
+                  styles={{ root: { paddingLeft: 4, paddingRight: 6, height: 22, fontSize: 11 } }}
+                >
+                  Van Management
+                </Button>
+              </Group>
               <Group gap="xs" align="center" wrap="wrap">
                 <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 21, letterSpacing: '-0.02em' }}>
                   {data.route_name}

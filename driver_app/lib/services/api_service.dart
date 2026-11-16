@@ -277,6 +277,8 @@ class ApiService {
     required List<Map<String, dynamic>> items,
     required String paymentMethod,
     required double amountCollected,
+    double? cashAmount,
+    double? upiAmount,
     String? ticketId,
   }) async {
     try {
@@ -290,12 +292,32 @@ class ApiService {
           'items': items,
           'payment_method': paymentMethod,
           'amount_collected': amountCollected,
+          if (cashAmount != null) 'cash_amount': cashAmount,
+          if (upiAmount != null) 'upi_amount': upiAmount,
           if (ticketId != null && ticketId.isNotEmpty) 'ticket_id': ticketId,
         }),
       ).timeout(requestTimeout);
       return jsonDecode(res.body) as Map<String, dynamic>;
     } catch (_) {
       return {'success': false, 'message': 'Network error or timeout'};
+    }
+  }
+
+  /// Fetch active connection packages for new installations
+  static Future<List<Map<String, dynamic>>> getConnectionPackages() async {
+    try {
+      final uri = Uri.parse('$baseUrl/connection-packages/?is_active=true');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data is List) return List<Map<String, dynamic>>.from(data);
+        if (data is Map && data.containsKey('results')) {
+          return List<Map<String, dynamic>>.from(data['results']);
+        }
+      }
+      return [];
+    } catch (_) {
+      return [];
     }
   }
 
@@ -480,5 +502,162 @@ class ApiService {
     } catch (_) {
       return false;
     }
+  }
+
+  // ================= ADMIN / MANAGER LIVE DATA ENDPOINTS =================
+
+  /// 14. Stock Analysis (Live Godowns, Vans & System Inventory): GET /delivery-notes/stock-analysis/
+  static Future<Map<String, dynamic>?> getStockAnalysis() async {
+    try {
+      final uri = Uri.parse('$baseUrl/delivery-notes/stock-analysis/');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// 15. Vehicles List: GET /vehicles/
+  static Future<List<Map<String, dynamic>>> getVehicles() async {
+    try {
+      final uri = Uri.parse('$baseUrl/vehicles/');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 16. Drivers List: GET /drivers/
+  static Future<List<Map<String, dynamic>>> getDrivers() async {
+    try {
+      final uri = Uri.parse('$baseUrl/drivers/');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 17. Routes List: GET /routes/
+  static Future<List<Map<String, dynamic>>> getRoutes() async {
+    try {
+      final uri = Uri.parse('$baseUrl/routes/');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 18. Allocations List: GET /allocations/
+  static Future<List<Map<String, dynamic>>> getAllocations() async {
+    try {
+      final uri = Uri.parse('$baseUrl/allocations/');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 19. Godowns List: GET /godowns/
+  static Future<List<Map<String, dynamic>>> getGodowns() async {
+    try {
+      final uri = Uri.parse('$baseUrl/godowns/');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 20. Live Stock in a specific Godown: GET /delivery-notes/godown-stock/?godown_id=X
+  static Future<List<Map<String, dynamic>>> getGodownStock([int godownId = 1]) async {
+    try {
+      final uri = Uri.parse('$baseUrl/delivery-notes/godown-stock/?godown_id=$godownId');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data is List) return List<Map<String, dynamic>>.from(data);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 21. Delivery Notes List (Van Stock Loads): GET /delivery-notes/
+  static Future<List<Map<String, dynamic>>> getDeliveryNotes() async {
+    try {
+      final uri = Uri.parse('$baseUrl/delivery-notes/');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// 22. Create Delivery Note (Transfer Stock from Godown to Van): POST /delivery-notes/
+  static Future<Map<String, dynamic>> createDeliveryNote({
+    required int allocationId,
+    int godownId = 1,
+    required List<Map<String, dynamic>> lines,
+    String? remarks,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/delivery-notes/');
+      final res = await http.post(
+        uri,
+        headers: await _headers(),
+        body: jsonEncode({
+          'RouteVehicleDriver': allocationId,
+          'GodownId': godownId,
+          'lines': lines,
+          'Remarks': remarks ?? '',
+        }),
+      ).timeout(requestTimeout);
+      final data = jsonDecode(res.body);
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return {'success': true, 'data': data};
+      }
+      return {
+        'success': false,
+        'message': data['detail'] ?? data['message'] ?? (data is Map ? data.values.join(', ') : 'Failed to allocate stock'),
+      };
+    } catch (e) {
+      return {'success': false, 'message': 'Network error creating delivery note: $e'};
+    }
+  }
+
+  /// 23. Fleet Sales for Today: GET /sales/?page_size=200
+  static Future<List<Map<String, dynamic>>> getFleetSales() async {
+    try {
+      final uri = Uri.parse('$baseUrl/sales/?page_size=200');
+      final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data is List ? data : (data['results'] as List? ?? []);
+        return List<Map<String, dynamic>>.from(list);
+      }
+    } catch (_) {}
+    return [];
   }
 }

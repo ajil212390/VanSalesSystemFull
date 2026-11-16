@@ -721,10 +721,14 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
-                        color: paymentMode == 'CREDIT' ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9),
+                        color: paymentMode == 'CREDIT'
+                            ? const Color(0xFFFEF3C7)
+                            : (paymentMode.contains('SPLIT') ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9)),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: paymentMode == 'CREDIT' ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0),
+                          color: paymentMode == 'CREDIT'
+                              ? const Color(0xFFFDE68A)
+                              : (paymentMode.contains('SPLIT') ? const Color(0xFFF5C2CB) : const Color(0xFFE2E8F0)),
                         ),
                       ),
                       child: Text(
@@ -732,11 +736,26 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
-                          color: paymentMode == 'CREDIT' ? const Color(0xFF92400E) : const Color(0xFF334155),
+                          color: paymentMode == 'CREDIT'
+                              ? const Color(0xFF92400E)
+                              : (paymentMode.contains('SPLIT') ? const Color(0xFF800020) : const Color(0xFF334155)),
                           letterSpacing: 0.3,
                         ),
                       ),
                     ),
+                    if (paymentMode.contains('SPLIT') ||
+                        ((activeOrder?.cashAmount ?? 0) > 0 &&
+                            (activeOrder?.upiAmount ?? 0) > 0)) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Cash: \u20B9${(activeOrder?.cashAmount ?? 0).toStringAsFixed(0)} \u2022 UPI: \u20B9${(activeOrder?.upiAmount ?? 0).toStringAsFixed(0)}',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF800020),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],

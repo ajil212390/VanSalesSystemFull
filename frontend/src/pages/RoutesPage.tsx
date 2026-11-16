@@ -19,7 +19,8 @@ import {
   Transition,
   Tooltip,
 } from '@mantine/core';
-import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
+import { IconPencil, IconTrash, IconSearch, IconArrowLeft } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -44,6 +45,7 @@ interface RouteFormValues {
 }
 
 export const RoutesPage: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [formOpened, setFormOpened] = useState(false);
   const [editingRoute, setEditingRoute] = useState<RouteItem | null>(null);
@@ -191,6 +193,18 @@ export const RoutesPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Group gap="xs" align="center" mb={6}>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/')}
+              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
+            >
+              Back to Dashboard
+            </Button>
+          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Routes
           </Title>
