@@ -20,10 +20,9 @@ import {
   ActionIcon,
   Box,
   Transition,
-  Tooltip,
-} from '@mantine/core';
-import { IconPencil, IconTrash, IconSearch, IconArrowLeft } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+  Tooltip } from '@mantine/core';
+import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
+import { } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -51,7 +50,6 @@ interface UserFormValues {
 }
 
 export const UsersPage: React.FC = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [formOpened, setFormOpened] = useState(false);
   const [editingUser, setEditingUser] = useState<UserItem | null>(null);
@@ -64,8 +62,7 @@ export const UsersPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get<any>('/users/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   // Client-side search filter
   const filteredUsers = useMemo(() => {
@@ -84,8 +81,7 @@ export const UsersPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get<any>('/roles/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   // 3. Fetch Drivers for optional linking
   const { data: drivers = [] } = useQuery<any[]>({
@@ -93,8 +89,7 @@ export const UsersPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get<any>('/drivers/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   // 4. Form setup
   const {
@@ -102,16 +97,13 @@ export const UsersPage: React.FC = () => {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
-  } = useForm<UserFormValues>({
+    formState: { errors, isSubmitting } } = useForm<UserFormValues>({
     defaultValues: {
       Username: '',
       password: '',
       UserRole: '',
       DriverId: '',
-      IsActive: true,
-    },
-  });
+      IsActive: true } });
 
   // 5. Mutation to create or edit user
   const saveMutation = useMutation({
@@ -136,8 +128,7 @@ export const UsersPage: React.FC = () => {
       notifications.show({
         title: 'Success',
         message: editingUser ? 'Staff user updated successfully.' : 'Staff user created successfully.',
-        color: 'green',
-      });
+        color: 'green' });
       queryClient.invalidateQueries({ queryKey: ['users'] });
       reset();
       setEditingUser(null);
@@ -152,10 +143,8 @@ export const UsersPage: React.FC = () => {
       notifications.show({
         title: 'Error',
         message: msg,
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   const onSubmit = (values: UserFormValues) => {
     saveMutation.mutate(values);
@@ -170,8 +159,7 @@ export const UsersPage: React.FC = () => {
       notifications.show({
         title: 'Deleted',
         message: 'Staff user deleted successfully.',
-        color: 'green',
-      });
+        color: 'green' });
       queryClient.invalidateQueries({ queryKey: ['users'] });
     },
     onError: (err: any) => {
@@ -179,16 +167,13 @@ export const UsersPage: React.FC = () => {
       notifications.show({
         title: 'Cannot Delete',
         message: msg,
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   const confirmDelete = () => {
     if (deleteTarget) {
       deleteMutation.mutate(deleteTarget.id, {
-        onSettled: () => setDeleteTarget(null),
-      });
+        onSettled: () => setDeleteTarget(null) });
     }
   };
 
@@ -200,8 +185,7 @@ export const UsersPage: React.FC = () => {
       password: '',
       UserRole: user.UserRole ? String(user.UserRole) : '',
       DriverId: user.DriverId ? String(user.DriverId) : '',
-      IsActive: user.IsActive,
-    });
+      IsActive: user.IsActive });
     setFormOpened(true);
   };
 
@@ -217,8 +201,7 @@ export const UsersPage: React.FC = () => {
       password: '',
       UserRole: '',
       DriverId: '',
-      IsActive: true, 
-    });
+      IsActive: true });
     setFormOpened(true);
   };
 
@@ -227,18 +210,6 @@ export const UsersPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Staff Users
           </Title>
@@ -294,8 +265,7 @@ export const UsersPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#f5c2cb',
-            borderLeft: '4px solid #800020',
-          }}
+            borderLeft: '4px solid #800020' }}
         >
           <Group justify="space-between" align="flex-start" mb="md">
             <div>
@@ -334,8 +304,7 @@ export const UsersPage: React.FC = () => {
                   required={!editingUser}
                   {...register('password', {
                     required: editingUser ? false : 'Password is required',
-                    minLength: { value: 6, message: 'Password must be at least 6 characters' },
-                  })}
+                    minLength: { value: 6, message: 'Password must be at least 6 characters' } })}
                   error={errors.password?.message}
                 />
 
@@ -349,8 +318,7 @@ export const UsersPage: React.FC = () => {
                       placeholder="Select a role"
                       data={roles.map((r) => ({
                         value: String(r.UserRoleId),
-                        label: r.RoleName,
-                      }))}
+                        label: r.RoleName }))}
                       value={field.value}
                       onChange={field.onChange}
                       error={errors.UserRole?.message}
@@ -371,8 +339,7 @@ export const UsersPage: React.FC = () => {
                       clearable
                       data={drivers.map((d) => ({
                         value: String(d.DriverId),
-                        label: `${d.DriverName} (${d.PhoneNumber})`,
-                      }))}
+                        label: `${d.DriverName} (${d.PhoneNumber})` }))}
                       value={field.value}
                       onChange={field.onChange}
                       searchable
@@ -477,8 +444,7 @@ export const UsersPage: React.FC = () => {
                             color: u.IsActive ? '#800020' : '#dc2626',
                             backgroundColor: 'transparent',
                             fontWeight: 600,
-                            letterSpacing: '0.4px',
-                          }}
+                            letterSpacing: '0.4px' }}
                         >
                           {u.IsActive ? 'ACTIVE' : 'INACTIVE'}
                         </Badge>
@@ -507,8 +473,7 @@ export const UsersPage: React.FC = () => {
                                 disabled={!!u.delete_block_reason}
                                 style={{
                                   cursor: u.delete_block_reason ? 'not-allowed' : 'pointer',
-                                  opacity: u.delete_block_reason ? 0.35 : 1,
-                                }}
+                                  opacity: u.delete_block_reason ? 0.35 : 1 }}
                                 onClick={() => {
                                   if (!u.delete_block_reason) {
                                     setDeleteTarget({ id: u.UserId, username: u.Username });

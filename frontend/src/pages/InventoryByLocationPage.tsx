@@ -53,11 +53,24 @@ export const InventoryByLocationPage: React.FC = () => {
     return stockAnalysis?.products || [];
   }, [stockAnalysis]);
 
-  const activeVans = useMemo(() => {
-    return stockAnalysis?.active_vans || [];
-  }, [stockAnalysis]);
+  const uniqueVans = useMemo(() => {
+    const map = new Map<number | string, any>();
+    (stockAnalysis?.all_vans || []).forEach((v: any) => {
+      const id = v.RouteVehicleDriverId || v.VehicleId || v.VehicleNumber;
+      if (id) map.set(id, { ...v });
+    });
+    (stockAnalysis?.active_vans || []).forEach((v: any) => {
+      const id = v.RouteVehicleDriverId || v.VehicleId || v.VehicleNumber;
+      if (id) map.set(id, { ...(map.get(id) || {}), ...v });
+    });
+    (stockAnalysis?.idle_vans || []).forEach((v: any) => {
+      const id = v.RouteVehicleDriverId || v.VehicleId || v.VehicleNumber;
+      if (id && !map.has(id)) map.set(id, { ...v });
+    });
+    return Array.from(map.values());
+  }, [stockAnalysis?.all_vans, stockAnalysis?.active_vans, stockAnalysis?.idle_vans]);
 
-  // Compute Locations List (All Godowns + All Active Vans)
+  // Compute Locations List (All Godowns + All Delivery Vans)
   const locations = useMemo(() => {
     const godownList = (stockAnalysis?.godowns && stockAnalysis.godowns.length > 0) ? stockAnalysis.godowns : [];
     let godownEntries: any[] = [];
@@ -114,7 +127,7 @@ export const InventoryByLocationPage: React.FC = () => {
 
       godownEntries = [{
         id: 'godown',
-        name: 'Central Godown',
+        name: 'Main Godown (Central)',
         type: 'godown',
         routeName: 'Primary Storage Hub',
         driverName: 'Warehouse Keeper',
@@ -124,11 +137,11 @@ export const InventoryByLocationPage: React.FC = () => {
       }];
     }
 
-    const vansList = activeVans.map((van: any) => {
+    const vansList = uniqueVans.map((van: any) => {
       const vanFilled = (van.BalanceCylinders ?? van.TotalCylinders ?? 0) + (van.OtherProductsBalance ?? 0);
       const vanEmpty = van.EmptyCylinders ?? 0;
       return {
-        id: `vehicle-${van.RouteVehicleDriverId}`,
+        id: `vehicle-${van.RouteVehicleDriverId || van.VehicleNumber}`,
         rawId: van.RouteVehicleDriverId,
         name: van.VehicleNumber || 'Delivery Van',
         type: 'vehicle',
@@ -141,7 +154,7 @@ export const InventoryByLocationPage: React.FC = () => {
     });
 
     return [...godownEntries, ...vansList];
-  }, [stockProducts, activeVans, stockAnalysis?.godowns]);
+  }, [stockProducts, uniqueVans, stockAnalysis?.godowns]);
 
   // Filter Locations
   const filteredLocations = useMemo(() => {

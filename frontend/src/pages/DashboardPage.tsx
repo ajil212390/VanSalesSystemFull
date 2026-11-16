@@ -475,25 +475,47 @@ export const DashboardPage: React.FC = () => {
     return filteredSales.length;
   }, [filteredSales]);
 
-  // Collections = Payment receipts + payments collected on sales in this period
-  // Deduct receipt allocations from sales PaidAmount to avoid double counting
-  const totalReceiptAllocatedToSales = useMemo(() => {
-    let allocSum = 0;
+  // Collections = Payment receipts + cash/UPI payments collected directly on sales in this period
+  // Map receipt allocations strictly by BillReference (InvoiceNo / SalesNo) to prevent double counting
+  const receiptAllocBySale = useMemo(() => {
+    const map = new Map<string, number>();
     filteredCustomerReceipts.forEach((p: any) => {
       (p.lines || []).forEach((l: any) => {
         (l.allocations || []).forEach((a: any) => {
-          allocSum += Number(a.AllocatedAmount || 0);
+          const amt = Number(a.AllocatedAmount || 0);
+          if (amt > 0 && a.BillReference) {
+            const bRef = String(a.BillReference).trim().toUpperCase();
+            if (bRef && bRef !== 'CUSTOMER ADVANCE' && bRef !== 'ADVANCE') {
+              map.set(bRef, (map.get(bRef) || 0) + amt);
+            }
+          }
         });
       });
     });
-    return allocSum;
+    return map;
   }, [filteredCustomerReceipts]);
 
-  const salesPaidTotal = useMemo(() => {
-    return filteredSales.reduce((sum: number, s: any) => sum + Number(s.PaidAmount || 0), 0);
-  }, [filteredSales]);
+  // Actual cash/UPI collected directly on sales (excluding advance adjustments and receipt allocations)
+  const netSalesPaid = useMemo(() => {
+    return filteredSales.reduce((sum: number, s: any) => {
+      const rawPaid = Number(s.PaidAmount || 0);
+      if (rawPaid <= 0) return sum;
 
-  const netSalesPaid = Math.max(0, salesPaidTotal - totalReceiptAllocatedToSales);
+      const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
+      const cashPaidOnSale = Math.max(0, rawPaid - advAdj);
+
+      const invRef = s.InvoiceNo ? String(s.InvoiceNo).trim().toUpperCase() : '';
+      const salRef = s.SalesNo ? String(s.SalesNo).trim().toUpperCase() : '';
+
+      const allocFromReceipt = Math.max(
+        invRef ? (receiptAllocBySale.get(invRef) || 0) : 0,
+        salRef ? (receiptAllocBySale.get(salRef) || 0) : 0
+      );
+
+      const netSaleCash = Math.max(0, cashPaidOnSale - allocFromReceipt);
+      return sum + netSaleCash;
+    }, 0);
+  }, [filteredSales, receiptAllocBySale]);
 
   const totalCustomerReceipts = useMemo(() => {
     const directReceipts = filteredCustomerReceipts.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
@@ -502,7 +524,11 @@ export const DashboardPage: React.FC = () => {
 
   // Direct collections received on sales invoices (Cash, UPI, etc.)
   const salesWithPaidCount = useMemo(() => {
-    return filteredSales.filter((s: any) => Number(s.PaidAmount || 0) > 0).length;
+    return filteredSales.filter((s: any) => {
+      const rawPaid = Number(s.PaidAmount || 0);
+      const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
+      return (rawPaid - advAdj) > 0;
+    }).length;
   }, [filteredSales]);
 
   const totalCollectionsCount = useMemo(() => {

@@ -22,8 +22,7 @@ import {
   Loader,
   Center,
   Collapse,
-  Transition,
-} from '@mantine/core';
+  Transition } from '@mantine/core';
 import {
   IconReceipt,
   IconSearch,
@@ -36,10 +35,8 @@ import {
   IconClock,
   IconPlus,
   IconTrash,
-  IconGasStation,
-  IconArrowLeft,
-} from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+  IconGasStation } from '@tabler/icons-react';
+import { } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
@@ -71,7 +68,6 @@ interface ReceiptNoteItem {
 }
 
 export const ReceiptNotesPage: React.FC = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
@@ -87,8 +83,7 @@ export const ReceiptNotesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/godowns/');
       return Array.isArray(res.data) ? res.data : [];
-    },
-  });
+    } });
 
   // Form State for "Add Receipt Note"
   const [createAllocation, setCreateAllocation] = useState<string | null>(null);
@@ -101,8 +96,7 @@ export const ReceiptNotesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get<any>('/allocations/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   // Fetch Available Cylinder Products (all products fallback)
   const { data: products = [] } = useQuery<any[]>({
@@ -110,8 +104,7 @@ export const ReceiptNotesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get<any>('/products/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   // Fetch Products allocated to the currently selected Van / Route
   const { data: allocatedProducts = [], isFetching: isFetchingAllocated } = useQuery<any[]>({
@@ -122,8 +115,7 @@ export const ReceiptNotesPage: React.FC = () => {
       const raw = res.data;
       return Array.isArray(raw) ? raw : (raw?.results || []);
     },
-    enabled: Boolean(createAllocation),
-  });
+    enabled: Boolean(createAllocation) });
 
   // Helper to determine if product is a gas cylinder
   const isCylinderProduct = (p: any) => {
@@ -161,8 +153,7 @@ export const ReceiptNotesPage: React.FC = () => {
         const rName = a.RouteName || a.route_name || (a.Route && a.Route.RouteName) || 'Route';
         return {
           value: String(a.RouteVehicleDriverId),
-          label: `${vNum} • ${dName} (${rName})`.trim(),
-        };
+          label: `${vNum} • ${dName} (${rName})`.trim() };
       });
   }, [allocations]);
 
@@ -172,19 +163,16 @@ export const ReceiptNotesPage: React.FC = () => {
       ? allocatedProducts.map((ap: any) => ({
           ProductId: ap.product_id || ap.ProductId,
           ProductName: ap.product_name || ap.ProductName,
-          is_cylinder: ap.is_cylinder ?? isCylinderProduct(ap),
-        }))
+          is_cylinder: ap.is_cylinder ?? isCylinderProduct(ap) }))
       : (Array.isArray(products) ? products : (products as any)?.results || []).map((p: any) => ({
           ProductId: p.ProductId || p.id,
           ProductName: p.ProductName || p.name,
-          is_cylinder: isCylinderProduct(p),
-        }));
+          is_cylinder: isCylinderProduct(p) }));
 
     return sourceList.map((p: any) => ({
       value: String(p.ProductId),
       label: p.ProductName || `Product ${p.ProductId}`,
-      is_cylinder: Boolean(p.is_cylinder),
-    }));
+      is_cylinder: Boolean(p.is_cylinder) }));
   }, [products, allocatedProducts, createAllocation]);
 
   const [createLines, setCreateLines] = useState<
@@ -221,8 +209,7 @@ export const ReceiptNotesPage: React.FC = () => {
         productId: pId,
         productName: pOpt?.label,
         isCylinder: pOpt?.is_cylinder ?? true,
-        emptyQty: pOpt?.is_cylinder ? l.emptyQty : 0,
-      } : l))
+        emptyQty: pOpt?.is_cylinder ? l.emptyQty : 0 } : l))
     );
   };
 
@@ -245,15 +232,13 @@ export const ReceiptNotesPage: React.FC = () => {
     data: receiptNotes = [],
     isLoading,
     isRefetching,
-    refetch,
-  } = useQuery<ReceiptNoteItem[]>({
+    refetch } = useQuery<ReceiptNoteItem[]>({
     queryKey: ['receipt-notes'],
     queryFn: async () => {
       const res = await apiClient.get<ReceiptNoteItem[]>('/receipt-notes/');
       return Array.isArray(res.data) ? res.data : [];
     },
-    refetchInterval: 10000,
-  });
+    refetchInterval: 10000 });
 
   // Mutation: Verify and Settle Pending Receipt Note into Selected Godown
   const verifyNoteMutation = useMutation({
@@ -262,8 +247,7 @@ export const ReceiptNotesPage: React.FC = () => {
       const godownId = typeof payload === 'object' ? payload.godownId : undefined;
       const res = await apiClient.post('/receipt-notes/process_receipt_note/', {
         receipt_note_id: noteId,
-        godown_id: godownId,
-      });
+        godown_id: godownId });
       return res.data;
     },
     onSuccess: (data) => {
@@ -275,17 +259,14 @@ export const ReceiptNotesPage: React.FC = () => {
       notifications.show({
         title: 'Receipt Note Verified',
         message: data.message || 'Returned empty cylinders verified and accepted into Central Godown.',
-        color: 'burgundy',
-      });
+        color: 'burgundy' });
     },
     onError: (err: any) => {
       notifications.show({
         title: 'Verification Failed',
         message: err.response?.data?.message || err.message || 'Could not verify receipt note.',
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   // Mutation: Create Receipt Note manually
   const createReceiptNoteMutation = useMutation({
@@ -298,8 +279,7 @@ export const ReceiptNotesPage: React.FC = () => {
         .map((l) => ({
           product_id: l.productId,
           filled_qty: Number(l.filledQty) || 0,
-          empty_qty: Number(l.emptyQty) || 0,
-        }));
+          empty_qty: Number(l.emptyQty) || 0 }));
 
       const payload = {
         allocation_id: Number(createAllocation),
@@ -308,8 +288,7 @@ export const ReceiptNotesPage: React.FC = () => {
         cash_collected: 0,
         digital_collected: 0,
         remarks: createRemarks,
-        auto_settle: autoSettle,
-      };
+        auto_settle: autoSettle };
       const res = await apiClient.post('/receipt-notes/', payload);
       return res.data;
     },
@@ -322,17 +301,14 @@ export const ReceiptNotesPage: React.FC = () => {
       notifications.show({
         title: 'Receipt Note Created',
         message: data.message || 'Receipt note created successfully.',
-        color: 'burgundy',
-      });
+        color: 'burgundy' });
     },
     onError: (err: any) => {
       notifications.show({
         title: 'Failed to Create Receipt Note',
         message: err.response?.data?.detail || err.response?.data?.message || err.message || 'Could not create receipt note.',
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   // Mutation: Delete Receipt Note
   const deleteReceiptNoteMutation = useMutation({
@@ -348,17 +324,14 @@ export const ReceiptNotesPage: React.FC = () => {
       notifications.show({
         title: 'Receipt Note Deleted',
         message: 'Receipt note and stock movements removed.',
-        color: 'burgundy',
-      });
+        color: 'burgundy' });
     },
     onError: (err: any) => {
       notifications.show({
         title: 'Delete Failed',
         message: err.response?.data?.detail || err.message || 'Could not delete receipt note.',
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   // Filtered Notes: Settled first, then pending, then remaining
   const filteredNotes = useMemo(() => {
@@ -399,18 +372,6 @@ export const ReceiptNotesPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             Receipt Notes
           </Title>
@@ -461,8 +422,7 @@ export const ReceiptNotesPage: React.FC = () => {
             style={{
               backgroundColor: '#ffffff',
               borderColor: '#f5c2cb',
-              borderLeft: '4px solid #800020',
-            }}
+              borderLeft: '4px solid #800020' }}
           >
             <Group justify="space-between" align="flex-start" mb="md">
               <div>
@@ -641,8 +601,7 @@ export const ReceiptNotesPage: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            height: '100%',
-          }}
+            height: '100%' }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
             e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
@@ -685,8 +644,7 @@ export const ReceiptNotesPage: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            height: '100%',
-          }}
+            height: '100%' }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
             e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
@@ -725,9 +683,7 @@ export const ReceiptNotesPage: React.FC = () => {
                     fontWeight: 700,
                     fontSize: 10.5,
                     height: 20,
-                    padding: '0 6px',
-                  },
-                }}
+                    padding: '0 6px' } }}
               >
                 Action Req.
               </Badge>
@@ -748,8 +704,7 @@ export const ReceiptNotesPage: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            height: '100%',
-          }}
+            height: '100%' }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
             e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
@@ -806,8 +761,7 @@ export const ReceiptNotesPage: React.FC = () => {
           overflow: 'hidden',
           backgroundColor: '#ffffff',
           borderColor: '#e2e8f0',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
       >
         {/* Table Toolbar */}
         <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -826,9 +780,7 @@ export const ReceiptNotesPage: React.FC = () => {
                     color: '#475569',
                     fontWeight: 600,
                     fontSize: 11,
-                    height: 22,
-                  },
-                }}
+                    height: 22 } }}
               >
                 {filteredNotes.length} Notes
               </Badge>
@@ -853,14 +805,12 @@ export const ReceiptNotesPage: React.FC = () => {
                         fontWeight: statusFilter === 'pending' ? 700 : 600,
                         fontSize: 12,
                         display: 'inline-block',
-                        transition: 'color 150ms ease',
-                      }}
+                        transition: 'color 150ms ease' }}
                     >
                       Pending ({pendingCount})
                     </span>
                   ),
-                  value: 'pending',
-                },
+                  value: 'pending' },
                 {
                   label: (
                     <span
@@ -869,14 +819,12 @@ export const ReceiptNotesPage: React.FC = () => {
                         fontWeight: statusFilter === 'settled' ? 700 : 600,
                         fontSize: 12,
                         display: 'inline-block',
-                        transition: 'color 150ms ease',
-                      }}
+                        transition: 'color 150ms ease' }}
                     >
                       Settled ({settledCount})
                     </span>
                   ),
-                  value: 'settled',
-                },
+                  value: 'settled' },
                 {
                   label: (
                     <span
@@ -885,14 +833,12 @@ export const ReceiptNotesPage: React.FC = () => {
                         fontWeight: statusFilter === 'all' ? 700 : 600,
                         fontSize: 12,
                         display: 'inline-block',
-                        transition: 'color 150ms ease',
-                      }}
+                        transition: 'color 150ms ease' }}
                     >
                       All ({receiptNotes.length})
                     </span>
                   ),
-                  value: 'all',
-                },
+                  value: 'all' },
               ]}
               radius="sm"
               size="xs"
@@ -903,17 +849,13 @@ export const ReceiptNotesPage: React.FC = () => {
                   backgroundColor: '#f1f5f9',
                   padding: 3,
                   borderRadius: 8,
-                  border: '1px solid #e2e8f0',
-                },
+                  border: '1px solid #e2e8f0' },
                 indicator: {
                   backgroundColor: '#800020',
                   boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
-                  borderRadius: 6,
-                },
+                  borderRadius: 6 },
                 label: {
-                  padding: '4px 12px',
-                },
-              }}
+                  padding: '4px 12px' } }}
             />
 
             {/* Search Input matching System */}
@@ -933,9 +875,7 @@ export const ReceiptNotesPage: React.FC = () => {
                   fontSize: 12,
                   borderColor: '#e2e8f0',
                   backgroundColor: '#ffffff',
-                  '&:focus': { borderColor: '#800020' },
-                },
-              }}
+                  '&:focus': { borderColor: '#800020' } } }}
             />
           </Group>
         </Group>
@@ -1026,9 +966,7 @@ export const ReceiptNotesPage: React.FC = () => {
                               borderColor: '#e2e8f0',
                               backgroundColor: '#f8fafc',
                               color: '#334155',
-                              fontWeight: 600,
-                            },
-                          }}
+                              fontWeight: 600 } }}
                         >
                           {note.deliveryNoteRef}
                         </Badge>
@@ -1047,9 +985,7 @@ export const ReceiptNotesPage: React.FC = () => {
                                 color: '#0f172a',
                                 fontWeight: 700,
                                 fontSize: 10.5,
-                                height: 20,
-                              },
-                            }}
+                                height: 20 } }}
                           >
                             {note.filledCylindersTotal || 0} Filled
                           </Badge>
@@ -1063,9 +999,7 @@ export const ReceiptNotesPage: React.FC = () => {
                                 color: '#800020',
                                 fontWeight: 700,
                                 fontSize: 10.5,
-                                height: 20,
-                              },
-                            }}
+                                height: 20 } }}
                           >
                             {note.emptyCylindersTotal || 0} Empty
                           </Badge>
@@ -1095,9 +1029,7 @@ export const ReceiptNotesPage: React.FC = () => {
                               fontWeight: 700,
                               fontSize: 11,
                               height: 22,
-                              letterSpacing: '0.3px',
-                            },
-                          }}
+                              letterSpacing: '0.3px' } }}
                         >
                           {isPending ? 'Pending Review' : 'Settled'}
                         </Badge>
@@ -1144,8 +1076,7 @@ export const ReceiptNotesPage: React.FC = () => {
                               onClick={() => {
                                 notifications.show({
                                   message: `Receipt Note ${note.noteNumber} prepared for printing.`,
-                                  color: 'burgundy',
-                                });
+                                  color: 'burgundy' });
                               }}
                               style={{ color: '#475569' }}
                             >
@@ -1280,8 +1211,7 @@ export const ReceiptNotesPage: React.FC = () => {
                   { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
                 ]).map((g: any) => ({
                   value: String(g.GodownId),
-                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
-                }))}
+                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}` }))}
               />
             )}
 
@@ -1295,8 +1225,7 @@ export const ReceiptNotesPage: React.FC = () => {
                   leftSection={<IconCheck size={16} />}
                   onClick={() => verifyNoteMutation.mutate({
                     noteId: selectedNote.receiptNoteId || selectedNote.deliveryNoteId || Number(selectedNote.id),
-                    godownId: Number(selectedReceivingGodown) || 1,
-                  })}
+                    godownId: Number(selectedReceivingGodown) || 1 })}
                   loading={verifyNoteMutation.isPending}
                   styles={{ root: { backgroundColor: '#800020', fontWeight: 600 } }}
                 >

@@ -32,6 +32,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DateInputDDMMYY } from '../components/DateInputDDMMYY';
 
 interface LedgerOption {
   LedgerId: number;
@@ -617,17 +618,6 @@ export const PurchaseFormPage: React.FC = () => {
       {/* 1. Ultra-Compact Top Header — minimal height, maximum screen space */}
       <Group justify="space-between" align="center" wrap="wrap" gap={4}>
         <Group gap={6} align="center">
-          <Button
-            variant="subtle"
-            color="gray"
-            size="xs"
-            leftSection={<IconArrowLeft size={14} />}
-            onClick={() => navigate('/')}
-            styles={{ root: { paddingLeft: 4, paddingRight: 6, height: 26, fontSize: 11 } }}
-          >
-            Dashboard
-          </Button>
-          <Text size="xs" c="dimmed">•</Text>
           <ActionIcon
             variant="subtle"
             color="gray"
@@ -696,10 +686,9 @@ export const PurchaseFormPage: React.FC = () => {
           {/* Purchase Date */}
           <div style={{ flex: '1 1 140px', minWidth: 130 }}>
             <Text size="xs" fw={600} c="#334155" mb={2}>Purchase Date *</Text>
-            <TextInput
-              type="date"
+            <DateInputDDMMYY
               value={purchaseDate}
-              onChange={(e) => setPurchaseDate(e.currentTarget.value)}
+              onChange={(val) => setPurchaseDate(val)}
               radius="md"
               size="sm"
             />
@@ -720,10 +709,9 @@ export const PurchaseFormPage: React.FC = () => {
           {/* Supplier Invoice Date */}
           <div style={{ flex: '1 1 140px', minWidth: 130 }}>
             <Text size="xs" fw={600} c="#334155" mb={2}>Invoice Date</Text>
-            <TextInput
-              type="date"
+            <DateInputDDMMYY
               value={invoiceDate}
-              onChange={(e) => setInvoiceDate(e.currentTarget.value)}
+              onChange={(val) => setInvoiceDate(val)}
               radius="md"
               size="sm"
             />
@@ -1225,11 +1213,10 @@ export const PurchaseFormPage: React.FC = () => {
                 radius="md"
                 size="xs"
               />
-              <TextInput
+              <DateInputDDMMYY
                 label="Sales Order Date"
-                type="date"
                 value={extraDetails.salesOrderDate}
-                onChange={(e) => setExtraDetails({ ...extraDetails, salesOrderDate: e.currentTarget.value })}
+                onChange={(val) => setExtraDetails({ ...extraDetails, salesOrderDate: val })}
                 radius="md"
                 size="xs"
               />
@@ -1241,11 +1228,10 @@ export const PurchaseFormPage: React.FC = () => {
                 radius="md"
                 size="xs"
               />
-              <TextInput
+              <DateInputDDMMYY
                 label="Delivery Date"
-                type="date"
                 value={extraDetails.deliveryDate}
-                onChange={(e) => setExtraDetails({ ...extraDetails, deliveryDate: e.currentTarget.value })}
+                onChange={(val) => setExtraDetails({ ...extraDetails, deliveryDate: val })}
                 radius="md"
                 size="xs"
               />
@@ -1289,11 +1275,10 @@ export const PurchaseFormPage: React.FC = () => {
                 radius="md"
                 size="xs"
               />
-              <TextInput
+              <DateInputDDMMYY
                 label="e-Waybill Valid Date"
-                type="date"
                 value={extraDetails.eWayBillValidDate}
-                onChange={(e) => setExtraDetails({ ...extraDetails, eWayBillValidDate: e.currentTarget.value })}
+                onChange={(val) => setExtraDetails({ ...extraDetails, eWayBillValidDate: val })}
                 radius="md"
                 size="xs"
               />

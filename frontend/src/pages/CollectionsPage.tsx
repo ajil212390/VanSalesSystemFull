@@ -19,11 +19,8 @@ import {
   Divider,
   Loader,
   Center,
-  CloseButton,
-} from '@mantine/core';
-import {
-  IconArrowLeft,
-  IconCash,
+  CloseButton } from '@mantine/core';
+import { IconCash,
   IconReceipt,
   IconReceipt2,
   IconSearch,
@@ -32,8 +29,7 @@ import {
   IconWallet,
   IconRefresh,
   IconCalendar,
-  IconPrinter,
-} from '@tabler/icons-react';
+  IconPrinter } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -76,8 +72,7 @@ export const CollectionsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/sales/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // 2. Fetch Customer Receipts (Payments of type RECEIPT)
   const { data: allPayments = [], isLoading: isLoadingPayments, refetch: refetchPayments } = useQuery<any[]>({
@@ -85,8 +80,7 @@ export const CollectionsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/payments/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // 3. Fetch Ledgers for party metadata
   const { data: ledgers = [] } = useQuery<any[]>({
@@ -94,8 +88,7 @@ export const CollectionsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/ledgers/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // Ledger Lookup Map
   const ledgerMap = useMemo(() => {
@@ -154,9 +147,16 @@ export const CollectionsPage: React.FC = () => {
       const rawPaid = Number(s.PaidAmount || 0);
       if (rawPaid <= 0) return;
 
+      const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
+      const cashPaidOnSale = Math.max(0, rawPaid - advAdj);
+      if (cashPaidOnSale <= 0) return;
+
       const sRef = String(s.InvoiceNo || s.SalesNo || `INV-${s.SalesId}`).trim();
-      const allocatedFromReceipt = receiptAllocBySale.get(sRef.toUpperCase()) || 0;
-      const netCounterPaid = Math.max(0, rawPaid - allocatedFromReceipt);
+      const allocatedFromReceipt = Math.max(
+        receiptAllocBySale.get(sRef.toUpperCase()) || 0,
+        receiptAllocBySale.get(String(s.SalesId)) || 0
+      );
+      const netCounterPaid = Math.max(0, cashPaidOnSale - allocatedFromReceipt);
 
       if (netCounterPaid > 0) {
         const custId = s.CustomerLedger ? Number(s.CustomerLedger.LedgerId || s.CustomerLedger) : null;
@@ -178,8 +178,7 @@ export const CollectionsPage: React.FC = () => {
           amount: netCounterPaid,
           totalBillAmount: Number(s.GrandTotal || 0),
           notes: s.Notes ? `Sale: ${s.Notes}` : `Direct counter collection on bill ${sRef}`,
-          raw: s,
-        });
+          raw: s });
       }
     });
 
@@ -208,8 +207,7 @@ export const CollectionsPage: React.FC = () => {
         paymentMode: (r.primary_mode || r.PaymentMode || 'CASH').toUpperCase(),
         amount: amt,
         notes: r.Narration || 'Customer collection receipt',
-        raw: r,
-      });
+        raw: r });
     });
 
     // Sort chronologically (newest first)
@@ -353,8 +351,7 @@ export const CollectionsPage: React.FC = () => {
       receiptCount,
       cashAmt,
       digitalAmt,
-      totalCount: filteredCollections.length,
-    };
+      totalCount: filteredCollections.length };
   }, [filteredCollections]);
 
   // Human-readable Period Label for Statement Header
@@ -412,16 +409,13 @@ export const CollectionsPage: React.FC = () => {
           routeName: c.routeName,
           paymentMode: c.paymentMode,
           amount: c.amount,
-          notes: c.notes,
-        })),
+          notes: c.notes })),
         source_type: sourceFilter,
         period_label: periodLabel,
-        summary_stats: stats,
-      };
+        summary_stats: stats };
 
       const response = await apiClient.post('/sales/collections-statement-pdf/', payload, {
-        responseType: 'blob',
-      });
+        responseType: 'blob' });
 
       const file = new Blob([response.data], { type: 'application/pdf' });
       const fileURL = URL.createObjectURL(file);
@@ -431,8 +425,7 @@ export const CollectionsPage: React.FC = () => {
       notifications.show({
         title: 'Error Generating PDF',
         message: 'Failed to generate collections statement PDF. Please try again.',
-        color: 'red',
-      });
+        color: 'red' });
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -442,22 +435,8 @@ export const CollectionsPage: React.FC = () => {
 
   return (
     <Stack gap="lg" style={{ width: '100%' }}>
-      {/* ── Top Header with Back to Dashboard ── */}
+      {/* ── Top Header ── */}
       <Box pt={4} pb={2}>
-        <Group gap="xs" align="center" mb={6}>
-          <Button
-            variant="subtle"
-            color="gray"
-            size="xs"
-            leftSection={<IconArrowLeft size={16} />}
-            onClick={() => navigate('/')}
-            styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-          >
-            Back to Dashboard
-          </Button>
-         
-      
-        </Group>
 
         <Group justify="space-between" align="center" wrap="wrap" gap="sm">
           <div>
@@ -524,8 +503,7 @@ export const CollectionsPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#eef2f6',
-            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
-          }}
+            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)' }}
         >
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <div>
@@ -553,8 +531,7 @@ export const CollectionsPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#eef2f6',
-            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
-          }}
+            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)' }}
         >
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <div>
@@ -582,8 +559,7 @@ export const CollectionsPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#eef2f6',
-            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
-          }}
+            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)' }}
         >
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <div>
@@ -611,8 +587,7 @@ export const CollectionsPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#eef2f6',
-            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
-          }}
+            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)' }}
         >
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <div>
@@ -647,8 +622,7 @@ export const CollectionsPage: React.FC = () => {
         style={{
           backgroundColor: '#ffffff',
           borderColor: '#eef2f6',
-          boxShadow: '0 2px 8px 0 rgba(15, 23, 42, 0.04)',
-        }}
+          boxShadow: '0 2px 8px 0 rgba(15, 23, 42, 0.04)' }}
       >
         <Stack gap="md">
           {/* Top Row: Streamlined Source Segmented Pill & Search */}
@@ -670,23 +644,18 @@ export const CollectionsPage: React.FC = () => {
                 root: {
                   backgroundColor: '#f1f5f9',
                   border: '1px solid #e2e8f0',
-                  padding: 3,
-                },
+                  padding: 3 },
                 control: {
-                  border: 'none',
-                },
+                  border: 'none' },
                 indicator: {
                   backgroundColor: '#800020',
                   borderRadius: 9999,
-                  boxShadow: 'none',
-                },
+                  boxShadow: 'none' },
                 label: {
                   fontSize: 12,
                   fontWeight: 600,
                   padding: '5px 14px',
-                  transition: 'color 150ms ease',
-                },
-              }}
+                  transition: 'color 150ms ease' } }}
             />
 
             <TextInput
@@ -710,9 +679,7 @@ export const CollectionsPage: React.FC = () => {
                 input: {
                   borderColor: '#e2e8f0',
                   backgroundColor: '#f8fafc',
-                  fontSize: 12,
-                },
-              }}
+                  fontSize: 12 } }}
             />
           </Group>
 
@@ -742,30 +709,24 @@ export const CollectionsPage: React.FC = () => {
                         <span>Custom</span>
                       </Group>
                     ),
-                    value: 'CUSTOM',
-                  },
+                    value: 'CUSTOM' },
                 ]}
                 styles={{
                   root: {
                     backgroundColor: '#f1f5f9',
                     border: '1px solid #e2e8f0',
-                    padding: 3,
-                  },
+                    padding: 3 },
                   control: {
-                    border: 'none',
-                  },
+                    border: 'none' },
                   indicator: {
                     backgroundColor: '#800020',
                     borderRadius: 9999,
-                    boxShadow: 'none',
-                  },
+                    boxShadow: 'none' },
                   label: {
                     fontSize: 12,
                     fontWeight: 500,
                     padding: '4px 13px',
-                    transition: 'color 150ms ease',
-                  },
-                }}
+                    transition: 'color 150ms ease' } }}
               />
 
               {datePreset === 'CUSTOM' && (
@@ -812,9 +773,7 @@ export const CollectionsPage: React.FC = () => {
                     borderColor: '#e2e8f0',
                     backgroundColor: '#f8fafc',
                     fontWeight: 500,
-                    fontSize: 12,
-                  },
-                }}
+                    fontSize: 12 } }}
               />
             </Group>
           </Group>
@@ -869,8 +828,7 @@ export const CollectionsPage: React.FC = () => {
                         style={{
                           color: '#800020',
                           fontFamily: 'monospace',
-                          cursor: 'pointer',
-                        }}
+                          cursor: 'pointer' }}
                         onClick={() => setSelectedItem(item)}
                       >
                         {item.ref}
@@ -892,8 +850,7 @@ export const CollectionsPage: React.FC = () => {
                             backgroundColor: '#fdf2f4',
                             color: '#800020',
                             fontWeight: 700,
-                            letterSpacing: '0.2px',
-                          }}
+                            letterSpacing: '0.2px' }}
                         >
                           Sale Direct Paid
                         </Badge>
@@ -905,8 +862,7 @@ export const CollectionsPage: React.FC = () => {
                             backgroundColor: '#fdf2f4',
                             color: '#800020',
                             fontWeight: 700,
-                            letterSpacing: '0.2px',
-                          }}
+                            letterSpacing: '0.2px' }}
                         >
                           Customer Receipt
                         </Badge>
@@ -943,9 +899,7 @@ export const CollectionsPage: React.FC = () => {
                             backgroundColor: '#f8fafc',
                             color: '#475569',
                             borderColor: '#cbd5e1',
-                            letterSpacing: '0.4px',
-                          },
-                        }}
+                            letterSpacing: '0.4px' } }}
                       >
                         {item.paymentMode}
                       </Badge>

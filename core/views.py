@@ -178,16 +178,40 @@ class RoleListView(APIView):
         roles = UserRole.objects.filter(IsActive=True).order_by('UserRoleId')
         serializer = UserRoleSerializer(roles, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+def get_godown_internal_ids(company_id):
+    """
+    Returns sets of internal RVD, Driver, Vehicle, and Route IDs associated with Godowns
+    so they can be filtered out from operational drivers, vehicles, routes, and van allocations.
+    """
+    from core.models import Godown, RouteVehicleDriver
+    godowns = list(Godown.objects.filter(CompanyId=company_id))
+    godown_rvd_ids = {g.RouteVehicleDriver_id for g in godowns if g.RouteVehicleDriver_id}
+    godown_rvd_ids.add(1)
+
+    rvds = RouteVehicleDriver.objects.filter(RouteVehicleDriverId__in=godown_rvd_ids)
+    godown_driver_ids = {r.Driver_id for r in rvds if r.Driver_id}
+    godown_vehicle_ids = {r.Vehicle_id for r in rvds if r.Vehicle_id}
+    godown_route_ids = {r.Route_id for r in rvds if r.Route_id}
+
+    return godown_rvd_ids, godown_driver_ids, godown_vehicle_ids, godown_route_ids
+
+
 class DriverViewSet(viewsets.ModelViewSet):
     """
     CRUD API for Drivers scoped to the logged-in user's company.
+    Excludes internal Godown dummy staff records by default.
     """
     serializer_class = DriverSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None
 
     def get_queryset(self):
-        return Driver.objects.filter(CompanyId=self.request.user.CompanyId).order_by('-DriverId')
+        company_id = getattr(self.request.user, 'CompanyId', 1) or 1
+        qs = Driver.objects.filter(CompanyId=company_id).order_by('-DriverId')
+        if self.request.query_params.get('include_godowns') != 'true':
+            _, godown_driver_ids, _, _ = get_godown_internal_ids(company_id)
+            qs = qs.exclude(DriverId__in=godown_driver_ids).exclude(DriverName__icontains='Godown')
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(CompanyId=self.request.user.CompanyId)
@@ -205,13 +229,19 @@ class DriverViewSet(viewsets.ModelViewSet):
 class VehicleViewSet(viewsets.ModelViewSet):
     """
     CRUD API for Vehicles scoped to the logged-in user's company.
+    Excludes internal Godown depot / storage records by default.
     """
     serializer_class = VehicleSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None
 
     def get_queryset(self):
-        return Vehicle.objects.filter(CompanyId=self.request.user.CompanyId).order_by('-VehicleId')
+        company_id = getattr(self.request.user, 'CompanyId', 1) or 1
+        qs = Vehicle.objects.filter(CompanyId=company_id).order_by('-VehicleId')
+        if self.request.query_params.get('include_godowns') != 'true':
+            _, _, godown_vehicle_ids, _ = get_godown_internal_ids(company_id)
+            qs = qs.exclude(VehicleId__in=godown_vehicle_ids).exclude(VehicleNumber__icontains='Godown').exclude(VehicleName__icontains='Godown')
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(CompanyId=self.request.user.CompanyId)
@@ -229,13 +259,19 @@ class VehicleViewSet(viewsets.ModelViewSet):
 class RouteViewSet(viewsets.ModelViewSet):
     """
     CRUD API for Routes scoped to the logged-in user's company.
+    Excludes internal Godown routes by default.
     """
     serializer_class = RouteSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = None
 
     def get_queryset(self):
-        return Route.objects.filter(CompanyId=self.request.user.CompanyId).order_by('-RouteId')
+        company_id = getattr(self.request.user, 'CompanyId', 1) or 1
+        qs = Route.objects.filter(CompanyId=company_id).order_by('-RouteId')
+        if self.request.query_params.get('include_godowns') != 'true':
+            _, _, _, godown_route_ids = get_godown_internal_ids(company_id)
+            qs = qs.exclude(RouteId__in=godown_route_ids).exclude(RouteName__icontains='Godown')
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(CompanyId=self.request.user.CompanyId)
@@ -945,12 +981,21 @@ class RouteVehicleDriverViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_queryset(self):
+        company_id = getattr(self.request.user, 'CompanyId', 1) or 1
         qs = (
             RouteVehicleDriver.objects
-            .filter(CompanyId=self.request.user.CompanyId)
+            .filter(CompanyId=company_id)
             .select_related('Route', 'Vehicle', 'Driver')
             .order_by('-RouteVehicleDriverId')
         )
+        if self.request.query_params.get('include_godowns') != 'true':
+            godown_rvd_ids, _, _, _ = get_godown_internal_ids(company_id)
+            qs = qs.exclude(RouteVehicleDriverId__in=godown_rvd_ids).exclude(
+                Q(Route__RouteName__icontains='Godown') |
+                Q(Vehicle__VehicleNumber__icontains='Godown') |
+                Q(Driver__DriverName__icontains='Godown')
+            )
+
         driver_id = self.request.query_params.get('DriverId') or self.request.query_params.get('driver_id')
         if driver_id == 'me':
             driver_id = getattr(self.request.user, 'DriverId', None)
@@ -1469,6 +1514,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
             'active_advances': [
                 {
                     'advance_id': a.AdvanceId,
+                    'payment_id': a.Payment_id,
                     'advance_no': a.AdvanceNo,
                     'date': str(a.AdvanceDate),
                     'total_amount': float(a.TotalAmount),
@@ -1856,7 +1902,17 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     sales_paid = float(
                         Sales.objects.filter(CustomerLedger=d).exclude(Status='CANCELLED').aggregate(t=Sum('PaidAmount'))['t'] or 0
                     )
-                    total_collections = collections + sales_paid
+                    adv_adj = float(
+                        AdvanceAdjustment.objects.filter(CustomerLedger=d).aggregate(t=Sum('AdjustmentAmount'))['t'] or 0
+                    )
+                    alloc_receipts = float(
+                        BillwiseAllocation.objects.filter(
+                            PaymentLine__Payment__PartyLedger=d,
+                            ReferenceTable='Sales'
+                        ).aggregate(t=Sum('AllocatedAmount'))['t'] or 0
+                    )
+                    cash_sales_paid = max(0.0, sales_paid - adv_adj - alloc_receipts)
+                    total_collections = collections + cash_sales_paid
                     adv_bal = float(
                         CustomerAdvance.objects.filter(CustomerLedger=d, Status__in=['ACTIVE', 'PARTIALLY_UTILIZED']).aggregate(t=Sum('RemainingAmount'))['t'] or 0
                     )
@@ -3763,75 +3819,87 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
+        try:
+            instance = self.get_object()
+        except Exception:
+            return Response({'detail': 'Payment/Receipt voucher not found or already deleted.'}, status=status.HTTP_404_NOT_FOUND)
+
         company_id = getattr(request.user, 'CompanyId', 1) or (instance.PartyLedger.CompanyId if instance.PartyLedger else 1) or 1
 
-        # Guard: Check if payment has customer advance that has already been utilized
-        advances = CustomerAdvance.objects.filter(Payment=instance)
-        if advances.exists():
-            utilized = sum((adv.TotalAmount - adv.RemainingAmount) for adv in advances)
-            if utilized > Decimal('0.00'):
-                return Response(
-                    {
-                        'detail': f'Cannot delete this receipt because ₹{utilized:,.2f} of its customer advance has already been adjusted against sales invoices. Please delete or cancel those sales invoices first.'
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            advances.delete()
+        try:
+            with transaction.atomic():
+                party_id = instance.PartyLedger_id
+                payment_ledger_ids = list(instance.lines.values_list('Ledger_id', flat=True))
 
-        with transaction.atomic():
-            party_id = instance.PartyLedger_id
-            payment_ledger_ids = list(instance.lines.values_list('Ledger_id', flat=True))
-
-            # Delete accounting vouchers & lines
-            vouchers = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=instance.PaymentId)
-            for v in vouchers:
-                v.lines.all().delete()
-            vouchers.delete()
-
-            # Delete billwise allocations and restore Sales.PaidAmount
-            for line in instance.lines.all():
-                for alloc in line.allocations.all():
-                    if alloc.BillType == 'SALES' or alloc.BillReference:
-                        s = Sales.objects.filter(CompanyId=company_id).filter(
-                            Q(SalesNo=alloc.BillReference) | Q(InvoiceNo=alloc.BillReference)
-                        ).first()
+                # Reverse any customer advance adjustments applied to sales invoices
+                advances = CustomerAdvance.objects.filter(Payment=instance)
+                for adv in advances:
+                    for adj in adv.adjustments.all():
+                        s = adj.Sales
                         if s:
-                            s.PaidAmount = max(Decimal('0.00'), (s.PaidAmount or Decimal('0.00')) - alloc.AllocatedAmount)
+                            s.PaidAmount = max(Decimal('0.00'), (s.PaidAmount or Decimal('0.00')) - adj.AdjustmentAmount)
                             s.save(update_fields=['PaidAmount'])
-                line.allocations.all().delete()
+                            Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales', ReferenceId=s.SalesId).delete()
+                            post_sale_voucher(s, company_id)
+                        adj.delete()
+                advances.delete()
 
-            # Also delete any allocations referencing this Payment/Receipt directly
-            BillwiseAllocation.objects.filter(
-                Q(ReferenceTable__in=['Payment', 'Receipt'], ReferenceId=instance.PaymentId)
-            ).delete()
+                # Delete accounting vouchers & lines
+                vouchers = Voucher.objects.filter(
+                    Q(ReferenceTable__in=['Payment', 'Receipt'], ReferenceId=instance.PaymentId) |
+                    Q(VoucherNo__in=[f"REC-VCH-{instance.PaymentId}", f"PAY-VCH-{instance.PaymentId}"])
+                )
+                for v in vouchers:
+                    v.lines.all().delete()
+                vouchers.delete()
 
-            # Delete lines & payment
-            instance.lines.all().delete()
-            instance.delete()
+                # Delete billwise allocations and restore Sales.PaidAmount
+                for line in instance.lines.all():
+                    for alloc in line.allocations.all():
+                        if alloc.BillType == 'SALES' or alloc.BillReference:
+                            s = Sales.objects.filter(CompanyId=company_id).filter(
+                                Q(SalesNo=alloc.BillReference) | Q(InvoiceNo=alloc.BillReference)
+                            ).first()
+                            if s:
+                                s.PaidAmount = max(Decimal('0.00'), (s.PaidAmount or Decimal('0.00')) - alloc.AllocatedAmount)
+                                s.save(update_fields=['PaidAmount'])
+                                Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales', ReferenceId=s.SalesId).delete()
+                                post_sale_voucher(s, company_id)
+                    line.allocations.all().delete()
 
-            # Sync ledger balances directly from remaining voucher lines
-            sync_ledger_balances(party_id, *payment_ledger_ids)
+                # Also delete any allocations referencing this Payment/Receipt directly
+                BillwiseAllocation.objects.filter(
+                    Q(ReferenceTable__in=['Payment', 'Receipt'], ReferenceId=instance.PaymentId)
+                ).delete()
 
-            # Safely synchronize sequences for Payment, PaymentLine, and BillwiseAllocation
-            try:
-                from django.db import connection
-                with connection.cursor() as cursor:
-                    for tbl, col, seq in [
-                        ('Payment', 'PaymentId', 'Payment_PaymentId_seq'),
-                        ('PaymentLine', 'PaymentLineId', 'PaymentLine_PaymentLineId_seq'),
-                        ('BillwiseAllocation', 'BillwiseAllocationId', 'BillwiseAllocation_BillwiseAllocationId_seq'),
-                    ]:
-                        cursor.execute(f'SELECT COALESCE(MAX("{col}"), 0) FROM "{tbl}"')
-                        m = cursor.fetchone()[0]
-                        if m > 0:
-                            cursor.execute(f'SELECT setval(\'"{seq}"\', {m}, true);')
-                        else:
-                            cursor.execute(f'SELECT setval(\'"{seq}"\', 1, false);')
-            except Exception:
-                pass
+                # Delete lines & payment
+                instance.lines.all().delete()
+                instance.delete()
 
-        return Response(status=status.HTTP_204_NO_CONTENT)
+                # Sync ledger balances directly from remaining voucher lines
+                sync_ledger_balances(party_id, *payment_ledger_ids)
+
+                # Safely synchronize sequences for Payment, PaymentLine, and BillwiseAllocation
+                try:
+                    from django.db import connection
+                    with connection.cursor() as cursor:
+                        for tbl, col, seq in [
+                            ('Payment', 'PaymentId', 'Payment_PaymentId_seq'),
+                            ('PaymentLine', 'PaymentLineId', 'PaymentLine_PaymentLineId_seq'),
+                            ('BillwiseAllocation', 'BillwiseAllocationId', 'BillwiseAllocation_BillwiseAllocationId_seq'),
+                        ]:
+                            cursor.execute(f'SELECT COALESCE(MAX("{col}"), 0) FROM "{tbl}"')
+                            m = cursor.fetchone()[0]
+                            if m > 0:
+                                cursor.execute(f'SELECT setval(\'"{seq}"\', {m}, true);')
+                            else:
+                                cursor.execute(f'SELECT setval(\'"{seq}"\', 1, false);')
+                except Exception:
+                    pass
+
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as e:
+            return Response({'detail': f'Failed to delete receipt voucher: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LedgerLineViewSet(viewsets.ModelViewSet):
@@ -4781,6 +4849,12 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         if not lines_data:
             return Response({'detail': 'Please add at least one cylinder or item to load.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Check if destination is another Godown (Godown-to-Godown transfer)
+        from core.models import Godown
+        target_godown = Godown.objects.filter(CompanyId=company_id, RouteVehicleDriver_id=allocation_id).first()
+        is_godown_transfer = target_godown is not None
+        dn_status = 'COMPLETED' if is_godown_transfer else 'LOADED'
+
         with transaction.atomic():
             # 1. Generate DeliveryNoteNo
             last_dn = DeliveryNote.objects.order_by('-DeliveryNoteId').first()
@@ -4797,10 +4871,13 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 RouteVehicleDriver_id=allocation_id,
                 CompanyId=company_id,
                 Remarks=remarks,
-                Status='LOADED'
+                Status=dn_status
             )
 
             # 3. Create Lines & Balanced Stock Movements
+            out_narration = f"Godown Transfer to {target_godown.GodownName} from {source_godown_name}: {delivery_note.DeliveryNoteNo}" if is_godown_transfer else f"Loaded to Van from {source_godown_name}: {delivery_note.DeliveryNoteNo}"
+            in_narration = f"Godown Transfer Received from {source_godown_name} into {target_godown.GodownName}: {delivery_note.DeliveryNoteNo}" if is_godown_transfer else f"Van Load: {delivery_note.DeliveryNoteNo}"
+
             for item in lines_data:
                 product_id = item.get('ProductId') or item.get('Product') or item.get('product_id')
                 unit_id = item.get('UnitId')
@@ -4840,10 +4917,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     OutQty=qty,
                     OutCostRate=rate,
                     OutCostAmount=amt,
-                    Narration=f"Loaded to Van from {source_godown_name}: {delivery_note.DeliveryNoteNo}"
+                    Narration=out_narration
                 )
 
-                # Add into Van Allocation Stock (RouteVehicleDriverId = allocation_id)
+                # Add into Van Allocation Stock or Target Godown Stock
                 StockMovement.objects.create(
                     CompanyId=company_id,
                     Product_id=product_id,
@@ -4858,7 +4935,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     InCostRate=rate,
                     InCostAmount=amt,
                     OutQty=Decimal('0.00'),
-                    Narration=f"Van Load: {delivery_note.DeliveryNoteNo}"
+                    Narration=in_narration
                 )
 
         serializer = self.get_serializer(delivery_note)
@@ -4888,8 +4965,14 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         if not lines_data:
             return Response({'detail': 'Please add at least one cylinder or item to load.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # If changing allocation to another vehicle/van, ensure the target does not have an active LOADED note
-        if allocation_id != instance.RouteVehicleDriver_id:
+        # Check if destination is another Godown (Godown-to-Godown transfer)
+        from core.models import Godown
+        target_godown = Godown.objects.filter(CompanyId=company_id, RouteVehicleDriver_id=allocation_id).first()
+        is_godown_transfer = target_godown is not None
+        dn_status = 'COMPLETED' if is_godown_transfer else 'LOADED'
+
+        # If changing allocation to another vehicle/van, ensure the target does not have an active LOADED note (unless it is a godown)
+        if allocation_id != instance.RouteVehicleDriver_id and not is_godown_transfer:
             target_already_active = DeliveryNote.objects.filter(
                 CompanyId=company_id,
                 RouteVehicleDriver_id=allocation_id,
@@ -4913,9 +4996,13 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             instance.RouteVehicleDriver_id = allocation_id
             instance.DeliveryDate = delivery_date
             instance.Remarks = remarks
+            instance.Status = dn_status
             instance.save()
 
             # 3. Create fresh Lines & Balanced Stock Movements
+            out_narration = f"Godown Transfer to {target_godown.GodownName} from {source_godown_name}: {instance.DeliveryNoteNo}" if is_godown_transfer else f"Loaded to Van from {source_godown_name}: {instance.DeliveryNoteNo}"
+            in_narration = f"Godown Transfer Received from {source_godown_name} into {target_godown.GodownName}: {instance.DeliveryNoteNo}" if is_godown_transfer else f"Van Load: {instance.DeliveryNoteNo}"
+
             for item in lines_data:
                 product_id = item.get('ProductId') or item.get('Product') or item.get('product_id')
                 unit_id = item.get('UnitId')
@@ -4955,10 +5042,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     OutQty=qty,
                     OutCostRate=rate,
                     OutCostAmount=amt,
-                    Narration=f"Loaded to Van from {source_godown_name}: {instance.DeliveryNoteNo}"
+                    Narration=out_narration
                 )
 
-                # Add into Van Allocation Stock (RouteVehicleDriverId = allocation_id)
+                # Add into Van Allocation Stock or Target Godown Stock
                 StockMovement.objects.create(
                     CompanyId=company_id,
                     Product_id=product_id,
@@ -4973,7 +5060,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     InCostRate=rate,
                     InCostAmount=amt,
                     OutQty=Decimal('0.00'),
-                    Narration=f"Van Load: {instance.DeliveryNoteNo}"
+                    Narration=in_narration
                 )
 
         serializer = self.get_serializer(instance)
@@ -6762,32 +6849,6 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
         """
         company_id = getattr(request.user, 'CompanyId', 1) or 1
 
-        # Auto-link any allocations that have LIVE / PENDING_APPROVAL sales today into a shift DeliveryNote
-        alloc_ids_with_sales = Sales.objects.filter(
-            CompanyId=company_id,
-            SalesDate=date.today(),
-            Status__in=['LIVE', 'PENDING_APPROVAL']
-        ).exclude(Status='CANCELLED').values_list('RouteVehicleDriver_id', flat=True).distinct()
-
-        for a_id in alloc_ids_with_sales:
-            if not a_id:
-                continue
-            alloc = RouteVehicleDriver.objects.filter(RouteVehicleDriverId=a_id).select_related('Route', 'Vehicle', 'Driver').first()
-            if alloc:
-                dn, created = DeliveryNote.objects.get_or_create(
-                    CompanyId=company_id,
-                    RouteVehicleDriver=alloc,
-                    DeliveryDate=date.today(),
-                    defaults={
-                        'DeliveryNoteNo': f"DN-{date.today().strftime('%y%m%d')}-A{a_id}",
-                        'Status': 'PENDING_APPROVAL',
-                        'Remarks': f"Shift for {alloc.Vehicle.VehicleNumber if alloc.Vehicle else 'Van'}"
-                    }
-                )
-                if not created and dn.Status == 'LOADED':
-                    dn.Status = 'PENDING_APPROVAL'
-                    dn.save(update_fields=['Status'])
-
         dn_qs = DeliveryNote.objects.filter(
             CompanyId=company_id,
             Status__in=['PENDING_APPROVAL', 'COMPLETED', 'SETTLED']
@@ -6951,6 +7012,20 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
             status_str = 'SETTLED' if dn.Status == 'COMPLETED' else 'PENDING'
             net_balance = (cash_amt + bank_amt) - trip_expenses
 
+            from core.models import Godown
+            source_sm = StockMovement.objects.filter(
+                CompanyId=company_id,
+                ReferenceId=dn.DeliveryNoteId,
+                TransactionType='DELIVERY_NOTE',
+                OutQty__gt=0
+            ).first()
+            source_godown = None
+            if source_sm and source_sm.RouteVehicleDriverId:
+                source_godown = Godown.objects.filter(CompanyId=company_id, RouteVehicleDriver_id=source_sm.RouteVehicleDriverId).first()
+            if not source_godown:
+                godowns = list(Godown.objects.filter(CompanyId=company_id, IsActive=True))
+                source_godown = next((g for g in godowns if g.IsCentral), None) or (godowns[0] if godowns else None)
+
             items.append({
                 'EndRouteDriverId': dn.DeliveryNoteId,
                 'ShiftDate': str(s_date),
@@ -6958,6 +7033,8 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 'driver_name': alloc.Driver.DriverName if alloc and alloc.Driver else 'Driver',
                 'vehicle_number': alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else 'Van',
                 'route_name': alloc.Route.RouteName if alloc and alloc.Route else 'Route',
+                'source_godown_id': source_godown.GodownId if source_godown else 1,
+                'source_godown_name': source_godown.GodownName if source_godown else 'Main Godown',
                 'Ledger': 24,
                 'ledger_name': 'Cash in Hand' if cash_amt >= bank_amt else 'Bank Accounts',
                 'CompanyId': company_id,
@@ -6985,63 +7062,69 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
         dn = DeliveryNote.objects.filter(DeliveryNoteId=pk, CompanyId=company_id).first()
         if dn:
             with transaction.atomic():
-                # 1. Revert DeliveryNote status to LOADED
-                dn.Status = 'LOADED'
-                dn.save(update_fields=['Status'])
+                dn_id = dn.DeliveryNoteId
+                rvd_id = dn.RouteVehicleDriver_id
+                dn_created_at = dn.CreatedAt
+                dn_delivery_date = dn.DeliveryDate
+                permanent_delete = (
+                    request.query_params.get('permanent') == 'true' or
+                    request.query_params.get('delete_note') == 'true' or
+                    request.query_params.get('delete_dn') == 'true'
+                )
 
-                # 2. Reverse and remove end-shift / settlement stock unload movements
+                # 1. Reverse and remove end-shift / settlement stock unload movements
                 StockMovement.objects.filter(
                     CompanyId=company_id,
-                    ReferenceId=dn.DeliveryNoteId,
+                    ReferenceId=dn_id,
                     TransactionType__in=['VAN_UNLOAD_FULL', 'GODOWN_RETURN_FULL', 'VAN_UNLOAD_EMPTY', 'GODOWN_RETURN_EMPTY']
                 ).delete()
 
                 # Also catch any with TransactionNo matching ERD-<id>
                 StockMovement.objects.filter(
                     CompanyId=company_id,
-                    TransactionNo=f"ERD-{dn.DeliveryNoteId}"
+                    TransactionNo=f"ERD-{dn_id}"
                 ).delete()
 
-                # 3. Revert Sales status back to LIVE
+                # 2. Revert Sales status
                 next_dn = DeliveryNote.objects.filter(
                     CompanyId=company_id,
-                    RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
-                    DeliveryNoteId__gt=dn.DeliveryNoteId
+                    RouteVehicleDriver_id=rvd_id,
+                    DeliveryNoteId__gt=dn_id
                 ).order_by('DeliveryNoteId').first()
 
                 sales_qs = Sales.objects.filter(
                     CompanyId=company_id,
-                    RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
-                    CreatedAt__gte=dn.CreatedAt
+                    RouteVehicleDriver_id=rvd_id,
+                    CreatedAt__gte=dn_created_at
                 ).exclude(Status='CANCELLED')
                 if next_dn and next_dn.CreatedAt:
                     sales_qs = sales_qs.filter(CreatedAt__lt=next_dn.CreatedAt)
 
                 if not sales_qs.exists():
                     sales_qs = Sales.objects.filter(
-                        RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
+                        RouteVehicleDriver_id=rvd_id,
                         CompanyId=company_id
-                    ).filter(Q(SalesDate=dn.DeliveryDate) | Q(Status='PENDING_APPROVAL')).exclude(Status='CANCELLED')
+                    ).filter(Q(SalesDate=dn_delivery_date) | Q(Status='PENDING_APPROVAL')).exclude(Status='CANCELLED')
                 affected_ledgers = {24, 56, 20, 22, 23, 35}
                 for s in sales_qs:
                     if s.CustomerLedger_id:
                         affected_ledgers.add(s.CustomerLedger_id)
 
-                # 4. If vouchers were created during a previous settlement, remove them and re-sync ledger balances
+                # 3. If vouchers were created during a previous settlement, remove them and re-sync ledger balances
                 sale_ids = list(sales_qs.values_list('SalesId', flat=True))
                 vouchers = Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales', ReferenceId__in=sale_ids)
                 for v in vouchers:
                     v.lines.all().delete()
                 vouchers.delete()
-                Voucher.objects.filter(CompanyId=company_id, VoucherNo=f"SHIFT-VCH-{dn.DeliveryNoteId}").delete()
+                Voucher.objects.filter(CompanyId=company_id, VoucherNo=f"SHIFT-VCH-{dn_id}").delete()
 
                 # Also remove expense payment vouchers settled during this shift
                 settled_exps = RouteExpense.objects.filter(
                     CompanyId=company_id,
-                    RouteVehicleDriver_id=dn.RouteVehicleDriver_id,
+                    RouteVehicleDriver_id=rvd_id,
                     Payment__isnull=False
                 ).filter(
-                    Q(ExpenseDate=dn.DeliveryDate) | Q(CreatedAt__gte=dn.CreatedAt)
+                    Q(ExpenseDate=dn_delivery_date) | Q(CreatedAt__gte=dn_created_at)
                 )
                 for exp in settled_exps:
                     pmt = exp.Payment
@@ -7060,7 +7143,22 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                         pmt.lines.all().delete()
                         pmt.delete()
 
-                sales_qs.update(Status='LIVE', ApprovedBy=None, ApprovedAt=None)
+                if permanent_delete:
+                    # Full purge of the delivery note and its loaded stock movements
+                    sales_qs.update(Status='CANCELLED')
+                    StockMovement.objects.filter(
+                        CompanyId=company_id,
+                        ReferenceId=dn_id,
+                        TransactionType='DELIVERY_NOTE'
+                    ).delete()
+                    dn.lines.all().delete()
+                    dn.delete()
+                else:
+                    # Restore shift to active in-progress status (LOADED) and sales to LIVE
+                    sales_qs.update(Status='LIVE', ApprovedBy=None, ApprovedAt=None)
+                    dn.Status = 'LOADED'
+                    dn.save(update_fields=['Status'])
+
                 sync_ledger_balances(*affected_ledgers)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -7114,7 +7212,7 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
             for s_rec in sales_qs:
                 post_sale_voucher(s_rec, company_id)
 
-            # 3. Empty the van completely: Transfer ALL remaining unsold filled cylinders & customer empty returns to Central Godown (RouteVehicleDriverId=1)
+            # 3. Empty the van completely: Transfer ALL remaining unsold filled cylinders & customer empty returns to Originating/Target Godown
             # Safeguard: If this shift was already unloaded (e.g. by end_shift), do not duplicate GODOWN_RETURN_FULL / GODOWN_RETURN_EMPTY
             already_unloaded = StockMovement.objects.filter(
                 CompanyId=company_id,
@@ -7128,8 +7226,23 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 godowns_by_id = {g.GodownId: g for g in godowns}
                 central_godown = next((g for g in godowns if g.IsCentral), None) or (godowns[0] if godowns else None)
                 
+                # Determine originating source godown from the outward DELIVERY_NOTE movement
+                source_sm = StockMovement.objects.filter(
+                    CompanyId=company_id,
+                    ReferenceId=dn.DeliveryNoteId,
+                    TransactionType='DELIVERY_NOTE',
+                    OutQty__gt=0
+                ).first()
+                source_godown = None
+                if source_sm and source_sm.RouteVehicleDriverId:
+                    source_godown = Godown.objects.filter(CompanyId=company_id, RouteVehicleDriver_id=source_sm.RouteVehicleDriverId).first()
+
                 target_godown_id = request.data.get('godown_id')
-                default_target_godown = godowns_by_id.get(int(target_godown_id)) if target_godown_id else central_godown
+                if target_godown_id:
+                    default_target_godown = godowns_by_id.get(int(target_godown_id)) or source_godown or central_godown
+                else:
+                    default_target_godown = source_godown or central_godown
+
                 default_rvd_id = default_target_godown.RouteVehicleDriver_id if default_target_godown else 1
                 default_godown_name = default_target_godown.GodownName if default_target_godown else 'Main Godown'
 
@@ -7223,10 +7336,10 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     prod_splits = splits_by_prod.get(p_id)
                     if prod_splits and len(prod_splits) > 0:
                         for sp in prod_splits:
-                            sp_gid = int(sp.get('godown_id') or 1)
-                            sp_g = godowns_by_id.get(sp_gid) or central_godown
-                            target_rvd = sp_g.RouteVehicleDriver_id if sp_g else 1
-                            target_name = sp_g.GodownName if sp_g else 'Godown'
+                            sp_gid = int(sp.get('godown_id') or (default_target_godown.GodownId if default_target_godown else 1))
+                            sp_g = godowns_by_id.get(sp_gid) or default_target_godown or central_godown
+                            target_rvd = sp_g.RouteVehicleDriver_id if sp_g else default_rvd_id
+                            target_name = sp_g.GodownName if sp_g else default_godown_name
                             sp_full = Decimal(str(sp.get('filled_qty') or 0))
                             sp_empty = Decimal(str(sp.get('empty_qty') or 0))
 
@@ -8206,6 +8319,88 @@ class SalesViewSet(viewsets.ModelViewSet):
         post_sale_voucher(sale, company_id)
         return Response({'success': True, 'message': f'Sale {sale.SalesNo} approved and entered into accounts successfully.'})
 
+    @action(detail=True, methods=['post'], url_path='apply-advance')
+    def apply_advance(self, request, pk=None):
+        """
+        Standard ERP action: Applies available CustomerAdvance against an existing sales invoice.
+        Creates an AdvanceAdjustment record, updates remaining advance amount,
+        increments sale.PaidAmount, and syncs voucher entries on today's date.
+        """
+        sale = self.get_object()
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        customer = sale.CustomerLedger
+
+        if not customer:
+            return Response({'success': False, 'message': 'Customer ledger is required to apply advance.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        unpaid = Decimal(str(sale.GrandTotal or 0)) - Decimal(str(sale.PaidAmount or 0))
+        if unpaid <= Decimal('0.00'):
+            return Response({'success': False, 'message': f'Sale invoice {sale.SalesNo} is already fully paid.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            active_advances = CustomerAdvance.objects.filter(
+                CustomerLedger=customer,
+                Status__in=['ACTIVE', 'PARTIALLY_UTILIZED'],
+                RemainingAmount__gt=0
+            ).order_by('AdvanceDate', 'AdvanceId').select_for_update()
+
+            total_avail = sum(adv.RemainingAmount for adv in active_advances)
+            if total_avail <= Decimal('0.00'):
+                return Response({'success': False, 'message': f'No active advance available for {customer.LedgerName}.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            take_total = min(unpaid, total_avail)
+            needed = take_total
+
+            # Synchronize sequence for AdvanceAdjustment
+            try:
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute('SELECT COALESCE(MAX("AdjustmentId"), 0) FROM "AdvanceAdjustment"')
+                    m = cursor.fetchone()[0]
+                    if m > 0:
+                        cursor.execute(f'SELECT setval(\'"AdvanceAdjustment_AdjustmentId_seq"\', {m}, true);')
+                    else:
+                        cursor.execute('SELECT setval(\'"AdvanceAdjustment_AdjustmentId_seq"\', 1, false);')
+            except Exception:
+                pass
+
+            today = timezone.now().date()
+            for adv in active_advances:
+                if needed <= Decimal('0.00'):
+                    break
+                take = min(adv.RemainingAmount, needed)
+                adv.RemainingAmount -= take
+                if adv.RemainingAmount <= Decimal('0.00'):
+                    adv.Status = 'UTILIZED'
+                else:
+                    adv.Status = 'PARTIALLY_UTILIZED'
+                adv.save(update_fields=['RemainingAmount', 'Status', 'UpdatedAt'])
+
+                AdvanceAdjustment.objects.create(
+                    CompanyId=company_id,
+                    Advance=adv,
+                    Sales=sale,
+                    CustomerLedger=customer,
+                    AdjustmentAmount=take,
+                    AdjustmentDate=today,
+                    Narration=f"Applied advance {adv.AdvanceNo} against invoice {sale.SalesNo}"
+                )
+                needed -= take
+
+            sale.PaidAmount = (Decimal(str(sale.PaidAmount or 0))) + take_total
+            sale.save(update_fields=['PaidAmount', 'UpdatedAt'])
+
+            post_sale_voucher(sale, company_id)
+
+        return Response({
+            'success': True,
+            'message': f'Successfully applied ₹{take_total:,.2f} advance to invoice {sale.SalesNo}.',
+            'adjusted_amount': float(take_total),
+            'paid_amount': float(sale.PaidAmount),
+            'grand_total': float(sale.GrandTotal),
+            'balance_due': max(0.0, float(sale.GrandTotal - sale.PaidAmount)),
+        })
+
     @action(detail=False, methods=['post'], url_path='bulk-approve')
     def bulk_approve(self, request):
         sale_ids = request.data.get('sales_ids', [])
@@ -8226,6 +8421,224 @@ class SalesViewSet(viewsets.ModelViewSet):
             post_sale_voucher(s, company_id)
             count += 1
         return Response({'success': True, 'count': count, 'message': f'{count} sales approved and entered into accounts successfully.'})
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        data = request.data
+        lines_data = data.get('lines', [])
+        if isinstance(lines_data, str):
+            try:
+                import json
+                lines_data = json.loads(lines_data)
+            except Exception:
+                pass
+        if not lines_data:
+            return Response({'detail': 'Please add at least one line item.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_id = instance.CompanyId or getattr(request.user, 'CompanyId', 1) or 1
+        customer_id = data.get('CustomerLedger') or data.get('CustomerLedgerId') or instance.CustomerLedger_id
+        customer = Ledger.objects.filter(LedgerId=customer_id).first() if customer_id else None
+
+        old_grand_total = instance.GrandTotal
+        old_pm = instance.PaymentMethod
+
+        sales_date_raw = data.get('SalesDate')
+        if sales_date_raw:
+            parsed_d = safe_parse_date(sales_date_raw)
+            if parsed_d:
+                instance.SalesDate = parsed_d
+
+        if 'InvoiceNo' in data and data.get('InvoiceNo'):
+            instance.InvoiceNo = str(data.get('InvoiceNo')).strip()
+        if 'SalesNo' in data and data.get('SalesNo'):
+            instance.SalesNo = str(data.get('SalesNo')).strip()
+
+        pm = (data.get('PaymentMethod') or instance.PaymentMethod or 'CASH').upper()
+        instance.PaymentMethod = pm
+        instance.CustomerLedger = customer
+
+        # Track edit audit trail
+        editor_name = getattr(request.user, 'Username', getattr(request.user, 'username', 'Admin')) if request.user.is_authenticated else 'Admin'
+        instance.IsEdited = True
+        instance.EditedBy = editor_name
+        instance.EditedAt = timezone.now()
+        instance.EditReason = data.get('EditReason') or data.get('notes') or 'Invoice edited via Sales Form'
+
+        notes = data.get('Notes', instance.Notes)
+        cash_split = Decimal(str(data.get('cash_amount') or data.get('CashAmount') or 0))
+        upi_split = Decimal(str(data.get('upi_amount') or data.get('UpiAmount') or data.get('bank_amount') or 0))
+        if pm == 'SPLIT':
+            if cash_split > 0 or upi_split > 0:
+                notes = f"Cash: ₹{cash_split:,.2f} • UPI: ₹{upi_split:,.2f}"
+                if data.get('Notes') and 'Cash:' not in str(data.get('Notes')):
+                    notes += f" | {data.get('Notes')}"
+        instance.Notes = notes
+
+        with transaction.atomic():
+            # 1. Clean existing lines and stock movements
+            instance.lines.all().delete()
+            StockMovement.objects.filter(
+                CompanyId=company_id,
+                TransactionNo__in=[instance.SalesNo, instance.InvoiceNo]
+            ).delete()
+
+            # Clean old accounting vouchers for this sale
+            old_vouchers = Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales', ReferenceId=instance.SalesId)
+            affected_ledgers = {customer_id, instance.CustomerLedger_id}
+            for v in old_vouchers:
+                for vl in v.lines.all():
+                    if vl.Ledger_id:
+                        affected_ledgers.add(vl.Ledger_id)
+                v.lines.all().delete()
+                v.delete()
+
+            # 2. Recreate lines & calculate gross, tax, delivered qty
+            tot_deliv = Decimal('0')
+            tot_empty = Decimal(str(data.get('TotalEmptyQty') or instance.TotalEmptyQty or 0))
+            tot_taxable = Decimal('0')
+            tot_cgst = Decimal('0')
+            tot_sgst = Decimal('0')
+            tot_gross = Decimal('0')
+
+            godown_rvd_id = instance.RouteVehicleDriver_id or 1
+            is_intra = (not customer or not customer.StateId or customer.StateId in [12, 32])
+
+            for idx, item in enumerate(lines_data, 1):
+                p_id = item.get('Product') or item.get('ProductId') or item.get('product_id')
+                prod = Product.objects.filter(ProductId=p_id).first() if p_id else None
+                if not prod:
+                    continue
+                qty = Decimal(str(item.get('Quantity') or item.get('qty') or 1))
+                empty_qty = Decimal(str(item.get('EmptyQuantity') or item.get('empty_qty') or 0))
+                rate = Decimal(str(item.get('SalesPrice') or item.get('rate') or prod.SalesPrice or 0))
+
+                line_gross = qty * rate
+                gst_p = Decimal(str(item.get('TaxPercent') or prod.GSTPercentage or 0))
+
+                if gst_p > 0 and line_gross > 0:
+                    tfactor = Decimal('1.00') + (gst_p / Decimal('100.00'))
+                    line_taxable = (line_gross / tfactor).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    unit_taxable = (rate / tfactor).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    line_tax = line_gross - line_taxable
+                    if is_intra:
+                        line_cgst = (line_tax / Decimal('2.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                        line_sgst = line_tax - line_cgst
+                    else:
+                        line_cgst = Decimal('0.00')
+                        line_sgst = Decimal('0.00')
+                else:
+                    line_taxable = line_gross
+                    unit_taxable = rate
+                    line_tax = Decimal('0.00')
+                    line_cgst = Decimal('0.00')
+                    line_sgst = Decimal('0.00')
+
+                tot_deliv += qty
+                tot_empty += empty_qty
+                tot_taxable += line_taxable
+                tot_cgst += line_cgst
+                tot_sgst += line_sgst
+                tot_gross += line_gross
+
+                SalesLine.objects.create(
+                    Sales=instance,
+                    LineNo=idx,
+                    Product=prod,
+                    ProductName=prod.ProductName,
+                    Unit=prod.Unit,
+                    SalesPrice=unit_taxable,
+                    TaxPercent=gst_p,
+                    TaxAmount=line_tax,
+                    Quantity=qty,
+                    EmptyQuantity=empty_qty,
+                    Total=line_gross,
+                    CompanyId=company_id
+                )
+
+                # Recreate stock movement
+                StockMovement.objects.create(
+                    CompanyId=company_id,
+                    Product=prod,
+                    Unit=prod.Unit,
+                    RouteVehicleDriverId=godown_rvd_id,
+                    TransactionType='DIRECT_SALE',
+                    ReferenceId=int(customer.LedgerId if customer else 0),
+                    TransactionNo=instance.SalesNo,
+                    TransactionDate=instance.SalesDate,
+                    InQty=Decimal('0.00'),
+                    OutQty=qty,
+                    OutCostRate=unit_taxable,
+                    OutCostAmount=line_gross,
+                    Narration=f"Sale to {customer.LedgerName if customer else 'Customer'} | {pm} | Amount: {line_gross}"
+                )
+                if empty_qty > 0:
+                    StockMovement.objects.create(
+                        CompanyId=company_id,
+                        Product=prod,
+                        Unit=prod.Unit,
+                        RouteVehicleDriverId=godown_rvd_id,
+                        TransactionType='GODOWN_RETURN_EMPTY',
+                        ReferenceId=int(customer.LedgerId if customer else 0),
+                        TransactionNo=instance.SalesNo,
+                        TransactionDate=instance.SalesDate,
+                        InQty=empty_qty,
+                        OutQty=Decimal('0.00'),
+                        InCostRate=Decimal('0.00'),
+                        InCostAmount=Decimal('0.00'),
+                        Narration=f"Empty cylinder returned on sale #{instance.SalesNo}"
+                    )
+
+            custom_total = Decimal(str(data.get('GrandTotal') or 0))
+            instance.GrandTotal = custom_total if custom_total > 0 else tot_gross
+            instance.SubTotal = tot_taxable
+            instance.TaxAmount = tot_cgst + tot_sgst
+            instance.TotalDeliveredQty = tot_deliv
+            instance.TotalEmptyQty = tot_empty
+
+            # Paid amount calculation
+            if pm == 'SPLIT':
+                if cash_split + upi_split > 0:
+                    instance.PaidAmount = min(instance.GrandTotal, cash_split + upi_split)
+                else:
+                    instance.PaidAmount = instance.GrandTotal
+            elif pm in ['CASH', 'UPI', 'BANK']:
+                raw_paid = data.get('PaidAmount')
+                if raw_paid is not None:
+                    instance.PaidAmount = min(instance.GrandTotal, Decimal(str(raw_paid)))
+                else:
+                    instance.PaidAmount = instance.GrandTotal
+            elif pm == 'CREDIT':
+                raw_paid = data.get('PaidAmount')
+                instance.PaidAmount = min(instance.GrandTotal, Decimal(str(raw_paid))) if raw_paid else Decimal('0.00')
+
+            instance.save()
+
+            # Record Edit History
+            SaleEditHistory.objects.create(
+                Sales=instance,
+                EditedBy=editor_name,
+                EditedAt=timezone.now(),
+                OldGrandTotal=old_grand_total,
+                NewGrandTotal=instance.GrandTotal,
+                OldPaymentMethod=old_pm,
+                NewPaymentMethod=instance.PaymentMethod,
+                Notes=instance.EditReason,
+                CompanyId=company_id
+            )
+
+            # Re-post accounting voucher and billwise allocation
+            post_sale_voucher(instance, company_id)
+            if instance.PaidAmount and instance.PaidAmount > 0 and customer:
+                sync_sales_billwise_allocation(instance, None)
+
+            # Recalculate balances
+            affected_ledgers.update({20, 22, 23, 24, 35, 56})
+            if customer:
+                affected_ledgers.add(customer.LedgerId)
+            sync_ledger_balances(*[l for l in affected_ledgers if l])
+
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def perform_update(self, serializer):
         sale = serializer.save()

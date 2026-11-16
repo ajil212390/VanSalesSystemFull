@@ -195,7 +195,7 @@ def generate_tax_invoice_pdf(sale):
     # -------------------------------------------------------------
     # 1. HEADER (Company Branding on Left, Tax Invoice Title on Right)
     # -------------------------------------------------------------
-    date_formatted = sale.SalesDate.strftime('%d/%m/%Y') if sale.SalesDate else datetime.now().strftime('%d/%m/%Y')
+    date_formatted = sale.SalesDate.strftime('%d/%m/%Y') if hasattr(sale.SalesDate, 'strftime') else (str(sale.SalesDate) if sale.SalesDate else datetime.now().strftime('%d/%m/%Y'))
     pm_upper = (sale.PaymentMethod or 'CASH').upper()
     payment_mode_display = f"<b>Payment Mode:</b> {pm_upper}<br/>"
     if pm_upper == 'SPLIT':
@@ -500,10 +500,19 @@ def generate_tax_invoice_pdf(sale):
         previous_bill_pending = Decimal('0.00')
         closing_balance = max(Decimal('0.00'), current_bill_amount - adv_adj - paid_amt)
 
+    # Parse split amounts if payment mode is SPLIT
+    c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+    u_m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+    c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
+    u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
+    is_split = (sale.PaymentMethod or '').upper() == 'SPLIT' or (c_split > Decimal('0.00') and u_split > Decimal('0.00'))
+
     # Empty cylinders return narration
     empty_qty_int = int(sale.TotalEmptyQty or 0)
     narration_text = f"{empty_qty_int} Return Qty." if empty_qty_int > 0 else "No Return Empties"
-    if sale.PaymentMethod:
+    if is_split:
+        narration_text += f" (Split: Cash Rs.{c_split:.2f} + UPI Rs.{u_split:.2f})"
+    elif sale.PaymentMethod:
         narration_text += f" (Payment: {sale.PaymentMethod.upper()})"
 
     # Left Box: Customer Account Summary (Handwritten layout)
@@ -518,8 +527,25 @@ def generate_tax_invoice_pdf(sale):
             Paragraph("Advance Adjusted :", ParagraphStyle('AdvLbl', parent=cell_bold, textColor=colors.HexColor('#0D9488'))),
             Paragraph(f"(-) Rs. {adv_adj:.2f}", ParagraphStyle('AdvVal', parent=cell_right_bold, textColor=colors.HexColor('#0D9488')))
         ])
+    if is_split:
+        cust_summary_rows.append([
+            Paragraph("<b>Paid Amount (Split) :</b>", cell_bold),
+            Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right_bold)
+        ])
+        cust_summary_rows.append([
+            Paragraph("&nbsp;&nbsp;&bull; Cash Paid :", ParagraphStyle('CshLbl', parent=cell_muted, fontSize=8)),
+            Paragraph(f"Rs. {c_split:.2f}", ParagraphStyle('CshVal', parent=cell_right, fontSize=8))
+        ])
+        cust_summary_rows.append([
+            Paragraph("&nbsp;&nbsp;&bull; UPI / Bank :", ParagraphStyle('UpiLbl', parent=cell_muted, fontSize=8)),
+            Paragraph(f"Rs. {u_split:.2f}", ParagraphStyle('UpiVal', parent=cell_right, fontSize=8))
+        ])
+    else:
+        cust_summary_rows.append([
+            Paragraph("Paid Amount :", cell_norm),
+            Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right)
+        ])
     cust_summary_rows.extend([
-        [Paragraph("Paid Amount :", cell_norm), Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right)],
         [Paragraph("<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
         [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
     ])

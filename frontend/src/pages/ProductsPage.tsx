@@ -20,9 +20,8 @@ import {
   ActionIcon,
   Box,
   Transition,
-  Tooltip,
-} from '@mantine/core';
-import { IconPencil, IconTrash, IconSearch, IconCylinder, IconCurrencyRupee, IconArrowLeft } from '@tabler/icons-react';
+  Tooltip } from '@mantine/core';
+import { IconPencil, IconTrash, IconSearch, IconCylinder, IconCurrencyRupee } from '@tabler/icons-react';
 import { useForm, Controller } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -103,8 +102,7 @@ const defaultProductValues: ProductFormValues = {
   IsActive: true,
   opening_filled_qty: '',
   opening_empty_qty: '',
-  opening_cost_rate: '',
-};
+  opening_cost_rate: '' };
 
 export const ProductsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -122,8 +120,7 @@ export const ProductsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/products/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // 2. Fetch Categories for dropdown
   const { data: categories = [] } = useQuery<CategoryOption[]>({
@@ -131,8 +128,7 @@ export const ProductsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/categories/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // 3. Fetch Units for dropdown
   const { data: units = [] } = useQuery<UnitOption[]>({
@@ -140,8 +136,7 @@ export const ProductsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/units/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // Form management
   const {
@@ -150,10 +145,8 @@ export const ProductsPage: React.FC = () => {
     control,
     reset,
     watch,
-    formState: { errors, isSubmitting },
-  } = useForm<ProductFormValues>({
-    defaultValues: defaultProductValues,
-  });
+    formState: { errors, isSubmitting } } = useForm<ProductFormValues>({
+    defaultValues: defaultProductValues });
 
   const [watchFilled, watchCostRate] = watch([
     'opening_filled_qty',
@@ -180,8 +173,7 @@ export const ProductsPage: React.FC = () => {
         opening_filled_qty: data.opening_filled_qty !== '' && data.opening_filled_qty !== null ? Number(data.opening_filled_qty) : 0,
         opening_empty_qty: data.opening_empty_qty !== '' && data.opening_empty_qty !== null ? Number(data.opening_empty_qty) : 0,
         opening_cost_rate: data.opening_cost_rate !== '' && data.opening_cost_rate !== null ? Number(data.opening_cost_rate) : 0,
-        IsActive: data.IsActive,
-      };
+        IsActive: data.IsActive };
 
       if (editingProduct) {
         const res = await apiClient.patch(`/products/${editingProduct.ProductId}/`, payload);
@@ -198,8 +190,7 @@ export const ProductsPage: React.FC = () => {
         message: editingProduct
           ? 'Product updated successfully.'
           : 'Product created successfully.',
-        color: 'teal',
-      });
+        color: 'teal' });
       setFormOpened(false);
       setEditingProduct(null);
       reset(defaultProductValues);
@@ -214,10 +205,8 @@ export const ProductsPage: React.FC = () => {
       notifications.show({
         title: 'Error',
         message: String(detail),
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -229,8 +218,7 @@ export const ProductsPage: React.FC = () => {
       notifications.show({
         title: 'Deleted',
         message: 'Product deleted successfully.',
-        color: 'teal',
-      });
+        color: 'teal' });
       setProductToDelete(null);
     },
     onError: (err: any) => {
@@ -238,11 +226,9 @@ export const ProductsPage: React.FC = () => {
       notifications.show({
         title: 'Error',
         message: String(detail),
-        color: 'red',
-      });
+        color: 'red' });
       setProductToDelete(null);
-    },
-  });
+    } });
 
   const onSubmit = (data: ProductFormValues) => {
     saveMutation.mutate(data);
@@ -282,8 +268,7 @@ export const ProductsPage: React.FC = () => {
       IsActive: product.IsActive,
       opening_filled_qty: product.opening_filled !== undefined && product.opening_filled > 0 ? product.opening_filled : '',
       opening_empty_qty: product.opening_empty !== undefined && product.opening_empty > 0 ? product.opening_empty : '',
-      opening_cost_rate: product.opening_rate !== undefined && product.opening_rate > 0 ? product.opening_rate : (product.PurchasePrice || ''),
-    });
+      opening_cost_rate: product.opening_rate !== undefined && product.opening_rate > 0 ? product.opening_rate : (product.PurchasePrice || '') });
     setFormOpened(true);
   };
 
@@ -309,15 +294,13 @@ export const ProductsPage: React.FC = () => {
   const categoryOptions = useMemo(() => {
     return categories.map((c) => ({
       value: String(c.CategoryId),
-      label: c.CategoryName,
-    }));
+      label: c.CategoryName }));
   }, [categories]);
 
   const unitOptions = useMemo(() => {
     return units.map((u) => ({
       value: String(u.UnitId),
-      label: u.UnitName,
-    }));
+      label: u.UnitName }));
   }, [units]);
 
   return (
@@ -325,18 +308,6 @@ export const ProductsPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Products
           </Title>
@@ -419,8 +390,7 @@ export const ProductsPage: React.FC = () => {
             style={{
               backgroundColor: '#ffffff',
               borderColor: '#f5c2cb',
-              borderLeft: '4px solid #800020',
-            }}
+              borderLeft: '4px solid #800020' }}
           >
             <Group justify="space-between" align="flex-start" mb="md">
               <div>
@@ -628,8 +598,7 @@ export const ProductsPage: React.FC = () => {
                   withBorder
                   style={{
                     backgroundColor: '#fafbfc',
-                    borderColor: '#e2e8f0',
-                  }}
+                    borderColor: '#e2e8f0' }}
                 >
                   <Group justify="space-between" align="center" mb="xs">
                     <div>
@@ -752,8 +721,7 @@ export const ProductsPage: React.FC = () => {
                 ...styles,
                 backgroundColor: '#ffffff',
                 borderColor: '#e2e8f0',
-                overflow: 'hidden',
-              }}
+                overflow: 'hidden' }}
             >
               {isLoadingProducts ? (
                 <Center p="xl" style={{ minHeight: 250 }}>
@@ -829,8 +797,7 @@ export const ProductsPage: React.FC = () => {
                                   borderColor: '#cbd5e1',
                                   color: '#475569',
                                   backgroundColor: '#f8fafc',
-                                  fontWeight: 600,
-                                }}
+                                  fontWeight: 600 }}
                               >
                                 {product.unit_name || '—'}
                               </Badge>
@@ -867,8 +834,7 @@ export const ProductsPage: React.FC = () => {
                                   color: product.IsActive ? '#800020' : '#dc2626',
                                   backgroundColor: 'transparent',
                                   fontWeight: 600,
-                                  letterSpacing: '0.4px',
-                                }}
+                                  letterSpacing: '0.4px' }}
                               >
                                 {product.IsActive ? 'ACTIVE' : 'INACTIVE'}
                               </Badge>

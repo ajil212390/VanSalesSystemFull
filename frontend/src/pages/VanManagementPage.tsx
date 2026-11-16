@@ -13,8 +13,7 @@ import {
   Center,
   ActionIcon,
   TextInput,
-  CloseButton,
-} from '@mantine/core';
+  CloseButton } from '@mantine/core';
 import {
   IconRoute,
   IconSearch,
@@ -22,9 +21,7 @@ import {
   IconChevronRight,
   IconCylinder,
   IconReceipt,
-  IconWallet,
-  IconArrowLeft,
-} from '@tabler/icons-react';
+  IconWallet } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
@@ -75,8 +72,7 @@ export const VanManagementPage: React.FC = () => {
   const { data, isLoading, isError, refetch, isFetching } = useQuery<VanManagementData>({
     queryKey: ['van-management', manualRefresh],
     queryFn: () => apiClient.get('/routes/van-management/').then((r) => r.data),
-    refetchInterval: 15_000,
-  });
+    refetchInterval: 15_000 });
 
   const handleRefresh = () => {
     setManualRefresh((v) => v + 1);
@@ -125,18 +121,6 @@ export const VanManagementPage: React.FC = () => {
       {/* ── 1. Page Header matching Executive Design System ── */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Group gap="xs" align="center" wrap="wrap">
             <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 22, letterSpacing: '-0.02em' }}>
               Van Management
@@ -183,8 +167,7 @@ export const VanManagementPage: React.FC = () => {
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
+            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)' }}
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -209,8 +192,7 @@ export const VanManagementPage: React.FC = () => {
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
+            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)' }}
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -235,8 +217,7 @@ export const VanManagementPage: React.FC = () => {
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
+            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)' }}
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -261,8 +242,7 @@ export const VanManagementPage: React.FC = () => {
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
+            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)' }}
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -287,8 +267,7 @@ export const VanManagementPage: React.FC = () => {
           overflow: 'hidden',
           backgroundColor: '#ffffff',
           borderColor: '#e2e8f0',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
       >
         <Group justify="space-between" align="center" p="md" px="lg" style={{ borderBottom: '1px solid #f1f5f9' }} wrap="wrap" gap="sm">
           <div>
@@ -463,8 +442,7 @@ export const VanManagementPage: React.FC = () => {
                           fw={600}
                           style={{
                             color: expAmt > 0 ? '#0f172a' : '#94a3b8',
-                            fontVariantNumeric: 'tabular-nums',
-                          }}
+                            fontVariantNumeric: 'tabular-nums' }}
                         >
                           {fmtInr(expAmt)}
                         </Text>
@@ -475,8 +453,7 @@ export const VanManagementPage: React.FC = () => {
                           fw={700}
                           style={{
                             color: '#0f172a',
-                            fontVariantNumeric: 'tabular-nums',
-                          }}
+                            fontVariantNumeric: 'tabular-nums' }}
                         >
                           {fmtInr(netBal)}
                         </Text>

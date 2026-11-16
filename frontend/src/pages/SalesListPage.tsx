@@ -15,8 +15,7 @@ import {
   Tooltip,
   Modal,
   Divider,
-  Box,
-} from '@mantine/core';
+  Box } from '@mantine/core';
 import {
   IconPlus,
   IconSearch,
@@ -28,9 +27,8 @@ import {
   IconReceipt2,
   IconUserCheck,
   IconTrash,
-  IconPackage,
-  IconArrowLeft,
-} from '@tabler/icons-react';
+  IconEdit,
+  IconPackage } from '@tabler/icons-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -54,8 +52,7 @@ export const SalesListPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/sales/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
-    },
-  });
+    } });
 
   // Automatically reopen sale details modal if open_sale_id is provided in URL
   React.useEffect(() => {
@@ -139,17 +136,14 @@ export const SalesListPage: React.FC = () => {
       notifications.show({
         title: 'Sale Approved',
         message: 'The sale invoice has been verified and approved.',
-        color: 'teal',
-      });
+        color: 'teal' });
     },
     onError: (err: any) => {
       notifications.show({
         title: 'Error',
         message: err.response?.data?.message || err.message || 'Could not approve sale.',
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   // Mutation: Delete Sale
   const deleteSaleMutation = useMutation({
@@ -162,13 +156,37 @@ export const SalesListPage: React.FC = () => {
       notifications.show({
         title: 'Invoice Deleted',
         message: 'The sale invoice has been removed and accounts synced.',
-        color: 'gray',
-      });
+        color: 'gray' });
     },
     onError: (err: any) => {
       notifications.show({
         title: 'Error Deleting Sale',
         message: err.response?.data?.detail || err.message || 'Could not delete sale invoice.',
+        color: 'red' });
+    } });
+
+  // Mutation: Apply Customer Advance
+  const applyAdvanceMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiClient.post(`/sales/${id}/apply-advance/`);
+      return res.data;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      setViewingSale(null);
+      notifications.show({
+        title: 'Advance Applied',
+        message: data.message || 'Advance adjustment created and invoice settled successfully.',
+        color: 'teal',
+      });
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Error Applying Advance',
+        message: err.response?.data?.message || err.message || 'Could not apply advance.',
         color: 'red',
       });
     },
@@ -192,18 +210,6 @@ export const SalesListPage: React.FC = () => {
       <Box pt={4} pb={2}>
         <Group justify="space-between" align="center" wrap="wrap">
           <div>
-            <Group gap="xs" align="center" mb={6}>
-              <Button
-                variant="subtle"
-                color="gray"
-                size="xs"
-                leftSection={<IconArrowLeft size={16} />}
-                onClick={() => navigate('/')}
-                styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-              >
-                Back to Dashboard
-              </Button>
-            </Group>
             <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
               Sales &amp; Invoices
             </Title>
@@ -393,9 +399,7 @@ export const SalesListPage: React.FC = () => {
                                   fontWeight: 700,
                                   flexShrink: 0,
                                   overflow: 'visible',
-                                  whiteSpace: 'nowrap',
-                                },
-                              }}
+                                  whiteSpace: 'nowrap' } }}
                             >
                               PACKAGE
                             </Badge>
@@ -446,8 +450,7 @@ export const SalesListPage: React.FC = () => {
                               fontWeight: 600,
                               color: '#800020',
                               borderColor: '#f5c2cb',
-                              backgroundColor: '#ffffff',
-                            }}
+                              backgroundColor: '#ffffff' }}
                           >
                             {Number(sale.TotalDeliveredQty || 0)} Deliv.
                           </Badge>
@@ -458,8 +461,7 @@ export const SalesListPage: React.FC = () => {
                               fontWeight: 600,
                               color: '#64748b',
                               borderColor: '#e2e8f0',
-                              backgroundColor: '#ffffff',
-                            }}
+                              backgroundColor: '#ffffff' }}
                           >
                             {Number(sale.TotalEmptyQty || 0)} Empty
                           </Badge>
@@ -474,8 +476,7 @@ export const SalesListPage: React.FC = () => {
                             fontWeight: 700,
                             backgroundColor: isCredit ? '#fdf2f4' : '#f8fafc',
                             color: isCredit ? '#800020' : '#475569',
-                            borderColor: isCredit ? '#f5c2cb' : '#cbd5e1',
-                          }}
+                            borderColor: isCredit ? '#f5c2cb' : '#cbd5e1' }}
                         >
                           {sale.PaymentMethod || 'CASH'}
                         </Badge>
@@ -501,9 +502,7 @@ export const SalesListPage: React.FC = () => {
                                 flexShrink: 0,
                                 overflow: 'visible',
                                 whiteSpace: 'nowrap',
-                                display: 'inline-block',
-                              },
-                            }}
+                                display: 'inline-block' } }}
                           >
                             APPROVED
                           </Badge>
@@ -520,9 +519,7 @@ export const SalesListPage: React.FC = () => {
                                 flexShrink: 0,
                                 overflow: 'visible',
                                 whiteSpace: 'nowrap',
-                                display: 'inline-block',
-                              },
-                            }}
+                                display: 'inline-block' } }}
                           >
                             PENDING
                           </Badge>
@@ -543,7 +540,19 @@ export const SalesListPage: React.FC = () => {
                             </ActionIcon>
                           </Tooltip>
 
-                          {/* 2. Delete icon SECOND */}
+                          {/* 2. Edit icon SECOND */}
+                          <Tooltip label="Edit Sale Invoice" withArrow>
+                            <ActionIcon
+                              variant="subtle"
+                              color="burgundy"
+                              size="sm"
+                              onClick={() => navigate(`/sales/${sale.SalesId}/edit`)}
+                            >
+                              <IconEdit size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+
+                          {/* 3. Delete icon THIRD */}
                           <Tooltip label="Delete Invoice" withArrow>
                             <ActionIcon
                               variant="subtle"
@@ -689,7 +698,7 @@ export const SalesListPage: React.FC = () => {
 
             <Divider />
 
-            <Group justify="space-between" align="center">
+            <Group justify="space-between" align="center" wrap="wrap" gap="md">
               <div>
                 <Text size="xs" c="dimmed">
                   Grand Total:
@@ -697,9 +706,28 @@ export const SalesListPage: React.FC = () => {
                 <Text size="lg" fw={800} style={{ color: '#800020' }}>
                   ₹{Number(viewingSale.GrandTotal || 0).toFixed(2)}
                 </Text>
+                <Text size="xs" fw={600} mt={2}>
+                  Paid: <span style={{ color: '#0d9488' }}>₹{Number(viewingSale.PaidAmount || 0).toFixed(2)}</span>
+                  {Number(viewingSale.GrandTotal || 0) > Number(viewingSale.PaidAmount || 0) && (
+                    <span style={{ color: '#dc2626', marginLeft: 8 }}>
+                      (Due: ₹{(Number(viewingSale.GrandTotal || 0) - Number(viewingSale.PaidAmount || 0)).toFixed(2)})
+                    </span>
+                  )}
+                </Text>
               </div>
 
-              <Group gap="sm">
+              <Group gap="sm" wrap="wrap">
+                {Number(viewingSale.GrandTotal || 0) > Number(viewingSale.PaidAmount || 0) && (
+                  <Button
+                    variant="light"
+                    color="burgundy"
+                    leftSection={<IconCash size={16} />}
+                    loading={applyAdvanceMutation.isPending}
+                    onClick={() => applyAdvanceMutation.mutate(viewingSale.SalesId)}
+                  >
+                    Apply Advance
+                  </Button>
+                )}
                 {!viewingSale.IsApproved && (
                   <Button
                     variant="filled"
@@ -714,6 +742,16 @@ export const SalesListPage: React.FC = () => {
                     Approve Invoice
                   </Button>
                 )}
+                <Button
+                  variant="light"
+                  color="burgundy"
+                  leftSection={<IconEdit size={16} />}
+                  onClick={() => {
+                    navigate(`/sales/${viewingSale.SalesId}/edit`);
+                  }}
+                >
+                  Edit Invoice
+                </Button>
                 <Button
                   variant="subtle"
                   color="red"

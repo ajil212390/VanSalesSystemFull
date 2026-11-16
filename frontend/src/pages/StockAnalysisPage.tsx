@@ -1014,51 +1014,15 @@ export const StockAnalysisPage: React.FC = () => {
                 transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
                 data={[
                   {
-                    label: (
-                      <span
-                        style={{
-                          color: categoryFilter === 'all' ? '#ffffff' : '#64748b',
-                          fontWeight: categoryFilter === 'all' ? 700 : 600,
-                          fontSize: 12,
-                          display: 'inline-block',
-                          transition: 'color 150ms ease',
-                        }}
-                      >
-                        All ({filteredLocationProducts.length})
-                      </span>
-                    ),
+                    label: `All (${filteredLocationProducts.length})`,
                     value: 'all',
                   },
                   {
-                    label: (
-                      <span
-                        style={{
-                          color: categoryFilter === 'cylinders' ? '#ffffff' : '#64748b',
-                          fontWeight: categoryFilter === 'cylinders' ? 700 : 600,
-                          fontSize: 12,
-                          display: 'inline-block',
-                          transition: 'color 150ms ease',
-                        }}
-                      >
-                        Cylinders ({cylProducts.length})
-                      </span>
-                    ),
+                    label: `Cylinders (${cylProducts.length})`,
                     value: 'cylinders',
                   },
                   {
-                    label: (
-                      <span
-                        style={{
-                          color: categoryFilter === 'other' ? '#ffffff' : '#64748b',
-                          fontWeight: categoryFilter === 'other' ? 700 : 600,
-                          fontSize: 12,
-                          display: 'inline-block',
-                          transition: 'color 150ms ease',
-                        }}
-                      >
-                        Other ({otherProducts.length})
-                      </span>
-                    ),
+                    label: `Other (${otherProducts.length})`,
                     value: 'other',
                   },
                 ]}
@@ -1282,18 +1246,6 @@ export const StockAnalysisPage: React.FC = () => {
       {/* 1. Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Stock Analysis
           </Title>

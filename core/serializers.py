@@ -994,6 +994,8 @@ class DeliveryNoteSerializer(serializers.ModelSerializer):
     vehicle_number = serializers.CharField(source='RouteVehicleDriver.Vehicle.VehicleNumber', read_only=True)
     driver_name = serializers.CharField(source='RouteVehicleDriver.Driver.DriverName', read_only=True)
     total_cylinders = serializers.SerializerMethodField()
+    target_godown_name = serializers.SerializerMethodField()
+    is_godown_transfer = serializers.SerializerMethodField()
 
     class Meta:
         model = DeliveryNote
@@ -1005,6 +1007,8 @@ class DeliveryNoteSerializer(serializers.ModelSerializer):
             'route_name',
             'vehicle_number',
             'driver_name',
+            'target_godown_name',
+            'is_godown_transfer',
             'Remarks',
             'Status',
             'CompanyId',
@@ -1015,6 +1019,15 @@ class DeliveryNoteSerializer(serializers.ModelSerializer):
 
     def get_total_cylinders(self, obj):
         return sum(line.Quantity for line in obj.lines.all())
+
+    def get_target_godown_name(self, obj):
+        from core.models import Godown
+        g = Godown.objects.filter(RouteVehicleDriver_id=obj.RouteVehicleDriver_id).first()
+        return g.GodownName if g else None
+
+    def get_is_godown_transfer(self, obj):
+        from core.models import Godown
+        return Godown.objects.filter(RouteVehicleDriver_id=obj.RouteVehicleDriver_id).exists()
 
 
 class ReceiptNoteLineSerializer(serializers.ModelSerializer):

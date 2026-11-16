@@ -17,10 +17,9 @@ import {
     ActionIcon,
     Box,
     Transition,
-    Tooltip,
-} from '@mantine/core';
-import { IconPencil, IconTrash, IconSearch, IconArrowLeft } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+    Tooltip } from '@mantine/core';
+import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
+import { } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -50,21 +49,20 @@ interface DriverFormValues {
 }
 
 export const DriversPage: React.FC = () => {
-    const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [formOpened, setFormOpened] = useState(false);
     const [editingDriver, setEditingDriver] = useState<DriverItem | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
-    // 1. Fetch drivers list
+    // 1. Fetch drivers list (excluding internal godown staff)
     const { data: drivers = [], isLoading } = useQuery<DriverItem[]>({
         queryKey: ['drivers'],
         queryFn: async () => {
             const res = await apiClient.get<any>('/drivers/');
-            return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        },
-    });
+            const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+            return list.filter((d: any) => !d.DriverName?.toLowerCase().includes('godown'));
+        } });
 
     // Client-side search filter
     const filteredDrivers = useMemo(() => {
@@ -83,17 +81,14 @@ export const DriversPage: React.FC = () => {
         register,
         handleSubmit,
         reset,
-        formState: { errors, isSubmitting },
-    } = useForm<DriverFormValues>({
+        formState: { errors, isSubmitting } } = useForm<DriverFormValues>({
         defaultValues: {
             DriverName: '',
             PhoneNumber: '',
             LicenseNumber: '',
             LicenseExpiryDate: '',
             AddressLine1: '',
-            AddressLine2: '',
-        },
-    });
+            AddressLine2: '' } });
     // 3. Mutation to create or edit driver
     const saveMutation = useMutation({
         mutationFn: async (data: DriverFormValues) => {
@@ -104,8 +99,7 @@ export const DriversPage: React.FC = () => {
                 LicenseExpiryDate: data.LicenseExpiryDate || null,
                 AddressLine1: data.AddressLine1?.trim() || null,
                 AddressLine2: data.AddressLine2?.trim() || null,
-                IsActive: true,
-            };
+                IsActive: true };
 
             if (editingDriver) {
                 return apiClient.patch(`/drivers/${editingDriver.DriverId}/`, payload);
@@ -116,8 +110,7 @@ export const DriversPage: React.FC = () => {
             notifications.show({
                 title: 'Success',
                 message: editingDriver ? 'Driver updated successfully.' : 'Driver added successfully.',
-                color: 'green',
-            });
+                color: 'green' });
             queryClient.invalidateQueries({ queryKey: ['drivers'] });
             reset();
             setEditingDriver(null);
@@ -128,10 +121,8 @@ export const DriversPage: React.FC = () => {
             notifications.show({
                 title: 'Error',
                 message: msg,
-                color: 'red',
-            });
-        },
-    });
+                color: 'red' });
+        } });
 
     const onSubmit = (values: DriverFormValues) => {
         saveMutation.mutate(values);
@@ -146,8 +137,7 @@ export const DriversPage: React.FC = () => {
             notifications.show({
                 title: 'Deleted',
                 message: 'Driver deleted successfully.',
-                color: 'green',
-            });
+                color: 'green' });
             queryClient.invalidateQueries({ queryKey: ['drivers'] });
         },
         onError: (err: any) => {
@@ -155,16 +145,13 @@ export const DriversPage: React.FC = () => {
             notifications.show({
                 title: 'Cannot Delete',
                 message: msg,
-                color: 'red',
-            });
-        },
-    });
+                color: 'red' });
+        } });
 
     const confirmDelete = () => {
         if (deleteTarget) {
             deleteMutation.mutate(deleteTarget.id, {
-                onSettled: () => setDeleteTarget(null),
-            });
+                onSettled: () => setDeleteTarget(null) });
         }
     };
 
@@ -177,8 +164,7 @@ export const DriversPage: React.FC = () => {
             LicenseNumber: driver.LicenseNumber || '',
             LicenseExpiryDate: driver.LicenseExpiryDate || '',
             AddressLine1: driver.AddressLine1 || '',
-            AddressLine2: driver.AddressLine2 || '',
-        });
+            AddressLine2: driver.AddressLine2 || '' });
         setFormOpened(true);
     };
 
@@ -195,8 +181,7 @@ export const DriversPage: React.FC = () => {
             LicenseNumber: '',
             LicenseExpiryDate: '',
             AddressLine1: '',
-            AddressLine2: '',
-        });
+            AddressLine2: '' });
         setFormOpened(true);
     };
 
@@ -206,20 +191,8 @@ export const DriversPage: React.FC = () => {
             {/* Page Header */}
             <Group justify="space-between" align="center" wrap="wrap" gap="md">
                 <div>
-                    <Group gap="xs" align="center" mb={6}>
-                        <Button
-                            variant="subtle"
-                            color="gray"
-                            size="xs"
-                            leftSection={<IconArrowLeft size={16} />}
-                            onClick={() => navigate('/')}
-                            styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-                        >
-                            Back to Dashboard
-                        </Button>
-                    </Group>
                     <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
-                        Drivers
+                        Drivers/Staff
                     </Title>
                     <Text size="sm" c="dimmed">
                         Manage your company's drivers and their license information.
@@ -274,8 +247,7 @@ export const DriversPage: React.FC = () => {
                     style={{
                         backgroundColor: '#ffffff',
                         borderColor: '#f5c2cb',
-                        borderLeft: '4px solid #800020',
-                    }}
+                        borderLeft: '4px solid #800020' }}
                 >
                     <Group justify="space-between" align="flex-start" mb="md">
                         <div>
@@ -418,8 +390,7 @@ export const DriversPage: React.FC = () => {
                                                             color: d.IsActive ? '#800020' : '#dc2626',
                                                             backgroundColor: 'transparent',
                                                             fontWeight: 600,
-                                                            letterSpacing: '0.4px',
-                                                        }}
+                                                            letterSpacing: '0.4px' }}
                                                     >
                                                         {d.IsActive ? 'ACTIVE' : 'INACTIVE'}
                                                     </Badge>
@@ -449,8 +420,7 @@ export const DriversPage: React.FC = () => {
                                                                     disabled={!!d.delete_block_reason}
                                                                     style={{
                                                                         cursor: d.delete_block_reason ? 'not-allowed' : 'pointer',
-                                                                        opacity: d.delete_block_reason ? 0.35 : 1,
-                                                                    }}
+                                                                        opacity: d.delete_block_reason ? 0.35 : 1 }}
                                                                     onClick={() => {
                                                                         if (!d.delete_block_reason) {
                                                                             setDeleteTarget({ id: d.DriverId, name: d.DriverName });

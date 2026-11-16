@@ -58,10 +58,25 @@ body,
   white-space: nowrap !important;
 }
 
-/* Ensure SegmentedControl active option with dark burgundy indicator always has crisp white text */
+/* Ensure SegmentedControl with dark burgundy indicator always has crisp white text and burgundy indicator */
+.mantine-SegmentedControl-indicator,
+.mantine-FloatingIndicator-root {
+  background-color: #800020 !important;
+  box-shadow: 0 1px 3px rgba(128, 0, 32, 0.3) !important;
+}
+
+.mantine-SegmentedControl-control[data-active] .mantine-SegmentedControl-label,
 .mantine-SegmentedControl-label[data-active],
 .mantine-SegmentedControl-label[data-active] * {
   color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+.mantine-SegmentedControl-control:not([data-active]) .mantine-SegmentedControl-label,
+.mantine-SegmentedControl-label:not([data-active]),
+.mantine-SegmentedControl-label:not([data-active]) * {
+  color: #475569 !important;
+  font-weight: 600 !important;
 }
 
 .mantine-ScrollArea-thumb {

@@ -17,10 +17,9 @@ import {
   ActionIcon,
   Box,
   Transition,
-  Tooltip,
-} from '@mantine/core';
-import { IconPencil, IconTrash, IconSearch, IconArrowLeft } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+  Tooltip } from '@mantine/core';
+import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
+import { } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -45,21 +44,20 @@ interface RouteFormValues {
 }
 
 export const RoutesPage: React.FC = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [formOpened, setFormOpened] = useState(false);
   const [editingRoute, setEditingRoute] = useState<RouteItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 1. Fetch routes list
+  // 1. Fetch routes list (excluding internal godowns)
   const { data: routes = [], isLoading } = useQuery<RouteItem[]>({
     queryKey: ['routes'],
     queryFn: async () => {
       const res = await apiClient.get<any>('/routes/');
-      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+      const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+      return list.filter((r: any) => !r.RouteName?.toLowerCase().includes('godown'));
+    } });
 
   // Client-side search filter
   const filteredRoutes = useMemo(() => {
@@ -78,15 +76,12 @@ export const RoutesPage: React.FC = () => {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
-  } = useForm<RouteFormValues>({
+    formState: { errors, isSubmitting } } = useForm<RouteFormValues>({
     defaultValues: {
       RouteName: '',
       StartLocation: '',
       EndLocation: '',
-      Description: '',
-    },
-  });
+      Description: '' } });
 
   // 3. Mutation to create or edit route
   const saveMutation = useMutation({
@@ -96,8 +91,7 @@ export const RoutesPage: React.FC = () => {
         StartLocation: data.StartLocation?.trim() || null,
         EndLocation: data.EndLocation?.trim() || null,
         Description: data.Description?.trim() || null,
-        IsActive: true,
-      };
+        IsActive: true };
 
       if (editingRoute) {
         return apiClient.patch(`/routes/${editingRoute.RouteId}/`, payload);
@@ -108,8 +102,7 @@ export const RoutesPage: React.FC = () => {
       notifications.show({
         title: 'Success',
         message: editingRoute ? 'Route updated successfully.' : 'Route added successfully.',
-        color: 'green',
-      });
+        color: 'green' });
       queryClient.invalidateQueries({ queryKey: ['routes'] });
       reset();
       setEditingRoute(null);
@@ -120,10 +113,8 @@ export const RoutesPage: React.FC = () => {
       notifications.show({
         title: 'Error',
         message: msg,
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   const onSubmit = (values: RouteFormValues) => {
     saveMutation.mutate(values);
@@ -138,8 +129,7 @@ export const RoutesPage: React.FC = () => {
       notifications.show({
         title: 'Deleted',
         message: 'Route deleted successfully.',
-        color: 'green',
-      });
+        color: 'green' });
       queryClient.invalidateQueries({ queryKey: ['routes'] });
     },
     onError: (err: any) => {
@@ -147,16 +137,13 @@ export const RoutesPage: React.FC = () => {
       notifications.show({
         title: 'Cannot Delete',
         message: msg,
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   const confirmDelete = () => {
     if (deleteTarget) {
       deleteMutation.mutate(deleteTarget.id, {
-        onSettled: () => setDeleteTarget(null),
-      });
+        onSettled: () => setDeleteTarget(null) });
     }
   };
 
@@ -167,8 +154,7 @@ export const RoutesPage: React.FC = () => {
       RouteName: route.RouteName || '',
       StartLocation: route.StartLocation || '',
       EndLocation: route.EndLocation || '',
-      Description: route.Description || '',
-    });
+      Description: route.Description || '' });
     setFormOpened(true);
   };
 
@@ -183,8 +169,7 @@ export const RoutesPage: React.FC = () => {
       RouteName: '',
       StartLocation: '',
       EndLocation: '',
-      Description: '',
-    });
+      Description: '' });
     setFormOpened(true);
   };
 
@@ -193,20 +178,8 @@ export const RoutesPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
-            Routes
+            Routes/Stock Allocation
           </Title>
           <Text size="sm" c="dimmed">
             Manage distribution and delivery routes for your company.
@@ -260,8 +233,7 @@ export const RoutesPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#f5c2cb',
-            borderLeft: '4px solid #800020',
-          }}
+            borderLeft: '4px solid #800020' }}
         >
           <Group justify="space-between" align="flex-start" mb="md">
             <div>
@@ -390,8 +362,7 @@ export const RoutesPage: React.FC = () => {
                             color: r.IsActive ? '#800020' : '#dc2626',
                             backgroundColor: 'transparent',
                             fontWeight: 600,
-                            letterSpacing: '0.4px',
-                          }}
+                            letterSpacing: '0.4px' }}
                         >
                           {r.IsActive ? 'ACTIVE' : 'INACTIVE'}
                         </Badge>
@@ -420,8 +391,7 @@ export const RoutesPage: React.FC = () => {
                                 disabled={!!r.delete_block_reason}
                                 style={{
                                   cursor: r.delete_block_reason ? 'not-allowed' : 'pointer',
-                                  opacity: r.delete_block_reason ? 0.35 : 1,
-                                }}
+                                  opacity: r.delete_block_reason ? 0.35 : 1 }}
                                 onClick={() => {
                                   if (!r.delete_block_reason) {
                                     setDeleteTarget({ id: r.RouteId, name: r.RouteName });

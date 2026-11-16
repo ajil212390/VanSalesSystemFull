@@ -21,18 +21,15 @@ import {
   CloseButton,
   Box,
   Loader,
-  Divider,
-} from '@mantine/core';
+  Divider } from '@mantine/core';
 import {
   IconSearch,
   IconBook2,
   IconPencil,
   IconTrash,
   IconChevronDown,
-  IconFileSpreadsheet,
-  IconArrowLeft,
-} from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+  IconFileSpreadsheet } from '@tabler/icons-react';
+import { } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { notifications } from '@mantine/notifications';
@@ -152,11 +149,9 @@ const defaultLedgerValues: LedgerFormValues = {
   BankBranch: '',
   EmptyStockLimit: '',
   IsActive: true,
-  Narration: '',
-};
+  Narration: '' };
 
 export const AccountsPage: React.FC = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
@@ -173,8 +168,7 @@ export const AccountsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/ledgers/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // 2. Fetch Groups for dropdown
   const { data: groups = [] } = useQuery<GroupItem[]>({
@@ -182,8 +176,7 @@ export const AccountsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/groups/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // 3. Fetch States for dropdown
   const { data: states = [] } = useQuery<StateItem[]>({
@@ -191,8 +184,7 @@ export const AccountsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/states/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // Form management
   const {
@@ -202,10 +194,8 @@ export const AccountsPage: React.FC = () => {
     reset,
     setValue,
     watch,
-    formState: { errors, isSubmitting },
-  } = useForm<LedgerFormValues>({
-    defaultValues: defaultLedgerValues,
-  });
+    formState: { errors, isSubmitting } } = useForm<LedgerFormValues>({
+    defaultValues: defaultLedgerValues });
 
   const [showExtraDetails, setShowExtraDetails] = useState(false);
 
@@ -263,9 +253,7 @@ export const AccountsPage: React.FC = () => {
           BillDate: b.BillDate,
           DueDate: b.DueDate || null,
           Amount: safeNum(b.Amount, 0),
-          Narration: String(b.Narration || '').trim(),
-        })),
-      };
+          Narration: String(b.Narration || '').trim() })) };
 
       if (editingLedger) {
         return apiClient.put(`/ledgers/${editingLedger.LedgerId}/`, payload);
@@ -278,8 +266,7 @@ export const AccountsPage: React.FC = () => {
       notifications.show({
         title: 'Success',
         message: editingLedger ? 'Ledger updated successfully.' : 'Ledger created successfully.',
-        color: 'teal',
-      });
+        color: 'teal' });
       handleCloseForm();
     },
     onError: (err: any) => {
@@ -305,10 +292,8 @@ export const AccountsPage: React.FC = () => {
         title: 'Validation Error',
         message: message,
         color: 'red',
-        autoClose: 8000,
-      });
-    },
-  });
+        autoClose: 8000 });
+    } });
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -320,8 +305,7 @@ export const AccountsPage: React.FC = () => {
       notifications.show({
         title: 'Deleted',
         message: 'Ledger deleted successfully.',
-        color: 'teal',
-      });
+        color: 'teal' });
       setLedgerToDelete(null);
     },
     onError: (err: any) => {
@@ -329,11 +313,9 @@ export const AccountsPage: React.FC = () => {
       notifications.show({
         title: 'Error',
         message: String(detail),
-        color: 'red',
-      });
+        color: 'red' });
       setLedgerToDelete(null);
-    },
-  });
+    } });
 
   const onSubmit = (data: LedgerFormValues) => {
     saveMutation.mutate(data);
@@ -369,8 +351,7 @@ export const AccountsPage: React.FC = () => {
     notifications.show({
       title: 'Bills Attached',
       message: `${importedBills.length} opening bill(s) attached to this ledger.`,
-      color: 'teal',
-    });
+      color: 'teal' });
   };
 
   const handleEdit = async (ledger: LedgerItem) => {
@@ -389,8 +370,7 @@ export const AccountsPage: React.FC = () => {
             BillDate: b.BillDate,
             DueDate: b.DueDate || null,
             Amount: Number(b.Amount),
-            Narration: b.Narration || '',
-          }))
+            Narration: b.Narration || '' }))
         );
       }
     } catch {
@@ -425,8 +405,7 @@ export const AccountsPage: React.FC = () => {
       BankBranch: ledger.BankBranch || '',
       EmptyStockLimit: Number(ledger.EmptyStockLimit) !== 0 ? Number(ledger.EmptyStockLimit) : '',
       IsActive: ledger.IsActive,
-      Narration: ledger.Narration || '',
-    });
+      Narration: ledger.Narration || '' });
     setFormOpened(true);
   };
 
@@ -452,15 +431,13 @@ export const AccountsPage: React.FC = () => {
   const groupOptions = useMemo(() => {
     return groups.map((g) => ({
       value: String(g.GroupId),
-      label: `${g.GroupName} (${g.Nature})`,
-    }));
+      label: `${g.GroupName} (${g.Nature})` }));
   }, [groups]);
 
   const stateOptions = useMemo(() => {
     return states.map((s) => ({
       value: String(s.StateId),
-      label: `${s.StateName} (${s.GSTStateCode})`,
-    }));
+      label: `${s.StateName} (${s.GSTStateCode})` }));
   }, [states]);
 
   // Aggregate financial metrics across filtered ledgers
@@ -491,8 +468,7 @@ export const AccountsPage: React.FC = () => {
       netOpening,
       totalDebit,
       totalCredit,
-      totalCurrent,
-    };
+      totalCurrent };
   }, [filteredLedgers]);
 
   return (
@@ -500,18 +476,6 @@ export const AccountsPage: React.FC = () => {
       {/* Page Header matching Products Page */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Accounts
           </Title>
@@ -594,8 +558,7 @@ export const AccountsPage: React.FC = () => {
               backgroundColor: '#ffffff',
               borderColor: '#f5c2cb',
               borderLeft: '4px solid #800020',
-              marginBottom: 20,
-            }}
+              marginBottom: 20 }}
           >
             <Group justify="space-between" align="flex-start" mb="md">
               <div>
@@ -690,8 +653,7 @@ export const AccountsPage: React.FC = () => {
                           fontWeight: 600,
                           padding: '0 4px',
                           height: 20,
-                          color: '#800020',
-                        }}
+                          color: '#800020' }}
                         leftSection={<IconFileSpreadsheet size={13} />}
                         onClick={() => setBillsModalOpened(true)}
                       >
@@ -792,8 +754,7 @@ export const AccountsPage: React.FC = () => {
                         size={14}
                         style={{
                           transition: 'transform 250ms ease',
-                          transform: isDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                        }}
+                          transform: isDetailsExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
                       />
                     }
                     onClick={() => setShowExtraDetails(!showExtraDetails)}
@@ -1142,8 +1103,7 @@ export const AccountsPage: React.FC = () => {
                 style={{
                   backgroundColor: '#ffffff',
                   borderColor: '#e2e8f0',
-                  overflow: 'hidden',
-                }}
+                  overflow: 'hidden' }}
               >
                 {isLoadingLedgers ? (
                   <Center p="xl" style={{ minHeight: 250 }}>
@@ -1210,8 +1170,7 @@ export const AccountsPage: React.FC = () => {
                                 <Text size="sm" fw={600} c="#334155" style={{ fontVariantNumeric: 'tabular-nums' }}>
                                   ₹{Math.abs(Number(ledger.OpeningBalance || 0)).toLocaleString('en-IN', {
                                     minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })}{' '}
+                                    maximumFractionDigits: 2 })}{' '}
                                   <Text component="span" size="xs" c={ledger.OpeningBalanceType === 'CR' ? '#dc2626' : '#0284c7'} fw={600}>
                                     {ledger.OpeningBalanceType || 'DR'}
                                   </Text>
@@ -1224,8 +1183,7 @@ export const AccountsPage: React.FC = () => {
                                   {Number(ledger.DebitBalance || 0) !== 0
                                     ? `₹${Number(ledger.DebitBalance).toLocaleString('en-IN', {
                                         minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      })}`
+                                        maximumFractionDigits: 2 })}`
                                     : '—'}
                                 </Text>
                               </Table.Td>
@@ -1236,8 +1194,7 @@ export const AccountsPage: React.FC = () => {
                                   {Number(ledger.CreditBalance || 0) !== 0
                                     ? `₹${Number(ledger.CreditBalance).toLocaleString('en-IN', {
                                         minimumFractionDigits: 2,
-                                        maximumFractionDigits: 2,
-                                      })}`
+                                        maximumFractionDigits: 2 })}`
                                     : '—'}
                                 </Text>
                               </Table.Td>
@@ -1252,8 +1209,7 @@ export const AccountsPage: React.FC = () => {
                                 >
                                   ₹{Math.abs(currVal).toLocaleString('en-IN', {
                                     minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })}{' '}
+                                    maximumFractionDigits: 2 })}{' '}
                                   {!isZero && (
                                     <Text component="span" size="xs" c={isDr ? '#0284c7' : '#dc2626'} fw={700}>
                                       {isDr ? 'Dr' : 'Cr'}
@@ -1291,8 +1247,7 @@ export const AccountsPage: React.FC = () => {
                                     fontWeight: 600,
                                     letterSpacing: '0.4px',
                                     whiteSpace: 'nowrap',
-                                    overflow: 'visible',
-                                  }}
+                                    overflow: 'visible' }}
                                 >
                                   {ledger.IsActive ? 'ACTIVE' : 'INACTIVE'}
                                 </Badge>

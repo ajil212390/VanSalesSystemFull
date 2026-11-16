@@ -17,10 +17,9 @@ import {
     ActionIcon,
     Box,
     Transition,
-    Tooltip,
-} from '@mantine/core';
+    Tooltip } from '@mantine/core';
 import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+import { } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -49,21 +48,20 @@ interface VehicleFormValues {
 }
 
 export const VehiclesPage: React.FC = () => {
-    const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [formOpened, setFormOpened] = useState(false);
     const [editingVehicle, setEditingVehicle] = useState<VehicleItem | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<{ id: number; number: string } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
 
-    // 1. Fetch vehicles list
+    // 1. Fetch vehicles list (excluding internal godown storage)
     const { data: vehicles = [], isLoading } = useQuery<VehicleItem[]>({
         queryKey: ['vehicles'],
         queryFn: async () => {
             const res = await apiClient.get<any>('/vehicles/');
-            return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        },
-    });
+            const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+            return list.filter((v: any) => !v.VehicleNumber?.toLowerCase().includes('godown') && !v.VehicleName?.toLowerCase().includes('godown'));
+        } });
 
     // Client-side search filter
     const filteredVehicles = useMemo(() => {
@@ -80,17 +78,14 @@ export const VehiclesPage: React.FC = () => {
         register,
         handleSubmit,
         reset,
-        formState: { errors, isSubmitting },
-    } = useForm<VehicleFormValues>({
+        formState: { errors, isSubmitting } } = useForm<VehicleFormValues>({
         defaultValues: {
             VehicleNumber: '',
             VehicleName: '',
             RcExpiryDate: '',
             InsuranceExpiryDate: '',
             FitnessExpiryDate: '',
-            PollutionExpiryDate: '',
-        },
-    });
+            PollutionExpiryDate: '' } });
 
     // 3. Mutation to create or edit vehicle
     const saveMutation = useMutation({
@@ -102,8 +97,7 @@ export const VehiclesPage: React.FC = () => {
                 InsuranceExpiryDate: data.InsuranceExpiryDate || null,
                 FitnessExpiryDate: data.FitnessExpiryDate || null,
                 PollutionExpiryDate: data.PollutionExpiryDate || null,
-                IsActive: true,
-            };
+                IsActive: true };
 
             if (editingVehicle) {
                 return apiClient.patch(`/vehicles/${editingVehicle.VehicleId}/`, payload);
@@ -114,8 +108,7 @@ export const VehiclesPage: React.FC = () => {
             notifications.show({
                 title: 'Success',
                 message: editingVehicle ? 'Vehicle updated successfully.' : 'Vehicle added successfully.',
-                color: 'green',
-            });
+                color: 'green' });
             queryClient.invalidateQueries({ queryKey: ['vehicles'] });
             reset();
             setEditingVehicle(null);
@@ -126,10 +119,8 @@ export const VehiclesPage: React.FC = () => {
             notifications.show({
                 title: 'Error',
                 message: msg,
-                color: 'red',
-            });
-        },
-    });
+                color: 'red' });
+        } });
 
     const onSubmit = (values: VehicleFormValues) => {
         saveMutation.mutate(values);
@@ -144,8 +135,7 @@ export const VehiclesPage: React.FC = () => {
             notifications.show({
                 title: 'Deleted',
                 message: 'Vehicle deleted successfully.',
-                color: 'green',
-            });
+                color: 'green' });
             queryClient.invalidateQueries({ queryKey: ['vehicles'] });
         },
         onError: (err: any) => {
@@ -153,16 +143,13 @@ export const VehiclesPage: React.FC = () => {
             notifications.show({
                 title: 'Cannot Delete',
                 message: msg,
-                color: 'red',
-            });
-        },
-    });
+                color: 'red' });
+        } });
 
     const confirmDelete = () => {
         if (deleteTarget) {
             deleteMutation.mutate(deleteTarget.id, {
-                onSettled: () => setDeleteTarget(null),
-            });
+                onSettled: () => setDeleteTarget(null) });
         }
     };
 
@@ -175,8 +162,7 @@ export const VehiclesPage: React.FC = () => {
             RcExpiryDate: vehicle.RcExpiryDate || '',
             InsuranceExpiryDate: vehicle.InsuranceExpiryDate || '',
             FitnessExpiryDate: vehicle.FitnessExpiryDate || '',
-            PollutionExpiryDate: vehicle.PollutionExpiryDate || '',
-        });
+            PollutionExpiryDate: vehicle.PollutionExpiryDate || '' });
         setFormOpened(true);
     };
 
@@ -193,8 +179,7 @@ export const VehiclesPage: React.FC = () => {
             RcExpiryDate: '',
             InsuranceExpiryDate: '',
             FitnessExpiryDate: '',
-            PollutionExpiryDate: '',
-        });
+            PollutionExpiryDate: '' });
         setFormOpened(true);
     };
 
@@ -204,7 +189,7 @@ export const VehiclesPage: React.FC = () => {
             <Group justify="space-between" align="center" wrap="wrap" gap="md">
                 <div>
                     <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
-                        Vehicles
+                        Vehicles/Stock Location
                     </Title>
                     <Text size="sm" c="dimmed">
                         Manage your company's delivery vehicles and compliance renewal dates.
@@ -258,8 +243,7 @@ export const VehiclesPage: React.FC = () => {
                     style={{
                         backgroundColor: '#ffffff',
                         borderColor: '#f5c2cb',
-                        borderLeft: '4px solid #800020',
-                    }}
+                        borderLeft: '4px solid #800020' }}
                 >
                     <Group justify="space-between" align="flex-start" mb="md">
                         <div>
@@ -406,8 +390,7 @@ export const VehiclesPage: React.FC = () => {
                                                         color: v.IsActive ? '#800020' : '#dc2626',
                                                         backgroundColor: 'transparent',
                                                         fontWeight: 600,
-                                                        letterSpacing: '0.4px',
-                                                    }}
+                                                        letterSpacing: '0.4px' }}
                                                 >
                                                     {v.IsActive ? 'ACTIVE' : 'INACTIVE'}
                                                 </Badge>
@@ -436,8 +419,7 @@ export const VehiclesPage: React.FC = () => {
                                                                 disabled={!!v.delete_block_reason}
                                                                 style={{
                                                                     cursor: v.delete_block_reason ? 'not-allowed' : 'pointer',
-                                                                    opacity: v.delete_block_reason ? 0.35 : 1,
-                                                                }}
+                                                                    opacity: v.delete_block_reason ? 0.35 : 1 }}
                                                                 onClick={() => {
                                                                     if (!v.delete_block_reason) {
                                                                         setDeleteTarget({ id: v.VehicleId, number: v.VehicleNumber });

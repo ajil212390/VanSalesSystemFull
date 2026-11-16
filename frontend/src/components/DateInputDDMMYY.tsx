@@ -13,11 +13,17 @@ export const formatDateDDMMYY = (val: string | null | undefined): string => {
 };
 
 interface DateInputDDMMYYProps {
-  label?: string;
+  label?: React.ReactNode;
   value: string; // ISO string 'YYYY-MM-DD'
   onChange: (isoDate: string) => void;
   style?: React.CSSProperties;
   placeholder?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  radius?: any;
+  required?: boolean;
+  styles?: any;
+  error?: React.ReactNode;
+  disabled?: boolean;
 }
 
 export const DateInputDDMMYY: React.FC<DateInputDDMMYYProps> = ({
@@ -26,6 +32,12 @@ export const DateInputDDMMYY: React.FC<DateInputDDMMYYProps> = ({
   onChange,
   style,
   placeholder = 'dd/mm/yyyy',
+  size = 'sm',
+  radius,
+  required,
+  styles,
+  error,
+  disabled,
 }) => {
   const hiddenInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,12 +58,15 @@ export const DateInputDDMMYY: React.FC<DateInputDDMMYYProps> = ({
   const handleTextChange = (raw: string) => {
     setText(raw);
     const clean = raw.trim();
-    // Match DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-    const match = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    // Match DD/MM/YYYY or DD/MM/YY or DD-MM-YYYY or DD-MM-YY or DD.MM.YYYY or DD.MM.YY
+    const match = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/);
     if (match) {
       const dd = match[1].padStart(2, '0');
       const mm = match[2].padStart(2, '0');
-      const yyyy = match[3];
+      let yyyy = match[3];
+      if (yyyy.length === 2) {
+        yyyy = `20${yyyy}`;
+      }
       onChange(`${yyyy}-${mm}-${dd}`);
     } else if (!clean) {
       onChange('');
@@ -71,7 +86,12 @@ export const DateInputDDMMYY: React.FC<DateInputDDMMYYProps> = ({
   return (
     <Box style={{ position: 'relative', ...style }}>
       <TextInput
-        size="sm"
+        size={size}
+        radius={radius}
+        required={required}
+        styles={styles}
+        error={error}
+        disabled={disabled}
         label={label}
         placeholder={placeholder}
         value={text}
@@ -83,6 +103,7 @@ export const DateInputDDMMYY: React.FC<DateInputDDMMYYProps> = ({
             color="gray"
             onClick={handleOpenPicker}
             title="Choose Date"
+            disabled={disabled}
           >
             <IconCalendar size={14} />
           </ActionIcon>
@@ -93,6 +114,7 @@ export const DateInputDDMMYY: React.FC<DateInputDDMMYYProps> = ({
         ref={hiddenInputRef}
         type="date"
         value={value || ''}
+        disabled={disabled}
         onChange={(e) => {
           onChange(e.target.value);
         }}

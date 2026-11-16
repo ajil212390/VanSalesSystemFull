@@ -241,19 +241,10 @@ export const ConnectionSaleFormPage: React.FC = () => {
                 color="gray"
                 size="compact-sm"
                 leftSection={<IconArrowLeft size={16} />}
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/sales')}
                 style={{ paddingLeft: 0 }}
               >
-                Back to Dashboard
-              </Button>
-              <Text size="xs" c="dimmed">•</Text>
-              <Button
-                variant="subtle"
-                color="gray"
-                size="compact-sm"
-                onClick={() => navigate('/sales')}
-              >
-                Sales
+                Sales & Invoices
               </Button>
             </Group>
             <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>

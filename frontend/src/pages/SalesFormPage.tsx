@@ -18,6 +18,7 @@ import {
   Box,
   Badge,
   Modal,
+  Switch,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -29,7 +30,7 @@ import {
   IconCheck,
   IconCash,
 } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
@@ -45,16 +46,21 @@ interface SaleLineItem {
 
 export const SalesFormPage: React.FC = () => {
   const navigate = useNavigate();
+  const { id } = useParams<{ id?: string }>();
+  const isEditing = Boolean(id);
   const queryClient = useQueryClient();
 
   const [salesDate, setSalesDate] = useState<string>(
     new Date().toISOString().split('T')[0]
   );
+  const [invoiceNo, setInvoiceNo] = useState<string>('');
   const [routeId, setRouteId] = useState<string>('');
   const [godownId, setGodownId] = useState<string>('1');
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [selectedConnectionPackage, setSelectedConnectionPackage] = useState<string | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<string>('CASH');
+  const [splitCashAmount, setSplitCashAmount] = useState<number | ''>('');
+  const [splitUpiAmount, setSplitUpiAmount] = useState<number | ''>('');
   const [amountPaidNow, setAmountPaidNow] = useState<number | ''>('');
   const [isPaidUserEdited, setIsPaidUserEdited] = useState<boolean>(false);
   const [notes, setNotes] = useState<string>('');
@@ -64,6 +70,52 @@ export const SalesFormPage: React.FC = () => {
   // Post-sale completion modal state
   const [completionModalOpened, setCompletionModalOpened] = useState(false);
   const [createdSaleData, setCreatedSaleData] = useState<any | null>(null);
+
+  // 0. Fetch Sale Data if editing
+  const { data: existingSale } = useQuery<any>({
+    queryKey: ['sale', id],
+    queryFn: async () => {
+      const res = await apiClient.get(`/sales/${id}/`);
+      return res.data;
+    },
+    enabled: isEditing,
+  });
+
+  useEffect(() => {
+    if (existingSale) {
+      if (existingSale.SalesDate) setSalesDate(existingSale.SalesDate.split('T')[0]);
+      if (existingSale.InvoiceNo || existingSale.SalesNo) setInvoiceNo(existingSale.InvoiceNo || existingSale.SalesNo);
+      if (existingSale.CustomerLedger) setCustomerId(String(existingSale.CustomerLedger));
+      if (existingSale.RouteVehicleDriver) setRouteId(String(existingSale.RouteVehicleDriver));
+      if (existingSale.Notes) setNotes(existingSale.Notes);
+      if (existingSale.PaymentMethod) {
+        setPaymentMethod(existingSale.PaymentMethod.toUpperCase());
+      }
+      if (existingSale.PaymentMethod?.toUpperCase() === 'SPLIT') {
+        const cVal = Number(existingSale.cash_amount || 0);
+        const uVal = Number(existingSale.upi_amount || 0);
+        setSplitCashAmount(cVal > 0 ? cVal : '');
+        setSplitUpiAmount(uVal > 0 ? uVal : '');
+      }
+      if (existingSale.PaidAmount !== undefined && existingSale.PaidAmount !== null) {
+        setAmountPaidNow(Number(existingSale.PaidAmount));
+        setIsPaidUserEdited(true);
+      }
+      if (existingSale.TotalEmptyQty) setTotalEmptyQty(Number(existingSale.TotalEmptyQty));
+      if (Array.isArray(existingSale.lines) && existingSale.lines.length > 0) {
+        setLines(
+          existingSale.lines.map((l: any) => ({
+            Product: String(l.Product || l.ProductId || ''),
+            Quantity: Number(l.Quantity || 1),
+            EmptyQuantity: Number(l.EmptyQuantity || 0),
+            SalesPrice: Number(l.SalesPrice || 0),
+            TaxPercent: Number(l.TaxPercent || 0),
+            Total: Number(l.Total || (Number(l.Quantity || 1) * Number(l.SalesPrice || 0))),
+          }))
+        );
+      }
+    }
+  }, [existingSale]);
 
   // 1. Fetch Routes (to select Point of Sale, defaults to Office Sale Point)
   const { data: routes = [] } = useQuery<any[]>({
@@ -415,21 +467,67 @@ export const SalesFormPage: React.FC = () => {
   });
 
   const availableAdvance = Number(customerAdvanceData?.available_advance || 0);
-  const finalGrandTotal = customGrandTotal !== '' ? Number(customGrandTotal) : autoGrandTotal;
-
-  const paidVal = Number(amountPaidNow !== '' ? amountPaidNow : (paymentMethod === 'CREDIT' ? 0 : finalGrandTotal));
-  const balanceDue = Math.max(0, finalGrandTotal - paidVal);
+  const [applyAdvance, setApplyAdvance] = useState(false);
 
   useEffect(() => {
-    // Auto-sync amountPaidNow to finalGrandTotal if CASH and user hasn't manually edited
+    if (availableAdvance > 0) {
+      setApplyAdvance(true);
+    } else {
+      setApplyAdvance(false);
+    }
+  }, [availableAdvance, customerId]);
+
+  const finalGrandTotal = customGrandTotal !== '' ? Number(customGrandTotal) : autoGrandTotal;
+  const advanceAdjustAmount = applyAdvance ? Math.min(availableAdvance, finalGrandTotal) : 0;
+  const netAfterAdvance = Math.max(0, finalGrandTotal - advanceAdjustAmount);
+
+  const paidVal = Number(amountPaidNow !== '' ? amountPaidNow : (paymentMethod === 'CREDIT' ? 0 : netAfterAdvance));
+  const balanceDue = Math.max(0, finalGrandTotal - paidVal - advanceAdjustAmount);
+
+  useEffect(() => {
+    // Auto-sync amountPaidNow to net remaining amount if CASH/UPI, user hasn't manually edited
     if (!isPaidUserEdited) {
-      if (paymentMethod !== 'CREDIT') {
-        setAmountPaidNow(finalGrandTotal > 0 ? finalGrandTotal : '');
-      } else {
+      if (paymentMethod === 'CREDIT') {
         setAmountPaidNow(0);
+      } else {
+        setAmountPaidNow(netAfterAdvance > 0 ? netAfterAdvance : 0);
       }
     }
-  }, [finalGrandTotal, paymentMethod, isPaidUserEdited]);
+  }, [netAfterAdvance, paymentMethod, isPaidUserEdited]);
+
+  // Mutation: Apply Advance against Invoice
+  const applyAdvanceMutation = useMutation({
+    mutationFn: async (salesId: number) => {
+      const res = await apiClient.post(`/sales/${salesId}/apply-advance/`);
+      return res.data;
+    },
+    onSuccess: (data: any) => {
+      notifications.show({
+        title: 'Advance Applied',
+        message: data.message || 'Customer advance applied successfully.',
+        color: 'green',
+      });
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-advance', customerId] });
+      if (createdSaleData) {
+        setCreatedSaleData({
+          ...createdSaleData,
+          PaidAmount: data.paid_amount,
+        });
+      }
+    },
+    onError: (err: any) => {
+      const msg = err.response?.data?.message || err.response?.data?.error || 'Failed to apply advance.';
+      notifications.show({
+        title: 'Error',
+        message: msg,
+        color: 'red',
+      });
+    },
+  });
 
   // Mutation: Create Sale
   const createSaleMutation = useMutation({
@@ -463,6 +561,37 @@ export const SalesFormPage: React.FC = () => {
     },
   });
 
+  // Mutation: Update Sale
+  const updateSaleMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await apiClient.put(`/sales/${id}/`, payload);
+      return res.data;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['godowns'] });
+      queryClient.invalidateQueries({ queryKey: ['van-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-advance', customerId] });
+      queryClient.invalidateQueries({ queryKey: ['sale', id] });
+      notifications.show({
+        title: 'Sale Invoice Updated',
+        message: `Invoice #${data.InvoiceNo || data.SalesNo} updated successfully.`,
+        color: 'teal',
+      });
+      navigate('/sales');
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Error Updating Sale',
+        message: err.response?.data?.detail || err.response?.data?.message || err.message || 'Could not update sale invoice.',
+        color: 'red',
+      });
+    },
+  });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (lines.length === 0 || !lines[0].Product) {
@@ -470,7 +599,12 @@ export const SalesFormPage: React.FC = () => {
       return;
     }
 
-    const paidNowAmount = amountPaidNow !== '' ? Number(amountPaidNow) : (paymentMethod === 'CREDIT' ? 0 : finalGrandTotal);
+    const cashVal = Number(splitCashAmount || 0);
+    const upiVal = Number(splitUpiAmount || 0);
+    const splitTotal = cashVal + upiVal;
+    const paidNowAmount = paymentMethod === 'SPLIT'
+      ? (splitTotal > 0 ? splitTotal : netAfterAdvance)
+      : (amountPaidNow !== '' ? Number(amountPaidNow) : (paymentMethod === 'CREDIT' ? 0 : netAfterAdvance));
 
     const payload = {
       SalesDate: salesDate,
@@ -478,9 +612,11 @@ export const SalesFormPage: React.FC = () => {
       godown_id: Number(godownId) || 1,
       CustomerLedger: customerId ? Number(customerId) : null,
       PaymentMethod: paymentMethod,
-      advance_to_adjust: 0,
+      cash_amount: paymentMethod === 'SPLIT' ? cashVal : undefined,
+      upi_amount: paymentMethod === 'SPLIT' ? upiVal : undefined,
+      advance_to_adjust: advanceAdjustAmount,
       PaidNow: paidNowAmount,
-      PaidAmount: paidNowAmount,
+      PaidAmount: paidNowAmount + advanceAdjustAmount,
       Notes: notes.trim(),
       TotalEmptyQty: totalEmptyQty,
       GrandTotal: finalGrandTotal,
@@ -496,7 +632,11 @@ export const SalesFormPage: React.FC = () => {
         })),
     };
 
-    createSaleMutation.mutate(payload);
+    if (isEditing) {
+      updateSaleMutation.mutate(payload);
+    } else {
+      createSaleMutation.mutate(payload);
+    }
   };
 
   return (
@@ -511,26 +651,19 @@ export const SalesFormPage: React.FC = () => {
                 color="gray"
                 size="compact-sm"
                 leftSection={<IconArrowLeft size={16} />}
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/sales')}
                 style={{ paddingLeft: 0 }}
               >
-                Back to Dashboard
-              </Button>
-              <Text size="xs" c="dimmed">•</Text>
-              <Button
-                variant="subtle"
-                color="gray"
-                size="compact-sm"
-                onClick={() => navigate('/sales')}
-              >
-                Sales
+                Sales & Invoices
               </Button>
             </Group>
             <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
-              New Sale Invoice
+              {isEditing ? `Edit Sale Invoice — ${invoiceNo || `#${id}`}` : 'New Sale Invoice'}
             </Title>
             <Text size="xs" c="dimmed" mt={2}>
-              Generate direct office sale or route vehicle invoice with official GST calculation
+              {isEditing
+                ? 'Modify customer, line items, rates, taxes, and payment settlements'
+                : 'Generate direct office sale or route vehicle invoice with official GST calculation'}
             </Text>
           </div>
         </Group>
@@ -593,29 +726,82 @@ export const SalesFormPage: React.FC = () => {
                 data={[
                   { value: 'CASH', label: 'Cash Payment' },
                   { value: 'UPI', label: 'UPI / Bank Transfer' },
+                  { value: 'SPLIT', label: 'Split Payment (Cash + UPI)' },
+                  { value: 'CREDIT', label: 'Credit (Unpaid / On Account)' },
                 ]}
                 value={paymentMethod}
                 onChange={(val) => {
                   if (val) {
                     setPaymentMethod(val);
+                    if (val === 'SPLIT' && netAfterAdvance > 0) {
+                      const half = Math.round(netAfterAdvance / 2);
+                      setSplitCashAmount(half);
+                      setSplitUpiAmount(netAfterAdvance - half);
+                    }
                   }
                 }}
                 required
               />
             </SimpleGrid>
 
+            {paymentMethod === 'SPLIT' && (
+              <SimpleGrid cols={{ base: 1, sm: 2 }} mt="sm" p="sm" style={{ backgroundColor: '#fdf2f4', borderRadius: 8, border: '1px solid #f5c2cb' }}>
+                <NumberInput
+                  label="Split Cash Portion (₹)"
+                  placeholder="0.00"
+                  min={0}
+                  decimalScale={2}
+                  value={splitCashAmount}
+                  onChange={(val) => {
+                    const num = typeof val === 'number' ? val : 0;
+                    setSplitCashAmount(val as any);
+                    if (netAfterAdvance > 0) {
+                      setSplitUpiAmount(Math.max(0, netAfterAdvance - num));
+                    }
+                  }}
+                  required
+                />
+                <NumberInput
+                  label="Split UPI / Bank Portion (₹)"
+                  placeholder="0.00"
+                  min={0}
+                  decimalScale={2}
+                  value={splitUpiAmount}
+                  onChange={(val) => {
+                    const num = typeof val === 'number' ? val : 0;
+                    setSplitUpiAmount(val as any);
+                    if (netAfterAdvance > 0) {
+                      setSplitCashAmount(Math.max(0, netAfterAdvance - num));
+                    }
+                  }}
+                  required
+                />
+              </SimpleGrid>
+            )}
+
             {availableAdvance > 0 && (
-              <Paper p="xs" px="sm" radius="sm" withBorder mt="sm" style={{ backgroundColor: '#fdf8f9', borderColor: '#f2ccd3' }}>
+              <Paper p="sm" px="md" radius="sm" withBorder mt="sm" style={{ backgroundColor: '#fdf8f9', borderColor: '#f2ccd3' }}>
                 <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-                  <Group gap="xs">
-                    <Badge color="burgundy" variant="light" size="sm">Available Advance</Badge>
-                    <Text size="xs" fw={700} c="#800020">
-                      Customer has ₹{availableAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} unallocated advance balance.
+                  <div>
+                    <Group gap="xs">
+                      <Badge color="burgundy" variant="light" size="sm">Available Advance: ₹{availableAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Badge>
+                      <Text size="xs" fw={700} c="#800020">
+                        {applyAdvance
+                          ? `₹${advanceAdjustAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })} will be adjusted against this bill`
+                          : 'Customer has unallocated advance balance.'}
+                      </Text>
+                    </Group>
+                    <Text size="xs" c="dimmed" mt={2}>
+                      Standard ERP adjustment: Links directly to this bill without editing past bank entries.
                     </Text>
-                  </Group>
-                  <Text size="xs" c="dimmed">
-                    Advance can be adjusted against bills in Receipt Entry / Bill Allocation.
-                  </Text>
+                  </div>
+                  <Switch
+                    label="Apply Advance to Bill"
+                    checked={applyAdvance}
+                    onChange={(event) => setApplyAdvance(event.currentTarget.checked)}
+                    color="burgundy"
+                    size="sm"
+                  />
                 </Group>
               </Paper>
             )}
@@ -933,11 +1119,11 @@ export const SalesFormPage: React.FC = () => {
                   </Button>
                   <Button
                     type="submit"
-                    loading={createSaleMutation.isPending}
+                    loading={createSaleMutation.isPending || updateSaleMutation.isPending}
                     leftSection={<IconReceipt2 size={16} />}
                     style={{ backgroundColor: '#800020', fontWeight: 700 }}
                   >
-                    Save &amp; Generate Invoice
+                    {isEditing ? 'Save Changes & Update Invoice' : 'Save & Generate Invoice'}
                   </Button>
                 </Group>
               </Stack>
@@ -1020,30 +1206,53 @@ export const SalesFormPage: React.FC = () => {
           </Text>
 
           <Stack gap="xs">
+            {/* If bill has balance due and customer has available advance, offer 1-click Apply Advance */}
+            {Number(createdSaleData?.GrandTotal || finalGrandTotal) > Number(createdSaleData?.PaidAmount || 0) && availableAdvance > 0 && (
+              <Button
+                variant="filled"
+                fullWidth
+                color="burgundy"
+                leftSection={<IconCheck size={16} />}
+                loading={applyAdvanceMutation.isPending}
+                styles={{ root: { backgroundColor: '#800020', fontWeight: 700, height: 42 } }}
+                onClick={() => {
+                  if (createdSaleData?.SalesId) {
+                    applyAdvanceMutation.mutate(createdSaleData.SalesId);
+                  }
+                }}
+              >
+                Apply Advance (₹{Math.min(availableAdvance, Number(createdSaleData?.GrandTotal || finalGrandTotal) - Number(createdSaleData?.PaidAmount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
+              </Button>
+            )}
+
             {/* Action 1: Record Receipt Now */}
-            <Button
-              variant="light"
-              color="burgundy"
-              fullWidth
-              leftSection={<IconCash size={16} />}
-              styles={{
-                root: {
-                  backgroundColor: '#fdf2f4',
-                  color: '#800020',
-                  borderColor: '#fce7ec',
-                  fontWeight: 600,
-                  height: 42,
-                },
-              }}
-              onClick={() => {
-                setCompletionModalOpened(false);
-                const custParam = customerId ? `&party_id=${customerId}` : '';
-                const saleParam = createdSaleData?.SalesId ? `&sale_id=${createdSaleData.SalesId}` : '';
-                navigate(`/receipts/new?return_to=sales${custParam}${saleParam}`);
-              }}
-            >
-              Add Receipt Now
-            </Button>
+            {Number(createdSaleData?.GrandTotal || finalGrandTotal) > Number(createdSaleData?.PaidAmount || 0) && (
+              <Button
+                variant="light"
+                color="burgundy"
+                fullWidth
+                leftSection={<IconCash size={16} />}
+                styles={{
+                  root: {
+                    backgroundColor: '#fdf2f4',
+                    color: '#800020',
+                    borderColor: '#fce7ec',
+                    fontWeight: 600,
+                    height: 42,
+                  },
+                }}
+                onClick={() => {
+                  setCompletionModalOpened(false);
+                  const custParam = customerId ? `&party_id=${customerId}` : '';
+                  const saleParam = createdSaleData?.SalesId ? `&sale_id=${createdSaleData.SalesId}` : '';
+                  const bal = Number(createdSaleData?.GrandTotal || finalGrandTotal) - Number(createdSaleData?.PaidAmount || 0);
+                  const amtParam = bal > 0 ? `&amount=${bal}` : '';
+                  navigate(`/receipts/new?return_to=sales${custParam}${saleParam}${amtParam}&auto_open_alloc=true`);
+                }}
+              >
+                Add Cash / Bank Receipt Now
+              </Button>
+            )}
 
             {/* Action 2: View / Print GST Invoice */}
             <Button

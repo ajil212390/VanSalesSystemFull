@@ -12,16 +12,13 @@ import {
   TextInput,
   CloseButton,
   ActionIcon,
-  Badge,
-} from '@mantine/core';
+  Badge } from '@mantine/core';
 import {
   IconPlus,
   IconSearch,
   IconReceipt,
   IconTrash,
-  IconPencil,
-  IconArrowLeft,
-} from '@tabler/icons-react';
+  IconPencil } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -60,8 +57,7 @@ export const PaymentListPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/payments/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
-    },
-  });
+    } });
 
   const filteredPayments = useMemo(() => {
     const paymentsOnly = payments.filter((p) => p.voucher_type !== 'RECEIPT');
@@ -87,26 +83,13 @@ export const PaymentListPage: React.FC = () => {
     },
     onError: () => {
       notifications.show({ title: 'Error', message: 'Failed to delete payment voucher.', color: 'red' });
-    },
-  });
+    } });
 
   return (
     <Stack gap="lg">
       {/* Top Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="sm">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Payments
           </Title>

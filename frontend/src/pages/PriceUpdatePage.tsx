@@ -17,18 +17,14 @@ import {
   Box,
   Tooltip,
   ActionIcon,
-  Alert,
-} from '@mantine/core';
+  Alert } from '@mantine/core';
 import {
   IconSearch,
   IconCylinder,
-  IconCurrencyRupee,
-  IconArrowLeft,
-  IconUser,
+  IconCurrencyRupee, IconUser,
   IconTags,
   IconCheck,
-  IconRefresh,
-} from '@tabler/icons-react';
+  IconRefresh } from '@tabler/icons-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -77,8 +73,7 @@ export const PriceUpdatePage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/products/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // 2. Fetch Categories
   const { data: categories = [] } = useQuery<CategoryOption[]>({
@@ -86,8 +81,7 @@ export const PriceUpdatePage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/categories/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   // 3. Fetch Customers (Sundry Debtors)
   const { data: ledgers = [] } = useQuery<any[]>({
@@ -95,8 +89,7 @@ export const PriceUpdatePage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/ledgers/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
-    },
-  });
+    } });
 
   const customerOptions = useMemo(() => {
     return ledgers
@@ -107,8 +100,7 @@ export const PriceUpdatePage: React.FC = () => {
       })
       .map((l: any) => ({
         value: String(l.LedgerId),
-        label: `${l.LedgerName}${l.MobileNumber ? ` (${l.MobileNumber})` : ''}`,
-      }));
+        label: `${l.LedgerName}${l.MobileNumber ? ` (${l.MobileNumber})` : ''}` }));
   }, [ledgers]);
 
   const selectedCustomerObj = useMemo(() => {
@@ -123,8 +115,7 @@ export const PriceUpdatePage: React.FC = () => {
       const res = await apiClient.get(`/customer-prices/?customer=${selectedCustomerId}`);
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
     },
-    enabled: mode === 'customer' && !!selectedCustomerId,
-  });
+    enabled: mode === 'customer' && !!selectedCustomerId });
 
   // Initialize standard prices draft when products load
   useEffect(() => {
@@ -156,8 +147,7 @@ export const PriceUpdatePage: React.FC = () => {
   const categoryOptions = useMemo(() => {
     return categories.map((c) => ({
       value: String(c.CategoryId),
-      label: c.CategoryName,
-    }));
+      label: c.CategoryName }));
   }, [categories]);
 
   // Filtered Products
@@ -214,8 +204,7 @@ export const PriceUpdatePage: React.FC = () => {
           const val = newPrices[p.ProductId];
           const newPrice = val === '' ? 0 : Number(val);
           return apiClient.patch(`/products/${p.ProductId}/`, {
-            SalesPrice: newPrice,
-          });
+            SalesPrice: newPrice });
         })
       );
     },
@@ -224,8 +213,7 @@ export const PriceUpdatePage: React.FC = () => {
       notifications.show({
         title: 'Prices Updated',
         message: `${modifiedStandardProducts.length} standard catalogue price(s) saved successfully.`,
-        color: 'green',
-      });
+        color: 'green' });
       navigate('/products');
     },
     onError: (err: any) => {
@@ -233,10 +221,8 @@ export const PriceUpdatePage: React.FC = () => {
       notifications.show({
         title: 'Update Error',
         message: String(msg),
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   // Customer Special Prices Bulk Save Mutation
   const saveCustomerMutation = useMutation({
@@ -248,14 +234,12 @@ export const PriceUpdatePage: React.FC = () => {
         const val = custPricesDraft[p.ProductId];
         return {
           product_id: p.ProductId,
-          special_price: val !== undefined && val !== '' ? Number(val) : null,
-        };
+          special_price: val !== undefined && val !== '' ? Number(val) : null };
       });
 
       const res = await apiClient.post('/customer-prices/bulk_update/', {
         customer_id: Number(selectedCustomerId),
-        prices: pricesPayload,
-      });
+        prices: pricesPayload });
       return res.data;
     },
     onSuccess: () => {
@@ -263,18 +247,15 @@ export const PriceUpdatePage: React.FC = () => {
       notifications.show({
         title: 'Special Prices Saved',
         message: `Custom cylinder rates updated for ${selectedCustomerObj?.LedgerName || 'customer'}.`,
-        color: 'green',
-      });
+        color: 'green' });
     },
     onError: (err: any) => {
       const msg = err.response?.data?.detail || err.response?.data?.error || 'Failed to save customer prices.';
       notifications.show({
         title: 'Save Failed',
         message: String(msg),
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   const handleResetStandard = () => {
     const initial: Record<number, number | string> = {};
@@ -304,17 +285,6 @@ export const PriceUpdatePage: React.FC = () => {
               variant="subtle"
               color="gray"
               size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-            <Text size="xs" c="dimmed">•</Text>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
               onClick={() => navigate('/products')}
               styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
             >
@@ -338,8 +308,7 @@ export const PriceUpdatePage: React.FC = () => {
             borderRadius: 9999,
             padding: 4,
             border: '1px solid #e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-          }}
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}
         >
           <Group gap={4}>
             <Button
@@ -350,8 +319,7 @@ export const PriceUpdatePage: React.FC = () => {
               style={{
                 backgroundColor: mode === 'standard' ? '#800020' : 'transparent',
                 color: mode === 'standard' ? '#ffffff' : '#64748b',
-                fontWeight: mode === 'standard' ? 700 : 500,
-              }}
+                fontWeight: mode === 'standard' ? 700 : 500 }}
               onClick={() => setMode('standard')}
             >
               Standard Catalogue
@@ -364,8 +332,7 @@ export const PriceUpdatePage: React.FC = () => {
               style={{
                 backgroundColor: mode === 'customer' ? '#800020' : 'transparent',
                 color: mode === 'customer' ? '#ffffff' : '#64748b',
-                fontWeight: mode === 'customer' ? 700 : 500,
-              }}
+                fontWeight: mode === 'customer' ? 700 : 500 }}
               onClick={() => setMode('customer')}
             >
               Customer-Specific Rates
@@ -511,8 +478,7 @@ export const PriceUpdatePage: React.FC = () => {
                         key={p.ProductId}
                         style={{
                           backgroundColor: isModified ? '#fdf2f4' : hasSpecial ? '#fffcfc' : undefined,
-                          transition: 'background-color 200ms ease',
-                        }}
+                          transition: 'background-color 200ms ease' }}
                       >
                         {/* Product */}
                         <Table.Td>
@@ -563,17 +529,14 @@ export const PriceUpdatePage: React.FC = () => {
                               onChange={(val) => {
                                 setCustPricesDraft((prev) => ({
                                   ...prev,
-                                  [p.ProductId]: val === '' ? '' : val,
-                                }));
+                                  [p.ProductId]: val === '' ? '' : val }));
                               }}
                               styles={{
                                 input: {
                                   fontWeight: 650,
                                   backgroundColor: isModified ? '#fdf2f4' : hasSpecial ? '#fef6f7' : '#ffffff',
                                   borderColor: isModified ? '#800020' : hasSpecial ? '#f5b5c2' : '#cbd5e1',
-                                  color: hasSpecial ? '#800020' : '#0f172a',
-                                },
-                              }}
+                                  color: hasSpecial ? '#800020' : '#0f172a' } }}
                             />
                             {hasSpecial && (
                               <Tooltip label="Reset to Standard Price" withArrow position="top">
@@ -584,8 +547,7 @@ export const PriceUpdatePage: React.FC = () => {
                                   onClick={() => {
                                     setCustPricesDraft((prev) => ({
                                       ...prev,
-                                      [p.ProductId]: '',
-                                    }));
+                                      [p.ProductId]: '' }));
                                   }}
                                 >
                                   <IconRefresh size={14} />
@@ -620,8 +582,7 @@ export const PriceUpdatePage: React.FC = () => {
                       key={p.ProductId}
                       style={{
                         backgroundColor: isModified ? '#fdf2f4' : undefined,
-                        transition: 'background-color 200ms ease',
-                      }}
+                        transition: 'background-color 200ms ease' }}
                     >
                       {/* Product */}
                       <Table.Td>
@@ -669,17 +630,14 @@ export const PriceUpdatePage: React.FC = () => {
                           onChange={(val) => {
                             setNewPrices((prev) => ({
                               ...prev,
-                              [p.ProductId]: val === '' ? '' : val,
-                            }));
+                              [p.ProductId]: val === '' ? '' : val }));
                           }}
                           styles={{
                             input: {
                               fontWeight: 650,
                               backgroundColor: isModified ? '#fdf2f4' : '#ffffff',
                               borderColor: isModified ? '#800020' : '#cbd5e1',
-                              color: '#0f172a',
-                            },
-                          }}
+                              color: '#0f172a' } }}
                         />
                       </Table.Td>
 
@@ -693,8 +651,7 @@ export const PriceUpdatePage: React.FC = () => {
                             color: p.IsActive ? '#800020' : '#dc2626',
                             backgroundColor: 'transparent',
                             fontWeight: 600,
-                            letterSpacing: '0.4px',
-                          }}
+                            letterSpacing: '0.4px' }}
                         >
                           {p.IsActive ? 'ACTIVE' : 'INACTIVE'}
                         </Badge>

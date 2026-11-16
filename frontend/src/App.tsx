@@ -173,6 +173,7 @@ export const App: React.FC = () => {
               <Route path="/connection-packages/:id/edit" element={<ConnectionPackageFormPage />} />
               <Route path="/sales" element={<SalesListPage />} />
               <Route path="/sales/new" element={<SalesFormPage />} />
+              <Route path="/sales/:id/edit" element={<SalesFormPage />} />
               <Route path="/sales/new-connection" element={<ConnectionSaleFormPage />} />
               <Route path="/collections" element={<CollectionsPage />} />
 

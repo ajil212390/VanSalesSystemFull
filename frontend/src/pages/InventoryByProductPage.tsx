@@ -15,18 +15,14 @@ import {
   CloseButton,
   Select,
   Tooltip,
-  ActionIcon,
-} from '@mantine/core';
-import {
-  IconArrowLeft,
-  IconSearch,
+  ActionIcon } from '@mantine/core';
+import { IconSearch,
   IconPackage,
   IconCylinder,
   IconBuildingFactory2,
   IconArrowUpRight,
   IconRefresh,
-  IconLayersLinked,
-} from '@tabler/icons-react';
+  IconLayersLinked } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
@@ -42,15 +38,13 @@ export const InventoryByProductPage: React.FC = () => {
     data: stockAnalysis,
     isLoading,
     refetch,
-    isFetching,
-  } = useQuery<any>({
+    isFetching } = useQuery<any>({
     queryKey: ['stock-analysis'],
     queryFn: async () => {
       const res = await apiClient.get('/delivery-notes/stock-analysis/');
       return res.data;
     },
-    refetchInterval: 5000,
-  });
+    refetchInterval: 5000 });
 
   const products: any[] = useMemo(() => {
     return stockAnalysis?.products || [];
@@ -108,18 +102,6 @@ export const InventoryByProductPage: React.FC = () => {
       {/* 1. Header with Back Button and Quick Actions */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             Inventory by Product
           </Title>
@@ -154,8 +136,7 @@ export const InventoryByProductPage: React.FC = () => {
             style={{
               backgroundColor: '#ffffff',
               borderColor: '#800020',
-              color: '#800020',
-            }}
+              color: '#800020' }}
           >
             Detailed Stock Analysis
           </Button>
@@ -172,8 +153,7 @@ export const InventoryByProductPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -202,8 +182,7 @@ export const InventoryByProductPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -232,8 +211,7 @@ export const InventoryByProductPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -262,8 +240,7 @@ export const InventoryByProductPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-          }}
+            boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -293,8 +270,7 @@ export const InventoryByProductPage: React.FC = () => {
           backgroundColor: '#ffffff',
           borderColor: '#e2e8f0',
           overflow: 'hidden',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
       >
         {/* Table Filter Toolbar */}
         <Group justify="space-between" align="center" p="md" style={{ borderBottom: '1px solid #f1f5f9' }} wrap="wrap" gap="sm">
@@ -333,9 +309,7 @@ export const InventoryByProductPage: React.FC = () => {
               root: {
                 backgroundColor: '#fdf2f4',
                 color: '#800020',
-                fontWeight: 700,
-              },
-            }}
+                fontWeight: 700 } }}
           >
             {filteredProducts.length} of {products.length} Items
           </Badge>
@@ -415,8 +389,7 @@ export const InventoryByProductPage: React.FC = () => {
                             fontWeight: 700,
                             color: '#1e293b',
                             borderColor: '#e2e8f0',
-                            backgroundColor: '#f8fafc',
-                          }}
+                            backgroundColor: '#f8fafc' }}
                         >
                           {p.ProductCode || '—'}
                         </Badge>

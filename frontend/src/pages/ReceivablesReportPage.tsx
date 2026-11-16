@@ -209,9 +209,6 @@ export const ReceivablesReportPage: React.FC = () => {
         (l.allocations || []).forEach((a: any) => {
           const amt = Number(a.AllocatedAmount || 0);
           if (amt > 0) {
-            if (a.ReferenceId) {
-              receiptAllocBySale.set(Number(a.ReferenceId), (receiptAllocBySale.get(Number(a.ReferenceId)) || 0) + amt);
-            }
             if (a.BillReference) {
               const bRef = String(a.BillReference).trim().toUpperCase();
               receiptAllocBySale.set(bRef, (receiptAllocBySale.get(bRef) || 0) + amt);
@@ -232,7 +229,10 @@ export const ReceivablesReportPage: React.FC = () => {
         const cId = Number(s.CustomerLedger);
         if (cId) {
           salesMap.set(cId, (salesMap.get(cId) || 0) + Number(s.GrandTotal || 0));
-          salesPaidMap.set(cId, (salesPaidMap.get(cId) || 0) + Number(s.PaidAmount || 0));
+          const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
+          const rawPaid = Number(s.PaidAmount || 0);
+          const cashPaid = Math.max(0, rawPaid - advAdj);
+          salesPaidMap.set(cId, (salesPaidMap.get(cId) || 0) + cashPaid);
         }
       }
     });
@@ -430,17 +430,14 @@ export const ReceivablesReportPage: React.FC = () => {
     const custReceipts = payments.filter((pm: any) => Number(pm.PartyLedgerId) === selectedCustomer.id);
 
     // Build allocation map for this customer to distinguish counter payments from receipt vouchers
-    const receiptAllocBySale = new Map<string | number, number>();
+    const receiptAllocBySale = new Map<string, number>();
     custReceipts.forEach((r: any) => {
       (r.lines || []).forEach((l: any) => {
         (l.allocations || []).forEach((a: any) => {
           const amt = Number(a.AllocatedAmount || 0);
-          if (amt > 0) {
-            if (a.ReferenceId) {
-              receiptAllocBySale.set(Number(a.ReferenceId), (receiptAllocBySale.get(Number(a.ReferenceId)) || 0) + amt);
-            }
-            if (a.BillReference) {
-              const bRef = String(a.BillReference).trim().toUpperCase();
+          if (amt > 0 && a.BillReference) {
+            const bRef = String(a.BillReference).trim().toUpperCase();
+            if (bRef && bRef !== 'CUSTOMER ADVANCE' && bRef !== 'ADVANCE') {
               receiptAllocBySale.set(bRef, (receiptAllocBySale.get(bRef) || 0) + amt);
             }
           }
@@ -459,7 +456,6 @@ export const ReceivablesReportPage: React.FC = () => {
     // Sales (Debit entries - customer owes money)
     custSales.forEach((s: any) => {
       const dt = String(s.SalesDate || '');
-      const sId = Number(s.SalesId);
       const sRef = String(s.InvoiceNo || s.SalesNo || '').trim().toUpperCase();
       let dueDate = '';
       let isOverdue = false;
@@ -496,7 +492,7 @@ export const ReceivablesReportPage: React.FC = () => {
       });
 
       // Amount paid directly on the sale counter (exclude amounts allocated from separate receipt vouchers and advance adjustments)
-      const allocatedFromReceipt = (receiptAllocBySale.get(sId) || 0) || (receiptAllocBySale.get(sRef) || 0);
+      const allocatedFromReceipt = (receiptAllocBySale.get(sRef) || 0) || (s.InvoiceNo ? (receiptAllocBySale.get(String(s.InvoiceNo).trim().toUpperCase()) || 0) : 0);
       const adjFromAdvance = Number(s.advance_adjusted || 0);
       const counterPaidOnSale = Math.max(0, Number(s.PaidAmount || 0) - allocatedFromReceipt - adjFromAdvance);
 
@@ -974,18 +970,6 @@ export const ReceivablesReportPage: React.FC = () => {
       {/* 1. Header with Back Button and Quick Actions */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             Receivables Report (Sundry Debtors)
           </Title>

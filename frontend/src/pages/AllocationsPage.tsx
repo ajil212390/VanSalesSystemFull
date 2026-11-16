@@ -19,10 +19,9 @@ import {
   ActionIcon,
   Box,
   Transition,
-  Tooltip,
-} from '@mantine/core';
-import { IconPencil, IconTrash, IconAlertCircle, IconSearch, IconArrowLeft } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+  Tooltip } from '@mantine/core';
+import { IconPencil, IconTrash, IconAlertCircle, IconSearch } from '@tabler/icons-react';
+import { } from 'react-router-dom';
 import { useForm, Controller, useWatch  } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -55,25 +54,28 @@ const defaultAllocationValues: AllocationFormValues = {
   Vehicle: '',
   Driver: '',
   AssignmentDate: new Date().toISOString().split('T')[0],
-  Narration: '',
-};
+  Narration: '' };
 
 export const AllocationsPage: React.FC = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [formOpened, setFormOpened] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<AllocationItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 1. Fetch allocations
+  // 1. Fetch allocations (filtered to operational vans & routes)
   const { data: allocations = [], isLoading } = useQuery<AllocationItem[]>({
     queryKey: ['allocations'],
     queryFn: async () => {
       const res = await apiClient.get<any>('/allocations/');
-      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+      const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+      return list.filter((a: any) => {
+        const v = (a.VehicleNumber || '').toLowerCase();
+        const r = (a.RouteName || '').toLowerCase();
+        const d = (a.DriverName || '').toLowerCase();
+        return !v.includes('godown') && !r.includes('godown') && !d.includes('godown');
+      });
+    } });
 
   // Client-side search filter
   const filteredAllocations = useMemo(() => {
@@ -93,31 +95,27 @@ export const AllocationsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/routes/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   const { data: vehicles = [] } = useQuery<any[]>({
     queryKey: ['vehicles'],
     queryFn: async () => {
       const res = await apiClient.get('/vehicles/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   const { data: drivers = [] } = useQuery<any[]>({
     queryKey: ['drivers'],
     queryFn: async () => {
       const res = await apiClient.get('/drivers/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
     const { data: users = [] } = useQuery<any[]>({
     queryKey: ['users'],
     queryFn: async () => {
       const res = await apiClient.get('/users/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   // 3. Form Setup
   const {
@@ -125,10 +123,8 @@ export const AllocationsPage: React.FC = () => {
     register,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
-  } = useForm<AllocationFormValues>({
-    defaultValues: defaultAllocationValues,
-  });
+    formState: { errors, isSubmitting } } = useForm<AllocationFormValues>({
+    defaultValues: defaultAllocationValues });
     // Instantly re-evaluate whenever the selected Driver changes
   const selectedDriverId = useWatch({ control, name: 'Driver' });
 
@@ -173,8 +169,7 @@ export const AllocationsPage: React.FC = () => {
       return {
         value: String(r.RouteId),
         label: isAllocated ? `${r.RouteName} (Already Allocated)` : r.RouteName,
-        disabled: isAllocated,
-      };
+        disabled: isAllocated };
     });
   }, [routes, activeRouteAllocationMap]);
 
@@ -186,8 +181,7 @@ export const AllocationsPage: React.FC = () => {
       return {
         value: String(v.VehicleId),
         label: isAllocated ? `${baseLabel} (Already Allocated)` : baseLabel,
-        disabled: isAllocated,
-      };
+        disabled: isAllocated };
     });
   }, [vehicles, activeVehicleAllocationMap]);
 
@@ -199,8 +193,7 @@ export const AllocationsPage: React.FC = () => {
       return {
         value: String(d.DriverId),
         label: isAllocated ? `${baseLabel} (Already Allocated)` : baseLabel,
-        disabled: isAllocated,
-      };
+        disabled: isAllocated };
     });
   }, [drivers, activeDriverAllocationMap]);
 
@@ -213,8 +206,7 @@ export const AllocationsPage: React.FC = () => {
         Driver: parseInt(data.Driver, 10),
         AssignmentDate: data.AssignmentDate || null,
         Narration: data.Narration?.trim() || null,
-        IsActive: true,
-      };
+        IsActive: true };
 
       if (editingAllocation) {
         return apiClient.patch(`/allocations/${editingAllocation.RouteVehicleDriverId}/`, payload);
@@ -225,8 +217,7 @@ export const AllocationsPage: React.FC = () => {
       notifications.show({
         title: 'Success',
         message: editingAllocation ? 'Allocation updated successfully.' : 'Route, vehicle, and driver allocated successfully.',
-        color: 'green',
-      });
+        color: 'green' });
       queryClient.invalidateQueries({ queryKey: ['allocations'] });
       reset(defaultAllocationValues);
       setEditingAllocation(null);
@@ -237,18 +228,15 @@ export const AllocationsPage: React.FC = () => {
       notifications.show({
         title: 'Error',
         message: msg,
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   const onSubmit = (values: AllocationFormValues) => {
     if (driverHasNoUser) {
       notifications.show({
         title: 'Cannot Save Allocation',
         message: 'The selected driver does not have a user account created yet. Please create a staff user login first.',
-        color: 'red',
-      });
+        color: 'red' });
       return;
     }
     saveMutation.mutate(values);
@@ -263,8 +251,7 @@ export const AllocationsPage: React.FC = () => {
       notifications.show({
         title: 'Deleted',
         message: 'Allocation deleted successfully.',
-        color: 'green',
-      });
+        color: 'green' });
       queryClient.invalidateQueries({ queryKey: ['allocations'] });
     },
     onError: (err: any) => {
@@ -272,16 +259,13 @@ export const AllocationsPage: React.FC = () => {
       notifications.show({
         title: 'Cannot Delete',
         message: msg,
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   const confirmDelete = () => {
     if (deleteTarget) {
       deleteMutation.mutate(deleteTarget.id, {
-        onSettled: () => setDeleteTarget(null),
-      });
+        onSettled: () => setDeleteTarget(null) });
     }
   };
 
@@ -299,8 +283,7 @@ export const AllocationsPage: React.FC = () => {
       Vehicle: String(item.Vehicle || ''),
       Driver: String(item.Driver || ''),
       AssignmentDate: item.AssignmentDate || new Date().toISOString().split('T')[0],
-      Narration: item.Narration || '',
-    });
+      Narration: item.Narration || '' });
     setFormOpened(true);
   };
 
@@ -320,18 +303,6 @@ export const AllocationsPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Allocations
           </Title>
@@ -387,8 +358,7 @@ export const AllocationsPage: React.FC = () => {
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#f5c2cb',
-            borderLeft: '4px solid #800020',
-          }}
+            borderLeft: '4px solid #800020' }}
         >
           <Group justify="space-between" align="flex-start" mb="md">
             <div>
@@ -482,10 +452,8 @@ export const AllocationsPage: React.FC = () => {
                   styles={{
                     root: {
                       borderColor: '#f5c2cb',
-                      borderLeft: '4px solid #800020',
-                    },
-                    message: { fontSize: '13px' },
-                  }}
+                      borderLeft: '4px solid #800020' },
+                    message: { fontSize: '13px' } }}
                 >
                   The selected driver cannot be assigned because they do not have a user login account. Please create a staff user for this driver under <b>Staff Users</b> before saving this allocation.
                 </Alert>
@@ -526,8 +494,7 @@ export const AllocationsPage: React.FC = () => {
                       loading={isSubmitting || saveMutation.isPending}
                       style={{
                         cursor: driverHasNoUser ? 'not-allowed' : 'pointer',
-                        opacity: driverHasNoUser ? 0.45 : 1,
-                      }}
+                        opacity: driverHasNoUser ? 0.45 : 1 }}
                     >
                       {editingAllocation ? 'Save Changes' : 'Save Allocation'}
                     </Button>
@@ -592,16 +559,14 @@ export const AllocationsPage: React.FC = () => {
                           variant="outline"
                           styles={{
                             root: { overflow: 'visible', paddingLeft: 8, paddingRight: 8 },
-                            label: { overflow: 'visible', textOverflow: 'clip', whiteSpace: 'nowrap' },
-                          }}
+                            label: { overflow: 'visible', textOverflow: 'clip', whiteSpace: 'nowrap' } }}
                           style={{
                             borderColor: a.IsActive ? '#800020' : '#dc2626',
                             color: a.IsActive ? '#800020' : '#dc2626',
                             backgroundColor: 'transparent',
                             fontWeight: 600,
                             letterSpacing: '0.3px',
-                            minWidth: 72,
-                          }}
+                            minWidth: 72 }}
                         >
                           {a.IsActive ? 'ACTIVE' : 'INACTIVE'}
                         </Badge>
@@ -626,8 +591,7 @@ export const AllocationsPage: React.FC = () => {
                                 onClick={() => {
                                   setDeleteTarget({
                                     id: a.RouteVehicleDriverId,
-                                    name: `${a.RouteName} - ${a.DriverName} (${a.VehicleNumber})`,
-                                  });
+                                    name: `${a.RouteName} - ${a.DriverName} (${a.VehicleNumber})` });
                                 }}
                               >
                                 <IconTrash size={16} />

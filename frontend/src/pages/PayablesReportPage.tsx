@@ -718,18 +718,6 @@ export const PayablesReportPage: React.FC = () => {
       {/* 1. Header with Back Button and Quick Actions */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             Payables Report (Sundry Creditors)
           </Title>

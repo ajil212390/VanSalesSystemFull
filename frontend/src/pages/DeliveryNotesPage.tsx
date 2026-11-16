@@ -18,8 +18,7 @@ import {
   Box,
   Tooltip,
   CloseButton,
-  Divider,
-} from '@mantine/core';
+  Divider } from '@mantine/core';
 import {
   IconClipboardList,
   IconPlus,
@@ -27,11 +26,9 @@ import {
   IconTrash,
   IconSearch,
   IconPackage,
-  IconBuildingFactory2,
-  IconArrowLeft,
-} from '@tabler/icons-react';
+  IconBuildingFactory2 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
@@ -54,6 +51,8 @@ interface DeliveryNote {
   route_name: string;
   vehicle_number: string;
   driver_name: string;
+  target_godown_name?: string;
+  is_godown_transfer?: boolean;
   Remarks: string;
   Status: string;
   total_cylinders: number;
@@ -71,7 +70,6 @@ interface DeliveryNote {
 }
 
 export const DeliveryNotesPage: React.FC = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [formOpened, setFormOpened] = useState(false);
@@ -92,8 +90,7 @@ export const DeliveryNotesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/delivery-notes/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   // 1b. Fetch Godowns
   const { data: godowns = [] } = useQuery<any[]>({
@@ -101,8 +98,7 @@ export const DeliveryNotesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/godowns/');
       return Array.isArray(res.data) ? res.data : [];
-    },
-  });
+    } });
 
   // 2. Fetch Active Van Allocations (Route + Vehicle + Driver)
   const { data: allocations = [] } = useQuery<any[]>({
@@ -110,10 +106,15 @@ export const DeliveryNotesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/allocations/');
       const list = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-      // Filter out Godown Stock (ID: 1) from van options
-      return list.filter((a: any) => a.RouteVehicleDriverId !== 1 && a.IsActive);
-    },
-  });
+      // Strictly exclude any godown internal dummy allocations
+      return list.filter((a: any) => {
+        if (!a.IsActive) return false;
+        const vName = (a.VehicleNumber || '').toLowerCase();
+        const rName = (a.RouteName || '').toLowerCase();
+        const dName = (a.DriverName || '').toLowerCase();
+        return !vName.includes('godown') && !rName.includes('godown') && !dName.includes('godown');
+      });
+    } });
 
   // 3. Fetch Live Available Stock in Godown
   const { data: godownStock = [], refetch: refetchGodownStock } = useQuery<any[]>({
@@ -121,15 +122,31 @@ export const DeliveryNotesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get(`/delivery-notes/godown-stock/?godown_id=${selectedGodownId}`);
       return res.data || [];
-    },
-  });
+    } });
 
   const allocationOptions = useMemo(() => {
-    return allocations.map((a: any) => ({
+    const vanOpts = allocations.map((a: any) => ({
       value: String(a.RouteVehicleDriverId),
       label: `${a.VehicleNumber} • ${a.DriverName} (${a.RouteName})`,
     }));
-  }, [allocations]);
+
+    // Other godowns excluding the currently selected dispatch godown
+    const godownOpts = godowns
+      .filter((g: any) => Number(g.GodownId) !== Number(selectedGodownId) && g.RouteVehicleDriverId)
+      .map((g: any) => ({
+        value: String(g.RouteVehicleDriverId),
+        label: `🏢 ${g.GodownName} (Godown Transfer)`,
+      }));
+
+    if (godownOpts.length > 0) {
+      return [
+        { group: 'Vans & Vehicles', items: vanOpts },
+        { group: 'Godown to Godown Transfer', items: godownOpts },
+      ];
+    }
+
+    return vanOpts;
+  }, [allocations, godowns, selectedGodownId]);
 
   // Open / Close / Edit Form Handlers
   const handleOpenForm = () => {
@@ -170,8 +187,7 @@ export const DeliveryNotesPage: React.FC = () => {
               UnitName: l.unit_name,
               Quantity: Number(l.Quantity),
               Rate: Number(l.Rate),
-              AvailableGodownQty: currentGodown + alreadyLoadedOnThisNote,
-            };
+              AvailableGodownQty: currentGodown + alreadyLoadedOnThisNote };
           })
         : [{ ProductId: 0, ProductName: '', UnitId: 0, UnitName: '', Quantity: 0, Rate: 0 }]
     );
@@ -224,8 +240,7 @@ export const DeliveryNotesPage: React.FC = () => {
         UnitName: product.UnitName,
         Quantity: origQty > 0 ? origQty : 0,
         Rate: Number(product.PurchasePrice) || 0,
-        AvailableGodownQty: effectiveAvail,
-      };
+        AvailableGodownQty: effectiveAvail };
       return updated;
     });
   };
@@ -254,9 +269,7 @@ export const DeliveryNotesPage: React.FC = () => {
           ProductId: l.ProductId,
           UnitId: l.UnitId,
           Quantity: l.Quantity,
-          Rate: l.Rate,
-        })),
-      };
+          Rate: l.Rate })) };
 
       if (editingNote) {
         const res = await apiClient.put(`/delivery-notes/${editingNote.DeliveryNoteId}/`, payload);
@@ -269,12 +282,13 @@ export const DeliveryNotesPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
       notifications.show({
-        title: editingNote ? 'Delivery Note Updated' : 'Delivery Note Created',
+        title: editingNote ? 'Delivery Note Updated' : (data.is_godown_transfer ? 'Stock Transfer Completed' : 'Delivery Note Created'),
         message: editingNote
           ? `Successfully updated note (${data.DeliveryNoteNo}) and adjusted stock.`
+          : data.is_godown_transfer
+          ? `Successfully transferred stock to ${data.target_godown_name || 'destination godown'} (${data.DeliveryNoteNo})!`
           : `Successfully loaded cylinders onto van (${data.DeliveryNoteNo})! Stock transferred from Godown to Van.`,
-        color: 'burgundy',
-      });
+        color: 'burgundy' });
       setEditingNote(null);
       setSelectedAllocation(null);
       setRemarks('');
@@ -287,10 +301,8 @@ export const DeliveryNotesPage: React.FC = () => {
       notifications.show({
         title: editingNote ? 'Update Failed' : 'Loading Failed',
         message: err.response?.data?.detail || err.message || 'Error saving delivery note.',
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   // Delete Mutation
   const deleteMutation = useMutation({
@@ -302,11 +314,9 @@ export const DeliveryNotesPage: React.FC = () => {
       notifications.show({
         title: 'Deleted',
         message: 'Van stock load deleted and cylinders reversed back to godown.',
-        color: 'burgundy',
-      });
+        color: 'burgundy' });
       setDeleteTarget(null);
-    },
-  });
+    } });
 
   const filteredNotes = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -333,18 +343,6 @@ export const DeliveryNotesPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Delivery Notes
           </Title>
@@ -378,7 +376,7 @@ export const DeliveryNotesPage: React.FC = () => {
               onClick={handleOpenForm}
               leftSection={<IconPlus size={16} />}
             >
-              Load Van Stock
+              Add New
             </Button>
           </Group>
         )}
@@ -394,8 +392,7 @@ export const DeliveryNotesPage: React.FC = () => {
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
             borderLeft: '5px solid #800020',
-            boxShadow: '0 4px 16px rgba(128, 0, 32, 0.06)',
-          }}
+            boxShadow: '0 4px 16px rgba(128, 0, 32, 0.06)' }}
         >
           <Group justify="space-between" align="flex-start" mb="md">
             <div>
@@ -420,8 +417,7 @@ export const DeliveryNotesPage: React.FC = () => {
                   { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
                 ]).map((g: any) => ({
                   value: String(g.GodownId),
-                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
-                }))}
+                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}` }))}
                 value={selectedGodownId}
                 onChange={(val) => {
                   if (val) {
@@ -432,7 +428,7 @@ export const DeliveryNotesPage: React.FC = () => {
               />
               <Select
                 label="Select location"
-                placeholder="Pick Vehicle • Driver (Route)"
+                placeholder="Pick Vehicle • Driver (Route) or Target Godown"
                 data={allocationOptions}
                 value={selectedAllocation}
                 onChange={setSelectedAllocation}
@@ -484,8 +480,7 @@ export const DeliveryNotesPage: React.FC = () => {
                       placeholder="Choose Product"
                       data={godownStock.map((p: any) => ({
                         value: String(p.ProductId),
-                        label: p.ProductName,
-                      }))}
+                        label: p.ProductName }))}
                       value={line.ProductId > 0 ? String(line.ProductId) : null}
                       onChange={(val) => handleProductChange(idx, val)}
                       searchable
@@ -590,8 +585,7 @@ export const DeliveryNotesPage: React.FC = () => {
               style={{
                 backgroundColor: '#ffffff',
                 borderColor: '#e2e8f0',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-              }}
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
             >
               <Group justify="space-between" align="flex-start" wrap="nowrap">
                 <Stack gap={2}>
@@ -617,8 +611,7 @@ export const DeliveryNotesPage: React.FC = () => {
               style={{
                 backgroundColor: '#ffffff',
                 borderColor: '#e2e8f0',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-              }}
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
             >
               <Group justify="space-between" align="flex-start" wrap="nowrap">
                 <Stack gap={2}>
@@ -644,8 +637,7 @@ export const DeliveryNotesPage: React.FC = () => {
               style={{
                 backgroundColor: '#ffffff',
                 borderColor: '#e2e8f0',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-              }}
+                boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
             >
               <Group justify="space-between" align="flex-start" wrap="nowrap">
                 <Stack gap={2}>
@@ -697,13 +689,23 @@ export const DeliveryNotesPage: React.FC = () => {
                         {dn.DeliveryDate}
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm" fw={600} c="#0f172a">{dn.route_name || '-'}</Text>
+                        {dn.is_godown_transfer ? (
+                          <Badge size="xs" variant="light" color="indigo" radius="sm">
+                            Godown Transfer
+                          </Badge>
+                        ) : (
+                          <Text size="sm" fw={600} c="#0f172a">{dn.route_name || '-'}</Text>
+                        )}
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm" fw={600} c="#0f172a">{dn.vehicle_number || '-'}</Text>
+                        <Text size="sm" fw={600} c="#0f172a">
+                          {dn.is_godown_transfer ? `🏢 ${dn.target_godown_name || dn.vehicle_number || 'Godown'}` : (dn.vehicle_number || '-')}
+                        </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Text size="sm" c="#334155">{dn.driver_name || '-'}</Text>
+                        <Text size="sm" c="#334155">
+                          {dn.is_godown_transfer ? 'Direct Transfer' : (dn.driver_name || '-')}
+                        </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center', fontWeight: 800, fontSize: 14, color: '#800020' }}>
                         {Number(dn.total_cylinders)}
@@ -738,14 +740,11 @@ export const DeliveryNotesPage: React.FC = () => {
                               fontWeight: 700,
                               letterSpacing: '0.4px',
                               padding: '0 8px',
-                              overflow: 'visible',
-                            },
+                              overflow: 'visible' },
                             label: {
                               overflow: 'visible',
                               textOverflow: 'clip',
-                              whiteSpace: 'nowrap',
-                            },
-                          }}
+                              whiteSpace: 'nowrap' } }}
                         >
                           {dn.Status === 'COMPLETED' ? 'COMPLETED' : dn.Status}
                         </Badge>
@@ -762,9 +761,7 @@ export const DeliveryNotesPage: React.FC = () => {
                                     root: {
                                       borderColor: '#cbd5e1',
                                       color: '#64748b',
-                                      fontWeight: 600,
-                                    },
-                                  }}
+                                      fontWeight: 600 } }}
                                 >
                                   Settled
                                 </Badge>

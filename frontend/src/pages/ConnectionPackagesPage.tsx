@@ -11,17 +11,14 @@ import {
   Badge,
   ActionIcon,
   Tooltip,
-  Box,
-} from '@mantine/core';
+  Box } from '@mantine/core';
 import {
   IconPlus,
   IconPencil,
   IconTrash,
   IconPackages,
   IconShoppingBag,
-  IconFlame,
-  IconArrowLeft,
-} from '@tabler/icons-react';
+  IconFlame } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -37,8 +34,7 @@ export const ConnectionPackagesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/connection-packages/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
-    },
-  });
+    } });
 
   // 2. Fetch Sales for Sold Packages Count
   const { data: sales = [] } = useQuery<any[]>({
@@ -46,8 +42,7 @@ export const ConnectionPackagesPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/sales/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
-    },
-  });
+    } });
 
   // Mutation: Delete Package
   const deleteMutation = useMutation({
@@ -59,17 +54,14 @@ export const ConnectionPackagesPage: React.FC = () => {
       notifications.show({
         title: 'Package Removed',
         message: 'Connection package was deleted successfully.',
-        color: 'gray',
-      });
+        color: 'gray' });
     },
     onError: (err: any) => {
       notifications.show({
         title: 'Error Deleting Package',
         message: err.response?.data?.detail || err.message || 'Could not delete package.',
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   // KPI Metrics
   const totalPackagesCount = packages.length;
@@ -89,18 +81,6 @@ export const ConnectionPackagesPage: React.FC = () => {
       <Box pt={4} pb={2}>
         <Group justify="space-between" align="center" wrap="wrap">
           <div>
-            <Group gap="xs" align="center" mb={6}>
-              <Button
-                variant="subtle"
-                color="gray"
-                size="xs"
-                leftSection={<IconArrowLeft size={16} />}
-                onClick={() => navigate('/')}
-                styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-              >
-                Back to Dashboard
-              </Button>
-            </Group>
             <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
               Connection Packages
             </Title>
@@ -253,9 +233,7 @@ export const ConnectionPackagesPage: React.FC = () => {
                                       fontSize: 11.5,
                                       textTransform: 'none',
                                       height: 22,
-                                      padding: '0 8px',
-                                    },
-                                  }}
+                                      padding: '0 8px' } }}
                                 >
                                   {it.product_name || `Product #${it.Product}`} &times; {qtyVal}
                                 </Badge>
@@ -297,8 +275,7 @@ export const ConnectionPackagesPage: React.FC = () => {
                           style={{
                             fontWeight: 700,
                             backgroundColor: pkg.IsActive !== false ? '#fdf2f4' : undefined,
-                            color: pkg.IsActive !== false ? '#800020' : undefined,
-                          }}
+                            color: pkg.IsActive !== false ? '#800020' : undefined }}
                         >
                           {pkg.IsActive !== false ? 'ACTIVE' : 'INACTIVE'}
                         </Badge>

@@ -19,8 +19,7 @@ import {
   Tooltip,
   Loader,
   Center,
-  Select,
-} from '@mantine/core';
+  Select } from '@mantine/core';
 import {
   IconSearch,
   IconRefresh,
@@ -31,10 +30,8 @@ import {
   IconTrash,
   IconClock,
   IconCreditCard,
-  IconReceipt,
-  IconArrowLeft,
-} from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+  IconReceipt } from '@tabler/icons-react';
+import { } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
@@ -61,6 +58,8 @@ interface EndRouteDriverItem {
   driver_name: string;
   vehicle_number: string;
   route_name: string;
+  source_godown_id?: number;
+  source_godown_name?: string;
   Ledger: number;
   ledger_name: string;
   CompanyId: number;
@@ -81,7 +80,6 @@ interface EndRouteDriverItem {
 }
 
 export const EndAllocationsPage: React.FC = () => {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
@@ -98,8 +96,7 @@ export const EndAllocationsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/godowns/');
       return Array.isArray(res.data) ? res.data : [];
-    },
-  });
+    } });
 
   // Fetch EndRouteDriver data from backend
   const { data: endRouteDrivers = [], isLoading, isRefetching, refetch } = useQuery<EndRouteDriverItem[]>({
@@ -107,8 +104,7 @@ export const EndAllocationsPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/end-route-drivers/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    },
-  });
+    } });
 
   // Approve & Settle Mutation
   // Delete Mutation
@@ -129,32 +125,27 @@ export const EndAllocationsPage: React.FC = () => {
       notifications.show({
         title: 'Record Removed',
         message: 'Shift settlement record deleted and stock reversed.',
-        color: 'burgundy',
-      });
+        color: 'burgundy' });
     },
     onError: (err: any) => {
       notifications.show({
         title: 'Delete Failed',
         message: err.response?.data?.detail || 'Could not delete settlement record.',
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   const settleMutation = useMutation({
     mutationFn: async ({
       id,
       godown_id,
-      godown_splits,
-    }: {
+      godown_splits }: {
       id: number;
       godown_id?: number;
       godown_splits?: any;
     }) => {
       const res = await apiClient.post(`/end-route-drivers/${id}/settle/`, {
         godown_id,
-        godown_splits,
-      });
+        godown_splits });
       return res.data;
     },
     onSuccess: (data) => {
@@ -168,17 +159,14 @@ export const EndAllocationsPage: React.FC = () => {
       notifications.show({
         title: 'Settlement Approved',
         message: data.message || 'Driver shift end settlement approved and verified.',
-        color: 'burgundy',
-      });
+        color: 'burgundy' });
     },
     onError: (err: any) => {
       notifications.show({
         title: 'Settlement Failed',
         message: err.response?.data?.message || err.message || 'Could not approve settlement.',
-        color: 'red',
-      });
-    },
-  });
+        color: 'red' });
+    } });
 
   // Counts & Summaries
   const pendingCount = useMemo(
@@ -224,10 +212,11 @@ export const EndAllocationsPage: React.FC = () => {
     setSelectedItem(item);
     setIsDetailOpen(true);
 
+    const defaultGid = String(item.source_godown_id || 1);
     const initialLineGodowns: Record<number, string> = {};
     (item.lines || []).forEach((l) => {
       const pid = l.Product || l.EndRouteDriverLineId;
-      initialLineGodowns[pid] = '1'; // Default to Central Godown
+      initialLineGodowns[pid] = defaultGid; // Default to Originating Dispatch Godown (e.g. Thalassery)
     });
     setLineGodowns(initialLineGodowns);
   };
@@ -237,10 +226,11 @@ export const EndAllocationsPage: React.FC = () => {
 
     const modalLinesList = selectedItem.lines || [];
     const splitsPayload: Record<number, any[]> = {};
+    const defaultGid = Number(selectedItem.source_godown_id || 1);
 
     for (const line of modalLinesList) {
       const pid = line.Product || line.EndRouteDriverLineId;
-      const targetGid = Number(lineGodowns[pid] || 1);
+      const targetGid = Number(lineGodowns[pid] || defaultGid);
       const totalF = Number(line.FilledQty) || 0;
       const totalE = Number(line.EmptyQty) || 0;
 
@@ -248,16 +238,17 @@ export const EndAllocationsPage: React.FC = () => {
         {
           godown_id: targetGid,
           filled_qty: totalF,
-          empty_qty: totalE,
-        },
+          empty_qty: totalE },
       ];
     }
 
+    const firstLinePid = modalLinesList.length > 0 ? (modalLinesList[0].Product || modalLinesList[0].EndRouteDriverLineId) : null;
+    const finalGodownId = firstLinePid ? Number(lineGodowns[firstLinePid] || defaultGid) : defaultGid;
+
     settleMutation.mutate({
       id: selectedItem.EndRouteDriverId,
-      godown_id: 1,
-      godown_splits: splitsPayload,
-    });
+      godown_id: finalGodownId,
+      godown_splits: splitsPayload });
   };
 
   // Helper to extract amounts from backend API attributes or fallback remarks
@@ -295,18 +286,6 @@ export const EndAllocationsPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             End Allocation
           </Title>
@@ -344,8 +323,7 @@ export const EndAllocationsPage: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            height: '100%',
-          }}
+            height: '100%' }}
         >
           <div>
             <Group justify="space-between" align="center" mb="xs">
@@ -378,8 +356,7 @@ export const EndAllocationsPage: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            height: '100%',
-          }}
+            height: '100%' }}
         >
           <div>
             <Group justify="space-between" align="center" mb="xs">
@@ -412,8 +389,7 @@ export const EndAllocationsPage: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            height: '100%',
-          }}
+            height: '100%' }}
         >
           <div>
             <Group justify="space-between" align="center" mb="xs">
@@ -464,8 +440,7 @@ export const EndAllocationsPage: React.FC = () => {
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            height: '100%',
-          }}
+            height: '100%' }}
         >
           <div>
             <Group justify="space-between" align="center" mb="xs">
@@ -501,8 +476,7 @@ export const EndAllocationsPage: React.FC = () => {
               backgroundColor: '#ffffff',
               borderColor: '#f5c2cb',
               borderLeft: '4px solid #800020',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
-            }}
+              boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}
           >
             <Group justify="space-between" align="flex-start" mb="md">
               <div>
@@ -520,8 +494,7 @@ export const EndAllocationsPage: React.FC = () => {
                     style={{
                       backgroundColor: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#f1f5f9' : '#fdf2f4',
                       color: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#334155' : '#800020',
-                      fontWeight: 700,
-                    }}
+                      fontWeight: 700 }}
                   >
                     {selectedItem.Status?.toUpperCase()}
                   </Badge>
@@ -549,8 +522,7 @@ export const EndAllocationsPage: React.FC = () => {
                   backgroundColor: '#f8fafc',
                   borderRadius: 8,
                   border: '1px solid #e2e8f0',
-                  overflow: 'hidden',
-                }}
+                  overflow: 'hidden' }}
               >
                 <Box style={{ padding: '12px 16px', borderRight: '1px solid #e2e8f0' }}>
                   <Text size="10.5px" fw={700} c="#64748b" tt="uppercase">
@@ -656,8 +628,7 @@ export const EndAllocationsPage: React.FC = () => {
                                       { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
                                     ]).map((g: any) => ({
                                       value: String(g.GodownId),
-                                      label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
-                                    }))}
+                                      label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}` }))}
                                     value={lineGodowns[pid] || '1'}
                                     onChange={(val) => {
                                       if (val) {
@@ -668,9 +639,7 @@ export const EndAllocationsPage: React.FC = () => {
                                       input: {
                                         fontWeight: 600,
                                         fontSize: 12,
-                                        borderColor: '#800020',
-                                      },
-                                    }}
+                                        borderColor: '#800020' } }}
                                   />
                                 ) : (
                                   <Badge variant="light" color="burgundy" size="sm">
@@ -740,8 +709,7 @@ export const EndAllocationsPage: React.FC = () => {
                       backgroundColor: '#800020',
                       color: '#ffffff',
                       fontWeight: 700,
-                      letterSpacing: '0.2px',
-                    }}
+                      letterSpacing: '0.2px' }}
                   >
                     Submit & Approve Settlement
                   </Button>
@@ -764,8 +732,7 @@ export const EndAllocationsPage: React.FC = () => {
           overflow: 'hidden',
           backgroundColor: '#ffffff',
           borderColor: '#e2e8f0',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
       >
         {/* Table Toolbar */}
         <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -783,9 +750,7 @@ export const EndAllocationsPage: React.FC = () => {
                     backgroundColor: '#f1f5f9',
                     color: '#475569',
                     fontWeight: 600,
-                    fontSize: 11,
-                  },
-                }}
+                    fontSize: 11 } }}
               >
                 {filteredData.length} NOTES
               </Badge>
@@ -810,14 +775,12 @@ export const EndAllocationsPage: React.FC = () => {
                         fontWeight: statusFilter === 'pending' ? 700 : 600,
                         fontSize: 12,
                         display: 'inline-block',
-                        transition: 'color 150ms ease',
-                      }}
+                        transition: 'color 150ms ease' }}
                     >
                       Pending ({pendingCount})
                     </span>
                   ),
-                  value: 'pending',
-                },
+                  value: 'pending' },
                 {
                   label: (
                     <span
@@ -826,14 +789,12 @@ export const EndAllocationsPage: React.FC = () => {
                         fontWeight: statusFilter === 'settled' ? 700 : 600,
                         fontSize: 12,
                         display: 'inline-block',
-                        transition: 'color 150ms ease',
-                      }}
+                        transition: 'color 150ms ease' }}
                     >
                       Settled ({settledCount})
                     </span>
                   ),
-                  value: 'settled',
-                },
+                  value: 'settled' },
                 {
                   label: (
                     <span
@@ -842,31 +803,25 @@ export const EndAllocationsPage: React.FC = () => {
                         fontWeight: statusFilter === 'all' ? 700 : 600,
                         fontSize: 12,
                         display: 'inline-block',
-                        transition: 'color 150ms ease',
-                      }}
+                        transition: 'color 150ms ease' }}
                     >
                       All ({endRouteDrivers.length})
                     </span>
                   ),
-                  value: 'all',
-                },
+                  value: 'all' },
               ]}
               styles={{
                 root: {
                   backgroundColor: '#f1f5f9',
                   border: '1px solid #e2e8f0',
                   padding: 3,
-                  borderRadius: 8,
-                },
+                  borderRadius: 8 },
                 indicator: {
                   backgroundColor: '#800020',
                   boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
-                  borderRadius: 6,
-                },
+                  borderRadius: 6 },
                 label: {
-                  padding: '4px 12px',
-                },
-              }}
+                  padding: '4px 12px' } }}
             />
 
             <TextInput
@@ -967,8 +922,7 @@ export const EndAllocationsPage: React.FC = () => {
                             borderColor: '#e2e8f0',
                             color: '#0f172a',
                             fontWeight: 600,
-                            backgroundColor: '#f8fafc',
-                          }}
+                            backgroundColor: '#f8fafc' }}
                         >
                           {item.ledger_name || 'Cash / Bank Ledger'}
                         </Badge>
@@ -1027,8 +981,7 @@ export const EndAllocationsPage: React.FC = () => {
                             backgroundColor: isSettled ? '#f1f5f9' : '#fdf2f4',
                             color: isSettled ? '#334155' : '#800020',
                             fontWeight: 700,
-                            letterSpacing: '0.4px',
-                          }}
+                            letterSpacing: '0.4px' }}
                         >
                           {isSettled ? 'SETTLED' : 'PENDING'}
                         </Badge>
@@ -1098,8 +1051,7 @@ export const EndAllocationsPage: React.FC = () => {
         onConfirm={() => {
           if (deleteConfirmItem) {
             deleteMutation.mutate(deleteConfirmItem.EndRouteDriverId, {
-              onSettled: () => setDeleteConfirmItem(null),
-            });
+              onSettled: () => setDeleteConfirmItem(null) });
           }
         }}
       />

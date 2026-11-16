@@ -11,21 +11,19 @@ import {
   Text,
   TextInput,
   CloseButton,
-  ActionIcon,
-} from '@mantine/core';
+  ActionIcon } from '@mantine/core';
 import {
   IconPlus,
   IconSearch,
   IconReceipt,
   IconPencil,
-  IconTrash,
-  IconArrowLeft,
-} from '@tabler/icons-react';
+  IconTrash } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 interface PurchaseItem {
   PurchaseId: number;
@@ -57,8 +55,7 @@ export const PurchaseListPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/purchases/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
-    },
-  });
+    } });
 
   const filteredPurchases = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
@@ -67,7 +64,9 @@ export const PurchaseListPage: React.FC = () => {
       (p) =>
         p.PurchaseNo.toLowerCase().includes(q) ||
         (p.InvoiceNo && p.InvoiceNo.toLowerCase().includes(q)) ||
-        (p.supplier_name && p.supplier_name.toLowerCase().includes(q))
+        (p.supplier_name && p.supplier_name.toLowerCase().includes(q)) ||
+        (p.PurchaseDate && (p.PurchaseDate.toLowerCase().includes(q) || formatDateDDMMYY(p.PurchaseDate).toLowerCase().includes(q))) ||
+        (p.InvoiceDate && (p.InvoiceDate.toLowerCase().includes(q) || formatDateDDMMYY(p.InvoiceDate).toLowerCase().includes(q)))
     );
   }, [purchases, searchQuery]);
 
@@ -87,26 +86,13 @@ export const PurchaseListPage: React.FC = () => {
     },
     onError: () => {
       notifications.show({ title: 'Error', message: 'Failed to delete purchase.', color: 'red' });
-    },
-  });
+    } });
 
   return (
     <Stack gap="lg">
       {/* Top Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="sm">
         <div>
-          <Group gap="xs" align="center" mb={6}>
-            <Button
-              variant="subtle"
-              color="gray"
-              size="xs"
-              leftSection={<IconArrowLeft size={16} />}
-              onClick={() => navigate('/')}
-              styles={{ root: { paddingLeft: 4, paddingRight: 8 } }}
-            >
-              Back to Dashboard
-            </Button>
-          </Group>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Purchases
           </Title>
@@ -184,7 +170,7 @@ export const PurchaseListPage: React.FC = () => {
                           </Text>
                           {item.PurchaseDate && (
                             <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                              {item.PurchaseDate}
+                              {formatDateDDMMYY(item.PurchaseDate)}
                             </Text>
                           )}
                         </div>
@@ -195,7 +181,7 @@ export const PurchaseListPage: React.FC = () => {
                       <div>
                         <Text fw={500} size="sm" c="#334155">{item.InvoiceNo || '-'}</Text>
                         {item.InvoiceDate && (
-                          <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{item.InvoiceDate}</Text>
+                          <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>{formatDateDDMMYY(item.InvoiceDate)}</Text>
                         )}
                       </div>
                     </Table.Td>

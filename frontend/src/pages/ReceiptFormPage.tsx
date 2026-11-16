@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Title,
   Paper,
@@ -17,6 +17,7 @@ import {
   Box,
   Modal,
   Badge,
+  Alert,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -27,6 +28,7 @@ import {
   IconBuildingBank,
   IconChevronDown,
   IconChevronUp,
+  IconInfoCircle,
 } from '@tabler/icons-react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -125,6 +127,9 @@ export const ReceiptFormPage: React.FC = () => {
   const prefillPartyId = searchParams.get('party_id') || searchParams.get('customer_id');
   const returnTo = searchParams.get('return_to');
   const saleId = searchParams.get('sale_id');
+  const prefillAmount = searchParams.get('amount');
+  const autoOpenAlloc = searchParams.get('auto_open_alloc') === 'true';
+  const autoAllocTriggeredRef = useRef(false);
 
   // Top Voucher Header State
   const [receiptNo, setReceiptNo] = useState('');
@@ -208,13 +213,21 @@ export const ReceiptFormPage: React.FC = () => {
   useEffect(() => {
     if (!isEditing && prefillPartyId && ledgers.length > 0) {
       setRows((prev) => {
-        if (prev.length > 0 && !prev[0].ledgerId) {
-          return [{ ...prev[0], ledgerId: String(prefillPartyId) }, ...prev.slice(1)];
+        if (prev.length > 0) {
+          const amt = prefillAmount ? Number(prefillAmount) : prev[0].amount;
+          return [{ ...prev[0], ledgerId: String(prefillPartyId), amount: amt || '' }, ...prev.slice(1)];
         }
         return prev;
       });
     }
-  }, [isEditing, prefillPartyId, ledgers]);
+  }, [isEditing, prefillPartyId, prefillAmount, ledgers]);
+
+  useEffect(() => {
+    if (autoOpenAlloc && !autoAllocTriggeredRef.current && rows.length > 0 && rows[0].ledgerId && Number(rows[0].amount) > 0) {
+      autoAllocTriggeredRef.current = true;
+      handleOpenAllocationModal(0);
+    }
+  }, [autoOpenAlloc, rows]);
 
   useEffect(() => {
     if (!isEditing && !receiptNo && paymentsList.length >= 0) {
@@ -385,6 +398,28 @@ export const ReceiptFormPage: React.FC = () => {
       });
 
       const rowAmount = Number(row.amount) || 0;
+
+      // Auto-allocate against saleId if opened directly from newly created sale
+      if (saleId) {
+        const targetBill = mapped.find(
+          (m) => String(m.SalesId) === String(saleId) || String(m.PurchaseId) === String(saleId)
+        );
+        if (targetBill && targetBill.AllocatedAmount === 0) {
+          const otherBillsAlloc = mapped.reduce((sum, b) => {
+            if (b.BillReference === 'CUSTOMER ADVANCE' || b === targetBill) return sum;
+            return sum + (existingAllocMap.get(b.BillReference) || 0);
+          }, 0);
+          const availableForThisBill = Math.max(0, rowAmount - otherBillsAlloc);
+          const allocToBill = Math.min(availableForThisBill, targetBill.PendingBalance);
+          targetBill.AllocatedAmount = allocToBill;
+
+          // If we had a CUSTOMER ADVANCE, reduce it
+          const currentAdv = existingAllocMap.get('CUSTOMER ADVANCE') || 0;
+          if (currentAdv > 0) {
+            existingAllocMap.set('CUSTOMER ADVANCE', Math.max(0, currentAdv - allocToBill));
+          }
+        }
+      }
       const totalPending = mapped.reduce(
         (acc, b) => acc + (b.BillReference !== 'CUSTOMER ADVANCE' ? b.PendingBalance : 0),
         0
@@ -392,7 +427,11 @@ export const ReceiptFormPage: React.FC = () => {
 
       // Add or sync Customer Advance row if receipt amount exceeds pending bills, or if party has no bills
       if (rowAmount > totalPending || mapped.length === 0 || existingAllocMap.has('CUSTOMER ADVANCE')) {
-        const excess = Math.max(0, rowAmount - totalPending);
+        const allocatedToRealBills = mapped.reduce(
+          (acc, b) => acc + (b.BillReference !== 'CUSTOMER ADVANCE' ? b.AllocatedAmount : 0),
+          0
+        );
+        const excess = Math.max(0, rowAmount - allocatedToRealBills);
         const existingAdv = existingAllocMap.get('CUSTOMER ADVANCE');
         const advAlloc = existingAdv !== undefined ? existingAdv : excess;
 
@@ -445,14 +484,49 @@ export const ReceiptFormPage: React.FC = () => {
     });
   };
 
+  // Shift/allocate advance or available voucher funds to a specific bill
+  const handleAllocateRow = (idx: number) => {
+    setModalAllocations((prev) => {
+      const target = prev[idx];
+      if (!target || target.BillReference === 'CUSTOMER ADVANCE') return prev;
+      const rowAmount = activeRowIndex !== null ? Number(rows[activeRowIndex].amount) || 0 : 0;
+
+      // Other allocated bills (excluding target and advance)
+      const otherAlloc = prev.reduce((sum, b, i) => {
+        if (i === idx || b.BillReference === 'CUSTOMER ADVANCE') return sum;
+        return sum + b.AllocatedAmount;
+      }, 0);
+
+      const available = Math.max(0, rowAmount - otherAlloc);
+      const alloc = Math.min(target.PendingBalance, available);
+
+      return prev.map((b, i) => {
+        if (i === idx) {
+          return { ...b, AllocatedAmount: alloc };
+        }
+        if (b.BillReference === 'CUSTOMER ADVANCE') {
+          const rem = Math.max(0, available - alloc);
+          return { ...b, AllocatedAmount: rem };
+        }
+        return b;
+      });
+    });
+  };
+
   const handleModalClear = (idx: number) => {
     setModalAllocations((prev) => {
-      const updated = [...prev];
-      updated[idx] = {
-        ...updated[idx],
-        AllocatedAmount: 0,
-      };
-      return updated;
+      const target = prev[idx];
+      if (!target) return prev;
+      const clearedAmount = target.AllocatedAmount;
+      return prev.map((b, i) => {
+        if (i === idx) {
+          return { ...b, AllocatedAmount: 0 };
+        }
+        if (b.BillReference === 'CUSTOMER ADVANCE') {
+          return { ...b, AllocatedAmount: b.AllocatedAmount + clearedAmount };
+        }
+        return b;
+      });
     });
   };
 
@@ -737,17 +811,6 @@ export const ReceiptFormPage: React.FC = () => {
       {/* 1. Top Header */}
       <Group justify="space-between" align="center" style={{ minHeight: 28 }}>
         <Group gap={6} align="center">
-          <Button
-            variant="subtle"
-            color="gray"
-            size="xs"
-            leftSection={<IconArrowLeft size={14} />}
-            onClick={() => navigate('/')}
-            styles={{ root: { paddingLeft: 4, paddingRight: 6, height: 26, fontSize: 11 } }}
-          >
-            Dashboard
-          </Button>
-          <Text size="xs" c="dimmed">•</Text>
           <ActionIcon
             variant="subtle"
             color="gray"
@@ -1144,6 +1207,24 @@ export const ReceiptFormPage: React.FC = () => {
         radius="md"
       >
         <Stack gap="md">
+          {/* Sale Bill Allocation Banner if redirected from a newly created sale */}
+          {saleId && (
+            <Alert
+              icon={<IconInfoCircle size={18} />}
+              color="burgundy"
+              radius="md"
+              variant="light"
+              title="Allocating Advance Against Invoice"
+              styles={{
+                root: { border: '1px solid #f5c2cb', backgroundColor: '#fdf2f4', padding: '10px 14px' },
+                title: { color: '#800020', fontWeight: 700, fontSize: 13, marginBottom: 2 },
+                message: { color: '#475569', fontSize: 12 },
+              }}
+            >
+              The advance payment was shifted to your newly generated invoice. Review the allocations below and click <b>Save Allocation</b> to confirm.
+            </Alert>
+          )}
+
           {/* Clean Sub-header with Auto Fill (F12) */}
           <Group justify="space-between" align="center" px={4} py={2} wrap="wrap" gap="sm">
             <Group gap="md" align="center" wrap="wrap">
@@ -1292,9 +1373,16 @@ export const ReceiptFormPage: React.FC = () => {
                                 </Badge>
                               </Group>
                             ) : (
-                              <Text size="xs" fw={600} c="#1e293b">
-                                {bill.BillReference}
-                              </Text>
+                              <Group gap={6} align="center" wrap="nowrap">
+                                <Text size="xs" fw={600} c="#1e293b">
+                                  {bill.BillReference}
+                                </Text>
+                                {saleId && (String(bill.SalesId) === String(saleId) || String(bill.PurchaseId) === String(saleId)) && (
+                                  <Badge size="xs" color="teal" variant="light" radius="sm">
+                                    New Bill
+                                  </Badge>
+                                )}
+                              </Group>
                             )}
                           </Table.Td>
                           <Table.Td>
@@ -1384,15 +1472,28 @@ export const ReceiptFormPage: React.FC = () => {
                             />
                           </Table.Td>
                           <Table.Td style={{ textAlign: 'center' }}>
-                            <Button
-                              size="compact-xs"
-                              variant="subtle"
-                              color="gray"
-                              disabled={bill.AllocatedAmount === 0}
-                              onClick={() => handleModalClear(bIdx)}
-                            >
-                              Clear
-                            </Button>
+                            {!isAdvanceRow && bill.AllocatedAmount === 0 ? (
+                              <Button
+                                size="compact-xs"
+                                variant="light"
+                                color="burgundy"
+                                onClick={() => handleAllocateRow(bIdx)}
+                                styles={{ root: { fontSize: 11, fontWeight: 700, height: 22, padding: '0 8px' } }}
+                              >
+                                Allocate
+                              </Button>
+                            ) : (
+                              <Button
+                                size="compact-xs"
+                                variant="subtle"
+                                color="gray"
+                                disabled={bill.AllocatedAmount === 0}
+                                onClick={() => handleModalClear(bIdx)}
+                                styles={{ root: { fontSize: 11, height: 22 } }}
+                              >
+                                Clear
+                              </Button>
+                            )}
                           </Table.Td>
                         </Table.Tr>
 
