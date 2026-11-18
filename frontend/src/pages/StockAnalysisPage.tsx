@@ -1246,6 +1246,17 @@ export const StockAnalysisPage: React.FC = () => {
       {/* 1. Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Stock Analysis
           </Title>

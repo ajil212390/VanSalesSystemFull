@@ -346,6 +346,9 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
               ),
+
+              // Responsive bottom clearance for floating pill navbar & classic 3-button navigation
+              SizedBox(height: 84 + MediaQuery.of(context).padding.bottom),
             ],
           ),
         ),

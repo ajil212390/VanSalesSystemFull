@@ -9,7 +9,6 @@ import {
   Button,
   Table,
   ActionIcon,
-  TextInput,
   Select,
   NumberInput,
   Textarea,
@@ -34,6 +33,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DateInputDDMMYY } from '../components/DateInputDDMMYY';
 
 interface SaleLineItem {
   Product: string;
@@ -674,12 +674,11 @@ export const SalesFormPage: React.FC = () => {
           {/* ── Top Parameters Card ── */}
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
             <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
-              <TextInput
+              <DateInputDDMMYY
                 label="Sales Date"
-                type="date"
                 required
                 value={salesDate}
-                onChange={(e) => setSalesDate(e.currentTarget.value)}
+                onChange={(val) => setSalesDate(val)}
               />
 
               <Select
@@ -1270,7 +1269,7 @@ export const SalesFormPage: React.FC = () => {
               }}
               onClick={() => {
                 if (createdSaleData?.SalesId) {
-                  const url = `${apiClient.defaults.baseURL}/sales/${createdSaleData.SalesId}/invoice-pdf/`;
+                  const url = `${apiClient.defaults.baseURL}/sales/${createdSaleData.SalesId}/invoice-pdf/?_t=${Date.now()}`;
                   window.open(url, '_blank');
                 }
               }}

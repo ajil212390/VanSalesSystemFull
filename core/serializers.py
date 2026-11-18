@@ -931,6 +931,9 @@ class PaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ['PaymentId', 'CreatedAt', 'UpdatedAt']
 
     def get_payment_date(self, obj):
+        vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=obj.PaymentId).first()
+        if vch and vch.VoucherDate:
+            return vch.VoucherDate.strftime('%Y-%m-%d')
         return obj.CreatedAt.strftime('%Y-%m-%d') if obj.CreatedAt else None
 
     def get_primary_mode(self, obj):
@@ -1143,10 +1146,12 @@ class SalesLineSerializer(serializers.ModelSerializer):
 
 
 class SaleEditHistorySerializer(serializers.ModelSerializer):
+    SalesId = serializers.IntegerField(source='Sales_id', read_only=True)
+
     class Meta:
         model = SaleEditHistory
         fields = [
-            'EditId', 'SalesId', 'EditedBy', 'EditedAt',
+            'EditId', 'Sales', 'SalesId', 'EditedBy', 'EditedAt',
             'OldGrandTotal', 'NewGrandTotal', 'OldPaymentMethod',
             'NewPaymentMethod', 'Notes', 'CompanyId'
         ]

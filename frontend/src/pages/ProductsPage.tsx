@@ -21,7 +21,7 @@ import {
   Box,
   Transition,
   Tooltip } from '@mantine/core';
-import { IconPencil, IconTrash, IconSearch, IconCylinder, IconCurrencyRupee } from '@tabler/icons-react';
+import { IconPencil, IconTrash, IconSearch, IconCylinder, IconCurrencyRupee, IconArrowLeft } from '@tabler/icons-react';
 import { useForm, Controller } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -308,6 +308,17 @@ export const ProductsPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Products
           </Title>

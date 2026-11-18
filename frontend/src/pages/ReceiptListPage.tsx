@@ -18,12 +18,14 @@ import {
   IconSearch,
   IconReceipt,
   IconTrash,
-  IconPencil } from '@tabler/icons-react';
+  IconPencil,
+  IconArrowLeft } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 interface PaymentLineItem {
   PaymentLineId?: number;
@@ -42,6 +44,7 @@ interface ReceiptItem {
   Narration?: string;
   CreatedAt?: string;
   voucher_type?: string;
+  payment_date?: string;
   lines?: PaymentLineItem[];
 }
 
@@ -88,16 +91,27 @@ export const ReceiptListPage: React.FC = () => {
     });
   }, [allPayments, ledgers]);
 
+  const receiptNumMap = useMemo(() => {
+    const map = new Map<number, string>();
+    const sorted = [...receipts].sort((a, b) => a.PaymentId - b.PaymentId);
+    sorted.forEach((p, idx) => {
+      map.set(p.PaymentId, `REC-${String(idx + 1).padStart(3, '0')}`);
+    });
+    return map;
+  }, [receipts]);
+
   const filteredReceipts = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return receipts;
     return receipts.filter(
       (p) =>
-        String(p.PaymentId).includes(q) ||
+        (receiptNumMap.get(p.PaymentId) || String(p.PaymentId)).toLowerCase().includes(q) ||
         (p.party_name && p.party_name.toLowerCase().includes(q)) ||
-        (p.Narration && p.Narration.toLowerCase().includes(q))
+        (p.Narration && p.Narration.toLowerCase().includes(q)) ||
+        (p.payment_date && (p.payment_date.includes(q) || formatDateDDMMYY(p.payment_date).includes(q))) ||
+        (p.CreatedAt && formatDateDDMMYY(p.CreatedAt).includes(q))
     );
-  }, [receipts, searchQuery]);
+  }, [receipts, searchQuery, receiptNumMap]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -110,7 +124,15 @@ export const ReceiptListPage: React.FC = () => {
       notifications.show({ title: 'Success', message: 'Receipt voucher deleted successfully.', color: 'green' });
     },
     onError: (err: any) => {
-      const msg = err.response?.data?.detail || err.response?.data?.message || 'Failed to delete receipt voucher.';
+      let msg = 'Failed to delete receipt voucher.';
+      if (err.response?.data) {
+        if (typeof err.response.data === 'string') msg = err.response.data;
+        else if (err.response.data.detail) msg = err.response.data.detail;
+        else if (err.response.data.message) msg = err.response.data.message;
+        else if (err.response.data.error) msg = err.response.data.error;
+      } else if (err.message) {
+        msg = err.message;
+      }
       notifications.show({ title: 'Error', message: msg, color: 'red' });
     } });
 
@@ -119,6 +141,17 @@ export const ReceiptListPage: React.FC = () => {
       {/* Top Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="sm">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={6}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8 } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Receipts
           </Title>
@@ -183,9 +216,9 @@ export const ReceiptListPage: React.FC = () => {
               <Table.Tbody>
                 {filteredReceipts.map((item) => {
                   const firstLine = item.lines && item.lines.length > 0 ? item.lines[0] : null;
-                  const dateStr = item.CreatedAt
+                  const dateStr = item.payment_date || (item.CreatedAt
                     ? new Date(item.CreatedAt).toISOString().split('T')[0]
-                    : '—';
+                    : '—');
 
                   return (
                     <Table.Tr key={item.PaymentId}>
@@ -193,7 +226,7 @@ export const ReceiptListPage: React.FC = () => {
                         <Group gap={6} wrap="nowrap">
                           <IconReceipt size={16} color="#800020" style={{ flexShrink: 0 }} />
                           <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
-                            REC-{String(item.PaymentId).padStart(3, '0')}
+                            {receiptNumMap.get(item.PaymentId) || `REC-${String(item.PaymentId).padStart(3, '0')}`}
                           </Text>
                         </Group>
                       </Table.Td>
@@ -209,7 +242,7 @@ export const ReceiptListPage: React.FC = () => {
                       </Table.Td>
                       <Table.Td style={{ whiteSpace: 'nowrap', minWidth: 110, width: 120 }}>
                         <Text size="sm" c="#475569" style={{ whiteSpace: 'nowrap', wordBreak: 'keep-all', display: 'inline-block' }}>
-                          {dateStr}
+                          {formatDateDDMMYY(dateStr)}
                         </Text>
                       </Table.Td>
                       <Table.Td>

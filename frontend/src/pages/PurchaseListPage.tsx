@@ -17,7 +17,8 @@ import {
   IconSearch,
   IconReceipt,
   IconPencil,
-  IconTrash } from '@tabler/icons-react';
+  IconTrash,
+  IconArrowLeft } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -93,6 +94,17 @@ export const PurchaseListPage: React.FC = () => {
       {/* Top Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="sm">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={6}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8 } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Purchases
           </Title>

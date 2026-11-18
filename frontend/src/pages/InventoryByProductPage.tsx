@@ -22,6 +22,7 @@ import { IconSearch,
   IconBuildingFactory2,
   IconArrowUpRight,
   IconRefresh,
+  IconArrowLeft,
   IconLayersLinked } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -102,6 +103,17 @@ export const InventoryByProductPage: React.FC = () => {
       {/* 1. Header with Back Button and Quick Actions */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             Inventory by Product
           </Title>
@@ -355,11 +367,8 @@ export const InventoryByProductPage: React.FC = () => {
                   <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 125 }}>
                     Filled Total
                   </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 115 }}>
+                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 140, paddingRight: 20 }}>
                     Empty
-                  </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 125, paddingRight: 20 }}>
-                    Total Stock
                   </Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -370,7 +379,6 @@ export const InventoryByProductPage: React.FC = () => {
                   const godown = Number(p.GodownQty || 0);
                   const allocated = Number(p.AllocatedQty || 0);
                   const empty = Number(p.EmptyQty || 0);
-                  const total = filled + (isCyl ? empty : 0);
 
                   return (
                     <Table.Tr
@@ -426,12 +434,8 @@ export const InventoryByProductPage: React.FC = () => {
                         {filled.toLocaleString()}
                       </Table.Td>
 
-                      <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: isCyl ? '#64748b' : '#cbd5e1', fontVariantNumeric: 'tabular-nums' }}>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: isCyl ? '#64748b' : '#cbd5e1', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                         {isCyl ? empty.toLocaleString() : '—'}
-                      </Table.Td>
-
-                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                        {total.toLocaleString()}
                       </Table.Td>
                     </Table.Tr>
                   );
@@ -455,16 +459,8 @@ export const InventoryByProductPage: React.FC = () => {
                   <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                     {filteredProducts.reduce((s, p) => s + (Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0), 0).toLocaleString()}
                   </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#64748b', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                     {filteredProducts.reduce((s, p) => s + (Number(p.EmptyQty) || 0), 0).toLocaleString()}
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 900, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                    {filteredProducts.reduce((s, p) => {
-                      const isCyl = p.IsCylinder !== false && (p.IsCylinder === true || /cylinder|lpg|kg/i.test(p.ProductName || ''));
-                      const f = Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0;
-                      const e = Number(p.EmptyQty) || 0;
-                      return s + f + (isCyl ? e : 0);
-                    }, 0).toLocaleString()}
                   </Table.Td>
                 </Table.Tr>
               </Table.Tfoot>

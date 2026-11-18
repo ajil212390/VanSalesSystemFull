@@ -19,7 +19,8 @@ import {
   Tooltip,
   Loader,
   Center,
-  Select } from '@mantine/core';
+  Select,
+  Modal } from '@mantine/core';
 import {
   IconSearch,
   IconRefresh,
@@ -30,12 +31,19 @@ import {
   IconTrash,
   IconClock,
   IconCreditCard,
-  IconReceipt } from '@tabler/icons-react';
-import { } from 'react-router-dom';
+  IconArrowLeft,
+  IconReceipt,
+  IconPrinter,
+  IconHistory,
+  IconEdit,
+  IconArrowRight,
+  IconArrowUpRight } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
+import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 interface EndRouteDriverLineItem {
   EndRouteDriverLineId: number;
@@ -51,10 +59,42 @@ interface EndRouteDriverLineItem {
   Amount: string | number;
 }
 
+export interface ShiftSaleEdit {
+  EditId: number;
+  EditedAt?: string;
+  EditedBy?: string;
+  OldGrandTotal: number;
+  NewGrandTotal: number;
+  OldPaymentMethod: string;
+  NewPaymentMethod: string;
+  Notes: string;
+}
+
+export interface ShiftSaleItem {
+  SalesId: number;
+  InvoiceNo: string;
+  CustomerName: string;
+  GrandTotal: number;
+  PaidAmount: number;
+  PaymentMethod: string;
+  Notes?: string;
+  IsEdited: boolean;
+  is_edited?: boolean;
+  TotalDeliveredQty?: number;
+  TotalEmptyQty?: number;
+  delivered_qty?: number;
+  empty_returned?: number;
+  EditReason?: string;
+  EditedBy?: string;
+  EditedAt?: string;
+  edit_history?: ShiftSaleEdit[];
+}
+
 interface EndRouteDriverItem {
   EndRouteDriverId: number;
   ShiftDate: string;
   RouteVehicleDriver: number;
+  route_id?: number;
   driver_name: string;
   vehicle_number: string;
   route_name: string;
@@ -67,6 +107,7 @@ interface EndRouteDriverItem {
   Status: 'PENDING' | 'SETTLED' | string;
   CreatedAt: string;
   lines?: EndRouteDriverLineItem[];
+  sales?: ShiftSaleItem[];
   total_loaded?: number;
   total_delivered?: number;
   total_filled?: number;
@@ -76,19 +117,56 @@ interface EndRouteDriverItem {
   bank_amount?: number;
   gross_amount?: number;
   trip_expenses?: number;
+  cash_expense?: number;
+  bank_expense?: number;
   net_balance?: number;
+  net_cash?: number;
+  net_bank?: number;
 }
 
 export const EndAllocationsPage: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
   const [selectedItem, setSelectedItem] = useState<EndRouteDriverItem | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [activeAuditSale, setActiveAuditSale] = useState<ShiftSaleItem | null>(null);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<EndRouteDriverItem | null>(null);
 
-  // Per-line receiving godown selection
-  const [lineGodowns, setLineGodowns] = useState<Record<number, string>>({});
+  // Per-line receiving godown selection for unsold full and empties
+  const [unsoldGodowns, setUnsoldGodowns] = useState<Record<number, string>>({});
+  const [emptyGodowns, setEmptyGodowns] = useState<Record<number, string>>({});
+  const [printingId, setPrintingId] = useState<number | null>(null);
+
+  const handlePrintTripSheet = async (item: EndRouteDriverItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    try {
+      setPrintingId(item.EndRouteDriverId);
+      const res = await apiClient.get(`/end-route-drivers/${item.EndRouteDriverId}/trip-sheet-pdf/`, {
+        responseType: 'blob',
+      });
+      const file = new Blob([res.data], { type: 'application/pdf' });
+      const fileURL = URL.createObjectURL(file);
+      const newWin = window.open(fileURL, '_blank');
+      if (!newWin || newWin.closed || typeof newWin.closed === 'undefined') {
+        const link = document.createElement('a');
+        link.href = fileURL;
+        link.download = `Trip_Sheet_ERD_${item.EndRouteDriverId}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (err: any) {
+      notifications.show({
+        color: 'red',
+        title: 'Error generating PDF',
+        message: 'Failed to generate Route Trip Sheet PDF.',
+      });
+    } finally {
+      setPrintingId(null);
+    }
+  };
 
   // Fetch Godowns
   const { data: godowns = [] } = useQuery<any[]>({
@@ -107,7 +185,7 @@ export const EndAllocationsPage: React.FC = () => {
     } });
 
   // Approve & Settle Mutation
-  // Delete Mutation
+  // Delete / Revoke Shift End Mutation (Restores shift to active state for driver to edit)
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiClient.delete(`/end-route-drivers/${id}/`);
@@ -213,12 +291,15 @@ export const EndAllocationsPage: React.FC = () => {
     setIsDetailOpen(true);
 
     const defaultGid = String(item.source_godown_id || 1);
-    const initialLineGodowns: Record<number, string> = {};
+    const initialUnsold: Record<number, string> = {};
+    const initialEmpty: Record<number, string> = {};
     (item.lines || []).forEach((l) => {
       const pid = l.Product || l.EndRouteDriverLineId;
-      initialLineGodowns[pid] = defaultGid; // Default to Originating Dispatch Godown (e.g. Thalassery)
+      initialUnsold[pid] = defaultGid;
+      initialEmpty[pid] = defaultGid;
     });
-    setLineGodowns(initialLineGodowns);
+    setUnsoldGodowns(initialUnsold);
+    setEmptyGodowns(initialEmpty);
   };
 
   const handleApproveSettlement = () => {
@@ -230,20 +311,37 @@ export const EndAllocationsPage: React.FC = () => {
 
     for (const line of modalLinesList) {
       const pid = line.Product || line.EndRouteDriverLineId;
-      const targetGid = Number(lineGodowns[pid] || defaultGid);
+      const unsoldGid = Number(unsoldGodowns[pid] || defaultGid);
+      const emptyGid = Number(emptyGodowns[pid] || defaultGid);
       const totalF = Number(line.FilledQty) || 0;
       const totalE = Number(line.EmptyQty) || 0;
 
-      splitsPayload[pid] = [
-        {
-          godown_id: targetGid,
-          filled_qty: totalF,
-          empty_qty: totalE },
-      ];
+      if (unsoldGid === emptyGid) {
+        splitsPayload[pid] = [
+          {
+            godown_id: unsoldGid,
+            filled_qty: totalF,
+            empty_qty: totalE,
+          },
+        ];
+      } else {
+        splitsPayload[pid] = [
+          {
+            godown_id: unsoldGid,
+            filled_qty: totalF,
+            empty_qty: 0,
+          },
+          {
+            godown_id: emptyGid,
+            filled_qty: 0,
+            empty_qty: totalE,
+          },
+        ];
+      }
     }
 
     const firstLinePid = modalLinesList.length > 0 ? (modalLinesList[0].Product || modalLinesList[0].EndRouteDriverLineId) : null;
-    const finalGodownId = firstLinePid ? Number(lineGodowns[firstLinePid] || defaultGid) : defaultGid;
+    const finalGodownId = firstLinePid ? Number(unsoldGodowns[firstLinePid] || defaultGid) : defaultGid;
 
     settleMutation.mutate({
       id: selectedItem.EndRouteDriverId,
@@ -253,27 +351,31 @@ export const EndAllocationsPage: React.FC = () => {
 
   // Helper to extract amounts from backend API attributes or fallback remarks
   const parseSettlementAmounts = (item: EndRouteDriverItem | null) => {
-    if (!item) return { cash: 0, bank: 0, total: 0 };
+    if (!item) return { cash: 0, bank: 0, total: 0, cashExpense: 0, bankExpense: 0, netCash: 0, netBank: 0, netBalance: 0 };
 
-    // 1. Single Source of Truth: Direct backend API attributes
-    if (item.cash_amount !== undefined && item.cash_amount !== null) {
-      const cash = Number(item.cash_amount) || 0;
-      const bank = Number(item.bank_amount) || 0;
-      return { cash, bank, total: cash + bank };
+    let cash = Number(item.cash_amount) || 0;
+    let bank = Number(item.bank_amount) || 0;
+    const totalExp = Number(item.trip_expenses) || 0;
+    let cashExpense = Number(item.cash_expense) || 0;
+    let bankExpense = Number(item.bank_expense) || 0;
+
+    if (item.cash_amount === undefined || item.cash_amount === null) {
+      const remarks = item.Remarks || '';
+      const cashMatch = remarks.match(/cash[\s:]*₹?\s*([\d,.]+)/i);
+      const bankMatch = remarks.match(/(?:bank|upi)[\s:]*₹?\s*([\d,.]+)/i);
+      if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
+      if (bankMatch) bank = parseFloat(bankMatch[1].replace(/,/g, '')) || 0;
     }
 
-    // 2. Fallback for legacy text remarks ONLY if backend fields are completely absent
-    let cash = 0;
-    let bank = 0;
-    const remarks = item.Remarks || '';
+    if (cashExpense === 0 && bankExpense === 0 && totalExp > 0) {
+      cashExpense = totalExp;
+    }
 
-    const cashMatch = remarks.match(/cash[\s:]*₹?\s*([\d,.]+)/i);
-    const bankMatch = remarks.match(/(?:bank|upi)[\s:]*₹?\s*([\d,.]+)/i);
+    const netCash = item.net_cash !== undefined ? Number(item.net_cash) : (cash - cashExpense);
+    const netBank = item.net_bank !== undefined ? Number(item.net_bank) : (bank - bankExpense);
+    const netBalance = item.net_balance !== undefined ? Number(item.net_balance) : (cash + bank - totalExp);
 
-    if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
-    if (bankMatch) bank = parseFloat(bankMatch[1].replace(/,/g, '')) || 0;
-
-    return { cash, bank, total: cash + bank };
+    return { cash, bank, total: cash + bank, cashExpense, bankExpense, netCash, netBank, netBalance };
   };
 
   const modalAmounts = parseSettlementAmounts(selectedItem);
@@ -286,6 +388,17 @@ export const EndAllocationsPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             End Allocation
           </Title>
@@ -492,9 +605,11 @@ export const EndAllocationsPage: React.FC = () => {
                     radius="sm"
                     variant="filled"
                     style={{
-                      backgroundColor: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#f1f5f9' : '#fdf2f4',
-                      color: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#334155' : '#800020',
-                      fontWeight: 700 }}
+                      backgroundColor: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#fdf2f4' : '#fef3c7',
+                      color: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '#800020' : '#b45309',
+                      border: selectedItem.Status?.toUpperCase() === 'SETTLED' ? '1px solid #fbcfe8' : '1px solid #fde68a',
+                      fontWeight: 700,
+                    }}
                   >
                     {selectedItem.Status?.toUpperCase()}
                   </Badge>
@@ -551,12 +666,44 @@ export const EndAllocationsPage: React.FC = () => {
                     NET SETTLEMENT BALANCE
                   </Text>
                   <Text fw={700} size="md" c="#800020" mt={2}>
-                    ₹{(selectedItem.net_balance ?? (modalAmounts.cash + modalAmounts.bank - (selectedItem.trip_expenses ?? 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ₹{modalAmounts.netBalance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Text>
-                  <Text size="10px" c="#64748b" mt={2}>
-                    Net cash & bank revenue in hand
+                  <Text size="10px" c="#800020" fw={600} mt={2}>
+                    Cash: ₹{modalAmounts.netCash.toLocaleString('en-IN', { minimumFractionDigits: 0 })} • Bank: ₹{modalAmounts.netBank.toLocaleString('en-IN', { minimumFractionDigits: 0 })}
                   </Text>
                 </Box>
+              </Box>
+
+              {/* Cash & Bank Net Settlement Breakdown Strip */}
+              <Box
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 12,
+                }}
+              >
+                <Paper p="xs" radius="sm" style={{ backgroundColor: '#f8fafc', border: '1px solid #cbd5e1' }}>
+                  <Text size="10px" fw={700} c="#1e293b" tt="uppercase">
+                     Net Cash Desk Handover
+                  </Text>
+                  <Text size="md" fw={800} c="#0f172a" mt={2}>
+                    ₹{modalAmounts.netCash.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text size="9.5px" c="#64748b" mt={1}>
+                    Gross Cash: ₹{modalAmounts.cash.toLocaleString('en-IN', { minimumFractionDigits: 2 })} &bull; Less Cash Exp: -₹{modalAmounts.cashExpense.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </Paper>
+                <Paper p="xs" radius="sm" style={{ backgroundColor: '#f8fafc', border: '1px solid #cbd5e1' }}>
+                  <Text size="10px" fw={700} c="#64748b" tt="uppercase">
+                     Net Digital UPI / Bank
+                  </Text>
+                  <Text size="md" fw={800} c="#64748b" mt={2}>
+                    ₹{modalAmounts.netBank.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </Text>
+                  <Text size="9.5px" c="#64748b" mt={1}>
+                    Gross UPI: ₹{modalAmounts.bank.toLocaleString('en-IN', { minimumFractionDigits: 2 })} &bull; Less Bank Exp: -₹{modalAmounts.bankExpense.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </Paper>
               </Box>
 
               {/* Remarks */}
@@ -578,7 +725,7 @@ export const EndAllocationsPage: React.FC = () => {
                     <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#0f172a', color: '#0f172a', fontWeight: 700 }}>
                       LOADED: {selectedItem.total_loaded ?? modalLines.reduce((s, l) => s + (l.LoadedQty ?? 0), 0)}
                     </Badge>
-                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#64748b', color: '#64748b', fontWeight: 700 }}>
+                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#0f172a', color: '#0f172a', fontWeight: 700 }}>
                       DELIVERED: {selectedItem.total_delivered ?? modalLines.reduce((s, l) => s + (l.DeliveredQty ?? 0), 0)}
                     </Badge>
                     <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#0f172a', color: '#0f172a', fontWeight: 700 }}>
@@ -601,51 +748,75 @@ export const EndAllocationsPage: React.FC = () => {
                     <Table verticalSpacing="xs" horizontalSpacing="sm">
                       <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                         <Table.Tr>
-                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700 }}>PRODUCT</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>LOADED</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>DELIVERED</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'right' }}>UNSOLD (TO GODOWN)</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textAlign: 'right' }}>EMPTIES (TO GODOWN)</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, width: 220 }}>GODOWN</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, paddingLeft: 16 }}>PRODUCT</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'center', width: 90 }}>LOADED</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'center', width: 90 }}>DELIVERED</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, minWidth: 230 }}>UNSOLD</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, minWidth: 230 }}>EMPTIES</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
                         {modalLines.map((line) => {
                           const pid = line.Product || line.EndRouteDriverLineId;
+                          const godownOptions = (godowns.length > 0 ? godowns : [
+                            { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
+                            { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
+                          ]).map((g: any) => ({
+                            value: String(g.GodownId),
+                            label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
+                          }));
+                          const defaultGid = String(selectedItem.source_godown_id || 1);
+
                           return (
                             <Table.Tr key={line.EndRouteDriverLineId}>
-                              <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{line.product_name}</Table.Td>
-                              <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{line.LoadedQty ?? '-'}</Table.Td>
-                              <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12.5, color: '#64748b' }}>{line.DeliveredQty ?? '-'}</Table.Td>
-                              <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a' }}>{line.FilledQty}</Table.Td>
-                              <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#800020' }}>{line.EmptyQty}</Table.Td>
-                              <Table.Td style={{ width: 220 }}>
-                                {selectedItem.Status?.toUpperCase() === 'PENDING' ? (
-                                  <Select
-                                    size="xs"
-                                    data={(godowns.length > 0 ? godowns : [
-                                      { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
-                                      { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
-                                    ]).map((g: any) => ({
-                                      value: String(g.GodownId),
-                                      label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}` }))}
-                                    value={lineGodowns[pid] || '1'}
-                                    onChange={(val) => {
-                                      if (val) {
-                                        setLineGodowns((prev) => ({ ...prev, [pid]: val }));
-                                      }
-                                    }}
-                                    styles={{
-                                      input: {
-                                        fontWeight: 600,
-                                        fontSize: 12,
-                                        borderColor: '#800020' } }}
-                                  />
-                                ) : (
-                                  <Badge variant="light" color="burgundy" size="sm">
-                                    {godowns.find((g: any) => String(g.GodownId) === (lineGodowns[pid] || '1'))?.GodownName || 'Main Godown'}
-                                  </Badge>
-                                )}
+                              <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a', paddingLeft: 16 }}>{line.product_name}</Table.Td>
+                              <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{line.LoadedQty ?? '-'}</Table.Td>
+                              <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{line.DeliveredQty ?? '-'}</Table.Td>
+                              <Table.Td>
+                                <Group gap="sm" wrap="nowrap" align="center">
+                                  <Text style={{ width: 28, textAlign: 'center', fontWeight: 700, fontSize: 13.5, color: '#0f172a', flexShrink: 0 }}>
+                                    {line.FilledQty}
+                                  </Text>
+                                  {selectedItem.Status?.toUpperCase() === 'PENDING' ? (
+                                    <Select
+                                      size="xs"
+                                      data={godownOptions}
+                                      value={unsoldGodowns[pid] || defaultGid}
+                                      onChange={(val) => {
+                                        if (val) setUnsoldGodowns((prev) => ({ ...prev, [pid]: val }));
+                                      }}
+                                      style={{ flexGrow: 1, minWidth: 150 }}
+                                      styles={{ input: { fontWeight: 600, fontSize: 11.5, borderColor: '#cbd5e1' } }}
+                                    />
+                                  ) : (
+                                    <Text size="xs" c="#334155" fw={600}>
+                                      {godowns.find((g: any) => String(g.GodownId) === (unsoldGodowns[pid] || defaultGid))?.GodownName || 'Main Godown'}
+                                    </Text>
+                                  )}
+                                </Group>
+                              </Table.Td>
+                              <Table.Td>
+                                <Group gap="sm" wrap="nowrap" align="center">
+                                  <Text style={{ width: 28, textAlign: 'center', fontWeight: 700, fontSize: 13.5, color: '#0f172a', flexShrink: 0 }}>
+                                    {line.EmptyQty}
+                                  </Text>
+                                  {selectedItem.Status?.toUpperCase() === 'PENDING' ? (
+                                    <Select
+                                      size="xs"
+                                      data={godownOptions}
+                                      value={emptyGodowns[pid] || defaultGid}
+                                      onChange={(val) => {
+                                        if (val) setEmptyGodowns((prev) => ({ ...prev, [pid]: val }));
+                                      }}
+                                      style={{ flexGrow: 1, minWidth: 150 }}
+                                      styles={{ input: { fontWeight: 600, fontSize: 11.5, borderColor: '#800020' } }}
+                                    />
+                                  ) : (
+                                    <Text size="xs" c="#334155" fw={600}>
+                                      {godowns.find((g: any) => String(g.GodownId) === (emptyGodowns[pid] || defaultGid))?.GodownName || 'Main Godown'}
+                                    </Text>
+                                  )}
+                                </Group>
                               </Table.Td>
                             </Table.Tr>
                           );
@@ -653,20 +824,27 @@ export const EndAllocationsPage: React.FC = () => {
                       </Table.Tbody>
                       <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
                         <Table.Tr>
-                          <Table.Td style={{ fontWeight: 700, fontSize: 12, color: '#0f172a' }}>TOTALS</Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
+                          <Table.Td style={{ fontWeight: 800, fontSize: 12, color: '#0f172a', paddingLeft: 16 }}>TOTALS</Table.Td>
+                          <Table.Td style={{ textAlign: 'center', fontWeight: 800, fontSize: 13, color: '#0f172a' }}>
                             {modalLines.reduce((s, l) => s + (l.LoadedQty ?? 0), 0)}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#64748b' }}>
+                          <Table.Td style={{ textAlign: 'center', fontWeight: 800, fontSize: 13, color: '#0f172a' }}>
                             {modalLines.reduce((s, l) => s + (l.DeliveredQty ?? 0), 0)}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
-                            {modalTotalFilled}
+                          <Table.Td>
+                            <Group gap="sm" wrap="nowrap" align="center">
+                              <Text style={{ width: 28, textAlign: 'center', fontWeight: 800, fontSize: 13.5, color: '#0f172a', flexShrink: 0 }}>
+                                {modalTotalFilled}
+                              </Text>
+                            </Group>
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12, color: '#800020' }}>
-                            {modalTotalEmpty}
+                          <Table.Td>
+                            <Group gap="sm" wrap="nowrap" align="center">
+                              <Text style={{ width: 28, textAlign: 'center', fontWeight: 800, fontSize: 13.5, color: '#0f172a', flexShrink: 0 }}>
+                                {modalTotalEmpty}
+                              </Text>
+                            </Group>
                           </Table.Td>
-                          <Table.Td />
                         </Table.Tr>
                       </Table.Tfoot>
                     </Table>
@@ -674,8 +852,187 @@ export const EndAllocationsPage: React.FC = () => {
                 )}
               </Stack>
 
+              {/* Trip Sales & Invoices with Edit History */}
+              <Stack gap="xs">
+                <Group justify="space-between" align="center">
+                  <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                    Trip Sales & Invoices ({selectedItem.sales?.length || 0})
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    Invoices created during this route shift with edit audit logs
+                  </Text>
+                </Group>
+
+                {(!selectedItem.sales || selectedItem.sales.length === 0) ? (
+                  <Paper p="md" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0', textAlign: 'center' }}>
+                    <Text size="xs" c="dimmed">No sales recorded during this delivery shift.</Text>
+                  </Paper>
+                ) : (
+                  <Paper radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
+                    <Table verticalSpacing="xs" horizontalSpacing="sm" highlightOnHover>
+                      <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
+                        <Table.Tr>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase' }}>Invoice #</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase' }}>Customer</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase' }}>Payment Mode</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase', textAlign: 'right' }}>Amount (₹)</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase', textAlign: 'center' }}>Edit Audit</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase', textAlign: 'right' }}>Action</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {selectedItem.sales.map((sale) => {
+                          const hasEdits = Boolean(sale.IsEdited || sale.is_edited || (sale.edit_history && sale.edit_history.length > 0));
+                          return (
+                            <Table.Tr key={sale.SalesId}>
+                              <Table.Td>
+                                <Group gap={6} wrap="nowrap" align="center">
+                                  <Text fw={700} size="xs" c="#0f172a" ff="monospace">
+                                    {sale.InvoiceNo || `INV-${sale.SalesId}`}
+                                  </Text>
+                                  {hasEdits && (
+                                    <Tooltip label="Click to inspect invoice revision history" withArrow position="top">
+                                      <Badge
+                                        size="xs"
+                                        variant="filled"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveAuditSale(sale);
+                                        }}
+                                        styles={{
+                                          root: {
+                                            cursor: 'pointer',
+                                            backgroundColor: '#800020',
+                                            color: '#ffffff',
+                                            fontWeight: 800,
+                                            fontSize: 9,
+                                            letterSpacing: '0.4px',
+                                            height: 18,
+                                            paddingLeft: 6,
+                                            paddingRight: 6,
+                                            borderRadius: 4,
+                                            boxShadow: '0 1px 2px rgba(128, 0, 32, 0.25)',
+                                            border: 'none',
+                                            verticalAlign: 'middle',
+                                            userSelect: 'none',
+                                          },
+                                          label: {
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 3.5,
+                                            overflow: 'visible',
+                                            lineHeight: 1,
+                                          },
+                                        }}
+                                      >
+                                        <span>EDITED</span>
+                                        <IconArrowUpRight size={10} stroke={2.8} />
+                                      </Badge>
+                                    </Tooltip>
+                                  )}
+                                </Group>
+                              </Table.Td>
+                              <Table.Td>
+                                <Text fw={600} size="xs" c="#334155" lineClamp={1}>
+                                  {sale.CustomerName || 'Cash Customer'}
+                                </Text>
+                              </Table.Td>
+                              <Table.Td>
+                                <Badge
+                                  size="xs"
+                                  variant="light"
+                                  color={sale.PaymentMethod?.toLowerCase() === 'cash' ? 'gray' : 'burgundy'}
+                                  styles={{ root: { fontWeight: 600 } }}
+                                >
+                                  {sale.PaymentMethod || 'Cash'}
+                                </Badge>
+                              </Table.Td>
+                              <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                                ₹{sale.GrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </Table.Td>
+                              <Table.Td style={{ textAlign: 'center' }}>
+                                {hasEdits ? (
+                                  <Tooltip label="Click to inspect invoice revision history" withArrow position="top">
+                                    <Badge
+                                      size="xs"
+                                      variant="filled"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveAuditSale(sale);
+                                      }}
+                                      styles={{
+                                        root: {
+                                          cursor: 'pointer',
+                                          backgroundColor: '#800020',
+                                          color: '#ffffff',
+                                          fontWeight: 800,
+                                          fontSize: 9,
+                                          letterSpacing: '0.4px',
+                                          height: 18,
+                                          paddingLeft: 6,
+                                          paddingRight: 6,
+                                          borderRadius: 4,
+                                          boxShadow: '0 1px 2px rgba(128, 0, 32, 0.25)',
+                                          border: 'none',
+                                          verticalAlign: 'middle',
+                                          userSelect: 'none',
+                                        },
+                                        label: {
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 3.5,
+                                          overflow: 'visible',
+                                          lineHeight: 1,
+                                        },
+                                      }}
+                                    >
+                                      <span>EDITED</span>
+                                      <IconArrowUpRight size={10} stroke={2.8} />
+                                    </Badge>
+                                  </Tooltip>
+                                ) : (
+                                  <Badge size="xs" variant="subtle" color="gray" styles={{ root: { color: '#64748b' } }}>
+                                    Original
+                                  </Badge>
+                                )}
+                              </Table.Td>
+                              <Table.Td style={{ textAlign: 'right' }}>
+                                <Tooltip label="Edit invoice in Sales Register" withArrow position="top">
+                                  <ActionIcon
+                                    size="xs"
+                                    variant="subtle"
+                                    color="burgundy"
+                                    onClick={() => {
+                                      setIsDetailOpen(false);
+                                      navigate(`/sales/${sale.SalesId}/edit`);
+                                    }}
+                                  >
+                                    <IconEdit size={14} color="#800020" />
+                                  </ActionIcon>
+                                </Tooltip>
+                              </Table.Td>
+                            </Table.Tr>
+                          );
+                        })}
+                      </Table.Tbody>
+                    </Table>
+                  </Paper>
+                )}
+              </Stack>
+
               {/* Action Buttons */}
               <Group justify="flex-end" gap="sm">
+                <Button
+                  variant="outline"
+                  radius="sm"
+                  size="sm"
+                  leftSection={<IconPrinter size={15} />}
+                  loading={printingId === selectedItem.EndRouteDriverId}
+                  onClick={() => handlePrintTripSheet(selectedItem)}
+                  style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
+                >
+                  Print Trip Sheet
+                </Button>
                 <Button
                   variant="subtle"
                   color="red"
@@ -714,7 +1071,7 @@ export const EndAllocationsPage: React.FC = () => {
                     Submit & Approve Settlement
                   </Button>
                 ) : (
-                  <Badge size="lg" radius="sm" variant="outline" color="green" style={{ fontWeight: 700 }}>
+                  <Badge size="lg" radius="sm" variant="light" color="burgundy" style={{ fontWeight: 700, borderColor: '#fbcfe8' }}>
                     Settlement Verified & Approved
                   </Badge>
                 )}
@@ -847,182 +1204,197 @@ export const EndAllocationsPage: React.FC = () => {
             </Text>
           </Center>
         ) : (
-          <Table.ScrollContainer minWidth={900}>
-            <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
-              <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
-                <Table.Tr>
-                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    SHIFT DATE & ID
-                  </Table.Th>
-                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    VEHICLE & ROUTE
-                  </Table.Th>
-                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    SETTLEMENT LEDGER
-                  </Table.Th>
-                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    RETURNS
-                  </Table.Th>
-                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    TOTAL COLLECTED
-                  </Table.Th>
-                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center' }}>
-                    STATUS
-                  </Table.Th>
-                  <Table.Th style={{ fontSize: 11, fontWeight: 700, color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right' }}>
-                    ACTIONS
-                  </Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {filteredData.map((item) => {
-                  const amounts = parseSettlementAmounts(item);
-                  const isSettled = item.Status?.toUpperCase() === 'SETTLED';
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md" p="md">
+            {filteredData.map((item) => {
+              const amounts = parseSettlementAmounts(item);
+              const isSettled = item.Status?.toUpperCase() === 'SETTLED';
 
-                  return (
-                    <Table.Tr
-                      key={item.EndRouteDriverId}
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => handleOpenDetail(item)}
-                    >
-                      {/* 1. Date & ID */}
-                      <Table.Td>
-                        <Stack gap={2}>
-                          <Text fw={700} style={{ color: '#800020', fontSize: 13 }}>
-                            ERD-{item.EndRouteDriverId}
-                          </Text>
-                          <Text size="11px" c="#64748b">
-                            {item.ShiftDate}
-                          </Text>
-                        </Stack>
-                      </Table.Td>
-
-                      {/* 2. Vehicle & Route */}
-                      <Table.Td>
-                        <Group gap="xs" wrap="nowrap">
-                          <IconTruck size={18} color="#800020" style={{ flexShrink: 0 }} />
-                          <div>
-                            <Text fw={700} style={{ color: '#0f172a', fontSize: 13 }}>
-                              {item.vehicle_number || 'Van'}
-                            </Text>
-                            <Text size="11px" c="#64748b">
-                              {item.route_name || 'Route'} • Driver: <span style={{ fontWeight: 600, color: '#0f172a' }}>{item.driver_name || 'Driver'}</span>
-                            </Text>
-                          </div>
-                        </Group>
-                      </Table.Td>
-
-                      {/* 3. Settlement Ledger */}
-                      <Table.Td>
+              return (
+                <Paper
+                  key={item.EndRouteDriverId}
+                  p="md"
+                  radius="lg"
+                  withBorder
+                  style={{
+                    backgroundColor: '#ffffff',
+                    borderColor: '#e2e8f0',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04)',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                  onClick={() => handleOpenDetail(item)}
+                >
+                  <Group justify="space-between" align="flex-start" mb="xs">
+                    <div>
+                      <Group gap={8} align="center">
+                        <Text fw={800} style={{ color: '#800020', fontSize: 15, letterSpacing: '-0.01em' }}>
+                          ERD-{item.EndRouteDriverId}
+                        </Text>
                         <Badge
-                          variant="outline"
-                          size="sm"
+                          size="xs"
                           radius="sm"
-                          style={{
-                            borderColor: '#e2e8f0',
-                            color: '#0f172a',
-                            fontWeight: 600,
-                            backgroundColor: '#f8fafc' }}
-                        >
-                          {item.ledger_name || 'Cash / Bank Ledger'}
-                        </Badge>
-                      </Table.Td>
-
-                      {/* 4. Returns */}
-                      <Table.Td>
-                        <Group gap={6} wrap="nowrap">
-                          {(item.total_filled || 0) > 0 && (
-                            <Badge
-                              size="xs"
-                              radius="sm"
-                              variant="filled"
-                              style={{ backgroundColor: '#f1f5f9', color: '#0f172a', fontWeight: 700 }}
-                            >
-                              {item.total_filled} FILLED
-                            </Badge>
-                          )}
-                          <Badge
-                            size="xs"
-                            radius="sm"
-                            variant="filled"
-                            style={{ backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 }}
-                          >
-                            {item.total_empty || 0} EMPTY
-                          </Badge>
-                        </Group>
-                      </Table.Td>
-
-                      {/* 5. Total Collected */}
-                      <Table.Td>
-                        <Stack gap={1}>
-                          <Text fw={700} style={{ color: '#0f172a', fontSize: 13 }}>
-                            ₹{amounts.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </Text>
-                          {amounts.cash > 0 && (
-                            <Text size="10.5px" c="#64748b">
-                              Cash: ₹{amounts.cash.toLocaleString('en-IN')}
-                            </Text>
-                          )}
-                          {amounts.bank > 0 && (
-                            <Text size="10.5px" c="#64748b">
-                              Bank: ₹{amounts.bank.toLocaleString('en-IN')}
-                            </Text>
-                          )}
-                        </Stack>
-                      </Table.Td>
-
-                      {/* 6. Status */}
-                      <Table.Td style={{ textAlign: 'center' }}>
-                        <Badge
-                          size="sm"
-                          radius="sm"
-                          variant="filled"
-                          style={{
-                            backgroundColor: isSettled ? '#f1f5f9' : '#fdf2f4',
-                            color: isSettled ? '#334155' : '#800020',
-                            fontWeight: 700,
-                            letterSpacing: '0.4px' }}
+                          variant="light"
+                          color={isSettled ? 'burgundy' : 'orange'}
+                          styles={{
+                            root: {
+                              backgroundColor: isSettled ? '#fdf2f4' : '#fef3c7',
+                              color: isSettled ? '#800020' : '#b45309',
+                              border: isSettled ? '1px solid #fbcfe8' : '1px solid #fde68a',
+                              fontWeight: 700,
+                            },
+                          }}
                         >
                           {isSettled ? 'SETTLED' : 'PENDING'}
                         </Badge>
-                      </Table.Td>
+                      </Group>
+                      <Text size="xs" c="dimmed" mt={2}>
+                        {formatDateDDMMYY(item.ShiftDate)}
+                      </Text>
+                    </div>
+                  </Group>
 
-                      {/* 7. Actions */}
-                      <Table.Td style={{ textAlign: 'right' }}>
-                        <Group gap={4} justify="flex-end" wrap="nowrap">
-                          <Tooltip label="View Settlement Details" withArrow position="left">
-                            <ActionIcon
-                              variant="subtle"
-                              color="gray"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenDetail(item);
-                              }}
-                            >
-                              <IconEye size={16} />
-                            </ActionIcon>
-                          </Tooltip>
+                  <Divider my="xs" style={{ borderColor: '#f1f5f9' }} />
 
-                          <Tooltip label="Delete Settlement Record" withArrow position="left">
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setDeleteConfirmItem(item);
-                              }}
-                            >
-                              <IconTrash size={15} />
-                            </ActionIcon>
-                          </Tooltip>
+                  {/* Vehicle & Driver */}
+                  <Box
+                    p="xs"
+                    mb="xs"
+                    style={{
+                      backgroundColor: '#f8fafc',
+                      borderRadius: 8,
+                      border: '1px solid #f1f5f9',
+                    }}
+                  >
+                    <Group gap="xs" wrap="nowrap" align="center">
+                      <Box
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 6,
+                          backgroundColor: '#fdf2f4',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <IconTruck size={18} color="#800020" />
+                      </Box>
+                      <div style={{ overflow: 'hidden', flex: 1 }}>
+                        <Text fw={700} size="sm" c="#0f172a" truncate>
+                          {item.vehicle_number || 'Van'}
+                        </Text>
+                        <Text size="xs" c="dimmed" truncate>
+                          {item.route_name || 'Route'} &bull; Driver: <Text component="span" fw={600} c="#0f172a">{item.driver_name || 'Driver'}</Text>
+                        </Text>
+                      </div>
+                    </Group>
+                  </Box>
+
+                  {/* Balance (Unsold Full & Empties) */}
+                  <Group justify="space-between" align="center" mb="xs">
+                    <Text size="xs" c="#64748b" fw={600}>
+                      Balance:
+                    </Text>
+                    <Group gap={6}>
+                      <Badge
+                        size="sm"
+                        radius="sm"
+                        variant="filled"
+                        style={{ backgroundColor: '#f1f5f9', color: '#0f172a', fontWeight: 700 }}
+                      >
+                        {item.total_filled || 0} Filled
+                      </Badge>
+                      <Badge
+                        size="sm"
+                        radius="sm"
+                        variant="filled"
+                        style={{ backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 }}
+                      >
+                        {item.total_empty || 0} Empty
+                      </Badge>
+                    </Group>
+                  </Group>
+
+                  {/* Total Collected */}
+                  <Box
+                    p="xs"
+                    mb="xs"
+                    style={{
+                      backgroundColor: '#fdf2f4',
+                      borderRadius: 8,
+                      border: '1px solid #fae8eb',
+                    }}
+                  >
+                    <Group justify="space-between" align="baseline">
+                      <div>
+                        <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                          Total Collected
+                        </Text>
+                        <Group gap={6} mt={2} align="center">
+                          <Text size="11px" fw={600} c="#475569">
+                            Cash: ₹{amounts.cash.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          </Text>
+                          <Text size="11px" c="dimmed">&bull;</Text>
+                          <Text size="11px" fw={600} style={{ color: '#800020' }}>
+                            Bank: ₹{amounts.bank.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                          </Text>
                         </Group>
-                      </Table.Td>
-                    </Table.Tr>
-                  );
-                })}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+                      </div>
+                      <Text fw={800} style={{ color: '#800020', fontSize: 18, fontVariantNumeric: 'tabular-nums' }}>
+                        ₹{amounts.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
+                    </Group>
+                  </Box>
+
+                  {/* Actions */}
+                  <Divider my="xs" style={{ borderColor: '#f1f5f9' }} />
+                  <Group justify="flex-end" gap={6} onClick={(e) => e.stopPropagation()}>
+                    <Tooltip label="Print Route Trip Sheet" withArrow position="top">
+                      <ActionIcon
+                        variant="subtle"
+                        color="burgundy"
+                        size="md"
+                        radius="md"
+                        style={{
+                          color: '#800020',
+                        }}
+                        loading={printingId === item.EndRouteDriverId}
+                        onClick={(e) => handlePrintTripSheet(item, e)}
+                      >
+                        <IconPrinter size={17} color="#800020" />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="View Settlement Details" withArrow position="top">
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        size="md"
+                        radius="md"
+                        onClick={() => handleOpenDetail(item)}
+                      >
+                        <IconEye size={17} />
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Delete Settlement Record" withArrow position="top">
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        size="md"
+                        radius="md"
+                        loading={deleteMutation.isPending && deleteConfirmItem?.EndRouteDriverId === item.EndRouteDriverId}
+                        onClick={() => setDeleteConfirmItem(item)}
+                      >
+                        <IconTrash size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  </Group>
+                </Paper>
+              );
+            })}
+          </SimpleGrid>
         )}
       </Paper>
 
@@ -1055,6 +1427,220 @@ export const EndAllocationsPage: React.FC = () => {
           }
         }}
       />
+
+      {/* ── Invoice Edit History Audit Modal ── */}
+      <Modal
+        opened={!!activeAuditSale}
+        onClose={() => setActiveAuditSale(null)}
+        title={
+          <Group gap="xs">
+            <Box
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                backgroundColor: '#fdf2f4',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid #f5c2cb',
+              }}
+            >
+              <IconHistory size={18} color="#800020" />
+            </Box>
+            <div>
+              <Text fw={800} style={{ color: '#800020', fontSize: 16 }}>
+                Invoice Revision History
+              </Text>
+              <Text size="xs" c="dimmed">
+                {activeAuditSale?.InvoiceNo || `INV-${activeAuditSale?.SalesId}`} &bull; {activeAuditSale?.CustomerName || 'Walk-in Customer'}
+              </Text>
+            </div>
+          </Group>
+        }
+        size="96%"
+        radius="lg"
+        padding="xl"
+        centered
+        styles={{
+          content: {
+            maxWidth: '1060px',
+            width: '92vw',
+          },
+          inner: {
+            padding: '12px',
+          },
+        }}
+      >
+        {activeAuditSale && (
+          <Stack gap="md">
+            {/* Summary Information Card */}
+            <Box p="md" style={{ backgroundColor: '#fdf2f4', borderRadius: 10, border: '1px solid #f5c2cb' }}>
+              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    CUSTOMER
+                  </Text>
+                  <Text fw={800} size="xs" c="#0f172a" truncate>
+                    {activeAuditSale.CustomerName || 'Walk-in Customer'}
+                  </Text>
+                </div>
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    DELIVERED / EMPTY
+                  </Text>
+                  <Text fw={800} size="xs" c="#0f172a">
+                    {activeAuditSale.TotalDeliveredQty ?? activeAuditSale.delivered_qty ?? 0} Cyl / {activeAuditSale.TotalEmptyQty ?? activeAuditSale.empty_returned ?? 0} Ret
+                  </Text>
+                </div>
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    INVOICE TOTAL
+                  </Text>
+                  <Text fw={800} size="xs" c="#0f172a">
+                    ₹{Number(activeAuditSale.GrandTotal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </div>
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    PAID / COLLECTED
+                  </Text>
+                  <Text fw={800} size="xs" style={{ color: '#800020' }}>
+                    ₹{Number(activeAuditSale.PaidAmount ?? activeAuditSale.GrandTotal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </div>
+              </SimpleGrid>
+            </Box>
+
+            {/* Note / Reason outside the tab */}
+            {activeAuditSale.EditReason && (
+              <Text size="xs" c="#475569" px={4} style={{ marginTop: -4 }}>
+                <Text component="span" fw={700} style={{ color: '#800020' }}>Latest Note / Reason:</Text>{' '}
+                {activeAuditSale.EditReason}
+              </Text>
+            )}
+
+            {(!activeAuditSale.edit_history || activeAuditSale.edit_history.length === 0) ? (
+              <Box p="lg" style={{ textAlign: 'center', backgroundColor: '#fdf2f4', borderRadius: 10, border: '1px solid #f5c2cb' }}>
+                <Text size="sm" style={{ color: '#800020', fontWeight: 700 }}>
+                  Invoice record was marked as modified
+                </Text>
+                {activeAuditSale.EditedBy && (
+                  <Text size="xs" c="dimmed" mt={4}>
+                    Modified by: {activeAuditSale.EditedBy} {activeAuditSale.EditedAt ? `on ${formatDateDDMMYY(activeAuditSale.EditedAt)}` : ''}
+                  </Text>
+                )}
+                {activeAuditSale.EditReason && (
+                  <Text size="xs" fw={600} style={{ color: '#800020' }} mt={6}>
+                    &ldquo;{activeAuditSale.EditReason}&rdquo;
+                  </Text>
+                )}
+              </Box>
+            ) : (
+              <Table.ScrollContainer minWidth={600} style={{ width: '100%' }}>
+                <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover withTableBorder style={{ borderRadius: 8, overflow: 'hidden', width: '100%' }}>
+                  <Table.Thead style={{ backgroundColor: '#fdf2f4' }}>
+                    <Table.Tr>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 160, whiteSpace: 'nowrap' }}>TIMESTAMP</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 180, whiteSpace: 'nowrap' }}>MODIFIED BY</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 210, whiteSpace: 'nowrap' }}>AMOUNT CHANGE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 150, whiteSpace: 'nowrap' }}>PAYMENT MODE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px' }}>REASON / NOTES</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {activeAuditSale.edit_history.map((eh: any, idx: number) => {
+                      const editDate = eh.EditedAt || eh.edited_at;
+                      const editor = eh.EditedBy || eh.edited_by || 'Driver / Admin';
+                      const oldTotal = eh.OldGrandTotal ?? eh.old_grand_total ?? 0;
+                      const newTotal = eh.NewGrandTotal ?? eh.new_grand_total ?? 0;
+                      const oldMode = eh.OldPaymentMethod || eh.old_payment_method || '';
+                      const newMode = eh.NewPaymentMethod || eh.new_payment_method || '';
+                      const noteText = eh.Notes || eh.notes || 'Invoice details updated';
+
+                      return (
+                        <Table.Tr key={eh.EditId || eh.edit_id || idx}>
+                          <Table.Td style={{ fontSize: 12, color: '#475569', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                            {editDate ? new Date(editDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                            {editor}
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                            <Group gap={6} wrap="nowrap">
+                              <Text size="xs" td="line-through" c="dimmed">
+                                ₹{Number(oldTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                              <IconArrowRight size={13} color="#800020" />
+                              <Text size="sm" fw={800} style={{ color: '#800020' }}>
+                                ₹{Number(newTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                            </Group>
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                            {oldMode && oldMode !== newMode ? (
+                              <Group gap={4} wrap="nowrap">
+                                <Text size="xs" c="dimmed">{oldMode}</Text>
+                                <IconArrowRight size={12} color="#800020" />
+                                <Text size="xs" fw={700} style={{ color: '#800020' }}>{newMode}</Text>
+                              </Group>
+                            ) : (
+                              <Text size="xs" fw={600} c="#0f172a">{newMode || 'Cash'}</Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12, color: '#334155', fontWeight: 500 }}>
+                            {noteText}
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            )}
+
+            <Group justify="space-between" mt="xs">
+              <Button
+                variant="subtle"
+                color="burgundy"
+                size="xs"
+                radius="md"
+                leftSection={<IconReceipt size={14} />}
+                onClick={() => {
+                  const billNo = activeAuditSale.InvoiceNo || `INV-${activeAuditSale.SalesId}`;
+                  const cleanTicket = String(billNo).replace(/^#/, '');
+                  const baseUrl = apiClient.defaults.baseURL?.replace(/\/api\/v1\/?$/, '') || '';
+                  window.open(`${baseUrl}/api/v1/sales/invoice-pdf/?ticket_id=${encodeURIComponent(cleanTicket)}&_t=${Date.now()}`, '_blank');
+                }}
+                styles={{
+                  root: {
+                    color: '#800020',
+                    fontWeight: 600,
+                  },
+                }}
+              >
+                View Invoice PDF
+              </Button>
+              <Button
+                variant="outline"
+                color="burgundy"
+                size="xs"
+                radius="md"
+                onClick={() => setActiveAuditSale(null)}
+                styles={{
+                  root: {
+                    borderColor: '#800020',
+                    color: '#800020',
+                    fontWeight: 700,
+                  },
+                }}
+              >
+                Close
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
 
     </Stack>
   );

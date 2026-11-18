@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/app_toast.dart';
 import '../providers/app_state.dart';
 import 'home_screen.dart';
 import 'orders_screen.dart';
@@ -28,6 +29,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late int _currentIndex;
 
   void _switchToTab(int index) {
+    if (index == 1) {
+      final state = AppStateProvider.of(context);
+      if (state.isShiftLocked || state.endShiftStatus.toUpperCase() != 'ACTIVE') {
+        AppToast.error(context, 'Shift ended. Awaiting approval or new load allocation.');
+        return;
+      }
+    }
     setState(() => _currentIndex = index);
   }
 
@@ -92,79 +100,93 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               ),
             ),
             if (MediaQuery.of(context).viewInsets.bottom == 0) ...[
-              // Subtle short bottom white shade blending upwards from screen bottom
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: 38 + MediaQuery.of(context).padding.bottom,
-                child: IgnorePointer(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          Color(0xD9FFFFFF),
-                          Color(0x59FFFFFF),
-                          Color(0x00FFFFFF),
-                        ],
-                        stops: [0.0, 0.5, 1.0],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              // Responsive bottom padding for classic 3-button navigation vs gesture navigation
+              Builder(
+                builder: (context) {
+                  final bottomPadding = MediaQuery.of(context).padding.bottom;
+                  // On devices with classic 3-button navigation (bottomPadding > 24),
+                  // use a 6px offset so the navbar sits right above the system buttons without jumping too high.
+                  final double navBottomOffset = bottomPadding > 24 ? (bottomPadding + 6) : (bottomPadding + 10);
 
-              // Floating Pill Navbar
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: 12 + MediaQuery.of(context).padding.bottom,
-                child: Container(
-                  height: 62,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
-                    border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x0A0F172A),
-                        blurRadius: 6,
-                        offset: Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  return Stack(
                     children: [
-                      _navItem(
-                        selectedIcon: Icons.home_rounded,
-                        unselectedIcon: Icons.home_outlined,
-                        label: 'Home',
-                        index: 0,
+                      // White gradient shade blending upwards behind floating pill navbar
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: navBottomOffset + 76,
+                        child: IgnorePointer(
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.bottomCenter,
+                                end: Alignment.topCenter,
+                                colors: [
+                                  Color(0xE6FFFFFF),
+                                  Color(0x80FFFFFF),
+                                  Color(0x00FFFFFF),
+                                ],
+                                stops: [0.0, 0.55, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      _navItem(
-                        selectedIcon: Icons.local_shipping_rounded,
-                        unselectedIcon: Icons.local_shipping_outlined,
-                        label: 'Delivery',
-                        index: 1,
-                      ),
-                      _navItem(
-                        selectedIcon: Icons.receipt_long_rounded,
-                        unselectedIcon: Icons.receipt_long_outlined,
-                        label: 'Sales',
-                        index: 2,
-                      ),
-                      _navItem(
-                        selectedIcon: Icons.person_rounded,
-                        unselectedIcon: Icons.person_outline_rounded,
-                        label: 'Profile',
-                        index: 3,
+
+                      // Floating Pill Navbar
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        bottom: navBottomOffset,
+                        child: Container(
+                          height: 62,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x0F0F172A),
+                                blurRadius: 8,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _navItem(
+                                selectedIcon: Icons.home_rounded,
+                                unselectedIcon: Icons.home_outlined,
+                                label: 'Home',
+                                index: 0,
+                              ),
+                              _navItem(
+                                selectedIcon: Icons.local_shipping_rounded,
+                                unselectedIcon: Icons.local_shipping_outlined,
+                                label: 'Delivery',
+                                index: 1,
+                              ),
+                              _navItem(
+                                selectedIcon: Icons.receipt_long_rounded,
+                                unselectedIcon: Icons.receipt_long_outlined,
+                                label: 'Sales',
+                                index: 2,
+                              ),
+                              _navItem(
+                                selectedIcon: Icons.person_rounded,
+                                unselectedIcon: Icons.person_outline_rounded,
+                                label: 'Profile',
+                                index: 3,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ],
-                  ),
-                ),
+                  );
+                },
               ),
             ],
           ],

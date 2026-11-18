@@ -28,8 +28,9 @@ import {
   IconPencil,
   IconTrash,
   IconChevronDown,
+  IconArrowLeft,
   IconFileSpreadsheet } from '@tabler/icons-react';
-import { } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm, Controller } from 'react-hook-form';
 import { notifications } from '@mantine/notifications';
@@ -152,6 +153,7 @@ const defaultLedgerValues: LedgerFormValues = {
   Narration: '' };
 
 export const AccountsPage: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
@@ -476,6 +478,17 @@ export const AccountsPage: React.FC = () => {
       {/* Page Header matching Products Page */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Accounts
           </Title>

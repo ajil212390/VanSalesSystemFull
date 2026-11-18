@@ -122,6 +122,7 @@ class DeliveryOrder {
   final int totalCylinders;
   final int totalEmpties;
   final double amount;
+  final double? billTotal;
   final String paymentMethod;
   final double? cashAmount;
   final double? upiAmount;
@@ -137,6 +138,7 @@ class DeliveryOrder {
     required this.totalCylinders,
     required this.totalEmpties,
     required this.amount,
+    this.billTotal,
     required this.paymentMethod,
     this.cashAmount,
     this.upiAmount,
@@ -144,6 +146,16 @@ class DeliveryOrder {
     this.status = 'Delivered',
     this.stopNumber = 1,
   });
+
+  double get totalBillValue => (billTotal != null && billTotal! > 0) ? billTotal! : amount;
+
+  double get pendingBalance {
+    if (paymentMethod.toUpperCase() == 'CREDIT') {
+      return totalBillValue;
+    }
+    final bal = totalBillValue - amount;
+    return bal > 0.01 ? bal : 0.0;
+  }
 
   String get cylinderSummary {
     final parts = items
@@ -306,6 +318,7 @@ class AppState extends ChangeNotifier {
   String endShiftStatus = 'ACTIVE';
   bool get isShiftLocked =>
       endShiftStatus.toUpperCase() == 'PENDING' ||
+      endShiftStatus.toUpperCase() == 'PENDING_APPROVAL' ||
       endShiftStatus.toUpperCase() == 'SETTLED' ||
       endShiftStatus.toUpperCase() == 'APPROVED';
   bool isLoadingFromBackend = false;
@@ -511,150 +524,179 @@ class AppState extends ChangeNotifier {
         }
 
         if (currentAllocationId != null) {
-          final vanStock = await ApiService.getVanStock(currentAllocationId!);
-          if (vanStock.isNotEmpty) {
-            // Separate Cylinders from Other Items (stoves, burners, lighters, etc.)
-            final cylItems = vanStock.where((s) {
-              if (s['IsCylinder'] == true) return true;
-              if (s['IsOther'] == true) return false;
-              final name = (s['ProductName'] ?? '').toString().toLowerCase();
-              return name.contains('cylinder') || name.contains('kg') || name.contains('lpg');
-            }).toList();
-
-            final otherItems = vanStock.where((s) {
-              if (s['IsOther'] == true) return true;
-              if (s['IsCylinder'] == true) return false;
-              final name = (s['ProductName'] ?? '').toString().toLowerCase();
-              return !name.contains('cylinder') && !name.contains('kg') && !name.contains('lpg');
-            }).toList();
-
-            // Load cylinders strictly from backend DB van-stock with live allocated, delivered, balance, empty
-            cylinders = cylItems.map((s) => CylinderType(
-              productId: safeInt(s['ProductId']),
-              weight: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
-                  ? s['AppProductName'].toString().trim()
-                  : (s['ProductName'] ?? '').toString(),
-              price: safeDouble(s['SalesPrice']),
-              gstPercentage: safeDouble(s['GSTPercentage']),
-              hsnCode: s['HSNCode']?.toString() ?? '271109',
-              initialFilledStock: safeInt(s['AllocatedQty'] ?? s['OnboardQty']),
-              filledStock: safeInt(s['BalanceQty'] ?? s['OnboardQty']),
-              emptyStock: safeInt(s['EmptyQty']),
-            )).toList();
-            _initDeliveryItems();
-
-            // Load Other Products allocated to this vehicle
-            otherProducts = otherItems
-                .where((s) => safeInt(s['AllocatedQty'] ?? s['OnboardQty']) > 0)
-                .map((s) => OtherProductItem(
-                  productId: safeInt(s['ProductId']),
-                  name: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
-                      ? s['AppProductName'].toString().trim()
-                      : (s['ProductName'] ?? '').toString(),
-                  price: safeDouble(s['SalesPrice']),
-                  gstPercentage: safeDouble(s['GSTPercentage']),
-                  categoryName: (s['CategoryName'] ?? 'Other Items').toString(),
-                  initialStock: safeInt(s['AllocatedQty'] ?? s['OnboardQty']),
-                  deliveredStock: safeInt(s['DeliveredQty']),
-                  balanceStock: safeInt(s['BalanceQty'] ?? s['OnboardQty']),
-                ))
-                .toList();
-          }
-        }
-        // Fetch Driver's Sales for Today from Backend
-        if (currentAllocationId != null) {
+          // 1. Authoritative Shift Status Check from backend
           try {
-            final backendSales = await ApiService.getDriverSales(currentAllocationId!);
-            final newOrders = <DeliveryOrder>[];
-            for (final s in backendSales) {
-              final cData = s['customer'] as Map<String, dynamic>? ?? {};
-              final itemsList = (s['items'] as List? ?? []).map((it) {
-                var w = it['weight']?.toString().trim() ?? '';
-                final kgMatch = RegExp(r'(\d+(?:\.\d+)?\s*KG)', caseSensitive: false).firstMatch(w);
-                if (kgMatch != null) {
-                  w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
-                }
-                final matchedCyl = cylinders.firstWhere(
-                  (c) => c.weight.trim().toUpperCase() == w.toUpperCase() ||
-                         (w.isNotEmpty && c.weight.toUpperCase().contains(w.toUpperCase())),
-                  orElse: () => CylinderType(
-                    productId: safeInt(it['productId']),
-                    weight: w,
-                    price: safeDouble(it['rate']),
-                    filledStock: 0,
-                  ),
-                );
-                return DeliveryItem(
-                  cylinder: matchedCyl,
-                  deliveryQty: safeInt(it['deliveryQty']),
-                  emptyReturnQty: safeInt(it['emptyReturnQty']),
-                );
+            final statusData = await ApiService.getShiftStatus(currentAllocationId!);
+            if (statusData != null) {
+              endShiftStatus = (statusData['status'] ?? 'ACTIVE').toString();
+            }
+          } catch (_) {}
+
+          if (isShiftLocked || endShiftStatus.toUpperCase() != 'ACTIVE') {
+            // Shift is ended (awaiting approval or settled): wipe all live sales, expenses, and zero all inventory on driver's device
+            orders.clear();
+            expenses.clear();
+            collectedAmount = 0.0;
+            for (final c in cylinders) {
+              c.filledStock = 0;
+              c.emptyStock = 0;
+              c.initialFilledStock = 0;
+            }
+            for (final p in otherProducts) {
+              p.balanceStock = 0;
+              p.deliveredStock = 0;
+              p.initialStock = 0;
+            }
+          } else {
+            // Shift is ACTIVE: load live van stock, sales orders, and trip expenses
+            final vanStock = await ApiService.getVanStock(currentAllocationId!);
+            if (vanStock.isNotEmpty) {
+              // Separate Cylinders from Other Items (stoves, burners, lighters, etc.)
+              final cylItems = vanStock.where((s) {
+                if (s['IsCylinder'] == true) return true;
+                if (s['IsOther'] == true) return false;
+                final name = (s['ProductName'] ?? '').toString().toLowerCase();
+                return name.contains('cylinder') || name.contains('kg') || name.contains('lpg');
               }).toList();
 
-              final cLedgerId = safeIntNullable(cData['ledgerId']);
-              final cName = cData['name'] ?? 'Customer';
-              final cPhoneRaw = (cData['phone'] ?? '').toString().trim();
+              final otherItems = vanStock.where((s) {
+                if (s['IsOther'] == true) return true;
+                if (s['IsCylinder'] == true) return false;
+                final name = (s['ProductName'] ?? '').toString().toLowerCase();
+                return !name.contains('cylinder') && !name.contains('kg') && !name.contains('lpg');
+              }).toList();
 
-              Customer matchedCust;
-              try {
-                matchedCust = customers.firstWhere(
-                  (c) => (cLedgerId != null && c.ledgerId == cLedgerId) ||
-                         (c.name.trim().toLowerCase() == cName.toString().trim().toLowerCase()),
-                );
-              } catch (_) {
-                matchedCust = Customer(
-                  ledgerId: cLedgerId,
-                  name: cName,
-                  phone: cPhoneRaw,
-                );
+              // Load cylinders strictly from backend DB van-stock with live allocated, delivered, balance, empty
+              cylinders = cylItems.map((s) => CylinderType(
+                productId: safeInt(s['ProductId']),
+                weight: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
+                    ? s['AppProductName'].toString().trim()
+                    : (s['ProductName'] ?? '').toString(),
+                price: safeDouble(s['SalesPrice']),
+                gstPercentage: safeDouble(s['GSTPercentage']),
+                hsnCode: s['HSNCode']?.toString() ?? '271109',
+                initialFilledStock: safeInt(s['AllocatedQty'] ?? s['OnboardQty']),
+                filledStock: safeInt(s['BalanceQty'] ?? s['OnboardQty']),
+                emptyStock: safeInt(s['EmptyQty']),
+              )).toList();
+              _initDeliveryItems();
+
+              // Load Other Products allocated to this vehicle
+              otherProducts = otherItems
+                  .where((s) => safeInt(s['AllocatedQty'] ?? s['OnboardQty']) > 0)
+                  .map((s) => OtherProductItem(
+                    productId: safeInt(s['ProductId']),
+                    name: (s['AppProductName'] != null && s['AppProductName'].toString().trim().isNotEmpty)
+                        ? s['AppProductName'].toString().trim()
+                        : (s['ProductName'] ?? '').toString(),
+                    price: safeDouble(s['SalesPrice']),
+                    gstPercentage: safeDouble(s['GSTPercentage']),
+                    categoryName: (s['CategoryName'] ?? 'Other Items').toString(),
+                    initialStock: safeInt(s['AllocatedQty'] ?? s['OnboardQty']),
+                    deliveredStock: safeInt(s['DeliveredQty']),
+                    balanceStock: safeInt(s['BalanceQty'] ?? s['OnboardQty']),
+                  ))
+                  .toList();
+            }
+
+            // Fetch Driver's Sales for Today from Backend
+            try {
+              final backendSales = await ApiService.getDriverSales(currentAllocationId!);
+              final newOrders = <DeliveryOrder>[];
+              for (final s in backendSales) {
+                final cData = s['customer'] as Map<String, dynamic>? ?? {};
+                final itemsList = (s['items'] as List? ?? []).map((it) {
+                  var w = it['weight']?.toString().trim() ?? '';
+                  final kgMatch = RegExp(r'(\d+(?:\.\d+)?\s*KG)', caseSensitive: false).firstMatch(w);
+                  if (kgMatch != null) {
+                    w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
+                  }
+                  final matchedCyl = cylinders.firstWhere(
+                    (c) => c.weight.trim().toUpperCase() == w.toUpperCase() ||
+                           (w.isNotEmpty && c.weight.toUpperCase().contains(w.toUpperCase())),
+                    orElse: () => CylinderType(
+                      productId: safeInt(it['productId']),
+                      weight: w,
+                      price: safeDouble(it['rate']),
+                      filledStock: 0,
+                    ),
+                  );
+                  return DeliveryItem(
+                    cylinder: matchedCyl,
+                    deliveryQty: safeInt(it['deliveryQty']),
+                    emptyReturnQty: safeInt(it['emptyReturnQty']),
+                  );
+                }).toList();
+
+                final cLedgerId = safeIntNullable(cData['ledgerId']);
+                final cName = cData['name'] ?? 'Customer';
+                final cPhoneRaw = (cData['phone'] ?? '').toString().trim();
+
+                Customer matchedCust;
+                try {
+                  matchedCust = customers.firstWhere(
+                    (c) => (cLedgerId != null && c.ledgerId == cLedgerId) ||
+                           (c.name.trim().toLowerCase() == cName.toString().trim().toLowerCase()),
+                  );
+                } catch (_) {
+                  matchedCust = Customer(
+                    ledgerId: cLedgerId,
+                    name: cName,
+                    phone: cPhoneRaw,
+                  );
+                }
+                final resolvedPhone = cPhoneRaw.isNotEmpty ? cPhoneRaw : matchedCust.phone;
+
+                final paidAmt = safeDouble(s['paidAmount']);
+                final billAmt = safeDouble(s['grandTotal'] != null && safeDouble(s['grandTotal']) > 0 ? s['grandTotal'] : s['amount']);
+                final isCreditSale = (s['paymentMethod'] ?? '').toString().toUpperCase() == 'CREDIT';
+
+                newOrders.add(DeliveryOrder(
+                  ticketId: s['ticketId'] != null
+                      ? s['ticketId'].toString().replaceAll(RegExp(r'^(DT|BT)-'), 'INV-')
+                      : 'INV-ORD',
+                  salesId: safeIntNullable(s['salesId']),
+                  customer: Customer(
+                    ledgerId: cLedgerId,
+                    name: cName,
+                    phone: resolvedPhone,
+                    address: matchedCust.address,
+                    type: matchedCust.type,
+                  ),
+                  items: itemsList,
+                  totalCylinders: safeInt(s['totalCylinders']),
+                  totalEmpties: safeInt(s['totalEmpties']),
+                  amount: isCreditSale ? 0.0 : (paidAmt > 0 ? paidAmt : billAmt),
+                  billTotal: billAmt > 0 ? billAmt : (paidAmt > 0 ? paidAmt : null),
+                  paymentMethod: s['paymentMethod'] ?? 'Cash',
+                  cashAmount: s['cashAmount'] != null ? safeDouble(s['cashAmount']) : null,
+                  upiAmount: s['upiAmount'] != null ? safeDouble(s['upiAmount']) : null,
+                  time: s['time'] ?? '10:00 AM',
+                  status: s['status'] ?? 'Delivered',
+                ));
               }
-              final resolvedPhone = cPhoneRaw.isNotEmpty ? cPhoneRaw : matchedCust.phone;
-
-              final paidAmt = safeDouble(s['paidAmount']);
-              final billAmt = safeDouble(s['amount']);
-
-              newOrders.add(DeliveryOrder(
-                ticketId: s['ticketId'] ?? 'DT-ORD',
-                salesId: safeIntNullable(s['salesId']),
-                customer: Customer(
-                  ledgerId: cLedgerId,
-                  name: cName,
-                  phone: resolvedPhone,
-                  address: matchedCust.address,
-                  type: matchedCust.type,
-                ),
-                items: itemsList,
-                totalCylinders: safeInt(s['totalCylinders']),
-                totalEmpties: safeInt(s['totalEmpties']),
-                amount: paidAmt > 0 ? paidAmt : billAmt,
-                paymentMethod: s['paymentMethod'] ?? 'Cash',
-                cashAmount: s['cashAmount'] != null ? safeDouble(s['cashAmount']) : null,
-                upiAmount: s['upiAmount'] != null ? safeDouble(s['upiAmount']) : null,
-                time: s['time'] ?? '10:00 AM',
-                status: s['status'] ?? 'Delivered',
-              ));
+              orders.clear();
+              orders.addAll(newOrders);
+            } catch (e) {
+              debugPrint('Failed to load driver sales: $e');
             }
-            orders.clear();
-            orders.addAll(newOrders);
-          } catch (e) {
-            debugPrint('Failed to load driver sales: $e');
-          }
 
-          // Fetch Driver's Expenses for Today from Backend
-          try {
-            final backendExpenses = await ApiService.getDriverExpenses(currentAllocationId!);
-            expenses.clear(); // Always clear previous list before populating
-            for (final exp in backendExpenses) {
-              expenses.add(DriverExpense(
-                id: (exp['id'] ?? exp['expense_id'] ?? '').toString(),
-                title: (exp['category'] ?? exp['title'] ?? 'Expense').toString(),
-                amount: safeDouble(exp['amount']),
-                paymentMethod: (exp['payment_mode'] ?? exp['paymentMethod'] ?? 'Cash').toString(),
-                time: (exp['time'] ?? '').toString(),
-              ));
+            // Fetch Driver's Expenses for Today from Backend
+            try {
+              final backendExpenses = await ApiService.getDriverExpenses(currentAllocationId!);
+              expenses.clear(); // Always clear previous list before populating
+              for (final exp in backendExpenses) {
+                expenses.add(DriverExpense(
+                  id: (exp['id'] ?? exp['expense_id'] ?? '').toString(),
+                  title: (exp['category'] ?? exp['title'] ?? 'Expense').toString(),
+                  amount: safeDouble(exp['amount']),
+                  paymentMethod: (exp['payment_mode'] ?? exp['paymentMethod'] ?? 'Cash').toString(),
+                  time: (exp['time'] ?? '').toString(),
+                ));
+              }
+            } catch (e) {
+              debugPrint('Failed to load driver expenses: $e');
             }
-          } catch (e) {
-            debugPrint('Failed to load driver expenses: $e');
           }
         }
       } else if (currentAllocationId == null) {
@@ -667,34 +709,6 @@ class AppState extends ChangeNotifier {
         cylinders.clear();
         otherProducts.clear();
         _initDeliveryItems();
-      }
-
-      if (currentAllocationId != null) {
-        try {
-          final statusData = await ApiService.getShiftStatus(currentAllocationId!);
-          if (statusData != null) {
-            endShiftStatus = (statusData['status'] ?? 'ACTIVE').toString();
-            final bool isSettled = statusData['is_settled'] == true || endShiftStatus.toUpperCase() == 'SETTLED';
-            final bool waitingForAllocation = statusData['waiting_for_next_allocation'] == true;
-
-            if (isSettled || waitingForAllocation) {
-              // Shift is settled & approved: wipe all sales, expenses, and inventory from driver's device
-              orders.clear();
-              expenses.clear();
-              collectedAmount = 0.0;
-              for (final c in cylinders) {
-                c.filledStock = 0;
-                c.emptyStock = 0;
-                c.initialFilledStock = 0;
-              }
-              for (final p in otherProducts) {
-                p.balanceStock = 0;
-                p.deliveredStock = 0;
-                p.initialStock = 0;
-              }
-            }
-          }
-        } catch (_) {}
       }
 
       // Customers from Backend (Sundry Debtors)
@@ -815,7 +829,7 @@ class AppState extends ChangeNotifier {
   String _generateTicketId() {
     final now = DateTime.now();
     final randomSuffix = (10000 + (now.microsecondsSinceEpoch % 90000)).toString();
-    return 'DT-$randomSuffix';
+    return 'INV-$randomSuffix';
   }
 
   Future<bool> completeDelivery() async {
@@ -838,6 +852,21 @@ class AppState extends ChangeNotifier {
     final effCash = isSplit ? splitCashAmount : (paymentMethod.toLowerCase() == 'cash' ? collectedAmount : 0.0);
     final effUpi = isSplit ? splitUpiAmount : (paymentMethod.toLowerCase().contains('upi') ? collectedAmount : 0.0);
 
+    double calculatedBill = 0.0;
+    for (final it in activeItems) {
+      calculatedBill += it.deliveryQty * it.cylinder.price;
+    }
+    for (final entry in otherDeliveryQty.entries) {
+      if (entry.value > 0) {
+        final prod = otherProducts.firstWhere(
+          (p) => p.name == entry.key,
+          orElse: () => OtherProductItem(name: entry.key, price: 0, initialStock: 0),
+        );
+        calculatedBill += entry.value * prod.price;
+      }
+    }
+    final orderBillTotal = calculatedBill > 0 ? calculatedBill : collectedAmount;
+
     final newOrder = DeliveryOrder(
       ticketId: ticketId,
       customer: selectedCustomer!,
@@ -851,6 +880,7 @@ class AppState extends ChangeNotifier {
       totalCylinders: totalCylinders,
       totalEmpties: totalEmpties,
       amount: collectedAmount,
+      billTotal: orderBillTotal,
       paymentMethod: paymentMethod,
       cashAmount: effCash,
       upiAmount: effUpi,
@@ -967,6 +997,32 @@ class AppState extends ChangeNotifier {
     final cylinderRate = safeDouble(package['CylinderRate'], 0.0);
     final cylinderName = (package['cylinder_name'] ?? 'LPG Cylinder').toString();
 
+    // Verify that van contains every package product in sufficient quantity before proceeding
+    if (cylinderProductId != null && cylinderQty > 0) {
+      final matchingCyl = deliveryItems.firstWhere(
+        (it) => it.cylinder.productId == cylinderProductId,
+        orElse: () => DeliveryItem(cylinder: CylinderType(weight: '', filledStock: 0, emptyStock: 0, price: 0)),
+      );
+      if (matchingCyl.cylinder.filledStock < cylinderQty) {
+        throw Exception('Insufficient van stock for $cylinderName! Required: $cylinderQty, Available: ${matchingCyl.cylinder.filledStock}');
+      }
+    }
+
+    final items = package['items'] as List<dynamic>? ?? [];
+    for (final it in items) {
+      final pid = it['Product'] ?? it['product_id'];
+      final pName = (it['ProductName'] ?? it['product_name'] ?? 'Accessory').toString();
+      final q = safeInt(it['Quantity'], 1);
+      if (q <= 0) continue;
+      final availProd = otherProducts.firstWhere(
+        (p) => p.productId == pid || p.name.toLowerCase() == pName.toLowerCase(),
+        orElse: () => OtherProductItem(name: pName, price: 0, initialStock: 0, balanceStock: 0),
+      );
+      if (availProd.balanceStock < q) {
+        throw Exception('Insufficient van stock for $pName! Required: $q, Available: ${availProd.balanceStock}');
+      }
+    }
+
     if (cylinderProductId != null) {
       allBackendItems.add({
         'product_id': cylinderProductId,
@@ -986,7 +1042,6 @@ class AppState extends ChangeNotifier {
     }
 
     // 2. Accessories items
-    final items = package['items'] as List<dynamic>? ?? [];
     for (final it in items) {
       final pid = it['Product'] ?? it['product_id'];
       final pName = (it['ProductName'] ?? it['product_name'] ?? 'Accessory').toString();
@@ -1126,6 +1181,8 @@ class AppState extends ChangeNotifier {
     required double newAmount,
     required String newPaymentMethod,
     required List<DeliveryItem> updatedItems,
+    double? cashAmount,
+    double? upiAmount,
   }) async {
     final index = orders.indexWhere((o) => o.ticketId == ticketId);
     if (index == -1) return false;
@@ -1157,12 +1214,16 @@ class AppState extends ChangeNotifier {
 
     orders[index] = DeliveryOrder(
       ticketId: oldOrder.ticketId,
+      salesId: oldOrder.salesId,
       customer: oldOrder.customer,
       items: updatedItems,
       totalCylinders: totalDeliv,
       totalEmpties: totalEmpty,
       amount: newAmount,
+      billTotal: oldOrder.billTotal,
       paymentMethod: newPaymentMethod,
+      cashAmount: cashAmount ?? oldOrder.cashAmount,
+      upiAmount: upiAmount ?? oldOrder.upiAmount,
       time: oldOrder.time,
       status: oldOrder.status,
       stopNumber: oldOrder.stopNumber,
@@ -1183,8 +1244,11 @@ class AppState extends ChangeNotifier {
 
       final res = await ApiService.updateSale(
         ticketId: ticketId,
+        salesId: oldOrder.salesId,
         amountCollected: newAmount,
         paymentMethod: newPaymentMethod,
+        cashAmount: cashAmount ?? oldOrder.cashAmount,
+        upiAmount: upiAmount ?? oldOrder.upiAmount,
         items: backendItems,
       );
       return res['success'] == true;
@@ -1194,19 +1258,23 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateOrderAmount(String ticketId, double newAmount, {String? newPaymentMethod}) async {
+  Future<bool> updateOrderAmount(String ticketId, double newAmount, {String? newPaymentMethod, double? cashAmount, double? upiAmount}) async {
     final index = orders.indexWhere((o) => o.ticketId == ticketId);
     if (index == -1) return false;
 
     final oldOrder = orders[index];
     orders[index] = DeliveryOrder(
       ticketId: oldOrder.ticketId,
+      salesId: oldOrder.salesId,
       customer: oldOrder.customer,
       items: oldOrder.items,
       totalCylinders: oldOrder.totalCylinders,
       totalEmpties: oldOrder.totalEmpties,
       amount: newAmount,
+      billTotal: oldOrder.billTotal,
       paymentMethod: newPaymentMethod ?? oldOrder.paymentMethod,
+      cashAmount: cashAmount ?? oldOrder.cashAmount,
+      upiAmount: upiAmount ?? oldOrder.upiAmount,
       time: oldOrder.time,
       status: oldOrder.status,
       stopNumber: oldOrder.stopNumber,
@@ -1217,8 +1285,11 @@ class AppState extends ChangeNotifier {
     try {
       final res = await ApiService.updateSale(
         ticketId: ticketId,
+        salesId: oldOrder.salesId,
         amountCollected: newAmount,
         paymentMethod: newPaymentMethod,
+        cashAmount: cashAmount ?? oldOrder.cashAmount,
+        upiAmount: upiAmount ?? oldOrder.upiAmount,
       );
       return res['success'] == true;
     } catch (e) {
@@ -1248,13 +1319,19 @@ class AppState extends ChangeNotifier {
       );
       if (res['success'] == true) {
         endShiftStatus = 'PENDING';
-        // Empty cylinders and unsold stock are now returned to Godown, not kept in vehicle
+        // When shift ends and waits for approval, all live data resets to zero
+        orders.clear();
+        expenses.clear();
+        collectedAmount = 0.0;
         for (final cyl in cylinders) {
           cyl.emptyStock = 0;
           cyl.filledStock = 0;
+          cyl.initialFilledStock = 0;
         }
         for (final op in otherProducts) {
           op.balanceStock = 0;
+          op.initialStock = 0;
+          op.deliveredStock = 0;
         }
       }
       lastSyncTime = DateTime.now();
@@ -1327,6 +1404,10 @@ class AppState extends ChangeNotifier {
   final List<DriverExpense> expenses = [];
 
   void addExpense({required String title, required double amount, required String paymentMethod}) {
+    if (isShiftLocked || endShiftStatus.toUpperCase() != 'ACTIVE') {
+      debugPrint('Cannot add expense: Shift is ended and locked.');
+      return;
+    }
     final now = TimeOfDay.now();
     final hour = now.hourOfPeriod == 0 ? 12 : now.hourOfPeriod;
     final period = now.period == DayPeriod.am ? 'AM' : 'PM';

@@ -28,11 +28,17 @@ import {
   IconUserCheck,
   IconTrash,
   IconEdit,
-  IconPackage } from '@tabler/icons-react';
+  IconPackage,
+  IconHistory,
+  IconArrowLeft,
+  IconArrowRight,
+  IconArrowUpRight,
+  IconReceipt } from '@tabler/icons-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 export const SalesListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -43,6 +49,7 @@ export const SalesListPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string | null>('ALL');
   const [typeFilter, setTypeFilter] = useState<string | null>('ALL');
   const [viewingSale, setViewingSale] = useState<any | null>(null);
+  const [historySale, setHistorySale] = useState<any | null>(null);
 
   const openSaleId = searchParams.get('open_sale_id');
 
@@ -115,10 +122,45 @@ export const SalesListPage: React.FC = () => {
     return sales.reduce((sum: number, s: any) => sum + Number(s.GrandTotal || 0), 0);
   }, [sales]);
 
-  const cashCollectionsAmount = useMemo(() => {
-    return sales
-      .filter((s: any) => (s.PaymentMethod || '').toUpperCase() === 'CASH')
-      .reduce((sum: number, s: any) => sum + Number(s.PaidAmount || s.GrandTotal || 0), 0);
+  const collectionsSummary = useMemo(() => {
+    let totalCash = 0;
+    let totalBank = 0;
+
+    sales.forEach((s: any) => {
+      if (s.Status === 'CANCELLED') return;
+      const pm = (s.PaymentMethod || 'CASH').toUpperCase();
+      const rawPaid = Number(s.PaidAmount ?? s.GrandTotal ?? 0);
+      const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
+      const paid = Math.max(0, rawPaid - advAdj);
+      if (paid <= 0) return;
+
+      if (pm === 'SPLIT') {
+        const cVal = Number(s.cash_amount ?? 0);
+        const uVal = Number(s.upi_amount ?? s.bank_amount ?? 0);
+        if (cVal > 0 || uVal > 0) {
+          totalCash += cVal;
+          totalBank += uVal;
+        } else {
+          const notes = s.Notes || '';
+          const cM = /Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
+          const uM = /UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
+          const cashSplit = cM ? Number(cM[1].replace(/,/g, '')) : paid / 2;
+          const upiSplit = uM ? Number(uM[1].replace(/,/g, '')) : paid - cashSplit;
+          totalCash += cashSplit;
+          totalBank += upiSplit;
+        }
+      } else if (pm.includes('CASH')) {
+        totalCash += paid;
+      } else {
+        totalBank += paid;
+      }
+    });
+
+    return {
+      total: totalCash + totalBank,
+      cash: totalCash,
+      bank: totalBank,
+    };
   }, [sales]);
 
   const pendingApprovalsCount = useMemo(() => {
@@ -200,7 +242,7 @@ export const SalesListPage: React.FC = () => {
 
   // Open Invoice PDF
   const handlePrintPdf = (sale: any) => {
-    const url = `${apiClient.defaults.baseURL}/sales/${sale.SalesId}/invoice-pdf/`;
+    const url = `${apiClient.defaults.baseURL}/sales/${sale.SalesId}/invoice-pdf/?_t=${Date.now()}`;
     window.open(url, '_blank');
   };
 
@@ -210,6 +252,17 @@ export const SalesListPage: React.FC = () => {
       <Box pt={4} pb={2}>
         <Group justify="space-between" align="center" wrap="wrap">
           <div>
+            <Button
+              variant="subtle"
+              color="gray"
+              size="xs"
+              leftSection={<IconArrowLeft size={16} />}
+              onClick={() => navigate('/')}
+              mb={6}
+              styles={{ root: { paddingLeft: 0, paddingRight: 8 } }}
+            >
+              Back to Dashboard
+            </Button>
             <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
               Sales &amp; Invoices
             </Title>
@@ -259,16 +312,22 @@ export const SalesListPage: React.FC = () => {
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-              Cash Collections
+              Collections
             </Text>
             <IconCash size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#800020', fontSize: 24, fontVariantNumeric: 'tabular-nums' }}>
-            ₹{cashCollectionsAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ₹{collectionsSummary.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </Text>
-          <Text size="xs" c="dimmed" mt={4}>
-            Immediate cash settled sales
-          </Text>
+          <Group gap="xs" mt={6} align="center" wrap="nowrap">
+            <Text size="xs" fw={700} c="#0f172a">
+              Cash: ₹{collectionsSummary.cash.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+            <Text size="xs" c="dimmed">&bull;</Text>
+            <Text size="xs" fw={700} style={{ color: '#800020' }}>
+              Bank: ₹{collectionsSummary.bank.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          </Group>
         </Paper>
 
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
@@ -404,20 +463,53 @@ export const SalesListPage: React.FC = () => {
                               PACKAGE
                             </Badge>
                           )}
-                          {sale.IsEdited && (
+                          {(sale.IsEdited || sale.is_edited || (sale.edit_history && sale.edit_history.length > 0)) && (
                             <Tooltip
-                              label={`Edited by ${sale.EditedBy || 'Driver'}${sale.EditedAt ? ` at ${new Date(sale.EditedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}${sale.EditReason ? ` • ${sale.EditReason}` : ''}`}
+                              label="Click to inspect invoice revision history"
                               withArrow
                               position="top"
                             >
-                              <Badge size="xs" color="orange" variant="light" styles={{ root: { cursor: 'pointer', fontWeight: 700, flexShrink: 0 } }}>
-                                Edited
+                              <Badge
+                                size="xs"
+                                variant="filled"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setHistorySale(sale);
+                                }}
+                                styles={{
+                                  root: {
+                                    cursor: 'pointer',
+                                    backgroundColor: '#800020',
+                                    color: '#ffffff',
+                                    fontWeight: 800,
+                                    fontSize: 9,
+                                    letterSpacing: '0.4px',
+                                    height: 18,
+                                    paddingLeft: 6,
+                                    paddingRight: 6,
+                                    borderRadius: 4,
+                                    boxShadow: '0 1px 2px rgba(128, 0, 32, 0.25)',
+                                    border: 'none',
+                                    verticalAlign: 'middle',
+                                    userSelect: 'none',
+                                  },
+                                  label: {
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3.5,
+                                    overflow: 'visible',
+                                    lineHeight: 1,
+                                  },
+                                }}
+                              >
+                                <span>EDITED</span>
+                                <IconArrowUpRight size={10} stroke={2.8} />
                               </Badge>
                             </Tooltip>
                           )}
                         </Group>
                         <Text size="xs" c="dimmed">
-                          {sale.SalesDate || ''}
+                          {formatDateDDMMYY(sale.SalesDate)}
                         </Text>
                       </Table.Td>
 
@@ -607,7 +699,7 @@ export const SalesListPage: React.FC = () => {
                   Sales Date:
                 </Text>
                 <Text size="sm" fw={600}>
-                  {viewingSale.SalesDate}
+                  {formatDateDDMMYY(viewingSale.SalesDate)}
                 </Text>
               </div>
               <div>
@@ -673,26 +765,65 @@ export const SalesListPage: React.FC = () => {
             {viewingSale.edit_history && viewingSale.edit_history.length > 0 && (
               <>
                 <Divider />
-                <Text size="xs" fw={700} c="orange" tt="uppercase">
-                  Edit Audit Log ({viewingSale.edit_history.length})
-                </Text>
-                <Stack gap={4}>
-                  {viewingSale.edit_history.map((eh: any, idx: number) => (
-                    <Paper key={idx} p="xs" radius="sm" style={{ backgroundColor: '#fffaf0', border: '1px solid #fed7aa' }}>
-                      <Group justify="space-between" align="center">
-                        <Text size="xs" fw={700} c="#9a3412">
-                          Edited by {eh.EditedBy}
-                        </Text>
-                        <Text size="10px" c="dimmed">
-                          {new Date(eh.EditedAt).toLocaleString()}
-                        </Text>
-                      </Group>
-                      <Text size="xs" c="dimmed" mt={2}>
-                        {eh.Notes || `Changed from ₹${eh.OldGrandTotal} to ₹${eh.NewGrandTotal}`}
-                      </Text>
-                    </Paper>
-                  ))}
-                </Stack>
+                <Group justify="space-between" align="center">
+                  <Text size="xs" fw={700} c="orange" tt="uppercase">
+                    Edit Audit Log ({viewingSale.edit_history.length})
+                  </Text>
+                  <Badge size="xs" color="orange" variant="light">
+                    Revised / Modified
+                  </Badge>
+                </Group>
+                <Table verticalSpacing="xs" highlightOnHover withTableBorder>
+                  <Table.Thead style={{ backgroundColor: '#fff7ed' }}>
+                    <Table.Tr>
+                      <Table.Th style={{ fontSize: 11 }}>TIMESTAMP</Table.Th>
+                      <Table.Th style={{ fontSize: 11 }}>EDITED BY</Table.Th>
+                      <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>OLD AMOUNT</Table.Th>
+                      <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>NEW AMOUNT</Table.Th>
+                      <Table.Th style={{ fontSize: 11 }}>PAYMENT MODE</Table.Th>
+                      <Table.Th style={{ fontSize: 11 }}>REASON / NOTES</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {viewingSale.edit_history.map((eh: any, idx: number) => (
+                      <Table.Tr key={idx}>
+                        <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                          <Text size="xs" fw={600}>
+                            {new Date(eh.EditedAt).toLocaleDateString()}
+                          </Text>
+                          <Text size="10px" c="dimmed">
+                            {new Date(eh.EditedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge size="xs" color="gray" variant="outline">
+                            {eh.EditedBy || 'User'}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>
+                          <Text size="xs" td="line-through" c="dimmed">
+                            ₹{Number(eh.OldGrandTotal || 0).toFixed(2)}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>
+                          <Text size="xs" fw={700} c="#800020">
+                            ₹{Number(eh.NewGrandTotal || 0).toFixed(2)}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="xs">
+                            {eh.NewPaymentMethod || eh.OldPaymentMethod || '-'}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Text size="xs" c="dimmed">
+                            {eh.Notes || '-'}
+                          </Text>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
               </>
             )}
 
@@ -769,6 +900,220 @@ export const SalesListPage: React.FC = () => {
                   Print GST Tax Invoice
                 </Button>
               </Group>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
+      {/* Edit History Audit Modal */}
+      <Modal
+        opened={!!historySale}
+        onClose={() => setHistorySale(null)}
+        title={
+          <Group gap="xs">
+            <Box
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 8,
+                backgroundColor: '#fdf2f4',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid #f5c2cb',
+              }}
+            >
+              <IconHistory size={18} color="#800020" />
+            </Box>
+            <div>
+              <Text fw={800} style={{ color: '#800020', fontSize: 16 }}>
+                Invoice Revision History
+              </Text>
+              <Text size="xs" c="dimmed">
+                {historySale?.InvoiceNo || historySale?.SalesNo} &bull; {historySale?.customer_name || 'Walk-in Customer'}
+              </Text>
+            </div>
+          </Group>
+        }
+        size="96%"
+        radius="lg"
+        padding="xl"
+        centered
+        styles={{
+          content: {
+            maxWidth: '1060px',
+            width: '92vw',
+          },
+          inner: {
+            padding: '12px',
+          },
+        }}
+      >
+        {historySale && (
+          <Stack gap="md">
+            {/* Summary Information Card */}
+            <Box p="md" style={{ backgroundColor: '#fdf2f4', borderRadius: 10, border: '1px solid #f5c2cb' }}>
+              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    CUSTOMER
+                  </Text>
+                  <Text fw={800} size="xs" c="#0f172a" truncate>
+                    {historySale.customer_name || 'Walk-in Customer'}
+                  </Text>
+                </div>
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    DELIVERED / EMPTY
+                  </Text>
+                  <Text fw={800} size="xs" c="#0f172a">
+                    {historySale.TotalDeliveredQty ?? 0} Cyl / {historySale.TotalEmptyQty ?? 0} Ret
+                  </Text>
+                </div>
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    INVOICE TOTAL
+                  </Text>
+                  <Text fw={800} size="xs" c="#0f172a">
+                    ₹{Number(historySale.GrandTotal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </div>
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    PAID / COLLECTED
+                  </Text>
+                  <Text fw={800} size="xs" style={{ color: '#800020' }}>
+                    ₹{Number(historySale.PaidAmount ?? historySale.GrandTotal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </div>
+              </SimpleGrid>
+            </Box>
+
+            {/* Note / Reason outside the tab */}
+            {historySale.EditReason && (
+              <Text size="xs" c="#475569" px={4} style={{ marginTop: -4 }}>
+                <Text component="span" fw={700} style={{ color: '#800020' }}>Latest Note / Reason:</Text>{' '}
+                {historySale.EditReason}
+              </Text>
+            )}
+
+            {(!historySale.edit_history || historySale.edit_history.length === 0) ? (
+              <Box p="lg" style={{ textAlign: 'center', backgroundColor: '#fdf2f4', borderRadius: 10, border: '1px solid #f5c2cb' }}>
+                <Text size="sm" style={{ color: '#800020', fontWeight: 700 }}>
+                  Invoice record was marked as modified
+                </Text>
+                {historySale.EditedBy && (
+                  <Text size="xs" c="dimmed" mt={4}>
+                    Modified by: {historySale.EditedBy} {historySale.EditedAt ? `on ${formatDateDDMMYY(historySale.EditedAt)}` : ''}
+                  </Text>
+                )}
+                {historySale.EditReason && (
+                  <Text size="xs" fw={600} style={{ color: '#800020' }} mt={6}>
+                    &ldquo;{historySale.EditReason}&rdquo;
+                  </Text>
+                )}
+              </Box>
+            ) : (
+              <Table.ScrollContainer minWidth={600} style={{ width: '100%' }}>
+                <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover withTableBorder style={{ borderRadius: 8, overflow: 'hidden', width: '100%' }}>
+                  <Table.Thead style={{ backgroundColor: '#fdf2f4' }}>
+                    <Table.Tr>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 160, whiteSpace: 'nowrap' }}>TIMESTAMP</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 180, whiteSpace: 'nowrap' }}>MODIFIED BY</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 210, whiteSpace: 'nowrap' }}>AMOUNT CHANGE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 150, whiteSpace: 'nowrap' }}>PAYMENT MODE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px' }}>REASON / NOTES</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {historySale.edit_history.map((eh: any, idx: number) => {
+                      const editDate = eh.EditedAt || eh.edited_at;
+                      const editor = eh.EditedBy || eh.edited_by || 'Driver / Admin';
+                      const oldTotal = eh.OldGrandTotal ?? eh.old_grand_total ?? 0;
+                      const newTotal = eh.NewGrandTotal ?? eh.new_grand_total ?? 0;
+                      const oldMode = eh.OldPaymentMethod || eh.old_payment_method || '';
+                      const newMode = eh.NewPaymentMethod || eh.new_payment_method || '';
+                      const noteText = eh.Notes || eh.notes || 'Invoice details updated';
+
+                      return (
+                        <Table.Tr key={eh.EditId || eh.edit_id || idx}>
+                          <Table.Td style={{ fontSize: 12, color: '#475569', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                            {editDate ? new Date(editDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                            {editor}
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                            <Group gap={6} wrap="nowrap">
+                              <Text size="xs" td="line-through" c="dimmed">
+                                ₹{Number(oldTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                              <IconArrowRight size={13} color="#800020" />
+                              <Text size="sm" fw={800} style={{ color: '#800020' }}>
+                                ₹{Number(newTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                            </Group>
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                            {oldMode && oldMode !== newMode ? (
+                              <Group gap={4} wrap="nowrap">
+                                <Text size="xs" c="dimmed">{oldMode}</Text>
+                                <IconArrowRight size={12} color="#800020" />
+                                <Text size="xs" fw={700} style={{ color: '#800020' }}>{newMode}</Text>
+                              </Group>
+                            ) : (
+                              <Text size="xs" fw={600} c="#0f172a">{newMode || 'Cash'}</Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12, color: '#334155', fontWeight: 500 }}>
+                            {noteText}
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            )}
+
+            <Group justify="space-between" mt="xs">
+              <Button
+                variant="subtle"
+                color="burgundy"
+                size="xs"
+                radius="md"
+                leftSection={<IconReceipt size={14} />}
+                onClick={() => {
+                  const billNo = historySale.InvoiceNo || historySale.SalesNo || '';
+                  const cleanTicket = String(billNo).replace(/^#/, '');
+                  const baseUrl = apiClient.defaults.baseURL?.replace(/\/api\/v1\/?$/, '') || '';
+                  window.open(`${baseUrl}/api/v1/sales/invoice-pdf/?ticket_id=${encodeURIComponent(cleanTicket)}&_t=${Date.now()}`, '_blank');
+                }}
+                styles={{
+                  root: {
+                    color: '#800020',
+                    fontWeight: 600,
+                  },
+                }}
+              >
+                View Invoice PDF
+              </Button>
+              <Button
+                variant="outline"
+                color="burgundy"
+                size="xs"
+                radius="md"
+                onClick={() => setHistorySale(null)}
+                styles={{
+                  root: {
+                    borderColor: '#800020',
+                    color: '#800020',
+                    fontWeight: 700,
+                  },
+                }}
+              >
+                Close
+              </Button>
             </Group>
           </Stack>
         )}

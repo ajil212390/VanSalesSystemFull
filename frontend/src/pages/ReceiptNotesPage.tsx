@@ -34,12 +34,15 @@ import {
   IconPackage,
   IconClock,
   IconPlus,
+  IconArrowLeft,
   IconTrash,
-  IconGasStation } from '@tabler/icons-react';
-import { } from 'react-router-dom';
+  IconGasStation,
+  IconBrandWhatsapp } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DateInputDDMMYY, formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 interface EmptyBreakdownItem {
   product: string;
@@ -68,6 +71,7 @@ interface ReceiptNoteItem {
 }
 
 export const ReceiptNotesPage: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
@@ -84,6 +88,25 @@ export const ReceiptNotesPage: React.FC = () => {
       const res = await apiClient.get('/godowns/');
       return Array.isArray(res.data) ? res.data : [];
     } });
+
+  // Fetch Creditor Suppliers (Gas Suppliers)
+  const { data: suppliers = [] } = useQuery<any[]>({
+    queryKey: ['supplier-ledgers'],
+    queryFn: async () => {
+      const res = await apiClient.get('/ledgers/suppliers/?only_creditors=true');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    } });
+
+  // Multi-Mode / Movement Purpose:
+  // 1. VAN_TO_GODOWN: Van shift-end returns to godown
+  // 2. SUPPLIER_REFILL: Outward empty cylinders sent to suppliers for refilling
+  // 3. GODOWN_TRANSFER: Stock transfer between godowns
+  type ReceiptMode = 'VAN_TO_GODOWN' | 'SUPPLIER_REFILL' | 'GODOWN_TRANSFER';
+  const [createMode, setCreateMode] = useState<ReceiptMode>('VAN_TO_GODOWN');
+  const [createSourceType, setCreateSourceType] = useState<'VAN' | 'GODOWN'>('VAN');
+  const [createSourceId, setCreateSourceId] = useState<string | null>(null);
+  const [createDestType, setCreateDestType] = useState<'GODOWN' | 'SUPPLIER' | 'VAN'>('GODOWN');
+  const [createDestId, setCreateDestId] = useState<string | null>('1');
 
   // Form State for "Add Receipt Note"
   const [createAllocation, setCreateAllocation] = useState<string | null>(null);
@@ -157,6 +180,35 @@ export const ReceiptNotesPage: React.FC = () => {
       });
   }, [allocations]);
 
+  const godownOptions = useMemo(() => {
+    const list = godowns.length > 0 ? godowns : [
+      { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
+      { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
+    ];
+    return list.map((g: any) => ({
+      value: String(g.GodownId),
+      label: `${g.GodownName}${g.IsCentral ? ' (Central Godown)' : ''}`,
+    }));
+  }, [godowns]);
+
+  const supplierOptions = useMemo(() => {
+    return (suppliers || [])
+      .filter((s: any) => {
+        const gid = Number(s.group_id ?? s.Group ?? 0);
+        const gName = (s.group_name || s.GroupName || '').toLowerCase();
+        const name = (s.LedgerName || s.name || '').toLowerCase();
+        // Strictly exclude Cash and Bank accounts
+        if (gid === 16 || gid === 17) return false;
+        if (gName.includes('cash') || gName.includes('bank')) return false;
+        if (name === 'cash' || name.includes('bank') || name === 'sbi') return false;
+        return true;
+      })
+      .map((s: any) => ({
+        value: String(s.LedgerId || s.id),
+        label: s.LedgerName || s.name,
+      }));
+  }, [suppliers]);
+
   // Unified Dropdown options with all allocated products (or all products fallback)
   const productOptions = useMemo(() => {
     const sourceList = (createAllocation && allocatedProducts.length > 0)
@@ -180,15 +232,49 @@ export const ReceiptNotesPage: React.FC = () => {
   >([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
 
   const handleOpenCreateModal = () => {
-    setCreateAllocation(null);
+    setCreateMode('VAN_TO_GODOWN');
+    setCreateSourceType('VAN');
+    const firstAlloc = allocationOptions[0]?.value || null;
+    setCreateSourceId(firstAlloc);
+    setCreateAllocation(firstAlloc);
+    setCreateDestType('GODOWN');
+    setCreateDestId('1');
     setCreateDate(new Date().toISOString().split('T')[0]);
     setCreateRemarks('');
     setCreateLines([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
     setIsCreateModalOpen(true);
   };
 
+  const handleModeChange = (val: string) => {
+    const m = val as ReceiptMode;
+    setCreateMode(m);
+    if (m === 'VAN_TO_GODOWN') {
+      setCreateSourceType('VAN');
+      const firstAlloc = allocationOptions[0]?.value || null;
+      setCreateSourceId(firstAlloc);
+      setCreateAllocation(firstAlloc);
+      setCreateDestType('GODOWN');
+      setCreateDestId('1');
+    } else if (m === 'SUPPLIER_REFILL') {
+      setCreateSourceType('GODOWN');
+      setCreateSourceId('1');
+      setCreateAllocation(null);
+      setCreateDestType('SUPPLIER');
+      const firstSup = supplierOptions[0]?.value || null;
+      setCreateDestId(firstSup);
+    } else if (m === 'GODOWN_TRANSFER') {
+      setCreateSourceType('GODOWN');
+      setCreateSourceId('1');
+      setCreateAllocation(null);
+      setCreateDestType('GODOWN');
+      const otherGodown = godownOptions.find((g) => g.value !== '1');
+      setCreateDestId(otherGodown ? otherGodown.value : '2');
+    }
+  };
+
   const handleAllocationChange = (val: string | null) => {
     setCreateAllocation(val);
+    setCreateSourceId(val);
     setCreateLines([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
   };
 
@@ -268,12 +354,19 @@ export const ReceiptNotesPage: React.FC = () => {
         color: 'red' });
     } });
 
-  // Mutation: Create Receipt Note manually
+  // Mutation: Create Receipt Note manually (Van Return, Supplier Refill Challan, or Godown Transfer)
   const createReceiptNoteMutation = useMutation({
     mutationFn: async (autoSettle: boolean) => {
-      if (!createAllocation) {
+      if (createMode === 'VAN_TO_GODOWN' && !createSourceId) {
         throw new Error('Please select an active vehicle / route allocation.');
       }
+      if (createMode === 'SUPPLIER_REFILL' && !createDestId) {
+        throw new Error('Please select a supplier.');
+      }
+      if (createMode === 'GODOWN_TRANSFER' && (!createSourceId || !createDestId)) {
+        throw new Error('Please select both source and destination godowns.');
+      }
+
       const items = createLines
         .filter((l) => l.productId > 0 && ((Number(l.filledQty) || 0) > 0 || (Number(l.emptyQty) || 0) > 0))
         .map((l) => ({
@@ -281,8 +374,17 @@ export const ReceiptNotesPage: React.FC = () => {
           filled_qty: Number(l.filledQty) || 0,
           empty_qty: Number(l.emptyQty) || 0 }));
 
+      if (items.length === 0) {
+        throw new Error('Please enter at least one item quantity.');
+      }
+
       const payload = {
-        allocation_id: Number(createAllocation),
+        source_type: createSourceType,
+        source_id: createSourceId ? Number(createSourceId) : (createAllocation ? Number(createAllocation) : 1),
+        destination_type: createDestType,
+        destination_id: createDestId ? Number(createDestId) : 1,
+        movement_purpose: createMode === 'SUPPLIER_REFILL' ? 'SUPPLIER_REFILL' : (createMode === 'GODOWN_TRANSFER' ? 'GODOWN_TRANSFER' : 'RETURN'),
+        allocation_id: createSourceType === 'VAN' && createSourceId ? Number(createSourceId) : (createAllocation ? Number(createAllocation) : 1),
         delivery_date: createDate,
         items,
         cash_collected: 0,
@@ -299,8 +401,8 @@ export const ReceiptNotesPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
       setIsCreateModalOpen(false);
       notifications.show({
-        title: 'Receipt Note Created',
-        message: data.message || 'Receipt note created successfully.',
+        title: createMode === 'SUPPLIER_REFILL' ? 'Refill Challan Created' : 'Receipt Note Created',
+        message: data.message || 'Challan / Receipt note created successfully.',
         color: 'burgundy' });
     },
     onError: (err: any) => {
@@ -372,6 +474,17 @@ export const ReceiptNotesPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             Receipt Notes
           </Title>
@@ -426,11 +539,19 @@ export const ReceiptNotesPage: React.FC = () => {
           >
             <Group justify="space-between" align="flex-start" mb="md">
               <div>
-                <Text fw={700} style={{ color: '#800020' }}>
-                  New Receipt Note Details
+                <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
+                  {createMode === 'SUPPLIER_REFILL'
+                    ? 'Outward Empty Cylinder Refill Challan'
+                    : createMode === 'GODOWN_TRANSFER'
+                    ? 'Internal Godown Stock Transfer Note'
+                    : 'Van Shift Return Receipt Note'}
                 </Text>
                 <Text size="xs" c="dimmed">
-                  Record unsold full & empty cylinders and cash/digital route collections unloaded into Central Godown.
+                  {createMode === 'SUPPLIER_REFILL'
+                    ? 'Dispatch empty cylinders to supplier for refilling.'
+                    : createMode === 'GODOWN_TRANSFER'
+                    ? 'Transfer stock between warehouse godowns.'
+                    : 'Record unsold full & empty cylinders returned by route delivery vans into Central Godown.'}
                 </Text>
               </div>
               <CloseButton
@@ -440,35 +561,129 @@ export const ReceiptNotesPage: React.FC = () => {
             </Group>
 
             <Stack gap="md">
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-                <Select
-                  label="Van / Route Allocation"
-                  placeholder="Select Vehicle • Driver (Route)"
-                  data={allocationOptions}
-                  value={createAllocation}
-                  onChange={handleAllocationChange}
-                  searchable
-                  clearable
-                  nothingFoundMessage="No active allocations found"
-                  comboboxProps={{ withinPortal: true, zIndex: 1000 }}
-                  required
+              {/* Mode / Purpose Selector */}
+              <Box>
+                <Text size="xs" fw={700} c="#475569" mb={4}>
+                  MOVEMENT PURPOSE / NOTE TYPE
+                </Text>
+                <SegmentedControl
+                  value={createMode}
+                  onChange={handleModeChange}
+                  fullWidth
+                  radius="xl"
+                  color="burgundy"
+                  data={[
+                    { label: 'Van to Godown Return', value: 'VAN_TO_GODOWN' },
+                    { label: 'Outward to Supplier (Refilling)', value: 'SUPPLIER_REFILL' },
+                    { label: 'Godown Transfer', value: 'GODOWN_TRANSFER' },
+                  ]}
+                  styles={{
+                    root: {
+                      backgroundColor: '#f1f5f9',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 9999,
+                      padding: 4,
+                    },
+                    indicator: {
+                      backgroundColor: '#800020',
+                      borderRadius: 9999,
+                      boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
+                    },
+                    label: {
+                      fontWeight: 700,
+                      fontSize: 12,
+                      padding: '6px 14px',
+                    },
+                  }}
                 />
-                <TextInput
-                  label="Receipt Date"
-                  type="date"
+              </Box>
+
+              <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                {/* Source Selection */}
+                {createMode === 'VAN_TO_GODOWN' ? (
+                  <Select
+                    label="Source Van / Allocation"
+                    placeholder="Select Delivery Van"
+                    data={allocationOptions}
+                    value={createSourceId}
+                    onChange={(val) => {
+                      setCreateSourceId(val);
+                      handleAllocationChange(val);
+                    }}
+                    searchable
+                    clearable
+                    nothingFoundMessage="No active allocations found"
+                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                    required
+                  />
+                ) : (
+                  <Select
+                    label="Source Godown"
+                    placeholder="Select Source Godown"
+                    data={godownOptions}
+                    value={createSourceId}
+                    onChange={(val) => setCreateSourceId(val)}
+                    searchable
+                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                    required
+                  />
+                )}
+
+                {/* Destination Selection */}
+                {createMode === 'SUPPLIER_REFILL' ? (
+                  <Select
+                    label="Supplier"
+                    placeholder="Select Supplier (Super Gas, Hari Gas...)"
+                    data={supplierOptions}
+                    value={createDestId}
+                    onChange={(val) => setCreateDestId(val)}
+                    searchable
+                    clearable
+                    nothingFoundMessage="No suppliers found"
+                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                    required
+                  />
+                ) : createMode === 'GODOWN_TRANSFER' ? (
+                  <Select
+                    label="Destination Godown"
+                    placeholder="Select Target Godown"
+                    data={godownOptions}
+                    value={createDestId}
+                    onChange={(val) => setCreateDestId(val)}
+                    searchable
+                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                    required
+                  />
+                ) : (
+                  <Select
+                    label="Receiving Godown"
+                    placeholder="Receiving Godown"
+                    data={godownOptions}
+                    value={createDestId}
+                    onChange={(val) => setCreateDestId(val)}
+                    searchable
+                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                    required
+                  />
+                )}
+
+                <DateInputDDMMYY
+                  label="Challan / Receipt Date"
                   value={createDate}
-                  onChange={(e) => setCreateDate(e.currentTarget.value)}
+                  onChange={(val) => setCreateDate(val)}
                   required
                 />
               </SimpleGrid>
 
-              {/* Unified Section: Products Returned to Godown */}
+              {/* Products Section Header */}
               <Divider
                 label={
                   <Group gap="xs">
                     <IconGasStation size={16} color="#800020" />
                     <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Products Returned to Godown
+                      {createMode === 'SUPPLIER_REFILL'
+                        ? 'Empty Cylinders Dispatched for Refilling'
+                        : 'Products Returned / Unloaded into Godown'}
                     </Text>
                     {isFetchingAllocated && (
                       <Group gap={4}>
@@ -497,18 +712,20 @@ export const ReceiptNotesPage: React.FC = () => {
                         comboboxProps={{ withinPortal: true, zIndex: 1000 }}
                       />
                     </Box>
-                    <Box style={{ width: 180, minWidth: 120 }}>
+                    {createMode !== 'SUPPLIER_REFILL' && (
+                      <Box style={{ width: 180, minWidth: 120 }}>
+                        <NumberInput
+                          label={idx === 0 ? 'Unsold Full / Return Qty' : undefined}
+                          placeholder="0"
+                          min={0}
+                          value={line.filledQty}
+                          onChange={(val) => handleLineFilledQtyChange(idx, val)}
+                        />
+                      </Box>
+                    )}
+                    <Box style={{ width: createMode === 'SUPPLIER_REFILL' ? 240 : 180, minWidth: 120 }}>
                       <NumberInput
-                        label={idx === 0 ? 'Unsold Full / Return Qty' : undefined}
-                        placeholder="0"
-                        min={0}
-                        value={line.filledQty}
-                        onChange={(val) => handleLineFilledQtyChange(idx, val)}
-                      />
-                    </Box>
-                    <Box style={{ width: 180, minWidth: 120 }}>
-                      <NumberInput
-                        label={idx === 0 ? 'Empty Returns Qty' : undefined}
+                        label={idx === 0 ? (createMode === 'SUPPLIER_REFILL' ? 'Empty Cylinders to Refill' : 'Empty Returns Qty') : undefined}
                         placeholder={line.isCylinder ? '0' : '—'}
                         disabled={!line.isCylinder}
                         min={0}
@@ -546,7 +763,7 @@ export const ReceiptNotesPage: React.FC = () => {
             {/* Remarks / Gate Notes */}
             <TextInput
               label="Remarks / Gate Notes"
-              placeholder="e.g. Route settlement, cylinders inspected at godown"
+              placeholder={createMode === 'SUPPLIER_REFILL' ? 'e.g. Empty cylinders dispatched to supplier for refilling' : 'e.g. Route settlement, cylinders inspected at godown'}
               value={createRemarks}
               onChange={(e) => setCreateRemarks(e.currentTarget.value)}
             />
@@ -573,7 +790,7 @@ export const ReceiptNotesPage: React.FC = () => {
                   loading={createReceiptNoteMutation.isPending}
                   onClick={() => createReceiptNoteMutation.mutate(true)}
                 >
-                  Save & Settle Note
+                  {createMode === 'SUPPLIER_REFILL' ? 'Dispatch & Settle Challan' : 'Save & Settle Note'}
                 </Button>
               </Group>
             </Group>
@@ -935,7 +1152,7 @@ export const ReceiptNotesPage: React.FC = () => {
                           <Group gap={4} wrap="nowrap">
                             <IconClock size={11} color="#64748b" />
                             <Text size="xs" c="dimmed">
-                              {note.time ? `${note.time} • ` : ''}{note.date}
+                              {note.time ? `${note.time} • ` : ''}{formatDateDDMMYY(note.date)}
                             </Text>
                           </Group>
                         </Stack>
@@ -1068,19 +1285,44 @@ export const ReceiptNotesPage: React.FC = () => {
                             </Tooltip>
                           )}
 
-                          <Tooltip label="Print Note" withArrow position="top">
+                          <Tooltip label="Print Note / Challan PDF" withArrow position="top">
                             <ActionIcon
                               variant="subtle"
                               color="gray"
                               size="sm"
                               onClick={() => {
-                                notifications.show({
-                                  message: `Receipt Note ${note.noteNumber} prepared for printing.`,
-                                  color: 'burgundy' });
+                                const noteId = note.receiptNoteId || note.deliveryNoteId || note.id;
+                                window.open(`${apiClient.defaults.baseURL}/receipt-notes/${noteId}/pdf/?_t=${Date.now()}`, '_blank');
                               }}
                               style={{ color: '#475569' }}
                             >
                               <IconPrinter size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+
+                          <Tooltip label="Share on WhatsApp" withArrow position="top">
+                            <ActionIcon
+                              variant="subtle"
+                              color="green"
+                              size="sm"
+                              onClick={() => {
+                                const noteId = note.receiptNoteId || note.deliveryNoteId || note.id;
+                                const pdfUrl = `${window.location.origin}/api/v1/receipt-notes/${noteId}/pdf/?_t=${Date.now()}`;
+                                const text = encodeURIComponent(
+                                  `*Future Gas - Stock Receipt / Refill Note: ${note.noteNumber}*\n` +
+                                  `Date: ${note.date}\n` +
+                                  `Vehicle: ${note.vehicleNumber}\n` +
+                                  `Driver: ${note.driverName}\n` +
+                                  `Full: ${note.filledCylindersTotal} • Empty: ${note.emptyCylindersTotal}\n` +
+                                  `Status: ${note.status.toUpperCase()}\n` +
+                                  (note.notes ? `Remarks: ${note.notes}\n` : '') +
+                                  `\nChallan PDF: ${pdfUrl}`
+                                );
+                                window.open(`https://wa.me/?text=${text}`, '_blank');
+                              }}
+                              style={{ color: '#16a34a' }}
+                            >
+                              <IconBrandWhatsapp size={16} />
                             </ActionIcon>
                           </Tooltip>
 
@@ -1215,23 +1457,66 @@ export const ReceiptNotesPage: React.FC = () => {
               />
             )}
 
-            <Group justify="space-between" mt="sm">
-              <Button variant="default" onClick={() => setIsDetailModalOpen(false)}>
-                Close
-              </Button>
-              {selectedNote.status === 'pending' && (
+            <Group justify="space-between" mt="md" wrap="wrap" gap="sm">
+              <Group gap="xs">
                 <Button
+                  variant="outline"
                   color="burgundy"
-                  leftSection={<IconCheck size={16} />}
-                  onClick={() => verifyNoteMutation.mutate({
-                    noteId: selectedNote.receiptNoteId || selectedNote.deliveryNoteId || Number(selectedNote.id),
-                    godownId: Number(selectedReceivingGodown) || 1 })}
-                  loading={verifyNoteMutation.isPending}
-                  styles={{ root: { backgroundColor: '#800020', fontWeight: 600 } }}
+                  size="xs"
+                  leftSection={<IconPrinter size={16} />}
+                  onClick={() => {
+                    const noteId = selectedNote.receiptNoteId || selectedNote.deliveryNoteId || selectedNote.id;
+                    window.open(`${apiClient.defaults.baseURL}/receipt-notes/${noteId}/pdf/?_t=${Date.now()}`, '_blank');
+                  }}
+                  styles={{ root: { borderColor: '#800020', color: '#800020', fontWeight: 600 } }}
                 >
-                  Verify & Accept into Godown
+                  Print Challan / Note PDF
                 </Button>
-              )}
+                <Button
+                  variant="light"
+                  color="green"
+                  size="xs"
+                  leftSection={<IconBrandWhatsapp size={16} />}
+                  onClick={() => {
+                    const noteId = selectedNote.receiptNoteId || selectedNote.deliveryNoteId || selectedNote.id;
+                    const pdfUrl = `${window.location.origin}/api/v1/receipt-notes/${noteId}/pdf/?_t=${Date.now()}`;
+                    const text = encodeURIComponent(
+                      `*Future Gas - Stock Receipt / Refill Note: ${selectedNote.noteNumber}*\n` +
+                      `Date: ${selectedNote.date}\n` +
+                      `Vehicle: ${selectedNote.vehicleNumber}\n` +
+                      `Driver: ${selectedNote.driverName}\n` +
+                      `Full: ${selectedNote.filledCylindersTotal} • Empty: ${selectedNote.emptyCylindersTotal}\n` +
+                      `Status: ${selectedNote.status.toUpperCase()}\n` +
+                      (selectedNote.notes ? `Remarks: ${selectedNote.notes}\n` : '') +
+                      `\nChallan PDF: ${pdfUrl}`
+                    );
+                    window.open(`https://wa.me/?text=${text}`, '_blank');
+                  }}
+                  styles={{ root: { fontWeight: 600 } }}
+                >
+                  Share on WhatsApp
+                </Button>
+              </Group>
+
+              <Group gap="xs">
+                <Button variant="default" size="xs" onClick={() => setIsDetailModalOpen(false)}>
+                  Close
+                </Button>
+                {selectedNote.status === 'pending' && (
+                  <Button
+                    color="burgundy"
+                    size="xs"
+                    leftSection={<IconCheck size={16} />}
+                    onClick={() => verifyNoteMutation.mutate({
+                      noteId: selectedNote.receiptNoteId || selectedNote.deliveryNoteId || Number(selectedNote.id),
+                      godownId: Number(selectedReceivingGodown) || 1 })}
+                    loading={verifyNoteMutation.isPending}
+                    styles={{ root: { backgroundColor: '#800020', fontWeight: 600 } }}
+                  >
+                    Verify & Accept into Godown
+                  </Button>
+                )}
+              </Group>
             </Group>
           </Stack>
         )}

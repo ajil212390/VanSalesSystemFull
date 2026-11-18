@@ -18,8 +18,8 @@ import {
   Box,
   Transition,
   Tooltip } from '@mantine/core';
-import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
-import { } from 'react-router-dom';
+import { IconPencil, IconTrash, IconSearch, IconPrinter, IconArrowLeft } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -44,11 +44,33 @@ interface RouteFormValues {
 }
 
 export const RoutesPage: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [formOpened, setFormOpened] = useState(false);
   const [editingRoute, setEditingRoute] = useState<RouteItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; name: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [printingRouteId, setPrintingRouteId] = useState<number | null>(null);
+
+  const handlePrintTripSheet = async (routeId: number) => {
+    try {
+      setPrintingRouteId(routeId);
+      const res = await apiClient.get(`/routes/${routeId}/trip-sheet-pdf/`, {
+        responseType: 'blob',
+      });
+      const file = new Blob([res.data], { type: 'application/pdf' });
+      const fileURL = URL.createObjectURL(file);
+      window.open(fileURL, '_blank');
+    } catch (err: any) {
+      notifications.show({
+        color: 'red',
+        title: 'Error generating PDF',
+        message: 'Failed to generate Route Trip Sheet PDF.',
+      });
+    } finally {
+      setPrintingRouteId(null);
+    }
+  };
 
   // 1. Fetch routes list (excluding internal godowns)
   const { data: routes = [], isLoading } = useQuery<RouteItem[]>({
@@ -178,6 +200,17 @@ export const RoutesPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Routes/Stock Allocation
           </Title>
@@ -369,6 +402,16 @@ export const RoutesPage: React.FC = () => {
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
                         <Group gap={4} justify="flex-end" wrap="nowrap">
+                          <ActionIcon
+                            variant="subtle"
+                            color="burgundy"
+                            size="sm"
+                            loading={printingRouteId === r.RouteId}
+                            title="Print Daily Trip Sheet PDF"
+                            onClick={() => handlePrintTripSheet(r.RouteId)}
+                          >
+                            <IconPrinter size={16} />
+                          </ActionIcon>
                           <ActionIcon
                             variant="subtle"
                             color="burgundy"

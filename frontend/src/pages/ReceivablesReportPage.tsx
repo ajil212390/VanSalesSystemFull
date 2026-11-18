@@ -112,7 +112,7 @@ export const ReceivablesReportPage: React.FC = () => {
   // Helper: compute last delivery date and next expected delivery date for a customer
   const getDeliverySchedule = (customerId: number, frequencyDays: number) => {
     const custSalesSorted = sales
-      .filter((s: any) => Number(s.CustomerLedger) === customerId && s.Status !== 'CANCELLED' && s.SalesDate)
+      .filter((s: any) => Number(s.CustomerLedger) === customerId && s.Status !== 'CANCELLED' && (s.IsApproved === true || s.is_approved === true || s.Status === 'COMPLETED') && s.SalesDate)
       .sort((a: any, b: any) => b.SalesDate.localeCompare(a.SalesDate));
     const lastSale = custSalesSorted[0];
     if (!lastSale) return { lastDelivery: null, nextDue: null, status: 'no-data' };
@@ -226,6 +226,8 @@ export const ReceivablesReportPage: React.FC = () => {
     const salesPaidMap = new Map<number, number>();
     sales.forEach((s) => {
       if (s.Status !== 'CANCELLED') {
+        const isApproved = s.IsApproved === true || s.is_approved === true || s.Status === 'COMPLETED';
+        if (!isApproved) return;
         const cId = Number(s.CustomerLedger);
         if (cId) {
           salesMap.set(cId, (salesMap.get(cId) || 0) + Number(s.GrandTotal || 0));
@@ -425,7 +427,10 @@ export const ReceivablesReportPage: React.FC = () => {
     if (!selectedCustomer) return { entries: [], effectiveOpening: 0, totDebit: 0, totCredit: 0, closingBal: 0 };
 
     const custSales = sales.filter(
-      (s: any) => Number(s.CustomerLedger) === selectedCustomer.id && s.Status !== 'CANCELLED'
+      (s: any) =>
+        Number(s.CustomerLedger) === selectedCustomer.id &&
+        s.Status !== 'CANCELLED' &&
+        (s.IsApproved === true || s.is_approved === true || s.Status === 'COMPLETED')
     );
     const custReceipts = payments.filter((pm: any) => Number(pm.PartyLedgerId) === selectedCustomer.id);
 
@@ -970,6 +975,17 @@ export const ReceivablesReportPage: React.FC = () => {
       {/* 1. Header with Back Button and Quick Actions */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={6}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8 } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             Receivables Report (Sundry Debtors)
           </Title>

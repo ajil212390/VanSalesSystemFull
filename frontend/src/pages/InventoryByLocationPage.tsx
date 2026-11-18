@@ -25,6 +25,7 @@ import {
   IconPackage,
   IconRefresh,
   IconArrowUpRight,
+  IconArrowLeft,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -49,6 +50,15 @@ export const InventoryByLocationPage: React.FC = () => {
     refetchInterval: 5000,
   });
 
+  // Fetch Fleet Vehicles
+  const { data: fleetVehicles = [] } = useQuery<any[]>({
+    queryKey: ['vehicles'],
+    queryFn: async () => {
+      const res = await apiClient.get('/vehicles/');
+      return Array.isArray(res.data) ? res.data : res.data.results || [];
+    },
+  });
+
   const stockProducts = useMemo(() => {
     return stockAnalysis?.products || [];
   }, [stockAnalysis]);
@@ -67,8 +77,26 @@ export const InventoryByLocationPage: React.FC = () => {
       const id = v.RouteVehicleDriverId || v.VehicleId || v.VehicleNumber;
       if (id && !map.has(id)) map.set(id, { ...v });
     });
+
+    (fleetVehicles || []).forEach((veh: any) => {
+      const vNum = (veh.VehicleNumber || '').toLowerCase();
+      const vName = (veh.VehicleName || '').toLowerCase();
+      if (!vNum.includes('godown') && !vName.includes('godown')) {
+        const id = veh.VehicleId || veh.VehicleNumber;
+        if (!Array.from(map.values()).some((existing: any) => existing.VehicleNumber === veh.VehicleNumber)) {
+          map.set(`veh-${id}`, {
+            VehicleId: veh.VehicleId,
+            VehicleNumber: veh.VehicleNumber,
+            RouteName: 'Fleet Vehicle',
+            BalanceCylinders: 0,
+            EmptyCylinders: 0,
+          });
+        }
+      }
+    });
+
     return Array.from(map.values());
-  }, [stockAnalysis?.all_vans, stockAnalysis?.active_vans, stockAnalysis?.idle_vans]);
+  }, [stockAnalysis?.all_vans, stockAnalysis?.active_vans, stockAnalysis?.idle_vans, fleetVehicles]);
 
   // Compute Locations List (All Godowns + All Delivery Vans)
   const locations = useMemo(() => {
@@ -193,6 +221,17 @@ export const InventoryByLocationPage: React.FC = () => {
       {/* 1. Header and Quick Actions */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             Inventory by Location
           </Title>
@@ -436,11 +475,8 @@ export const InventoryByLocationPage: React.FC = () => {
                   <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 120 }}>
                     Filled Stock
                   </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 120 }}>
+                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 140, paddingRight: 20 }}>
                     Empty Bottles
-                  </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 130, paddingRight: 20 }}>
-                    Total Units
                   </Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -505,12 +541,8 @@ export const InventoryByLocationPage: React.FC = () => {
                         {Number(location.filledQuantity || 0).toLocaleString()}
                       </Table.Td>
 
-                      <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#64748b', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                         {Number(location.emptyQuantity || 0).toLocaleString()}
-                      </Table.Td>
-
-                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                        {Number(location.quantity || 0).toLocaleString()}
                       </Table.Td>
                     </Table.Tr>
                   );
@@ -528,11 +560,8 @@ export const InventoryByLocationPage: React.FC = () => {
                   <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                     {filteredLocations.reduce((s, l) => s + (Number(l.filledQuantity) || 0), 0).toLocaleString()}
                   </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#64748b', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
                     {filteredLocations.reduce((s, l) => s + (Number(l.emptyQuantity) || 0), 0).toLocaleString()}
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 900, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums', paddingRight: 20 }}>
-                    {filteredLocations.reduce((s, l) => s + (Number(l.quantity) || 0), 0).toLocaleString()}
                   </Table.Td>
                 </Table.Tr>
               </Table.Tfoot>

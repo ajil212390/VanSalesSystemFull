@@ -1,5 +1,6 @@
 import '../widgets/app_toast.dart';
 import '../widgets/confirm_dialog.dart';
+import '../services/invoice_helper.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -116,7 +117,8 @@ class _HomeScreenState extends State<HomeScreen> {
               // 7. END SHIFT ACTION BUTTON (At bottom of balance section)
               _buildEndShiftButton(context, state),
 
-              const SizedBox(height: 90),
+              // Responsive bottom clearance for floating pill navbar & classic 3-button navigation
+              SizedBox(height: 84 + MediaQuery.of(context).padding.bottom),
             ],
           ),
         ),
@@ -278,15 +280,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                             const SizedBox(height: 1),
-                            Text(
-                              state.vehicleNumber,
+                            _MarqueeText(
+                              text: state.vehicleNumber,
                               style: GoogleFonts.inter(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w800,
                                 color: _textPrimary,
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
                           ],
                         ),
@@ -1107,7 +1107,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           // Left: + Add Expense Button
                           Expanded(
                             child: InkWell(
-                              onTap: () => _openAddExpenseModal(context, state),
+                              onTap: () {
+                                if (state.isShiftLocked || state.endShiftStatus.toUpperCase() != 'ACTIVE') {
+                                  AppToast.error(context, 'Shift ended. Awaiting approval or new load allocation.');
+                                  return;
+                                }
+                                _openAddExpenseModal(context, state);
+                              },
                               borderRadius: BorderRadius.circular(9),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(vertical: 9.5),
@@ -1543,9 +1549,11 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showQuickEditInModal(BuildContext context, AppState state, DeliveryOrder order, VoidCallback onUpdated) {
     final amountController = TextEditingController(text: order.amount.toStringAsFixed(0));
     String selectedMethod = order.paymentMethod;
+    bool isSaving = false;
 
     showDialog(
       context: context,
+      barrierDismissible: !isSaving,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
           backgroundColor: Colors.white,
@@ -1611,6 +1619,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: amountController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 cursorColor: const Color(0xFF800020),
+                enabled: !isSaving,
                 style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
                 decoration: InputDecoration(
                   prefixText: '\u20B9 ',
@@ -1636,7 +1645,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 3),
                       child: InkWell(
-                        onTap: () => setDialogState(() => selectedMethod = m),
+                        onTap: isSaving ? null : () => setDialogState(() => selectedMethod = m),
                         borderRadius: BorderRadius.circular(8),
                         child: Container(
                           height: 38,
@@ -1663,6 +1672,24 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }).toList(),
               ),
+              if (isSaving) ...[
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF800020)),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Updating invoice & regenerating PDF...',
+                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF800020)),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
           actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -1671,7 +1698,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx),
+                    onPressed: isSaving ? null : () => Navigator.pop(ctx),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       side: const BorderSide(color: Color(0xFFCBD5E1)),
@@ -1686,12 +1713,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () async {
-                      final amt = double.tryParse(amountController.text.trim()) ?? order.amount;
-                      await state.updateOrderAmount(order.ticketId, amt, newPaymentMethod: selectedMethod);
-                      onUpdated();
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    },
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            final amt = double.tryParse(amountController.text.trim()) ?? order.amount;
+                            setDialogState(() => isSaving = true);
+                            final ok = await state.updateOrderAmount(order.ticketId, amt, newPaymentMethod: selectedMethod);
+                            await InvoiceHelper.invalidateCachedPdf(order.ticketId);
+                            onUpdated();
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (context.mounted) {
+                              if (ok) {
+                                AppToast.success(context, 'Invoice updated & PDF regenerated: ₹${amt.toStringAsFixed(0)} ($selectedMethod)');
+                              } else {
+                                AppToast.error(context, 'Failed to update invoice on server');
+                              }
+                            }
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF800020),
                       foregroundColor: Colors.white,
@@ -1699,10 +1737,16 @@ class _HomeScreenState extends State<HomeScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       elevation: 0,
                     ),
-                    child: Text(
-                      'Update',
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
-                    ),
+                    child: isSaving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text(
+                            'Update & Sync',
+                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+                          ),
                   ),
                 ),
               ],
@@ -3200,6 +3244,10 @@ class _HomeScreenState extends State<HomeScreen> {
         color: Colors.transparent,
         child: InkWell(
           onTap: () {
+            if (state.isShiftLocked || state.endShiftStatus.toUpperCase() != 'ACTIVE') {
+              AppToast.error(context, 'Shift ended. Awaiting approval or new load allocation.');
+              return;
+            }
             state.resetDelivery();
             HomeShell.switchTab(context, 1);
           },
@@ -3463,7 +3511,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // Bottom Action to Add Expense
                   Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + MediaQuery.of(ctx).padding.bottom),
                     child: SizedBox(
                       width: double.infinity,
                       height: 44,
@@ -3514,7 +3562,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 top: 18,
                 left: 18,
                 right: 18,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom > 0
+                    ? (MediaQuery.of(context).viewInsets.bottom + 16)
+                    : (MediaQuery.of(context).padding.bottom + 16),
               ),
               decoration: const BoxDecoration(
                 color: Colors.white,
@@ -3706,6 +3756,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       height: 46,
                       child: ElevatedButton(
                         onPressed: () {
+                          if (state.isShiftLocked || state.endShiftStatus.toUpperCase() != 'ACTIVE') {
+                            Navigator.pop(ctx);
+                            AppToast.error(context, 'Shift ended. Awaiting approval or new load allocation.');
+                            return;
+                          }
                           final amt = double.tryParse(amountCtrl.text.trim()) ?? 0;
                           if (amt <= 0) {
                             AppToast.warning(context, 'Please enter a valid amount');

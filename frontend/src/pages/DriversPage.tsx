@@ -18,8 +18,8 @@ import {
     Box,
     Transition,
     Tooltip } from '@mantine/core';
-import { IconPencil, IconTrash, IconSearch } from '@tabler/icons-react';
-import { } from 'react-router-dom';
+import { IconPencil, IconTrash, IconSearch, IconArrowLeft } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -49,6 +49,7 @@ interface DriverFormValues {
 }
 
 export const DriversPage: React.FC = () => {
+    const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [formOpened, setFormOpened] = useState(false);
     const [editingDriver, setEditingDriver] = useState<DriverItem | null>(null);
@@ -191,6 +192,17 @@ export const DriversPage: React.FC = () => {
             {/* Page Header */}
             <Group justify="space-between" align="center" wrap="wrap" gap="md">
                 <div>
+                    <Button
+                        variant="subtle"
+                        color="gray"
+                        size="xs"
+                        leftSection={<IconArrowLeft size={16} />}
+                        onClick={() => navigate('/')}
+                        mb={4}
+                        styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+                    >
+                        Back to Dashboard
+                    </Button>
                     <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
                         Drivers/Staff
                     </Title>

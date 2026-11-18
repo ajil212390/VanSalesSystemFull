@@ -197,7 +197,11 @@ def generate_tax_invoice_pdf(sale):
     # -------------------------------------------------------------
     date_formatted = sale.SalesDate.strftime('%d/%m/%Y') if hasattr(sale.SalesDate, 'strftime') else (str(sale.SalesDate) if sale.SalesDate else datetime.now().strftime('%d/%m/%Y'))
     pm_upper = (sale.PaymentMethod or 'CASH').upper()
-    payment_mode_display = f"<b>Payment Mode:</b> {pm_upper}<br/>"
+    is_credit = pm_upper == 'CREDIT' or getattr(sale, 'PaidAmount', None) == Decimal('0.00')
+    if is_credit:
+        payment_mode_display = f"<b>Payment Mode:</b> <font color='#92400E'><b>CREDIT (Rs. 0.00 Paid)</b></font><br/>"
+    else:
+        payment_mode_display = f"<b>Payment Mode:</b> {pm_upper}<br/>"
     if pm_upper == 'SPLIT':
         c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
         u_m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
@@ -210,6 +214,14 @@ def generate_tax_invoice_pdf(sale):
             )
         else:
             payment_mode_display = f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
+
+    rev_display = ""
+    if getattr(sale, 'IsEdited', False):
+        rev_dt = sale.EditedAt.strftime('%d/%m/%Y %I:%M %p') if getattr(sale, 'EditedAt', None) else ''
+        rev_by = getattr(sale, 'EditedBy', '') or 'Driver/Admin'
+        rev_display = f"<font color='#B91C1C'><b>[REVISED INVOICE]</b></font><br/>"
+        if rev_dt:
+            rev_display += f"<font size='7' color='#64748B'>Rev Date: {rev_dt}</font><br/>"
 
     header_data = [
         [
@@ -226,6 +238,7 @@ def generate_tax_invoice_pdf(sale):
             ),
             Paragraph(
                 f"<b>Invoice No:</b> {sale.SalesNo}<br/>"
+                f"{rev_display}"
                 f"<b>Date:</b> {date_formatted}<br/>"
                 f"{payment_mode_display}"
                 f"<b>Vehicle No:</b> {sale.VehicleName or 'Van Delivery'}<br/>"
@@ -351,9 +364,11 @@ def generate_tax_invoice_pdf(sale):
             if qty == 0 and line.EmptyQuantity > 0:
                 continue
 
+            # Fetch the actual sales amount added in the products
             gross_total = Decimal(str(line.Total or 0))
-            if gross_total == 0 and qty > 0:
-                gross_total = (qty * Decimal(str(line.SalesPrice or 0))).quantize(Decimal('0.01'))
+            if gross_total <= Decimal('0.00') and qty > 0:
+                gross_unit_rate = Decimal(str(line.SalesPrice or (prod.SalesPrice if prod else 0) or 0))
+                gross_total = (qty * gross_unit_rate).quantize(Decimal('0.01'))
 
             # Resolve GST rate: explicitly respect line.TaxPercent (even if 0.00) or product GSTPercentage
             gst_rate_raw = line.TaxPercent if line.TaxPercent is not None else (prod.GSTPercentage if prod else Decimal('0.00'))
@@ -440,21 +455,24 @@ def generate_tax_invoice_pdf(sale):
     current_bill_amount = total_gross_sum if total_gross_sum > 0 else Decimal(str(sale.GrandTotal or 0))
 
     # Determine Paid Amount:
-    # If payment was Cash/UPI/Bank or recorded via VoucherLine
     paid_amt = Decimal('0.00')
-    vl = VoucherLine.objects.filter(
-        Voucher__ReferenceTable='Sales',
-        Voucher__ReferenceId=sale.SalesId,
-        CreditAmount__gt=0,
-        Ledger=customer
-    ).first() if customer else None
-
-    if vl:
-        paid_amt = vl.CreditAmount
-    elif hasattr(sale, 'PaidAmount') and sale.PaidAmount is not None and (sale.PaymentMethod or '').upper() != 'CREDIT':
+    pm_upper = (sale.PaymentMethod or 'CASH').upper()
+    if pm_upper == 'CREDIT':
+        paid_amt = Decimal('0.00')
+    elif hasattr(sale, 'PaidAmount') and sale.PaidAmount is not None:
         paid_amt = Decimal(str(sale.PaidAmount))
-    elif (sale.PaymentMethod or '').upper() in ['CASH', 'UPI', 'BANK', 'ONLINE']:
-        paid_amt = Decimal(str(sale.GrandTotal or current_bill_amount))
+    else:
+        vl = VoucherLine.objects.filter(
+            Voucher__ReferenceTable='Sales',
+            Voucher__ReferenceId=sale.SalesId,
+            CreditAmount__gt=0,
+            Ledger=customer
+        ).first() if customer else None
+
+        if vl:
+            paid_amt = vl.CreditAmount
+        elif pm_upper in ['CASH', 'UPI', 'BANK', 'ONLINE']:
+            paid_amt = Decimal(str(sale.GrandTotal or current_bill_amount))
 
     # Determine Previous Pending and Closing Balance (Point-in-Time as of this invoice):
     adv_adj = Decimal('0.00')
@@ -539,6 +557,11 @@ def generate_tax_invoice_pdf(sale):
         cust_summary_rows.append([
             Paragraph("&nbsp;&nbsp;&bull; UPI / Bank :", ParagraphStyle('UpiLbl', parent=cell_muted, fontSize=8)),
             Paragraph(f"Rs. {u_split:.2f}", ParagraphStyle('UpiVal', parent=cell_right, fontSize=8))
+        ])
+    elif is_credit or paid_amt == Decimal('0.00'):
+        cust_summary_rows.append([
+            Paragraph("<b>Paid Amount :</b>", cell_bold),
+            Paragraph("<font color='#92400E'><b>Rs. 0.00 (CREDIT)</b></font>", cell_right_bold)
         ])
     else:
         cust_summary_rows.append([
@@ -680,10 +703,10 @@ def format_short_ref(val):
         if nums:
             return f"INV-{nums[-1]}"
         return s
-    if re.match(r'^DT-', s, re.I):
+    if re.match(r'^(?:DT|BT)-', s, re.I):
         nums = re.findall(r'\d+', s)
         if nums:
-            return f"DT-{nums[-1]}"
+            return f"INV-{nums[-1]}"
         return s
     if re.match(r'^PUR-', s, re.I):
         nums = re.findall(r'\d+', s)
@@ -2143,6 +2166,257 @@ def generate_collections_statement_pdf(records, source_type='ALL', period_text='
         ('LINEABOVE', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(ftr_table)
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def generate_receipt_note_pdf(receipt_note, company_id=1):
+    """
+    Generates an official Receipt Note / Empty Cylinder Delivery Challan PDF.
+    Accommodates:
+    1. Empty Cylinder Movements sent to Suppliers for Refilling
+    2. Godown and Van returns & inward movements
+    3. Godown-to-Godown transfers
+    """
+    from core.models import Company, Product
+    company = Company.objects.filter(CompanyId=company_id).first() or Company.objects.first()
+    company_name = company.Name if company else "FUTURE GAS"
+    company_addr = f"{company.AddressLine1 or ''}, {company.AddressLine2 or ''}, {company.AddressLine3 or ''} - {company.Pincode or ''}".strip(', -')
+    company_gstin = company.GstNo or "32ABCDE1234F1Z5"
+    company_phone = company.Phone or "9876543210"
+    company_email = company.Email or "info@futuregas.com"
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=22,
+        bottomMargin=22
+    )
+    story = []
+    styles = getSampleStyleSheet()
+
+    alloc = getattr(receipt_note, 'RouteVehicleDriver', None)
+    veh_num = alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else 'Fleet Transport'
+    driver_name = alloc.Driver.DriverName if alloc and alloc.Driver else 'Driver / Dispatcher'
+    route_name = alloc.Route.RouteName if alloc and alloc.Route else 'General Route'
+
+    remarks = receipt_note.Remarks or ''
+    is_supplier_refill = any(k in remarks.lower() for k in ['supplier', 'refill', 'refilling', 'bottling plant'])
+    title_text = "EMPTY CYLINDER REFILL CHALLAN" if is_supplier_refill else "STOCK RECEIPT NOTE / INWARD CHALLAN"
+    badge_bg = colors.HexColor('#9A3412') if is_supplier_refill else PRIMARY_COLOR
+
+    c_title = ParagraphStyle('RnTitle', fontName=FONT_BOLD, fontSize=17, leading=21, textColor=PRIMARY_COLOR)
+    c_sub = ParagraphStyle('RnSub', fontName=FONT_NAME, fontSize=8, leading=11, textColor=MUTED_COLOR)
+    rn_badge = ParagraphStyle('RnBadge', fontName=FONT_BOLD, fontSize=11, leading=14, alignment=2, textColor=badge_bg)
+    rn_meta = ParagraphStyle('RnMeta', fontName=FONT_NAME, fontSize=8.5, leading=12, alignment=2, textColor=DARK_COLOR)
+    th_style = ParagraphStyle('RnPth', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=colors.white, alignment=1)
+    cell_norm = ParagraphStyle('RnCell', fontName=FONT_NAME, fontSize=8.5, leading=11.5, textColor=DARK_COLOR)
+    cell_bold = ParagraphStyle('RnCellB', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, textColor=DARK_COLOR)
+    cell_center = ParagraphStyle('RnCellC', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, alignment=1, textColor=DARK_COLOR)
+
+    date_str = receipt_note.ReceiptDate.strftime('%d/%m/%Y') if receipt_note.ReceiptDate else datetime.now().strftime('%d/%m/%Y')
+
+    # Top Header
+    header_data = [
+        [
+            Paragraph(f"<b>{company_name}</b>", c_title),
+            Paragraph(f"<b>{title_text}</b>", rn_badge)
+        ],
+        [
+            Paragraph(
+                f"LPG Cylinders &amp; Logistics Infrastructure<br/>"
+                f"{company_addr}<br/>"
+                f"<b>GSTIN:</b> {company_gstin} &nbsp;|&nbsp; <b>State:</b> Kerala (Code: 32)<br/>"
+                f"<b>Phone:</b> {company_phone} &nbsp;|&nbsp; <b>Email:</b> {company_email}",
+                c_sub
+            ),
+            Paragraph(
+                f"<b>Challan / Note No:</b> {receipt_note.ReceiptNoteNo}<br/>"
+                f"<b>Date:</b> {date_str}<br/>"
+                f"<b>Status:</b> {(receipt_note.Status or 'SETTLED').upper()}<br/>"
+                f"<b>Vehicle:</b> {veh_num}<br/>"
+                f"<b>In-Charge / Driver:</b> {driver_name}",
+                rn_meta
+            )
+        ]
+    ]
+    hdr_table = Table(header_data, colWidths=[330, 215])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+    ]))
+    story.append(hdr_table)
+    story.append(Spacer(1, 6))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceAfter=8))
+
+    # Location Details Card
+    src_text = f"<b>Dispatching Unit / Source:</b> {veh_num} • {driver_name} ({route_name})"
+    dest_text = "<b>Receiving Destination:</b> Central Main Godown"
+    if "From:" in remarks:
+        try:
+            src_text = "<b>Source:</b> " + remarks.split("From:")[1].split("•")[0].split("|")[0].strip()
+        except:
+            pass
+    if "To:" in remarks:
+        try:
+            dest_text = "<b>Destination:</b> " + remarks.split("To:")[1].split("•")[0].split("|")[0].strip()
+        except:
+            pass
+    elif is_supplier_refill:
+        dest_text = "<b>Destination (Supplier):</b> Refilling Supplier"
+
+    loc_box = [
+        [
+            Paragraph("<b>DISPATCH / MOVEMENT SUMMARY</b>", ParagraphStyle('LsTitle', fontName=FONT_BOLD, fontSize=9, textColor=PRIMARY_COLOR)),
+            Paragraph(f"<b>Category:</b> {'Supplier Refill Outward' if is_supplier_refill else 'Van Return & Godown Inward'}", ParagraphStyle('LsCat', fontName=FONT_BOLD, fontSize=8.5, alignment=2, textColor=DARK_COLOR))
+        ],
+        [
+            Paragraph(f"{src_text}<br/>{dest_text}", cell_norm),
+            Paragraph(f"<b>Associated Route:</b> {route_name}<br/><b>Purpose:</b> {'Empty Cylinders Outward for Refill' if is_supplier_refill else 'Stock Inward / Unsold & Empties'}", cell_norm)
+        ]
+    ]
+    loc_table = Table(loc_box, colWidths=[340, 205])
+    loc_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
+        ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(loc_table)
+    story.append(Spacer(1, 10))
+
+    # Items Table
+    col_widths = [35, 230, 95, 95, 90]
+    th_cells = [
+        Paragraph("Sl no.", th_style),
+        Paragraph("Item / Cylinder Description", ParagraphStyle('ThLeft', parent=th_style, alignment=0)),
+        Paragraph("Full Cylinders", th_style),
+        Paragraph("Empty Cylinders", th_style),
+        Paragraph("Total Units", th_style),
+    ]
+    table_rows = [th_cells]
+
+    lines = list(receipt_note.lines.select_related('Product', 'Unit').all())
+    tot_full = 0
+    tot_empty = 0
+    tot_units = 0
+
+    if not lines:
+        table_rows.append([
+            Paragraph("1", cell_center),
+            Paragraph("Commercial / Domestic Gas Cylinders", cell_bold),
+            Paragraph("0 NOS", cell_center),
+            Paragraph("0 NOS", cell_center),
+            Paragraph("0 NOS", cell_center),
+        ])
+    else:
+        for idx, ln in enumerate(lines, 1):
+            p_name = ln.Product.ProductName if ln.Product else f"Product #{ln.Product_id}"
+            qty = int(ln.Quantity or 0)
+            f_qty = 0
+            e_qty = qty
+            if "filled" in p_name.lower():
+                f_qty = qty
+                e_qty = 0
+            tot_full += f_qty
+            tot_empty += e_qty
+            tot_units += qty
+
+            table_rows.append([
+                Paragraph(str(idx), cell_center),
+                Paragraph(p_name, cell_bold),
+                Paragraph(f"{f_qty} NOS" if f_qty > 0 else "-", cell_center),
+                Paragraph(f"{e_qty} NOS" if e_qty > 0 else "-", cell_center),
+                Paragraph(f"{qty} NOS", cell_center),
+            ])
+
+    # Totals Row
+    table_rows.append([
+        Paragraph("TOTAL", cell_bold),
+        Paragraph("<b>Total Cylinders Transferred / Received</b>", cell_bold),
+        Paragraph(f"<b>{tot_full} NOS</b>", cell_center),
+        Paragraph(f"<b>{tot_empty} NOS</b>", cell_center),
+        Paragraph(f"<b>{tot_units} NOS</b>", cell_center),
+    ])
+
+    items_table = Table(table_rows, colWidths=col_widths)
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('BACKGROUND', (0, -1), (-1, -1), CARD_BG),
+    ]
+    for r in range(1, len(table_rows) - 1):
+        bg = LIGHT_BG if r % 2 == 1 else colors.white
+        t_style.append(('BACKGROUND', (0, r), (-1, r), bg))
+
+    items_table.setStyle(TableStyle(t_style))
+    story.append(items_table)
+    story.append(Spacer(1, 10))
+
+    # Notes & Remarks
+    notes_box = [
+        [
+            Paragraph(f"<b>Remarks &amp; Audit Trail:</b> {remarks or 'Stock movement recorded successfully.'}", cell_norm)
+        ]
+    ]
+    nt_table = Table(notes_box, colWidths=[545])
+    nt_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
+        ('BOX', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(nt_table)
+    story.append(Spacer(1, 15))
+
+    # Dual Signatures: Handed Over By & Received By
+    sig_data = [
+        [
+            Paragraph("<b>DISPATCHED / HANDED OVER BY:</b>", cell_bold),
+            Paragraph("<b>RECEIVED &amp; ACKNOWLEDGED BY:</b>", cell_bold)
+        ],
+        [
+            Paragraph(f"<br/><br/>____________________________________<br/>Driver / Store In-Charge<br/><font size=7 color='#64748B'>{driver_name} &bull; {veh_num}</font>", cell_norm),
+            Paragraph(f"<br/><br/>____________________________________<br/>Authorized Recipient / Supplier Rep<br/><font size=7 color='#64748B'>Date: {date_str}</font>", cell_norm)
+        ]
+    ]
+    sig_table = Table(sig_data, colWidths=[272, 273])
+    sig_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(KeepTogether(sig_table))
+    story.append(Spacer(1, 15))
+
+    # Footer
+    now_time = datetime.now().strftime('%d/%m/%Y %I:%M %p')
+    ftr_data = [[
+        Paragraph(f"<font size=6 color='#64748B'>Future Gas Cloud ERP &bull; Official Receipt Note / Transfer Challan &bull; Generated {now_time}</font>", ParagraphStyle('RnFtrL', fontName=FONT_NAME, fontSize=6, textColor=MUTED_COLOR)),
+        Paragraph("<font size=6 color='#64748B'>Physical Stock Verification Document</font>", ParagraphStyle('RnFtrR', fontName=FONT_NAME, fontSize=6, textColor=MUTED_COLOR, alignment=2))
+    ]]
+    ftr_table = Table(ftr_data, colWidths=[345, 200])
+    ftr_table.setStyle(TableStyle([
+        ('LINEABOVE', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))

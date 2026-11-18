@@ -15,6 +15,7 @@ import {
   ActionIcon,
   Collapse,
   Tooltip,
+  Modal,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -27,6 +28,10 @@ import {
   IconTrash,
   IconWallet,
   IconChevronDown,
+  IconPrinter,
+  IconHistory,
+  IconArrowRight,
+  IconArrowUpRight,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -40,6 +45,25 @@ interface SalesLineItem {
   empty_quantity: number;
   rate: number;
   total: number;
+}
+
+interface SaleEditHistoryItem {
+  edit_id?: number;
+  EditId?: number;
+  edited_by?: string;
+  EditedBy?: string;
+  edited_at?: string;
+  EditedAt?: string;
+  old_grand_total?: number;
+  OldGrandTotal?: number;
+  new_grand_total?: number;
+  NewGrandTotal?: number;
+  old_payment_method?: string;
+  OldPaymentMethod?: string;
+  new_payment_method?: string;
+  NewPaymentMethod?: string;
+  notes?: string;
+  Notes?: string;
 }
 
 interface RecentSale {
@@ -63,10 +87,12 @@ interface RecentSale {
   status?: string;
   is_approved?: boolean;
   is_edited?: boolean;
+  IsEdited?: boolean;
   edited_by?: string;
   edited_at?: string;
   edit_reason?: string;
   lines?: SalesLineItem[];
+  edit_history?: SaleEditHistoryItem[];
 }
 
 interface RouteExpenseItem {
@@ -154,6 +180,29 @@ export const RouteDetailsPage: React.FC = () => {
 
   const [manualRefresh, setManualRefresh] = useState(0);
   const [isInventoryOpen, setIsInventoryOpen] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [activeAuditSale, setActiveAuditSale] = useState<RecentSale | null>(null);
+
+  const handlePrintTripSheet = async () => {
+    if (!routeId) return;
+    try {
+      setIsGeneratingPdf(true);
+      const res = await apiClient.get(`/routes/${routeId}/trip-sheet-pdf/`, {
+        responseType: 'blob',
+      });
+      const file = new Blob([res.data], { type: 'application/pdf' });
+      const fileURL = URL.createObjectURL(file);
+      window.open(fileURL, '_blank');
+    } catch (err: any) {
+      notifications.show({
+        color: 'red',
+        title: 'Error generating PDF',
+        message: err?.response?.data?.detail || 'Failed to generate Route Trip Sheet PDF.',
+      });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<RouteDetails>({
     queryKey: ['route-live-details', routeId, manualRefresh],
@@ -322,6 +371,22 @@ export const RouteDetailsPage: React.FC = () => {
           </Group>
 
           <Group gap="xs" wrap="wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              radius={8}
+              loading={isGeneratingPdf}
+              leftSection={<IconPrinter size={16} />}
+              onClick={handlePrintTripSheet}
+              style={{
+                borderColor: '#800020',
+                color: '#800020',
+                fontWeight: 600,
+                backgroundColor: '#ffffff',
+              }}
+            >
+              Print Trip Sheet PDF
+            </Button>
             <ActionIcon
               variant="outline"
               size="lg"
@@ -933,14 +998,47 @@ export const RouteDetailsPage: React.FC = () => {
                           <Text size="sm" fw={700} ff="monospace" style={{ color: '#800020' }}>
                             {billNo}
                           </Text>
-                          {sale.is_edited && (
+                          {(sale.is_edited || sale.IsEdited || (sale.edit_history && sale.edit_history.length > 0)) && (
                             <Tooltip
-                              label={`Edited by ${sale.edited_by || 'Driver'}${sale.edited_at ? ` at ${new Date(sale.edited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}${sale.edit_reason ? ` • ${sale.edit_reason}` : ''}`}
+                              label="Click to inspect invoice revision history"
                               withArrow
                               position="top"
                             >
-                              <Badge size="xs" color="orange" variant="light" style={{ cursor: 'pointer', fontWeight: 700 }}>
-                                Edited
+                              <Badge
+                                size="xs"
+                                variant="filled"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveAuditSale(sale);
+                                }}
+                                styles={{
+                                  root: {
+                                    cursor: 'pointer',
+                                    backgroundColor: '#800020',
+                                    color: '#ffffff',
+                                    fontWeight: 800,
+                                    fontSize: 9,
+                                    letterSpacing: '0.4px',
+                                    height: 18,
+                                    paddingLeft: 6,
+                                    paddingRight: 6,
+                                    borderRadius: 4,
+                                    boxShadow: '0 1px 2px rgba(128, 0, 32, 0.25)',
+                                    border: 'none',
+                                    verticalAlign: 'middle',
+                                    userSelect: 'none',
+                                  },
+                                  label: {
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3.5,
+                                    overflow: 'visible',
+                                    lineHeight: 1,
+                                  },
+                                }}
+                              >
+                                <span>EDITED</span>
+                                <IconArrowUpRight size={10} stroke={2.8} />
                               </Badge>
                             </Tooltip>
                           )}
@@ -1011,6 +1109,220 @@ export const RouteDetailsPage: React.FC = () => {
           </Table.ScrollContainer>
         )}
       </Paper>
+
+      {/* ── Invoice Edit Revision History Audit Modal ── */}
+      <Modal
+        opened={!!activeAuditSale}
+        onClose={() => setActiveAuditSale(null)}
+        title={
+          <Group gap="xs">
+            <Box
+              p={6}
+              style={{
+                backgroundColor: '#fdf2f4',
+                borderRadius: 8,
+                border: '1px solid #f5c2cb',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <IconHistory size={18} color="#800020" />
+            </Box>
+            <div>
+              <Text fw={800} style={{ color: '#800020', fontSize: 16, letterSpacing: '-0.2px' }}>
+                Invoice Revision History
+              </Text>
+              <Text size="11px" c="dimmed">
+                {activeAuditSale?.bill_number || activeAuditSale?.invoice_no || activeAuditSale?.sales_no || 'Invoice'} &bull; {activeAuditSale?.customer || activeAuditSale?.customer_name || 'Customer'}
+              </Text>
+            </div>
+          </Group>
+        }
+        size="96%"
+        radius="lg"
+        padding="xl"
+        centered
+        styles={{
+          content: {
+            maxWidth: '1060px',
+            width: '92vw',
+          },
+          inner: {
+            padding: '12px',
+          },
+        }}
+      >
+        {activeAuditSale && (
+          <Stack gap="md">
+            {/* Summary Information Card */}
+            <Box p="md" style={{ backgroundColor: '#fdf2f4', borderRadius: 10, border: '1px solid #f5c2cb' }}>
+              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    CUSTOMER
+                  </Text>
+                  <Text fw={800} size="xs" c="#0f172a" truncate>
+                    {activeAuditSale.customer || activeAuditSale.customer_name || 'Walk-in Customer'}
+                  </Text>
+                </div>
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    DELIVERED / EMPTY
+                  </Text>
+                  <Text fw={800} size="xs" c="#0f172a">
+                    {activeAuditSale.delivered_qty ?? 0} Cyl / {activeAuditSale.empty_returned ?? activeAuditSale.empty_qty ?? 0} Ret
+                  </Text>
+                </div>
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    INVOICE TOTAL
+                  </Text>
+                  <Text fw={800} size="xs" c="#0f172a">
+                    ₹{Number(activeAuditSale.grand_total ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </div>
+                <div>
+                  <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    PAID / COLLECTED
+                  </Text>
+                  <Text fw={900} size="sm" style={{ color: '#800020' }}>
+                    ₹{Number(activeAuditSale.paid_amount ?? activeAuditSale.amount ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </Text>
+                </div>
+              </SimpleGrid>
+            </Box>
+
+            {/* Note / Reason outside the tab */}
+            {activeAuditSale.edit_reason && (
+              <Text size="xs" c="#475569" px={4} style={{ marginTop: -4 }}>
+                <Text component="span" fw={700} style={{ color: '#800020' }}>Latest Note / Reason:</Text>{' '}
+                {activeAuditSale.edit_reason}
+              </Text>
+            )}
+
+            {/* Revision Audit Rows */}
+            {(!activeAuditSale.edit_history || activeAuditSale.edit_history.length === 0) ? (
+              <Box p="lg" style={{ textAlign: 'center', backgroundColor: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                <Text size="sm" fw={700} style={{ color: '#800020' }}>
+                  Invoice modified by {activeAuditSale.edited_by || 'Driver / Admin'}
+                </Text>
+                {activeAuditSale.edited_at && (
+                  <Text size="xs" c="dimmed" mt={4}>
+                    Modified at {new Date(activeAuditSale.edited_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  </Text>
+                )}
+                {activeAuditSale.edit_reason && (
+                  <Text size="xs" fw={600} style={{ color: '#800020' }} mt={6}>
+                    &ldquo;{activeAuditSale.edit_reason}&rdquo;
+                  </Text>
+                )}
+              </Box>
+            ) : (
+              <Table.ScrollContainer minWidth={600} style={{ width: '100%' }}>
+                <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover withTableBorder style={{ borderRadius: 8, overflow: 'hidden', width: '100%' }}>
+                  <Table.Thead style={{ backgroundColor: '#fdf2f4' }}>
+                    <Table.Tr>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 160, whiteSpace: 'nowrap' }}>TIMESTAMP</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 180, whiteSpace: 'nowrap' }}>MODIFIED BY</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 210, whiteSpace: 'nowrap' }}>AMOUNT CHANGE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 150, whiteSpace: 'nowrap' }}>PAYMENT MODE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px' }}>REASON / NOTES</Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {activeAuditSale.edit_history.map((eh: any, idx: number) => {
+                      const editDate = eh.edited_at || eh.EditedAt;
+                      const editor = eh.edited_by || eh.EditedBy || 'Driver / Admin';
+                      const oldTotal = eh.old_grand_total ?? eh.OldGrandTotal ?? 0;
+                      const newTotal = eh.new_grand_total ?? eh.NewGrandTotal ?? 0;
+                      const oldMode = eh.old_payment_method || eh.OldPaymentMethod || '';
+                      const newMode = eh.new_payment_method || eh.NewPaymentMethod || '';
+                      const noteText = eh.notes || eh.Notes || 'Invoice details updated';
+
+                      return (
+                        <Table.Tr key={eh.edit_id || eh.EditId || idx}>
+                          <Table.Td style={{ fontSize: 12, color: '#475569', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                            {editDate ? new Date(editDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                            {editor}
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                            <Group gap={6} wrap="nowrap">
+                              <Text size="xs" td="line-through" c="dimmed">
+                                ₹{Number(oldTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                              <IconArrowRight size={13} color="#800020" />
+                              <Text size="sm" fw={800} style={{ color: '#800020' }}>
+                                ₹{Number(newTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                            </Group>
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                            {oldMode && oldMode !== newMode ? (
+                              <Group gap={4} wrap="nowrap">
+                                <Text size="xs" c="dimmed">{oldMode}</Text>
+                                <IconArrowRight size={12} color="#800020" />
+                                <Text size="xs" fw={700} style={{ color: '#800020' }}>{newMode}</Text>
+                              </Group>
+                            ) : (
+                              <Text size="xs" fw={600} c="#0f172a">{newMode || 'Cash'}</Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td style={{ fontSize: 12, color: '#334155', fontWeight: 500 }}>
+                            {noteText}
+                          </Table.Td>
+                        </Table.Tr>
+                      );
+                    })}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            )}
+
+            <Group justify="space-between" mt="xs">
+              <Button
+                variant="subtle"
+                color="burgundy"
+                size="xs"
+                radius="md"
+                leftSection={<IconReceipt size={14} />}
+                onClick={() => {
+                  const billNo = activeAuditSale.bill_number || activeAuditSale.invoice_no || activeAuditSale.sales_no || '';
+                  const cleanTicket = String(billNo).replace(/^#/, '');
+                  const baseUrl = apiClient.defaults.baseURL?.replace(/\/api\/v1\/?$/, '') || '';
+                  window.open(`${baseUrl}/api/v1/sales/invoice-pdf/?ticket_id=${encodeURIComponent(cleanTicket)}&_t=${Date.now()}`, '_blank');
+                }}
+                styles={{
+                  root: {
+                    color: '#800020',
+                    fontWeight: 600,
+                  },
+                }}
+              >
+                View Invoice PDF
+              </Button>
+              <Button
+                variant="outline"
+                color="burgundy"
+                size="xs"
+                radius="md"
+                onClick={() => setActiveAuditSale(null)}
+                styles={{
+                  root: {
+                    borderColor: '#800020',
+                    color: '#800020',
+                    fontWeight: 700,
+                  },
+                }}
+              >
+                Close
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </Stack>
   );
 };

@@ -16,6 +16,8 @@ import {
   Divider,
   Box,
   Modal,
+  Badge,
+  Tooltip,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -31,6 +33,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { DateInputDDMMYY } from '../components/DateInputDDMMYY';
 
 interface LedgerOption {
   LedgerId: number;
@@ -44,6 +47,8 @@ interface LedgerOption {
   PhoneNumber?: string;
   MobileNumber?: string;
   City?: string;
+  OpeningBalance?: number;
+  OpeningBalanceType?: string;
   CurrentBalance?: number | string;
   BalanceType?: 'Dr' | 'Cr';
   IsBillWise?: boolean;
@@ -60,6 +65,56 @@ export const isSundryCreditorOrDebtor = (ledger?: LedgerOption | null): boolean 
     gName.includes('debtor') ||
     Boolean(ledger.IsBillWise)
   );
+};
+
+export const isSundryCreditor = (ledger?: LedgerOption | null): boolean => {
+  if (!ledger) return false;
+  const gName = (ledger.group_name || '').toLowerCase();
+  const gid = Number(ledger.GroupId ?? ledger.Group ?? 0);
+  return (
+    gid === 24 || // Sundry Creditors
+    gid === 25 ||
+    gName.includes('creditor') ||
+    gName.includes('supplier')
+  );
+};
+
+export const getLedgerBalanceInfo = (l?: LedgerOption | null) => {
+  if (!l) return null;
+  const curRaw = l.CurrentBalance !== undefined && l.CurrentBalance !== null && l.CurrentBalance !== ''
+    ? Number(l.CurrentBalance)
+    : null;
+
+  let bal = 0;
+  let balType: 'Dr' | 'Cr' = 'Dr';
+
+  if (curRaw !== null && !isNaN(curRaw)) {
+    bal = curRaw;
+    if (bal > 0) {
+      balType = 'Dr';
+    } else if (bal < 0) {
+      balType = 'Cr';
+    } else {
+      balType = (l.OpeningBalanceType || 'Dr').toUpperCase() === 'CR' ? 'Cr' : 'Dr';
+    }
+  } else {
+    bal = Number(l.OpeningBalance ?? 0);
+    balType = (l.OpeningBalanceType || 'Dr').toUpperCase() === 'CR' ? 'Cr' : 'Dr';
+  }
+
+  const absBal = Math.abs(bal);
+  const isCreditor = isSundryCreditor(l);
+  const isZero = absBal === 0;
+
+  return {
+    rawBal: bal,
+    absBal,
+    balType,
+    isZero,
+    isCreditor,
+    label: isCreditor ? 'Payable' : 'Bal',
+    formatted: `₹${absBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${balType}`,
+  };
 };
 
 interface BillPaymentRecord {
@@ -163,10 +218,19 @@ export const PaymentFormPage: React.FC = () => {
   }, [ledgers]);
 
   const bankAndCashOptions = useMemo(() => {
-    return bankAndCashLedgers.map((l) => ({
-      value: String(l.LedgerId),
-      label: `${l.LedgerName} (${l.group_name || 'Account'})`,
-    }));
+    return bankAndCashLedgers.map((l) => {
+      const bal = Number(l.CurrentBalance ?? l.OpeningBalance ?? 0);
+      const balType = bal > 0 ? 'Dr' : (bal < 0 ? 'Cr' : (l.OpeningBalanceType || 'Dr'));
+      const formattedBal = `₹${Math.abs(bal).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${balType}`;
+      return {
+        value: String(l.LedgerId),
+        label: `${l.LedgerName} (${l.group_name || 'Account'})`,
+        ledgerName: l.LedgerName,
+        groupName: l.group_name || 'Account',
+        balance: formattedBal,
+        balType: balType,
+      };
+    });
   }, [bankAndCashLedgers]);
 
 
@@ -187,10 +251,20 @@ export const PaymentFormPage: React.FC = () => {
 
   // All Ledgers options for the Particulars rows in the table
   const allLedgerOptions = useMemo(() => {
-    return ledgers.map((l) => ({
-      value: String(l.LedgerId),
-      label: `${l.LedgerName} (${l.group_name || 'Ledger'})`,
-    }));
+    return ledgers.map((l) => {
+      const bInfo = getLedgerBalanceInfo(l);
+      return {
+        value: String(l.LedgerId),
+        label: `${l.LedgerName} (${l.group_name || 'Ledger'})`,
+        ledgerName: l.LedgerName,
+        groupName: l.group_name || 'Ledger',
+        isCreditor: bInfo?.isCreditor ?? false,
+        absBal: bInfo?.absBal ?? 0,
+        balType: bInfo?.balType ?? 'Dr',
+        formattedBal: bInfo?.formatted ?? '₹0.00',
+        balanceText: bInfo ? `${bInfo.label}: ${bInfo.formatted}` : '',
+      };
+    });
   }, [ledgers]);
 
   // Fetch payments list to auto-calculate next voucher number (e.g. 001, 002)
@@ -216,12 +290,8 @@ export const PaymentFormPage: React.FC = () => {
 
   useEffect(() => {
     if (!isEditing && !paymentNo && paymentsList.length >= 0) {
-      let maxNum = 0;
-      paymentsList.forEach((p: any) => {
-        const num = Number(p.PaymentId || 0);
-        if (num > maxNum) maxNum = num;
-      });
-      const nextNum = maxNum + 1;
+      const paymentsOnly = paymentsList.filter((p: any) => p.voucher_type !== 'RECEIPT');
+      const nextNum = paymentsOnly.length + 1;
       setPaymentNo(String(nextNum).padStart(3, '0'));
     }
   }, [isEditing, paymentsList, paymentNo]);
@@ -604,6 +674,9 @@ export const PaymentFormPage: React.FC = () => {
         PaymentLedgerId: Number(bankOrCashLedgerId),
         PaymentMode: autoPaymentMode,
         voucher_type: 'PAYMENT',
+        payment_date: paymentDate,
+        Date: paymentDate,
+        PaymentDate: paymentDate,
         lines: [
           {
             LineNo: 1,
@@ -708,10 +781,9 @@ export const PaymentFormPage: React.FC = () => {
             <Text size="xs" fw={600} c="#334155" mb={2}>
               Date *
             </Text>
-            <TextInput
-              type="date"
+            <DateInputDDMMYY
               value={paymentDate}
-              onChange={(e) => setPaymentDate(e.currentTarget.value)}
+              onChange={(val) => setPaymentDate(val)}
               radius="md"
               size="sm"
             />
@@ -719,14 +791,48 @@ export const PaymentFormPage: React.FC = () => {
 
           {/* Account (Paid From - ONLY Bank & Cash) */}
           <div style={{ flex: '2 1 320px', minWidth: 260 }}>
-            <Text size="xs" fw={600} c="#334155" mb={2}>
-              Account (Bank / Cash) *
-            </Text>
+            <Group justify="space-between" align="center" mb={2}>
+              <Text size="xs" fw={600} c="#334155">
+                Account (Bank / Cash) *
+              </Text>
+              {selectedAccountLedger && (() => {
+                const cur = Number(selectedAccountLedger.CurrentBalance ?? selectedAccountLedger.OpeningBalance ?? 0);
+                const bType = cur > 0 ? 'Dr' : (cur < 0 ? 'Cr' : (selectedAccountLedger.OpeningBalanceType || 'Dr'));
+                return (
+                  <Text size="xs" fw={700} c={bType === 'Cr' ? '#b91c1c' : '#800020'}>
+                    Bal: ₹{Math.abs(cur).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {bType}
+                  </Text>
+                );
+              })()}
+            </Group>
             <Select
               placeholder="Select Bank or Cash..."
               data={bankAndCashOptions}
               value={bankOrCashLedgerId}
               onChange={(val) => setBankOrCashLedgerId(val ? String(val) : null)}
+              renderOption={({ option }) => {
+                const item = bankAndCashOptions.find((o) => o.value === option.value);
+                const isCr = item?.balType === 'Cr';
+                return (
+                  <Group justify="space-between" wrap="nowrap" style={{ width: '100%' }}>
+                    <Text size="sm" fw={500}>{option.label}</Text>
+                    {item?.balance && (
+                      <Badge
+                        size="xs"
+                        variant="light"
+                        style={{
+                          backgroundColor: isCr ? '#fef2f2' : '#fdf2f4',
+                          color: isCr ? '#b91c1c' : '#800020',
+                          border: `1px solid ${isCr ? '#fecaca' : '#fecdd3'}`,
+                          fontWeight: 700,
+                        }}
+                      >
+                        Bal: {item.balance}
+                      </Badge>
+                    )}
+                  </Group>
+                );
+              }}
               searchable
               clearable
               radius="md"
@@ -792,7 +898,7 @@ export const PaymentFormPage: React.FC = () => {
                   const hasAllocations = allocatedSum > 0;
 
                   return (
-                    <Table.Tr key={row.id} style={{ height: 38 }}>
+                    <Table.Tr key={row.id} style={{ minHeight: 42, verticalAlign: 'middle' }}>
                       {/* # */}
                       <Table.Td style={{ textAlign: 'left' }}>
                         <Text size="xs" fw={600} c="dimmed">
@@ -801,18 +907,138 @@ export const PaymentFormPage: React.FC = () => {
                       </Table.Td>
 
                       {/* Particulars (Ledger Select) */}
-                      <Table.Td>
-                        <Select
-                          placeholder="Select Ledger (Supplier, Expense, Party)..."
-                          data={allLedgerOptions}
-                          value={row.ledgerId}
-                          onChange={(val) => updateRowLedger(index, val ? String(val) : null)}
-                          searchable
-                          clearable
-                          size="xs"
-                          radius="sm"
-                          styles={{ input: { height: 26, minHeight: 26, fontSize: 12 } }}
-                        />
+                      <Table.Td style={{ padding: '4px 6px' }}>
+                        {(() => {
+                          const balInfo = getLedgerBalanceInfo(selectedLedger);
+                          const hasBal = Boolean(balInfo && selectedLedger);
+                          return (
+                            <Box style={{ position: 'relative' }}>
+                              <Select
+                                placeholder="Select Ledger (Supplier, Expense, Party)..."
+                                data={allLedgerOptions}
+                                value={row.ledgerId}
+                                onChange={(val) => {
+                                  updateRowLedger(index, val ? String(val) : null);
+                                  if (val) {
+                                    const lObj = ledgers.find((l) => String(l.LedgerId) === String(val));
+                                    const b = getLedgerBalanceInfo(lObj);
+                                    if (b && b.absBal > 0 && !row.amount) {
+                                      updateRowAmount(index, b.absBal);
+                                    }
+                                  }
+                                }}
+                                searchable
+                                clearable
+                                size="xs"
+                                radius="sm"
+                                renderOption={({ option }) => {
+                                  const item = allLedgerOptions.find((o) => o.value === option.value);
+                                  const isCreditor = item?.isCreditor;
+                                  return (
+                                    <Group justify="space-between" wrap="nowrap" style={{ width: '100%', padding: '2px 0' }}>
+                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>
+                                        <Text size="xs" fw={600} c="#0f172a" truncate>
+                                          {option.label}
+                                        </Text>
+                                      </div>
+                                      {item && item.balanceText && (
+                                        <Badge
+                                          size="xs"
+                                          variant="light"
+                                          style={{
+                                            backgroundColor: isCreditor ? '#fdf2f4' : '#f8fafc',
+                                            color: isCreditor ? '#800020' : '#475569',
+                                            border: `1px solid ${isCreditor ? '#f5c2cb' : '#e2e8f0'}`,
+                                            fontWeight: 800,
+                                            fontSize: 10,
+                                            letterSpacing: '0.2px',
+                                            flexShrink: 0,
+                                            fontVariantNumeric: 'tabular-nums',
+                                          }}
+                                        >
+                                          {item.balanceText}
+                                        </Badge>
+                                      )}
+                                    </Group>
+                                  );
+                                }}
+                                rightSection={
+                                  hasBal && balInfo ? (
+                                    <Tooltip label={`Click to fill ₹${balInfo.absBal.toFixed(2)} into Amount`} withArrow position="top">
+                                      <Badge
+                                        size="xs"
+                                        variant="filled"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (balInfo.absBal > 0) {
+                                            updateRowAmount(index, balInfo.absBal);
+                                          }
+                                        }}
+                                        style={{
+                                          cursor: 'pointer',
+                                          backgroundColor: '#800020',
+                                          color: '#ffffff',
+                                          border: '1px solid #800020',
+                                          fontWeight: 800,
+                                          fontSize: 10,
+                                          letterSpacing: '0.3px',
+                                          padding: '2px 7px',
+                                          borderRadius: 4,
+                                          marginRight: 2,
+                                          boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
+                                          whiteSpace: 'nowrap',
+                                          userSelect: 'none',
+                                          lineHeight: '16px',
+                                        }}
+                                      >
+                                        {balInfo.isCreditor ? 'Payable: ' : 'Bal: '}₹{balInfo.absBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {balInfo.balType}
+                                      </Badge>
+                                    </Tooltip>
+                                  ) : undefined
+                                }
+                                rightSectionWidth={hasBal ? 175 : 28}
+                                rightSectionPointerEvents="auto"
+                                styles={{
+                                  input: {
+                                    height: 28,
+                                    minHeight: 28,
+                                    fontSize: 12,
+                                    paddingRight: hasBal ? 180 : 28,
+                                  },
+                                }}
+                              />
+                              {selectedLedger && balInfo && (
+                                <Group justify="space-between" align="center" gap={4} mt={3} px={2} wrap="nowrap">
+                                  <Text size="10px" c="dimmed" truncate style={{ maxWidth: '50%' }}>
+                                    {selectedLedger.group_name || 'Ledger'}
+                                  </Text>
+                                  <Group gap={4} wrap="nowrap">
+                                    <Text size="10px" fw={700} style={{ color: '#800020' }}>
+                                      {balInfo.isCreditor ? 'Balance Payable:' : 'Current Balance:'}
+                                    </Text>
+                                    <Tooltip label="Click to autofill this payable amount" withArrow position="top">
+                                      <Text
+                                        size="11px"
+                                        fw={800}
+                                        style={{
+                                          color: '#800020',
+                                          cursor: 'pointer',
+                                          textDecoration: 'underline dotted',
+                                          fontVariantNumeric: 'tabular-nums',
+                                        }}
+                                        onClick={() => {
+                                          if (balInfo.absBal > 0) updateRowAmount(index, balInfo.absBal);
+                                        }}
+                                      >
+                                        ₹{balInfo.absBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balInfo.balType}
+                                      </Text>
+                                    </Tooltip>
+                                  </Group>
+                                </Group>
+                              )}
+                            </Box>
+                          );
+                        })()}
                       </Table.Td>
 
                       {/* Amount (₹) — Styled exactly like PurchaseFormPage */}

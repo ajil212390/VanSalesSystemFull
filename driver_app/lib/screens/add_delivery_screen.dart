@@ -43,24 +43,41 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     super.dispose();
   }
 
-  Future<void> _submitDelivery(AppState state) async {
-    if (state.paymentMethod.toLowerCase() == 'split') {
+  Future<void> _submitDelivery(AppState state, {bool autoShareWhatsApp = false}) async {
+    if (state.isShiftLocked || state.endShiftStatus.toUpperCase() != 'ACTIVE') {
+      AppToast.error(context, 'Shift ended. Awaiting approval or new load allocation.');
+      return;
+    }
+
+    final isCredit = state.paymentMethod.toLowerCase() == 'credit';
+    final isSplit = state.paymentMethod.toLowerCase() == 'split';
+
+    if (isCredit) {
+      state.setCollectedAmount(0.0);
+    } else if (isSplit) {
       final cashVal = double.tryParse(_splitCashController.text.replaceAll(',', '').trim()) ?? 0;
       final upiVal = double.tryParse(_splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
       final splitSum = cashVal + upiVal;
       state.setSplitAmounts(cashVal, upiVal);
-      state.setCollectedAmount(splitSum > 0 ? splitSum : state.totalBillAmount);
+      state.setCollectedAmount(splitSum);
     } else {
-      final enteredAmount = double.tryParse(_amountController.text.replaceAll(',', '').trim()) ?? 0;
-      if (enteredAmount > 0) {
-        state.setCollectedAmount(enteredAmount);
-      } else if (state.collectedAmount == 0 && state.totalBillAmount > 0) {
-        state.setCollectedAmount(state.totalBillAmount);
+      final textTrim = _amountController.text.trim();
+      if (textTrim == '0' || textTrim == '0.0') {
+        state.setCollectedAmount(0.0);
+      } else {
+        final enteredAmount = double.tryParse(textTrim.replaceAll(',', '')) ?? 0;
+        if (enteredAmount > 0) {
+          state.setCollectedAmount(enteredAmount);
+        } else if (textTrim.isEmpty) {
+          state.setCollectedAmount(state.totalBillAmount);
+        } else {
+          state.setCollectedAmount(0.0);
+        }
       }
     }
 
     // Launch modern half-screen animated submission & PDF preparation modal
-    SuccessScreen.processAndShow(context, state: state);
+    SuccessScreen.processAndShow(context, state: state, autoShareWhatsApp: autoShareWhatsApp);
   }
 
   void _selectOrAddCustomCustomer(AppState state, String name) {
@@ -99,6 +116,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     }
 
     final isSplit = state.paymentMethod.toLowerCase() == 'split';
+    final isCredit = state.paymentMethod.toLowerCase() == 'credit';
     final splitCash = double.tryParse(_splitCashController.text.replaceAll(',', '').trim()) ?? 0;
     final splitUpi = double.tryParse(_splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
     final splitSum = splitCash + splitUpi;
@@ -106,22 +124,28 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final enteredAmount = isSplit
         ? splitSum
         : (double.tryParse(_amountController.text.replaceAll(',', '').trim()) ?? 0);
-    final effectiveAmount = enteredAmount > 0
-        ? enteredAmount
-        : (state.collectedAmount > 0 ? state.collectedAmount : state.totalBillAmount);
-    final hasValidAmount = effectiveAmount > 0;
+    final effectiveAmount = isCredit
+        ? 0.0
+        : (enteredAmount > 0
+            ? enteredAmount
+            : (_amountController.text.trim() == '0'
+                ? 0.0
+                : (state.collectedAmount > 0 ? state.collectedAmount : state.totalBillAmount)));
+
+    final hasItems = state.totalCylinders > 0 || state.totalOtherDeliveryCount > 0 || state.totalEmpties > 0;
+    final hasValidAmount = isCredit || _amountController.text.trim() == '0' || effectiveAmount >= 0;
 
     final canSubmit = !state.isShiftLocked &&
+        state.endShiftStatus.toUpperCase() == 'ACTIVE' &&
         state.selectedCustomer != null &&
-        (state.totalCylinders > 0 || state.totalOtherDeliveryCount > 0) &&
-        state.paymentMethod.isNotEmpty &&
-        hasValidAmount;
+        hasItems &&
+        state.paymentMethod.isNotEmpty;
 
     // Calculate completion progress (1: Customer, 2: Cylinders/Products, 3: Payment & Amount)
     int completedStepCount = 0;
     if (state.selectedCustomer != null) completedStepCount++;
-    if (state.totalCylinders > 0 || state.totalOtherDeliveryCount > 0) completedStepCount++;
-    if (state.paymentMethod.isNotEmpty && hasValidAmount) completedStepCount++;
+    if (hasItems) completedStepCount++;
+    if (state.paymentMethod.isNotEmpty) completedStepCount++;
     final double completionProgress = completedStepCount / 3.0;
 
     return Scaffold(
@@ -141,23 +165,37 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
               onTap: () => _showNewConnectionModal(context, state),
               borderRadius: BorderRadius.circular(10),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFDF2F4),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFF5A0016),
+                      Color(0xFF800020),
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF800020), width: 1.2),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x33800020),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.add_link_rounded, size: 16, color: Color(0xFF800020)),
+                    const Icon(Icons.add_link_rounded, size: 16, color: Colors.white),
                     const SizedBox(width: 5),
                     Text(
                       'New Connection',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: const Color(0xFF800020),
+                        color: Colors.white,
+                        letterSpacing: 0.2,
                       ),
                     ),
                   ],
@@ -240,7 +278,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (state.isShiftLocked) ...[
+            if (state.isShiftLocked || state.endShiftStatus.toUpperCase() != 'ACTIVE') ...[
               Container(
                 margin: const EdgeInsets.only(bottom: 14),
                 padding: const EdgeInsets.all(12),
@@ -272,31 +310,75 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
 
             const SizedBox(height: 14),
 
-            // 2. Unified Cylinder to Deliver & Return Empty Section (Single Table)
-            _buildUnifiedCylinderTableCard(state),
-
-            // 2.1 Other Products Section
-            if (state.otherProducts.any((p) => p.balanceStock > 0)) ...[
-              const SizedBox(height: 14),
-              _buildOtherProductsCard(state),
+            // If no customer is selected: guidance banner
+            if (state.selectedCustomer == null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFDF2F4),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF800020).withValues(alpha: 0.2)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.touch_app_rounded, color: Color(0xFF800020), size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Select a customer above first to enter cylinder quantities & payment.',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF800020),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
             ],
 
-            const SizedBox(height: 14),
+            // The remaining options only become typable / interactive after selecting a customer
+            IgnorePointer(
+              ignoring: state.selectedCustomer == null,
+              child: Opacity(
+                opacity: state.selectedCustomer == null ? 0.38 : 1.0,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 2. Unified Cylinder to Deliver & Return Empty Section (Single Table)
+                    _buildUnifiedCylinderTableCard(state),
 
-            // 3. Payment Method Section
-            _buildPaymentMethodSection(state),
+                    // 2.1 Other Products Section
+                    if (state.otherProducts.any((p) => p.balanceStock > 0)) ...[
+                      const SizedBox(height: 14),
+                      _buildOtherProductsCard(state),
+                    ],
 
-            const SizedBox(height: 14),
+                    const SizedBox(height: 14),
 
-            // 4. Redesigned Bill Amount Collection Card
-            _buildRedesignedBillAmountCard(state),
+                    // 3. Payment Method Section
+                    _buildPaymentMethodSection(state),
 
-            const SizedBox(height: 18),
+                    const SizedBox(height: 14),
 
-            // 5. Inline Submit Button (directly under Bill Amount)
-            _buildInlineSubmitButton(context, state, canSubmit, hasValidAmount),
+                    // 4. Redesigned Bill Amount Collection Card (Hidden for Split & Credit)
+                    if (!isSplit && !isCredit) ...[
+                      _buildRedesignedBillAmountCard(state),
+                      const SizedBox(height: 14),
+                    ],
 
-            const SizedBox(height: 100), // Clearance for floating pill bottom nav
+                    // 5. Inline Submit Button (directly under Bill Amount / Payment Section)
+                    _buildInlineSubmitButton(context, state, canSubmit, hasValidAmount, effectiveAmount, hasItems),
+                  ],
+                ),
+              ),
+            ),
+
+            // Responsive clearance for floating pill navbar & classic 3-button system navigation
+            SizedBox(height: 84 + MediaQuery.of(context).padding.bottom),
           ],
         ),
       ),
@@ -1150,6 +1232,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       {'key': 'Cash', 'title': 'Cash', 'icon': Icons.payments_outlined},
       {'key': 'UPI', 'title': 'Bank', 'icon': Icons.qr_code_2_rounded},
       {'key': 'Split', 'title': 'Split', 'icon': Icons.call_split_rounded},
+      {'key': 'Credit', 'title': 'Credit', 'icon': Icons.credit_score_rounded},
     ];
 
     return Container(
@@ -1190,21 +1273,15 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   child: GestureDetector(
                     onTap: () {
                       state.setPaymentMethod(m['key'] as String);
-                      if (m['key'] == 'Split' && state.totalBillAmount > 0) {
-                        if (_splitCashController.text.isEmpty && _splitUpiController.text.isEmpty) {
-                          _splitCashController.text = (state.totalBillAmount / 2).toStringAsFixed(0);
-                          _splitUpiController.text = (state.totalBillAmount - (state.totalBillAmount / 2)).toStringAsFixed(0);
-                          state.setSplitAmounts(
-                            double.tryParse(_splitCashController.text) ?? 0,
-                            double.tryParse(_splitUpiController.text) ?? 0,
-                          );
-                        }
+                      if (m['key'] == 'Credit') {
+                        state.setCollectedAmount(0.0);
+                        _amountController.text = '0';
                       }
                       setState(() {});
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
-                      margin: EdgeInsets.only(right: m['key'] != 'Split' ? 8 : 0),
+                      margin: EdgeInsets.only(right: m['key'] != 'Credit' ? 6 : 0),
                       padding: const EdgeInsets.symmetric(vertical: 11),
                       decoration: BoxDecoration(
                         color: isSelected ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
@@ -1234,7 +1311,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           Text(
                             m['title'] as String,
                             style: GoogleFonts.inter(
-                              fontSize: 11.5,
+                              fontSize: 11,
                               fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                               color: isSelected ? const Color(0xFF800020) : const Color(0xFF475569),
                             ),
@@ -1246,6 +1323,35 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 );
               }).toList(),
             ),
+
+            if (state.paymentMethod == 'Credit') ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline_rounded, color: Color(0xFFB45309), size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Credit Delivery: ₹0 paid now. Total bill ₹${state.totalBillAmount.toStringAsFixed(0)} will be added to customer pending balance.',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF92400E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             if (state.paymentMethod == 'Split') ...[
               const SizedBox(height: 12),
@@ -1450,18 +1556,35 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   }
 
   // ================= 5. INLINE SUBMIT BUTTON =================
-  Widget _buildInlineSubmitButton(BuildContext context, AppState state, bool canSubmit, bool hasValidAmount) {
+  Widget _buildInlineSubmitButton(
+    BuildContext context,
+    AppState state,
+    bool canSubmit,
+    bool hasValidAmount,
+    double effectiveAmount,
+    bool hasItems,
+  ) {
     String buttonLabel;
-    if (canSubmit) {
-      buttonLabel = 'COMPLETE DELIVERY';
-    } else if (state.selectedCustomer == null) {
-      buttonLabel = 'SELECT CUSTOMER';
-    } else if (state.totalCylinders == 0) {
-      buttonLabel = 'SELECT CYLINDERS';
-    } else if (state.paymentMethod.isEmpty) {
-      buttonLabel = 'SELECT PAYMENT METHOD';
+    final isCredit = state.paymentMethod.toLowerCase() == 'credit';
+    final textTrim = _amountController.text.trim();
+    final isZeroPayment = isCredit ||
+        (state.paymentMethod.toLowerCase() != 'split' &&
+            (textTrim.isEmpty || textTrim == '0' || textTrim == '0.0' || effectiveAmount == 0));
+
+    if (!canSubmit) {
+      if (state.selectedCustomer == null) {
+        buttonLabel = 'SELECT CUSTOMER FIRST';
+      } else if (!hasItems) {
+        buttonLabel = 'SELECT CYLINDERS TO DELIVER';
+      } else if (state.paymentMethod.isEmpty) {
+        buttonLabel = 'SELECT PAYMENT METHOD';
+      } else {
+        buttonLabel = 'COMPLETE DELIVERY';
+      }
+    } else if (effectiveAmount > 0 && !isZeroPayment) {
+      buttonLabel = 'COMPLETE DELIVERY (₹${effectiveAmount.toStringAsFixed(0)})';
     } else {
-      buttonLabel = 'ENTER BILL AMOUNT';
+      buttonLabel = 'COMPLETE DELIVERY';
     }
 
     return SizedBox(
@@ -1487,15 +1610,19 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
           child: InkWell(
             onTap: () {
               if (canSubmit) {
-                _submitDelivery(state);
+                if (isZeroPayment) {
+                  _showZeroPaymentConfirmationDialog(context, state);
+                } else {
+                  _submitDelivery(state);
+                }
               } else {
                 String msg = 'Please fill all required fields';
                 if (state.selectedCustomer == null) {
-                  msg = 'Please select or enter customer name';
-                } else if (state.totalCylinders == 0) {
-                  msg = 'Please select at least 1 cylinder to deliver';
+                  msg = 'Please select a customer first';
+                } else if (!hasItems) {
+                  msg = 'Please select at least 1 cylinder to deliver or return';
                 } else if (state.paymentMethod.isEmpty) {
-                  msg = 'Please select payment method (Cash / UPI)';
+                  msg = 'Please select payment method (Cash, Bank, Split, or Credit)';
                 } else if (!hasValidAmount) {
                   msg = 'Please enter a valid bill amount';
                 }
@@ -1510,7 +1637,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   Text(
                     buttonLabel,
                     style: TextStyle(
-                      fontSize: canSubmit ? 14 : 12.5,
+                      fontSize: canSubmit ? 13.5 : 12.5,
                       fontWeight: FontWeight.w800,
                       color: canSubmit ? Colors.white : const Color(0xFF94A3B8),
                       letterSpacing: 0.5,
@@ -1526,6 +1653,268 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  // ================= ZERO PAYMENT CONFIRMATION DIALOG =================
+  void _showZeroPaymentConfirmationDialog(BuildContext context, AppState state) {
+    final customer = state.selectedCustomer;
+    final customerName = customer?.name ?? 'Customer';
+    final customerPhone = customer?.phone.trim() ?? '';
+    final totalBill = state.totalBillAmount;
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 12,
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header Row: Burgundy Accent Icon + Title & Subtitle
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF2F4),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFF5C2CB)),
+                    ),
+                    child: const Icon(Icons.credit_score_rounded, color: Color(0xFF800020), size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Confirm Credit Delivery',
+                          style: GoogleFonts.inter(
+                            fontSize: 16.5,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF0F172A),
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Zero payment collected • Added to balance',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+
+              // Summary Breakdown Card
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
+                    // Customer Row
+                    Row(
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF800020),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            customerName.isNotEmpty ? customerName.trim().substring(0, 1).toUpperCase() : 'C',
+                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                customerName,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                              ),
+                              if (customerPhone.isNotEmpty)
+                                Text(
+                                  customerPhone,
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 20, color: Color(0xFFE2E8F0)),
+                    _buildZeroPaymentRow('Total Bill Amount', '₹${totalBill.toStringAsFixed(2)}', isBold: true),
+                    const SizedBox(height: 8),
+                    _buildZeroPaymentRow('Collected Now', '₹0.00 (CREDIT)', valueColor: const Color(0xFF475569), isBold: true),
+                    const Divider(height: 18, color: Color(0xFFE2E8F0)),
+                    _buildZeroPaymentRow(
+                      'Pending Balance Added',
+                      '+₹${totalBill.toStringAsFixed(2)}',
+                      valueColor: const Color(0xFF800020),
+                      isBold: true,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+
+              // WhatsApp Notice
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Image.asset(
+                      'assets/images/whatsapp_logo.png',
+                      width: 18,
+                      height: 18,
+                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF16A34A), size: 18),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        customerPhone.isNotEmpty
+                            ? 'Credit receipt will be sent to $customerPhone via WhatsApp.'
+                            : 'Credit receipt will be generated and shared via WhatsApp.',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF475569),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Action Buttons: Cancel and Confirm & Send
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(dialogCtx),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        side: const BorderSide(color: Color(0xFFCBD5E1), width: 1.2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        'Cancel',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF475569),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                          colors: [
+                            Color(0xFF5A0016),
+                            Color(0xFF800020),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(dialogCtx);
+                          state.setPaymentMethod('Credit');
+                          state.setCollectedAmount(0.0);
+                          _submitDelivery(state, autoShareWhatsApp: true);
+                        },
+                        icon: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
+                        label: Text(
+                          'Confirm & Send',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZeroPaymentRow(String label, String value, {Color? valueColor, bool isBold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: isBold ? FontWeight.w600 : FontWeight.w500,
+            color: const Color(0xFF64748B),
+          ),
+        ),
+        Text(
+          value,
+          style: GoogleFonts.inter(
+            fontSize: 12.5,
+            fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
+            color: valueColor ?? const Color(0xFF0F172A),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1593,12 +1982,7 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
 
   void _syncSplitAmounts() {
     if (_selectedPackage == null) return;
-    final total = safeDouble(_selectedPackage!['TotalAmount']);
-    if (_paymentMode == 'Split') {
-      final half = (total / 2).roundToDouble();
-      _cashController.text = half.toStringAsFixed(0);
-      _upiController.text = (total - half).toStringAsFixed(0);
-    }
+    // Keep user-entered amounts; do not enforce arbitrary 50/50 splits
   }
 
   Future<void> _submitPackageDelivery() async {
@@ -1609,6 +1993,47 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
     if (_selectedPackage == null) {
       AppToast.warning(context, 'Please select a connection package');
       return;
+    }
+
+    final state = widget.parentState;
+
+    // 1. Validate Van Stock for Cylinder in this package
+    final cylinderProductId = _selectedPackage!['CylinderProduct'];
+    final cylinderQty = safeInt(_selectedPackage!['CylinderQty'], 1);
+    final cylinderName = (_selectedPackage!['cylinder_name'] ?? 'LPG Cylinder').toString();
+    if (cylinderProductId != null && cylinderQty > 0) {
+      final matchingCyl = state.deliveryItems.firstWhere(
+        (it) => it.cylinder.productId == cylinderProductId,
+        orElse: () => DeliveryItem(cylinder: CylinderType(weight: '', filledStock: 0, emptyStock: 0, price: 0)),
+      );
+      if (matchingCyl.cylinder.filledStock < cylinderQty) {
+        AppToast.error(
+          context,
+          'Insufficient van stock for $cylinderName! Available: ${matchingCyl.cylinder.filledStock}, Required: $cylinderQty',
+        );
+        return;
+      }
+    }
+
+    // 2. Validate Van Stock for Every Accessory Item in this package
+    final pkgItems = _selectedPackage!['items'] as List<dynamic>? ?? [];
+    for (final it in pkgItems) {
+      final pid = it['Product'] ?? it['product_id'];
+      final pName = (it['ProductName'] ?? it['product_name'] ?? 'Accessory').toString();
+      final reqQty = safeInt(it['Quantity'], 1);
+      if (reqQty <= 0) continue;
+
+      final availProd = state.otherProducts.firstWhere(
+        (p) => p.productId == pid || p.name.toLowerCase() == pName.toLowerCase(),
+        orElse: () => OtherProductItem(name: pName, price: 0, initialStock: 0, balanceStock: 0),
+      );
+      if (availProd.balanceStock < reqQty) {
+        AppToast.error(
+          context,
+          'Insufficient van stock for $pName! Available: ${availProd.balanceStock}, Required: $reqQty',
+        );
+        return;
+      }
     }
 
     final total = safeDouble(_selectedPackage!['TotalAmount']);
@@ -1659,15 +2084,52 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final double effectiveBottom = bottomInset > 0 ? bottomInset : bottomPadding;
     final totalAmount = safeDouble(_selectedPackage?['TotalAmount']);
+
+    int completedStepCount = 0;
+    if (_selectedCustomer != null) completedStepCount++;
+    if (_selectedPackage != null) completedStepCount++;
+    if (_paymentMode == 'Split') {
+      final c = double.tryParse(_cashController.text.replaceAll(',', '').trim()) ?? 0;
+      final u = double.tryParse(_upiController.text.replaceAll(',', '').trim()) ?? 0;
+      if (c + u > 0) completedStepCount++;
+    } else if (_paymentMode.isNotEmpty) {
+      completedStepCount++;
+    }
+    final double completionProgress = completedStepCount / 3.0;
+
+    final bool canSubmit = _selectedCustomer != null &&
+        _selectedPackage != null &&
+        !_isSubmitting &&
+        !_isLoadingPackages &&
+        (_paymentMode != 'Split' ||
+            ((double.tryParse(_cashController.text.replaceAll(',', '').trim()) ?? 0) +
+                    (double.tryParse(_upiController.text.replaceAll(',', '').trim()) ?? 0) >
+                0));
+
+    String submitButtonLabel;
+    if (_selectedCustomer == null) {
+      submitButtonLabel = 'SELECT CUSTOMER';
+    } else if (_selectedPackage == null) {
+      submitButtonLabel = 'SELECT CONNECTION PACKAGE';
+    } else if (_paymentMode == 'Split' &&
+        ((double.tryParse(_cashController.text.replaceAll(',', '').trim()) ?? 0) +
+                (double.tryParse(_upiController.text.replaceAll(',', '').trim()) ?? 0) <=
+            0)) {
+      submitButtonLabel = 'ENTER SPLIT AMOUNTS';
+    } else {
+      submitButtonLabel = 'CONFIRM CONNECTION \u2022 \u20B9${totalAmount.toStringAsFixed(0)}';
+    }
 
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.9,
+        maxHeight: MediaQuery.of(context).size.height * 0.92,
       ),
-      padding: EdgeInsets.fromLTRB(18, 16, 18, 16 + bottomInset),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 14 + effectiveBottom),
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: Color(0xFFF1F5F9),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
@@ -1685,21 +2147,30 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
 
-          // Header
+          // Header Bar
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(7),
+                    padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFDF2F4),
-                      borderRadius: BorderRadius.circular(8),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF5A0016), Color(0xFF800020)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x33800020),
+                          blurRadius: 4,
+                          offset: Offset(0, 1.5),
+                        ),
+                      ],
                     ),
-                    child: const Icon(Icons.add_link_rounded, size: 20, color: Color(0xFF800020)),
+                    child: const Icon(Icons.add_link_rounded, size: 18, color: Colors.white),
                   ),
                   const SizedBox(width: 10),
                   Column(
@@ -1711,9 +2182,17 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
                           color: const Color(0xFF0F172A),
+                          letterSpacing: -0.3,
                         ),
                       ),
-                      
+                      Text(
+                        'Package setup & payment collection',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -1724,7 +2203,58 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
+
+          // Completion Progress Bar (Matches Delivery UI top bar)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      completedStepCount >= 3 ? 'Ready to Confirm' : 'Order Completion',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: completedStepCount >= 3
+                            ? const Color(0xFF800020)
+                            : const Color(0xFF64748B),
+                      ),
+                    ),
+                    Text(
+                      '$completedStepCount of 3 steps',
+                      style: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: completedStepCount >= 3
+                            ? const Color(0xFF800020)
+                            : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: completionProgress,
+                    backgroundColor: const Color(0xFFE2E8F0),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF800020)),
+                    minHeight: 4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
 
           // Scrollable fields
           Expanded(
@@ -1733,152 +2263,391 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // 1. Customer Selector
+                  // 1. Customer Card
                   _buildCustomerSection(),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
 
-                  // 2. Package Selector
+                  // 2. Package Selector & Components Table Bar
                   _buildPackageSection(),
 
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 12),
 
-                  // 3. Payment Method
+                  // 3. Payment Method Tabs & Split Bar
                   _buildPaymentSection(totalAmount),
+                  
+                  const SizedBox(height: 6),
                 ],
               ),
             ),
           ),
 
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
-          // Submit Button
-          ElevatedButton(
-            onPressed: (_isSubmitting || _isLoadingPackages || _selectedPackage == null)
-                ? null
-                : _submitPackageDelivery,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF800020),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
-            ),
-            child: _isSubmitting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : Text(
-                    _selectedPackage == null
-                        ? 'Select Connection Package'
-                        : 'Confirm Connection \u2022 \u20B9${totalAmount.toStringAsFixed(0)}',
-                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800),
+          // Confirm Button (Matches Delivery UI submit button)
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: canSubmit
+                    ? const LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Color(0xFF5A0016),
+                          Color(0xFF800020),
+                        ],
+                      )
+                    : null,
+                color: canSubmit ? null : const Color(0xFFCBD5E1),
+                boxShadow: canSubmit
+                    ? const [
+                        BoxShadow(
+                          color: Color(0x33800020),
+                          blurRadius: 8,
+                          offset: Offset(0, 3),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: canSubmit && !_isSubmitting ? _submitPackageDelivery : null,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Center(
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                canSubmit ? Icons.check_circle_rounded : Icons.add_link_rounded,
+                                size: 18,
+                                color: canSubmit ? Colors.white : const Color(0xFF64748B),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                submitButtonLabel,
+                                style: GoogleFonts.inter(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: canSubmit ? Colors.white : const Color(0xFF64748B),
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ],
+                          ),
                   ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
+  // ================= 1. CUSTOMER SECTION =================
   Widget _buildCustomerSection() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x060F172A),
+            blurRadius: 4,
+            offset: Offset(0, 1.5),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.person_outline_rounded, size: 15, color: Color(0xFF800020)),
-              const SizedBox(width: 6),
-              Text(
-                'CUSTOMER',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF800020),
-                  letterSpacing: 0.5,
-                ),
+              Row(
+                children: [
+                  const Icon(Icons.person_rounded, size: 16, color: Color(0xFF800020)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'CUSTOMER DETAILS',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF800020),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (_selectedCustomer != null) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _selectedCustomer!.name,
-                        style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
-                      ),
-                      if (_selectedCustomer!.phone.isNotEmpty)
+              if (_selectedCustomer != null)
+                InkWell(
+                  onTap: () => setState(() => _selectedCustomer = null),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.sync_alt_rounded, size: 13, color: Color(0xFF800020)),
+                        const SizedBox(width: 4),
                         Text(
-                          _selectedCustomer!.phone,
-                          style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF64748B)),
+                          'Change',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-                TextButton(
-                  onPressed: () {
-                    setState(() => _selectedCustomer = null);
-                  },
-                  child: Text('Change', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF800020))),
-                ),
-              ],
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_selectedCustomer != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF800020),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      _selectedCustomer!.name.isNotEmpty
+                          ? _selectedCustomer!.name.trim().substring(0, 1).toUpperCase()
+                          : 'C',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _selectedCustomer!.name,
+                          style: GoogleFonts.inter(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            if (_selectedCustomer!.phone.isNotEmpty) ...[
+                              const Icon(Icons.phone_outlined, size: 12, color: Color(0xFF64748B)),
+                              const SizedBox(width: 4),
+                              Text(
+                                _selectedCustomer!.phone,
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE2E8F0),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                _selectedCustomer!.type.isNotEmpty ? _selectedCustomer!.type : 'Customer',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF475569),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (_selectedCustomer!.outstanding != 0)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            _selectedCustomer!.outstanding > 0 ? 'Due' : 'Credit',
+                            style: GoogleFonts.inter(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w600,
+                              color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                            ),
+                          ),
+                          Text(
+                            '₹${_selectedCustomer!.outstanding.abs().toStringAsFixed(0)}',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
             ),
           ] else ...[
             TextField(
               controller: _searchCustController,
               decoration: InputDecoration(
-                hintText: 'Search or type customer name...',
+                hintText: 'Search customer name or phone...',
                 hintStyle: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF94A3B8)),
-                prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF64748B)),
+                prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Color(0xFF800020)),
+                suffixIcon: _searchCustController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFF94A3B8)),
+                        onPressed: () {
+                          _searchCustController.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
                 filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                fillColor: const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5),
+                ),
               ),
               onChanged: (_) => setState(() {}),
             ),
-            if (_searchCustController.text.trim().isNotEmpty) ...[
-              const SizedBox(height: 6),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 140),
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    ...widget.parentState.customers
-                        .where((c) => c.name.toLowerCase().contains(_searchCustController.text.toLowerCase()) ||
-                            c.phone.contains(_searchCustController.text))
-                        .map((c) => ListTile(
-                              dense: true,
-                              title: Text(c.name, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600)),
-                              subtitle: Text(c.phone, style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B))),
-                              onTap: () {
-                                setState(() {
-                                  _selectedCustomer = c;
-                                  _searchCustController.clear();
-                                });
-                              },
-                            )),
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.add, size: 16, color: Color(0xFF800020)),
-                      title: Text(
-                        'Add "${_searchCustController.text.trim()}" as Direct Customer',
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF800020)),
-                      ),
+            const SizedBox(height: 8),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 180),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: ListView(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                children: [
+                  ...widget.parentState.customers
+                      .where((c) {
+                        final q = _searchCustController.text.trim().toLowerCase();
+                        if (q.isEmpty) return true;
+                        return c.name.toLowerCase().contains(q) || c.phone.contains(q);
+                      })
+                      .take(5)
+                      .map((c) => InkWell(
+                            onTap: () {
+                              setState(() {
+                                _selectedCustomer = c;
+                                _searchCustController.clear();
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: const BoxDecoration(
+                                border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+                              ),
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 14,
+                                    backgroundColor: const Color(0xFFFDF2F4),
+                                    child: Text(
+                                      c.name.isNotEmpty ? c.name[0].toUpperCase() : 'C',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF800020),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          c.name,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: const Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                        if (c.phone.isNotEmpty)
+                                          Text(
+                                            c.phone,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 11,
+                                              color: const Color(0xFF64748B),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (c.outstanding != 0)
+                                    Text(
+                                      '₹${c.outstanding.toStringAsFixed(0)}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: c.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          )),
+                  if (_searchCustController.text.trim().isNotEmpty)
+                    InkWell(
                       onTap: () {
                         setState(() {
                           _selectedCustomer = Customer(
@@ -1890,22 +2659,47 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
                           _searchCustController.clear();
                         });
                       },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        color: const Color(0xFFFDF2F4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.person_add_alt_1_rounded, size: 16, color: Color(0xFF800020)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Add "${_searchCustController.text.trim()}" as Direct Customer',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF800020),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ],
-                ),
+                ],
               ),
-            ],
+            ),
           ],
         ],
       ),
     );
   }
 
+  // ================= 2. PACKAGE SELECTOR & COMPONENTS TABLE =================
   Widget _buildPackageSection() {
     if (_isLoadingPackages) {
       return Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24),
         alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
         child: const SizedBox(
           width: 24,
           height: 24,
@@ -1919,7 +2713,7 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: const Color(0xFFFFFBEB),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: const Color(0xFFFDE68A)),
         ),
         child: Text(
@@ -1929,124 +2723,558 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
       );
     }
 
+    final state = widget.parentState;
+
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x060F172A),
+            blurRadius: 4,
+            offset: Offset(0, 1.5),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Icon(Icons.inventory_2_outlined, size: 15, color: Color(0xFF800020)),
-              const SizedBox(width: 6),
-              Text(
-                'CONNECTION PACKAGE',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF800020),
-                  letterSpacing: 0.5,
-                ),
+              Row(
+                children: [
+                  const Icon(Icons.propane_tank_rounded, size: 16, color: Color(0xFF800020)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'CONNECTION PACKAGE & ITEMS',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF800020),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // Dropdown
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFCBD5E1)),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<int>(
-                isExpanded: true,
-                value: _selectedPackage != null ? safeInt(_selectedPackage!['PackageId']) : null,
-                hint: Text(
-                  'Select connection package...',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: const Color(0xFF64748B),
-                    fontWeight: FontWeight.w500,
+              if (_selectedPackage != null)
+                InkWell(
+                  onTap: () => _openPackagePickerSheet(context),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.sync_alt_rounded, size: 13, color: Color(0xFF800020)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Switch',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                items: _packages.map((pkg) {
-                  return DropdownMenuItem<int>(
-                    value: safeInt(pkg['PackageId']),
-                    child: Text(
-                      '${pkg['PackageName']} (\u20B9${safeDouble(pkg['TotalAmount']).toStringAsFixed(0)})',
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Interactive Package Card Selector
+          if (_selectedPackage == null) ...[
+            InkWell(
+              onTap: () => _openPackagePickerSheet(context),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFDF2F4),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.inventory_2_outlined, color: Color(0xFF800020), size: 20),
                     ),
-                  );
-                }).toList(),
-                onChanged: (pkgId) {
-                  if (pkgId != null) {
-                    setState(() {
-                      _selectedPackage = _packages.firstWhere((p) => safeInt(p['PackageId']) == pkgId);
-                      _syncSplitAmounts();
-                    });
-                  }
-                },
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Select Connection Package',
+                            style: GoogleFonts.inter(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${_packages.length} packages available on this route',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF800020), size: 22),
+                  ],
+                ),
               ),
             ),
-          ),
-
-          if (_selectedPackage != null) ...[
-            const SizedBox(height: 10),
+          ] else ...[
+            // Selected Package Overview Card
             Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: const Color(0xFFFDF2F4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFF5C2CB)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF800020),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.propane_tank_rounded, color: Colors.white, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _selectedPackage!['PackageName'] ?? 'Connection Package',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          (_selectedPackage!['cylinder_name'] ?? 'LPG Cylinder').toString(),
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF800020),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '₹${safeDouble(_selectedPackage!['TotalAmount']).toStringAsFixed(0)}',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Detailed Breakdown Table (Matches Delivery UI Cylinder & Product Table Bars)
+          if (_selectedPackage != null) ...[
+            const SizedBox(height: 12),
+
+            // Table Column Headers Bar (Identical to Delivery UI)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  Expanded(
+                    flex: 6,
+                    child: Text(
+                      'Package Component',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: Text(
+                      'Qty',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF800020),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      'Amount',
+                      textAlign: TextAlign.right,
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+
+            // 1. Cylinder Row
+            Builder(
+              builder: (context) {
+                final cylinderProductId = _selectedPackage!['CylinderProduct'];
+                final cylinderQty = safeInt(_selectedPackage!['CylinderQty'], 1);
+                final cylinderRate = safeDouble(_selectedPackage!['CylinderRate']);
+                final cylinderName = (_selectedPackage!['cylinder_name'] ?? 'LPG Cylinder').toString();
+
+                final matchingCyl = state.deliveryItems.firstWhere(
+                  (it) => it.cylinder.productId == cylinderProductId,
+                  orElse: () => DeliveryItem(
+                    cylinder: CylinderType(weight: '', filledStock: 0, emptyStock: 0, price: 0),
+                  ),
+                );
+                final availStock = matchingCyl.cylinder.filledStock;
+                final isStockOk = availStock >= cylinderQty;
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                  decoration: const BoxDecoration(
+                    border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                  ),
+                  child: Row(
                     children: [
-                     
-                      Text(
-                        '${_selectedPackage!['cylinder_name'] ?? 'LPG Cylinder'} \u00D7 ${_selectedPackage!['CylinderQty'] ?? 1}',
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
+                      // Component Name & Stock Pill
+                      Expanded(
+                        flex: 6,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Text(
+                                cylinderName,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 2),
+                              child: Text(
+                                '$availStock in van',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: isStockOk ? const Color(0xFF64748B) : const Color(0xFFDC2626),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Qty Pill
+                      Expanded(
+                        flex: 2,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFDF2F4),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFF800020).withValues(alpha: 0.3)),
+                            ),
+                            child: Text(
+                              '$cylinderQty',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF800020),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      // Amount
+                      Expanded(
+                        flex: 4,
+                        child: Text(
+                          '\u20B9${(cylinderRate * cylinderQty).toStringAsFixed(0)}',
+                          textAlign: TextAlign.right,
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  if ((_selectedPackage!['items'] as List<dynamic>? ?? []).isNotEmpty) ...[
-                    Text(
-                      'Included Accessories:',
-                      style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF64748B)),
-                    ),
-                    const SizedBox(height: 2),
-                    ...(_selectedPackage!['items'] as List<dynamic>).map((it) => Padding(
-                          padding: const EdgeInsets.only(left: 8, bottom: 2),
-                          child: Text(
-                            '\u2022 ${it['ProductName'] ?? it['product_name'] ?? 'Accessory'} \u00D7 ${it['Quantity'] ?? 1}',
-                            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF334155)),
+                );
+              },
+            ),
+
+            // 2. Accessories Rows
+            ...((_selectedPackage!['items'] as List<dynamic>? ?? []).map((it) {
+              final pid = it['Product'] ?? it['product_id'];
+              final pName = (it['ProductName'] ?? it['product_name'] ?? 'Accessory').toString();
+              final reqQty = safeInt(it['Quantity'], 1);
+              final unitPrice = safeDouble(it['UnitPrice']);
+              final itemTotal = safeDouble(it['TotalAmount'], unitPrice * reqQty);
+
+              final availProd = state.otherProducts.firstWhere(
+                (p) => p.productId == pid || p.name.toLowerCase() == pName.toLowerCase(),
+                orElse: () => OtherProductItem(name: pName, price: 0, initialStock: 0, balanceStock: 0),
+              );
+              final availStock = availProd.balanceStock;
+              final isStockOk = availStock >= reqQty;
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 6,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Text(
+                              pName,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
                           ),
-                        )),
-                  ],
-                  const Divider(height: 12, color: Color(0xFFF1F5F9)),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Total Package Cost:',
-                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w800, color: const Color(0xFF800020)),
+                          const SizedBox(height: 3),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 2),
+                            child: Text(
+                              '$availStock in van',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: isStockOk ? const Color(0xFF64748B) : const Color(0xFFDC2626),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: Text(
+                            '$reqQty',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 4,
+                      child: Text(
+                        '\u20B9${itemTotal.toStringAsFixed(0)}',
+                        textAlign: TextAlign.right,
+                        style: GoogleFonts.inter(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            })),
+
+            // 3. Labor / Installation Row (If applicable)
+            if (safeDouble(_selectedPackage!['LaborCharge']) > 0) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 6,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFDF2F4),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFF5C2CB)),
+                            ),
+                            child: Text(
+                              (_selectedPackage!['LaborDescription'] ?? 'Fitting & Installation Charge').toString(),
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF800020),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 2),
+                            child: Text(
+                              'Service / Setup',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: Text(
+                            '1',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      flex: 4,
+                      child: Text(
+                        '\u20B9${safeDouble(_selectedPackage!['LaborCharge']).toStringAsFixed(0)}',
+                        textAlign: TextAlign.right,
+                        style: GoogleFonts.inter(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 10),
+
+            // Package Total Summary Bar (Matches Delivery UI Summary Bar)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFDF2F4),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFF5C2CB)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.receipt_long_rounded, size: 16, color: Color(0xFF800020)),
+                      const SizedBox(width: 6),
                       Text(
-                        '\u20B9${safeDouble(_selectedPackage!['TotalAmount']).toStringAsFixed(0)}',
-                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF800020)),
+                        'TOTAL PACKAGE AMOUNT',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF800020),
+                          letterSpacing: 0.5,
+                        ),
                       ),
                     ],
+                  ),
+                  Text(
+                    '\u20B9${safeDouble(_selectedPackage!['TotalAmount']).toStringAsFixed(0)}',
+                    style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFF800020),
+                    ),
                   ),
                 ],
               ),
@@ -2057,6 +3285,223 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
     );
   }
 
+  void _openPackagePickerSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (pickerCtx) {
+        return Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(pickerCtx).size.height * 0.75,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Sheet Handle Bar
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 10, bottom: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFCBD5E1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              // Title Row
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFDF2F4),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.propane_tank_rounded, color: Color(0xFF800020), size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Select Connection Package',
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          Text(
+                            'Choose package to auto-fill cylinders and accessories',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
+                      onPressed: () => Navigator.pop(pickerCtx),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+              // Package List
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _packages.length,
+                  separatorBuilder: (context, index) => const SizedBox(height: 10),
+                  itemBuilder: (_, idx) {
+                    final pkg = _packages[idx];
+                    final isCurrent = _selectedPackage != null &&
+                        safeInt(_selectedPackage!['PackageId']) == safeInt(pkg['PackageId']);
+                    final total = safeDouble(pkg['TotalAmount']);
+                    final cylName = (pkg['cylinder_name'] ?? 'LPG Cylinder').toString();
+                    final items = pkg['items'] as List<dynamic>? ?? [];
+
+                    return InkWell(
+                      onTap: () {
+                        Navigator.pop(pickerCtx);
+                        setState(() {
+                          _selectedPackage = pkg;
+                          if (_paymentMode == 'Cash') {
+                            _cashController.text = total.toStringAsFixed(0);
+                            _upiController.text = '0';
+                          } else if (_paymentMode == 'UPI') {
+                            _cashController.text = '0';
+                            _upiController.text = total.toStringAsFixed(0);
+                          }
+                          _syncSplitAmounts();
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: isCurrent ? const Color(0xFFFDF2F4) : Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isCurrent ? const Color(0xFF800020) : const Color(0xFFE2E8F0),
+                            width: isCurrent ? 1.5 : 1.0,
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x060F172A),
+                              blurRadius: 4,
+                              offset: Offset(0, 1.5),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    pkg['PackageName'] ?? 'Package',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF800020),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    '₹${total.toStringAsFixed(0)}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.propane_tank_rounded, size: 12, color: Color(0xFF475569)),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        cylName,
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: const Color(0xFF334155),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (items.isNotEmpty) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '+${items.length} Accessories',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ================= 3. PAYMENT METHOD SECTION (Matches Delivery UI Tabs & Split Bar) =================
   Widget _buildPaymentSection(double totalAmount) {
     final modes = [
       {'key': 'Cash', 'title': 'Cash', 'icon': Icons.payments_outlined},
@@ -2065,23 +3510,30 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
     ];
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x060F172A),
+            blurRadius: 4,
+            offset: Offset(0, 1.5),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.payment_rounded, size: 15, color: Color(0xFF800020)),
+              const Icon(Icons.payments_rounded, size: 16, color: Color(0xFF800020)),
               const SizedBox(width: 6),
               Text(
                 'PAYMENT METHOD',
                 style: GoogleFonts.inter(
-                  fontSize: 11,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w800,
                   color: const Color(0xFF800020),
                   letterSpacing: 0.5,
@@ -2089,8 +3541,9 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
 
+          // Payment Option Tabs (Identical to Delivery UI)
           Row(
             children: modes.map((m) {
               final isSel = _paymentMode == m['key'];
@@ -2099,28 +3552,49 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
                   onTap: () {
                     setState(() {
                       _paymentMode = m['key'] as String;
+                      if (_paymentMode == 'Cash' && totalAmount > 0) {
+                        _cashController.text = totalAmount.toStringAsFixed(0);
+                        _upiController.text = '0';
+                      } else if (_paymentMode == 'UPI' && totalAmount > 0) {
+                        _cashController.text = '0';
+                        _upiController.text = totalAmount.toStringAsFixed(0);
+                      }
                       _syncSplitAmounts();
                     });
                   },
-                  child: Container(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
                     margin: EdgeInsets.only(right: m['key'] != 'Split' ? 8 : 0),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
                     decoration: BoxDecoration(
-                      color: isSel ? const Color(0xFFFDF2F4) : Colors.white,
-                      borderRadius: BorderRadius.circular(8),
+                      color: isSel ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: isSel ? const Color(0xFF800020) : const Color(0xFFCBD5E1),
+                        color: isSel ? const Color(0xFF800020) : const Color(0xFFE2E8F0),
                         width: isSel ? 1.5 : 1,
                       ),
+                      boxShadow: isSel
+                          ? const [
+                              BoxShadow(
+                                color: Color(0x20800020),
+                                blurRadius: 4,
+                                offset: Offset(0, 2),
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Column(
                       children: [
-                        Icon(m['icon'] as IconData, size: 18, color: isSel ? const Color(0xFF800020) : const Color(0xFF64748B)),
+                        Icon(
+                          m['icon'] as IconData,
+                          size: 19,
+                          color: isSel ? const Color(0xFF800020) : const Color(0xFF64748B),
+                        ),
                         const SizedBox(height: 3),
                         Text(
                           m['title'] as String,
                           style: GoogleFonts.inter(
-                            fontSize: 11,
+                            fontSize: 11.5,
                             fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
                             color: isSel ? const Color(0xFF800020) : const Color(0xFF475569),
                           ),
@@ -2133,74 +3607,152 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
             }).toList(),
           ),
 
+          // Split Payment Amounts Container (Matches Delivery UI Split Bar)
           if (_paymentMode == 'Split') ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFDF2F4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFF5C2CB)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Cash (\u20B9)', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF475569))),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: _cashController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700),
-                        decoration: InputDecoration(
-                          hintText: '0',
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5)),
+                      Text(
+                        'SPLIT PAYMENT AMOUNTS',
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF800020),
+                          letterSpacing: 0.5,
                         ),
-                        onChanged: (val) {
-                          final c = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
-                          if (totalAmount > 0 && c <= totalAmount) {
-                            final rem = (totalAmount - c).clamp(0.0, totalAmount);
-                            _upiController.text = rem.toStringAsFixed(0);
-                          }
-                          setState(() {});
-                        },
+                      ),
+                      if (totalAmount > 0)
+                        Text(
+                          'Total: \u20B9${totalAmount.toStringAsFixed(0)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF475569),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Cash (\u20B9)',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF475569),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextField(
+                              controller: _cashController,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF0F172A),
+                              ),
+                              decoration: InputDecoration(
+                                hintText: '0',
+                                filled: true,
+                                fillColor: Colors.white,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5),
+                                ),
+                              ),
+                              onChanged: (val) {
+                                final c = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                if (totalAmount > 0 && c <= totalAmount) {
+                                  final rem = (totalAmount - c).clamp(0.0, totalAmount);
+                                  _upiController.text = rem.toStringAsFixed(0);
+                                }
+                                setState(() {});
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Bank / UPI (\u20B9)',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF475569),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextField(
+                              controller: _upiController,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              style: GoogleFonts.inter(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF0F172A),
+                              ),
+                              decoration: InputDecoration(
+                                hintText: '0',
+                                filled: true,
+                                fillColor: Colors.white,
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                  borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5),
+                                ),
+                              ),
+                              onChanged: (val) {
+                                final u = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                if (totalAmount > 0 && u <= totalAmount) {
+                                  final rem = (totalAmount - u).clamp(0.0, totalAmount);
+                                  _cashController.text = rem.toStringAsFixed(0);
+                                }
+                                setState(() {});
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Bank / UPI (\u20B9)', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF475569))),
-                      const SizedBox(height: 4),
-                      TextField(
-                        controller: _upiController,
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                        style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700),
-                        decoration: InputDecoration(
-                          hintText: '0',
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5)),
-                        ),
-                        onChanged: (val) {
-                          final u = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
-                          if (totalAmount > 0 && u <= totalAmount) {
-                            final rem = (totalAmount - u).clamp(0.0, totalAmount);
-                            _cashController.text = rem.toStringAsFixed(0);
-                          }
-                          setState(() {});
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ],

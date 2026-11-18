@@ -10,6 +10,7 @@ class SuccessScreen extends StatefulWidget {
   final File? preloadedPdf;
   final VoidCallback? onDone;
   final bool startInProcessingMode;
+  final bool autoShareWhatsApp;
   final AppState? appState;
 
   const SuccessScreen({
@@ -18,6 +19,7 @@ class SuccessScreen extends StatefulWidget {
     this.preloadedPdf,
     this.onDone,
     this.startInProcessingMode = false,
+    this.autoShareWhatsApp = false,
     this.appState,
   });
 
@@ -28,6 +30,7 @@ class SuccessScreen extends StatefulWidget {
     BuildContext context, {
     required AppState state,
     VoidCallback? onDone,
+    bool autoShareWhatsApp = false,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -37,6 +40,7 @@ class SuccessScreen extends StatefulWidget {
       enableDrag: false,
       builder: (ctx) => SuccessScreen(
         startInProcessingMode: true,
+        autoShareWhatsApp: autoShareWhatsApp,
         appState: state,
         onDone: onDone,
       ),
@@ -180,6 +184,15 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
         _isProcessing = false;
       });
       _successAnimController.forward(from: 0.0);
+
+      // Auto-trigger WhatsApp share if requested (e.g. Zero Payment / Credit Confirmation)
+      if (widget.autoShareWhatsApp) {
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted && _activeOrder != null) {
+            _shareOnWhatsApp();
+          }
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -226,6 +239,25 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
         } catch (_) {}
       }
 
+      final state = widget.appState ?? AppStateProvider.of(context);
+      final int totalDeliv = ord.totalCylinders;
+      final int totalEmpt = ord.totalEmpties;
+      final double billVal = ord.totalBillValue;
+      final double paidVal = ord.amount;
+      final String payMethod = ord.paymentMethod;
+      final String drvName = state.driverName;
+
+      final customMsg = InvoiceHelper.formatWhatsAppDeliveryMessage(
+        customerName: ord.customer.name,
+        ticketId: ord.ticketId,
+        totalDelivered: totalDeliv,
+        totalEmpties: totalEmpt,
+        totalBill: billVal,
+        collectedAmount: paidVal,
+        paymentMethod: payMethod,
+        driverName: drvName,
+      );
+
       bool shareSuccess = false;
       if (pdfExists) {
         shareSuccess = await InvoiceHelper.shareDirectToWhatsApp(
@@ -234,6 +266,7 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
           ticketId: ord.ticketId,
           customerName: ord.customer.name,
           customerPhone: phone,
+          customMessage: customMsg,
         );
       } else {
         shareSuccess = await InvoiceHelper.sharePdfToWhatsApp(
@@ -242,6 +275,7 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
           customerName: ord.customer.name,
           customerPhone: phone,
           salesId: ord.salesId,
+          customMessage: customMsg,
         );
       }
 
@@ -543,6 +577,10 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
         ? activeOrder.totalEmpties
         : returnItems.fold(0, (s, i) => s + i.emptyReturnQty);
 
+    final bool isEmptyOnly = totalDelivered == 0 && totalEmpties > 0;
+    final double pendingBal = activeOrder?.pendingBalance ?? (paymentMode == 'CREDIT' ? (activeOrder?.totalBillValue ?? 0.0) : 0.0);
+    final bool hasPending = pendingBal > 0.01 || paymentMode == 'CREDIT';
+
     return SingleChildScrollView(
       key: const ValueKey('success_view'),
       physics: const BouncingScrollPhysics(),
@@ -561,7 +599,7 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
           ),
           const SizedBox(height: 12),
 
-          // 1. Header: Delivery Checkmark & Title
+          // 1. Header: Delivery Checkmark / Return Icon & Title
           ScaleTransition(
             scale: _scaleAnimation,
             child: Container(
@@ -587,9 +625,9 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
                       ),
                     ],
                   ),
-                  child: const Center(
+                  child: Center(
                     child: Icon(
-                      Icons.check_rounded,
+                      isEmptyOnly ? Icons.autorenew_rounded : Icons.check_rounded,
                       color: Colors.white,
                       size: 26,
                     ),
@@ -601,7 +639,7 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
           const SizedBox(height: 10),
 
           Text(
-            'Delivery Completed',
+            isEmptyOnly ? 'Empty Cylinder Return Slip' : 'Delivery Completed',
             style: GoogleFonts.inter(
               fontSize: 20,
               fontWeight: FontWeight.w900,
@@ -616,7 +654,7 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
             children: [
               if (ticketId.isNotEmpty)
                 Text(
-                  'Bill #$ticketId',
+                  'Invoice #$ticketId',
                   style: GoogleFonts.jetBrainsMono(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -710,7 +748,7 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      amountText,
+                      isEmptyOnly ? '₹0.00' : amountText,
                       style: GoogleFonts.inter(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
@@ -721,28 +759,53 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
-                        color: paymentMode == 'CREDIT'
-                            ? const Color(0xFFFEF3C7)
-                            : (paymentMode.contains('SPLIT') ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9)),
+                        color: isEmptyOnly
+                            ? const Color(0xFFF1F5F9)
+                            : (paymentMode == 'CREDIT'
+                                ? const Color(0xFFFEF3C7)
+                                : (paymentMode.contains('SPLIT') ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9))),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
-                          color: paymentMode == 'CREDIT'
-                              ? const Color(0xFFFDE68A)
-                              : (paymentMode.contains('SPLIT') ? const Color(0xFFF5C2CB) : const Color(0xFFE2E8F0)),
+                          color: isEmptyOnly
+                              ? const Color(0xFFE2E8F0)
+                              : (paymentMode == 'CREDIT'
+                                  ? const Color(0xFFFDE68A)
+                                  : (paymentMode.contains('SPLIT') ? const Color(0xFFF5C2CB) : const Color(0xFFE2E8F0))),
                         ),
                       ),
                       child: Text(
-                        paymentMode,
+                        isEmptyOnly ? 'EMPTY RETURN' : paymentMode,
                         style: GoogleFonts.inter(
                           fontSize: 10,
                           fontWeight: FontWeight.w800,
-                          color: paymentMode == 'CREDIT'
-                              ? const Color(0xFF92400E)
-                              : (paymentMode.contains('SPLIT') ? const Color(0xFF800020) : const Color(0xFF334155)),
+                          color: isEmptyOnly
+                              ? const Color(0xFF475569)
+                              : (paymentMode == 'CREDIT'
+                                  ? const Color(0xFF92400E)
+                                  : (paymentMode.contains('SPLIT') ? const Color(0xFF800020) : const Color(0xFF334155))),
                           letterSpacing: 0.3,
                         ),
                       ),
                     ),
+                    if (hasPending && !isEmptyOnly) ...[
+                      const SizedBox(height: 3),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF3C7),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: const Color(0xFFFDE68A)),
+                        ),
+                        child: Text(
+                          'Pending: ₹${_numberFormatEnIn(pendingBal)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFFB45309),
+                          ),
+                        ),
+                      ),
+                    ],
                     if (paymentMode.contains('SPLIT') ||
                         ((activeOrder?.cashAmount ?? 0) > 0 &&
                             (activeOrder?.upiAmount ?? 0) > 0)) ...[

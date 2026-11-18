@@ -235,12 +235,30 @@ const DashboardMetricCard: React.FC<MetricCardProps> = ({
 export const DashboardPage: React.FC = () => {
   const user = useAuthStore((s) => s.user);
   const navigate = useNavigate();
+
+  const role = (user?.role || '').toLowerCase();
+  const isAdmin = !role || role.includes('admin');
+  const isManager = role.includes('manager');
+  const isAccountant = role.includes('accountant');
+
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
   const [customDates, setCustomDates] = useState<{ from: string; to: string }>({
     from: new Date().toISOString().split('T')[0],
     to: new Date().toISOString().split('T')[0],
   });
   const [customModalOpened, setCustomModalOpened] = useState(false);
+
+  // Prevent browser back button from jumping out of Dashboard into previous screens or login
+  useEffect(() => {
+    window.history.pushState(null, '', window.location.href);
+    const handlePopState = () => {
+      window.history.pushState(null, '', window.location.href);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
 
   // Current Date Display
   const todayFormatted = useMemo(() => {
@@ -252,22 +270,24 @@ export const DashboardPage: React.FC = () => {
     });
   }, []);
 
-  // 1. Fetch Purchases
+  // 1. Fetch Purchases (Only for Admin & Accountant)
   const { data: purchases = [] } = useQuery<any[]>({
     queryKey: ['purchases'],
     queryFn: async () => {
       const res = await apiClient.get('/purchases/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
+    enabled: !isManager,
   });
 
-  // 2. Fetch Payments & Receipts
+  // 2. Fetch Payments & Receipts (Only for Admin & Accountant)
   const { data: payments = [] } = useQuery<any[]>({
     queryKey: ['payments'],
     queryFn: async () => {
       const res = await apiClient.get('/payments/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
+    enabled: !isManager,
   });
 
   // 3. Fetch Ledgers
@@ -279,31 +299,52 @@ export const DashboardPage: React.FC = () => {
     },
   });
 
-  // 4. Fetch Sales
+  // 4. Fetch Sales (Only for Admin & Accountant)
   const { data: sales = [] } = useQuery<any[]>({
     queryKey: ['sales'],
     queryFn: async () => {
       const res = await apiClient.get('/sales/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
+    enabled: !isManager,
   });
 
-  // 5. Fetch Routes for Van Management
+  // 5. Fetch Routes for Van Management (Only for Admin & Manager)
   const { data: routes = [] } = useQuery<any[]>({
     queryKey: ['routes'],
     queryFn: async () => {
       const res = await apiClient.get('/routes/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
+    enabled: !isAccountant,
   });
 
-  // 6. Live Stock Analysis Query (5s refresh)
+  // 5b. Fetch Registered Vehicles & Godowns for Fleet Counts
+  const { data: vehicles = [] } = useQuery<any[]>({
+    queryKey: ['vehicles'],
+    queryFn: async () => {
+      const res = await apiClient.get('/vehicles/');
+      return Array.isArray(res.data) ? res.data : res.data.results || [];
+    },
+    enabled: !isAccountant,
+  });
+
+  const { data: godownsList = [] } = useQuery<any[]>({
+    queryKey: ['godowns'],
+    queryFn: async () => {
+      const res = await apiClient.get('/godowns/');
+      return Array.isArray(res.data) ? res.data : res.data.results || [];
+    },
+  });
+
+  // 6. Live Stock Analysis Query (5s refresh, Only for Admin & Manager)
   const { data: stockAnalysis } = useQuery<any>({
     queryKey: ['stock-analysis'],
     queryFn: async () => {
       const res = await apiClient.get('/delivery-notes/stock-analysis/');
       return res.data;
     },
+    enabled: !isAccountant,
     refetchInterval: 5000,
   });
 
@@ -332,10 +373,8 @@ export const DashboardPage: React.FC = () => {
 
   const customerReceipts = useMemo(() => {
     return payments.filter((p: any) => {
-      if (p.voucher_type === 'RECEIPT') return true;
       if (p.voucher_type === 'PAYMENT') return false;
-      if (customerLedgerIds.has(p.PartyLedgerId)) return true;
-      return false;
+      return customerLedgerIds.has(Number(p.PartyLedgerId));
     });
   }, [payments, customerLedgerIds]);
 
@@ -394,6 +433,11 @@ export const DashboardPage: React.FC = () => {
   const filteredSales = useMemo(() => {
     return sales.filter((s: any) => {
       if (s.Status === 'CANCELLED') return false;
+      // Van route sales are provisional until driver ends allocation and admin approves.
+      // Unapproved sales (IsApproved === false and Status !== 'COMPLETED') must NOT count in official Sales & Collections
+      const isApproved = s.IsApproved === true || s.is_approved === true || s.Status === 'COMPLETED';
+      if (!isApproved) return false;
+
       if (!dateRange.start || !dateRange.end) return true;
       const sDate = s.SalesDate || s.CreatedAt?.split('T')[0];
       return sDate && sDate >= dateRange.start && sDate <= dateRange.end;
@@ -518,9 +562,8 @@ export const DashboardPage: React.FC = () => {
   }, [filteredSales, receiptAllocBySale]);
 
   const totalCustomerReceipts = useMemo(() => {
-    const directReceipts = filteredCustomerReceipts.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
-    return directReceipts + netSalesPaid;
-  }, [filteredCustomerReceipts, netSalesPaid]);
+    return netSalesPaid;
+  }, [netSalesPaid]);
 
   // Direct collections received on sales invoices (Cash, UPI, etc.)
   const salesWithPaidCount = useMemo(() => {
@@ -532,8 +575,8 @@ export const DashboardPage: React.FC = () => {
   }, [filteredSales]);
 
   const totalCollectionsCount = useMemo(() => {
-    return filteredCustomerReceipts.length + salesWithPaidCount;
-  }, [filteredCustomerReceipts.length, salesWithPaidCount]);
+    return salesWithPaidCount;
+  }, [salesWithPaidCount]);
 
   const receivableBalance = totalCustomerOpeningReceivable + totalSales - totalCustomerReceipts;
 
@@ -541,14 +584,27 @@ export const DashboardPage: React.FC = () => {
   const stockProducts = stockAnalysis?.products || [];
 
   const stockLocations = useMemo(() => {
-    // If backend returns dynamic godowns list, map all of them (Central + Secondary Godowns)
-    const godownList = (stockAnalysis?.godowns && stockAnalysis.godowns.length > 0) ? stockAnalysis.godowns : [];
+    // 1. Dynamic Godowns List (Central + Secondary Godowns)
+    const godownList = (stockAnalysis?.godowns && stockAnalysis.godowns.length > 0)
+      ? stockAnalysis.godowns
+      : (godownsList && godownsList.length > 0 ? godownsList : []);
+
     let godownEntries: any[] = [];
 
     if (godownList.length > 0) {
       godownEntries = godownList.map((g: any) => {
-        const filled = Number(g.FilledQty || 0);
-        const empty = Number(g.EmptyQty || 0);
+        let filled = Number(g.FilledQty || 0);
+        let empty = Number(g.EmptyQty || 0);
+        if (filled === 0 && empty === 0 && stockProducts.length > 0) {
+          filled = stockProducts.reduce((sum: number, p: any) => {
+            const mg = (p.Godowns || []).find((pg: any) => pg.GodownId === g.GodownId);
+            return sum + (mg ? Number(mg.FilledQty || 0) : 0);
+          }, 0);
+          empty = stockProducts.reduce((sum: number, p: any) => {
+            const mg = (p.Godowns || []).find((pg: any) => pg.GodownId === g.GodownId);
+            return sum + (mg ? Number(mg.EmptyQty || 0) : 0);
+          }, 0);
+        }
         return {
           id: `godown-${g.GodownId}`,
           rawId: g.GodownId,
@@ -594,11 +650,46 @@ export const DashboardPage: React.FC = () => {
       }];
     }
 
-    const activeVansList = (stockAnalysis?.active_vans || []).map((van: any) => {
+    // 2. Dynamic Delivery Vans List (Active + Idle Vans + Fleet Vehicles)
+    const map = new Map<number | string, any>();
+    (stockAnalysis?.all_vans || []).forEach((v: any) => {
+      const id = v.RouteVehicleDriverId || v.VehicleId || v.VehicleNumber;
+      if (id) map.set(id, { ...v });
+    });
+    (stockAnalysis?.active_vans || []).forEach((v: any) => {
+      const id = v.RouteVehicleDriverId || v.VehicleId || v.VehicleNumber;
+      if (id) map.set(id, { ...(map.get(id) || {}), ...v });
+    });
+    (stockAnalysis?.idle_vans || []).forEach((v: any) => {
+      const id = v.RouteVehicleDriverId || v.VehicleId || v.VehicleNumber;
+      if (id && !map.has(id)) map.set(id, { ...v });
+    });
+
+    // Ensure all fleet vehicles from Vehicle master (excluding internal Godown stock) are represented
+    (vehicles || []).forEach((veh: any) => {
+      const vNum = (veh.VehicleNumber || '').toLowerCase();
+      const vName = (veh.VehicleName || '').toLowerCase();
+      if (!vNum.includes('godown') && !vName.includes('godown')) {
+        const id = veh.VehicleId || veh.VehicleNumber;
+        if (!Array.from(map.values()).some((existing: any) => existing.VehicleNumber === veh.VehicleNumber)) {
+          map.set(`veh-${id}`, {
+            VehicleId: veh.VehicleId,
+            VehicleNumber: veh.VehicleNumber,
+            RouteName: 'Fleet Vehicle',
+            BalanceCylinders: 0,
+            EmptyCylinders: 0,
+          });
+        }
+      }
+    });
+
+    const uniqueVansList = Array.from(map.values());
+
+    const vansList = uniqueVansList.map((van: any) => {
       const vanFilled = (van.BalanceCylinders ?? van.TotalCylinders ?? 0) + (van.OtherProductsBalance ?? 0);
       const vanEmpty = van.EmptyCylinders ?? 0;
       return {
-        id: `vehicle-${van.RouteVehicleDriverId}`,
+        id: `vehicle-${van.RouteVehicleDriverId || van.VehicleId || van.VehicleNumber}`,
         name: van.VehicleNumber || 'Delivery Van',
         type: 'vehicle',
         filledQuantity: vanFilled,
@@ -607,8 +698,8 @@ export const DashboardPage: React.FC = () => {
       };
     });
 
-    return [...godownEntries, ...activeVansList];
-  }, [stockProducts, stockAnalysis?.godowns, stockAnalysis?.active_vans]);
+    return [...godownEntries, ...vansList];
+  }, [stockProducts, stockAnalysis?.godowns, stockAnalysis?.all_vans, stockAnalysis?.active_vans, stockAnalysis?.idle_vans, godownsList, vehicles]);
 
   const totalProductFilled = useMemo(() => {
     return stockProducts.reduce((sum: number, p: any) => sum + (Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0), 0);
@@ -619,8 +710,8 @@ export const DashboardPage: React.FC = () => {
   }, [stockProducts]);
 
   const godownCount = useMemo(() => {
-    return stockLocations.filter((l: any) => l.type === 'godown').length || 1;
-  }, [stockLocations]);
+    return stockLocations.filter((l: any) => l.type === 'godown').length || (godownsList.length > 0 ? godownsList.length : 1);
+  }, [stockLocations, godownsList]);
 
   const vanCount = useMemo(() => {
     return stockLocations.filter((l: any) => l.type === 'vehicle').length;
@@ -655,7 +746,7 @@ export const DashboardPage: React.FC = () => {
               {user?.company_name || 'Future Gas'}
             </Title>
             <Text size="xs" c="dimmed" mt={2} fw={500}>
-              {todayFormatted} &bull; Executive Operations &amp; Commercial Overview &bull; Showing {dateRange.label}
+              {todayFormatted} &bull; {isManager ? 'Fleet & Godown Stock Operations Overview' : (isAccountant ? 'Commercial, Accounting & Cashflow Overview' : 'Executive Operations & Commercial Overview')} &bull; Showing {dateRange.label}
             </Text>
           </Box>
 
@@ -719,76 +810,84 @@ export const DashboardPage: React.FC = () => {
             {/* Action Buttons Row: Clean White Pills */}
             <Group justify="flex-end" gap="sm" wrap="wrap">
               {/* 1. New Sale */}
-              <Button
-                variant="default"
-                size="sm"
-                radius="xl"
-                leftSection={<IconReceipt size={16} stroke={1.8} color="#800020" />}
-                style={{
-                  borderColor: '#e2e8f0',
-                  backgroundColor: '#ffffff',
-                  color: '#1e293b',
-                  fontWeight: 600,
-                  padding: '8px 16px',
-                }}
-                onClick={() => navigate('/sales/new')}
-              >
-                New Sale
-              </Button>
+              {(isAdmin || isAccountant) && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  radius="xl"
+                  leftSection={<IconReceipt size={16} stroke={1.8} color="#800020" />}
+                  style={{
+                    borderColor: '#e2e8f0',
+                    backgroundColor: '#ffffff',
+                    color: '#1e293b',
+                    fontWeight: 600,
+                    padding: '8px 16px',
+                  }}
+                  onClick={() => navigate('/sales/new')}
+                >
+                  New Sale
+                </Button>
+              )}
 
               {/* 2. Record Receipt */}
-              <Button
-                variant="default"
-                size="sm"
-                radius="xl"
-                leftSection={<IconCoins size={16} stroke={1.8} color="#800020" />}
-                style={{
-                  borderColor: '#e2e8f0',
-                  backgroundColor: '#ffffff',
-                  color: '#1e293b',
-                  fontWeight: 600,
-                  padding: '8px 16px',
-                }}
-                onClick={() => navigate('/receipts/new')}
-              >
-                Record Receipt
-              </Button>
+              {(isAdmin || isAccountant) && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  radius="xl"
+                  leftSection={<IconCoins size={16} stroke={1.8} color="#800020" />}
+                  style={{
+                    borderColor: '#e2e8f0',
+                    backgroundColor: '#ffffff',
+                    color: '#1e293b',
+                    fontWeight: 600,
+                    padding: '8px 16px',
+                  }}
+                  onClick={() => navigate('/receipts/new')}
+                >
+                  Record Receipt
+                </Button>
+              )}
 
               {/* 3. New Purchase */}
-              <Button
-                variant="default"
-                size="sm"
-                radius="xl"
-                leftSection={<IconPackage size={16} stroke={1.8} color="#800020" />}
-                style={{
-                  borderColor: '#e2e8f0',
-                  backgroundColor: '#ffffff',
-                  color: '#1e293b',
-                  fontWeight: 600,
-                  padding: '8px 16px',
-                }}
-                onClick={() => navigate('/purchases/new')}
-              >
-                New Purchase
-              </Button>
+              {(isAdmin || isAccountant) && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  radius="xl"
+                  leftSection={<IconPackage size={16} stroke={1.8} color="#800020" />}
+                  style={{
+                    borderColor: '#e2e8f0',
+                    backgroundColor: '#ffffff',
+                    color: '#1e293b',
+                    fontWeight: 600,
+                    padding: '8px 16px',
+                  }}
+                  onClick={() => navigate('/purchases/new')}
+                >
+                  New Purchase
+                </Button>
+              )}
 
               {/* 4. Load Van (Navigates to Delivery Notes / Add New Delivery Note) */}
-              <Button
-                variant="default"
-                size="sm"
-                radius="xl"
-                leftSection={<IconTruckDelivery size={16} stroke={1.8} color="#800020" />}
-                style={{
-                  borderColor: '#e2e8f0',
-                  backgroundColor: '#ffffff',
-                  color: '#1e293b',
-                  fontWeight: 600,
-                  padding: '8px 16px',
-                }}
-                onClick={() => navigate('/delivery-notes?action=new')}
-              >
-                Load Van
-              </Button>
+              {(isAdmin || isManager) && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  radius="xl"
+                  leftSection={<IconTruckDelivery size={16} stroke={1.8} color="#800020" />}
+                  style={{
+                    borderColor: '#e2e8f0',
+                    backgroundColor: '#ffffff',
+                    color: '#1e293b',
+                    fontWeight: 600,
+                    padding: '8px 16px',
+                  }}
+                  onClick={() => navigate('/delivery-notes?action=new')}
+                >
+                  Load Van
+                </Button>
+              )}
             </Group>
           </Stack>
         </Group>
@@ -797,180 +896,186 @@ export const DashboardPage: React.FC = () => {
       {/* ── 2. Structured 3x3 Metric Cards Grid (Original Clean Theme) ── */}
       <Stack gap="xl">
         {/* ROW 1: Purchases & Payables */}
-        <Stack gap="sm">
-          <Group gap={10} align="center">
-            <Box style={{ width: 4, height: 16, borderRadius: 2, backgroundColor: '#800020' }} />
-            <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.8px', fontSize: 11.5 }}>
-              Purchases &amp; Payables
-            </Text>
-            <Box style={{ flex: 1, height: 1, backgroundColor: '#f1f5f9' }} />
-          </Group>
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-            <DashboardMetricCard
-              title="Total Purchase"
-              icon={<IconReceipt size={22} color='#800020'/>}
-              value={<CountUp value={totalPurchase} prefix="₹" decimals={2} />}
-              subtitle={`${filteredPurchases.length} Invoice${filteredPurchases.length !== 1 ? 's' : ''} (${dateRange.label})`}
-              onClick={() => navigate('/purchases')}
-            />
+        {(isAdmin || isAccountant) && (
+          <Stack gap="sm">
+            <Group gap={10} align="center">
+              <Box style={{ width: 4, height: 16, borderRadius: 2, backgroundColor: '#800020' }} />
+              <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.8px', fontSize: 11.5 }}>
+                Purchases &amp; Payables
+              </Text>
+              <Box style={{ flex: 1, height: 1, backgroundColor: '#f1f5f9' }} />
+            </Group>
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+              <DashboardMetricCard
+                title="Total Purchase"
+                icon={<IconReceipt size={22} color='#800020'/>}
+                value={<CountUp value={totalPurchase} prefix="₹" decimals={2} />}
+                subtitle={`${filteredPurchases.length} Invoice${filteredPurchases.length !== 1 ? 's' : ''} (${dateRange.label})`}
+                onClick={() => navigate('/purchases')}
+              />
 
-            <DashboardMetricCard
-              title="Supplier Payments"
-              icon={<IconCreditCard size={22} color='#800020' />}
-              value={<CountUp value={totalSupplierPayments} prefix="₹" decimals={2} />}
-              subtitle={`${filteredSupplierPayments.length} Voucher${filteredSupplierPayments.length !== 1 ? 's' : ''} (${dateRange.label})`}
-              onClick={() => navigate('/payments')}
-            />
+              <DashboardMetricCard
+                title="Supplier Payments"
+                icon={<IconCreditCard size={22} color='#800020' />}
+                value={<CountUp value={totalSupplierPayments} prefix="₹" decimals={2} />}
+                subtitle={`${filteredSupplierPayments.length} Voucher${filteredSupplierPayments.length !== 1 ? 's' : ''} (${dateRange.label})`}
+                onClick={() => navigate('/payments')}
+              />
 
-            <DashboardMetricCard
-              title="Payable"
-              icon={<IconWallet size={22} color='#800020' />}
-              value={
-                <Text
-                  fw={800}
-                  style={{
-                    color: '#800020',
-                    fontSize: '28px',
-                    fontVariantNumeric: 'tabular-nums',
-                    letterSpacing: '-0.03em',
-                    lineHeight: 1.15,
-                  }}
-                >
-                  <CountUp value={Math.abs(payableBalance)} prefix="₹" decimals={2} />{' '}
-                  <Text component="span" size="sm" c="#800020" fw={700}>
-                    {payableBalance >= 0 ? 'Cr' : 'Dr'}
+              <DashboardMetricCard
+                title="Payable"
+                icon={<IconWallet size={22} color='#800020' />}
+                value={
+                  <Text
+                    fw={800}
+                    style={{
+                      color: '#800020',
+                      fontSize: '28px',
+                      fontVariantNumeric: 'tabular-nums',
+                      letterSpacing: '-0.03em',
+                      lineHeight: 1.15,
+                    }}
+                  >
+                    <CountUp value={Math.abs(payableBalance)} prefix="₹" decimals={2} />{' '}
+                    <Text component="span" size="sm" c="#800020" fw={700}>
+                      {payableBalance >= 0 ? 'Cr' : 'Dr'}
+                    </Text>
                   </Text>
-                </Text>
-              }
-              subtitle="Outstanding supplier liability"
-              onClick={() => navigate('/payables')}
-            />
-          </SimpleGrid>
-        </Stack>
+                }
+                subtitle="Outstanding supplier liability"
+                onClick={() => navigate('/payables')}
+              />
+            </SimpleGrid>
+          </Stack>
+        )}
 
         {/* ROW 2: Sales & Receivables */}
-        <Stack gap="sm">
-          <Group gap={10} align="center">
-            <Box style={{ width: 4, height: 16, borderRadius: 2, backgroundColor: '#800020' }} />
-            <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.8px', fontSize: 11.5 }}>
-              Sales &amp; Receivables
-            </Text>
-            <Box style={{ flex: 1, height: 1, backgroundColor: '#f1f5f9' }} />
-          </Group>
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-            <DashboardMetricCard
-              title="Sales"
-              icon={<IconFileInvoice size={22} color='#800020' />}
-              value={<CountUp value={totalSales} prefix="₹" decimals={2} />}
-              subtitle={`${validSalesCount} Bill${validSalesCount !== 1 ? 's' : ''} (${dateRange.label})`}
-              onClick={() => navigate('/sales')}
-            />
+        {(isAdmin || isAccountant) && (
+          <Stack gap="sm">
+            <Group gap={10} align="center">
+              <Box style={{ width: 4, height: 16, borderRadius: 2, backgroundColor: '#800020' }} />
+              <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.8px', fontSize: 11.5 }}>
+                Sales &amp; Receivables
+              </Text>
+              <Box style={{ flex: 1, height: 1, backgroundColor: '#f1f5f9' }} />
+            </Group>
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+              <DashboardMetricCard
+                title="Sales"
+                icon={<IconFileInvoice size={22} color='#800020' />}
+                value={<CountUp value={totalSales} prefix="₹" decimals={2} />}
+                subtitle={`${validSalesCount} Bill${validSalesCount !== 1 ? 's' : ''} (${dateRange.label})`}
+                onClick={() => navigate('/sales')}
+              />
 
-            <DashboardMetricCard
-              title="Collections"
-              icon={<IconCash size={22} color='#800020' />}
-              value={<CountUp value={totalCustomerReceipts} prefix="₹" decimals={2} />}
-              subtitle={`${totalCollectionsCount} Collection${totalCollectionsCount !== 1 ? 's' : ''} (${dateRange.label})`}
-              onClick={() => navigate('/collections')}
-            />
+              <DashboardMetricCard
+                title="Collections"
+                icon={<IconCash size={22} color='#800020' />}
+                value={<CountUp value={totalCustomerReceipts} prefix="₹" decimals={2} />}
+                subtitle={`${totalCollectionsCount} Collection${totalCollectionsCount !== 1 ? 's' : ''} (${dateRange.label})`}
+                onClick={() => navigate('/collections')}
+              />
 
-            <DashboardMetricCard
-              title="Receivable"
-              icon={<IconCoins size={22} color='#800020' />}
-              value={
-                <Text
-                  fw={800}
-                  style={{
-                    color: '#800020',
-                    fontSize: '27px',
-                    fontVariantNumeric: 'tabular-nums',
-                    letterSpacing: '-0.025em',
-                    lineHeight: 1.2,
-                  }}
-                >
-                  <CountUp value={Math.abs(receivableBalance)} prefix="₹" decimals={2} />{' '}
-                  <Text component="span" size="sm" c="#800020" fw={700}>
-                    {receivableBalance >= 0 ? 'Dr' : 'Cr'}
+              <DashboardMetricCard
+                title="Receivable"
+                icon={<IconCoins size={22} color='#800020' />}
+                value={
+                  <Text
+                    fw={800}
+                    style={{
+                      color: '#800020',
+                      fontSize: '27px',
+                      fontVariantNumeric: 'tabular-nums',
+                      letterSpacing: '-0.025em',
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    <CountUp value={Math.abs(receivableBalance)} prefix="₹" decimals={2} />{' '}
+                    <Text component="span" size="sm" c="#800020" fw={700}>
+                      {receivableBalance >= 0 ? 'Dr' : 'Cr'}
+                    </Text>
                   </Text>
-                </Text>
-              }
-              subtitle="Outstanding customer balance"
-              onClick={() => navigate('/receivables')}
-            />
-          </SimpleGrid>
-        </Stack>
+                }
+                subtitle="Outstanding customer balance"
+                onClick={() => navigate('/receivables')}
+              />
+            </SimpleGrid>
+          </Stack>
+        )}
 
         {/* ROW 3: Inventory & Van Operations */}
-        <Stack gap="sm">
-          <Group gap={10} align="center">
-            <Box style={{ width: 4, height: 16, borderRadius: 2, backgroundColor: '#800020' }} />
-            <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.8px', fontSize: 11.5 }}>
-              Inventory &amp; Van Operations
-            </Text>
-            <Box style={{ flex: 1, height: 1, backgroundColor: '#f1f5f9' }} />
-          </Group>
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-            <DashboardMetricCard
-              title="Inventory by Product"
-              icon={<IconPackage size={22} color='#800020' />}
-              value={
-                <Group align="baseline" gap={6}>
-                  <Text
-                    fw={800}
-                    style={{
-                      color: '#0f172a',
-                      fontSize: '28px',
-                      letterSpacing: '-0.03em',
-                      fontVariantNumeric: 'tabular-nums',
-                      lineHeight: 1.15,
-                    }}
-                  >
-                    <CountUp value={totalProductFilled} decimals={0} />
-                  </Text>
-                  <Text size="sm" fw={600}>
-                    filled
-                  </Text>
-                </Group>
-              }
-              subtitle={`${totalProductEmpty.toLocaleString()} empty • ${stockProducts.length} items`}
-              onClick={() => navigate('/inventory/products')}
-            />
+        {(isAdmin || isManager) && (
+          <Stack gap="sm">
+            <Group gap={10} align="center">
+              <Box style={{ width: 4, height: 16, borderRadius: 2, backgroundColor: '#800020' }} />
+              <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.8px', fontSize: 11.5 }}>
+                Inventory &amp; Van Operations
+              </Text>
+              <Box style={{ flex: 1, height: 1, backgroundColor: '#f1f5f9' }} />
+            </Group>
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+              <DashboardMetricCard
+                title="Inventory by Product"
+                icon={<IconPackage size={22} color='#800020' />}
+                value={
+                  <Group align="baseline" gap={6}>
+                    <Text
+                      fw={800}
+                      style={{
+                        color: '#0f172a',
+                        fontSize: '28px',
+                        letterSpacing: '-0.03em',
+                        fontVariantNumeric: 'tabular-nums',
+                        lineHeight: 1.15,
+                      }}
+                    >
+                      <CountUp value={totalProductFilled} decimals={0} />
+                    </Text>
+                    <Text size="sm" fw={600}>
+                      filled
+                    </Text>
+                  </Group>
+                }
+                subtitle={`${totalProductEmpty.toLocaleString()} empty • ${stockProducts.length} items`}
+                onClick={() => navigate('/inventory/products')}
+              />
 
-            <DashboardMetricCard
-              title="Inventory by Location"
-              icon={<IconBuildingFactory2 size={22} color='#800020' />}
-              value={
-                <Group align="baseline" gap={6}>
-                  <Text
-                    fw={800}
-                    style={{
-                      color: '#0f172a',
-                      fontSize: '28px',
-                      letterSpacing: '-0.03em',
-                      fontVariantNumeric: 'tabular-nums',
-                      lineHeight: 1.15,
-                    }}
-                  >
-                    <CountUp value={stockLocations.length} decimals={0} />
-                  </Text>
-                  <Text size="sm" fw={600} >
-                    locations
-                  </Text>
-                </Group>
-              }
-              subtitle={`${godownCount} godown${godownCount !== 1 ? 's' : ''} • ${vanCount} van${vanCount !== 1 ? 's' : ''}`}
-              onClick={() => navigate('/inventory/locations')}
-            />
+              <DashboardMetricCard
+                title="Inventory by Location"
+                icon={<IconBuildingFactory2 size={22} color='#800020' />}
+                value={
+                  <Group align="baseline" gap={6}>
+                    <Text
+                      fw={800}
+                      style={{
+                        color: '#0f172a',
+                        fontSize: '28px',
+                        letterSpacing: '-0.03em',
+                        fontVariantNumeric: 'tabular-nums',
+                        lineHeight: 1.15,
+                      }}
+                    >
+                      <CountUp value={stockLocations.length} decimals={0} />
+                    </Text>
+                    <Text size="sm" fw={600} c="dimmed">
+                      Locations
+                    </Text>
+                  </Group>
+                }
+                subtitle={`${godownCount} godown${godownCount !== 1 ? 's' : ''} • ${vanCount} van${vanCount !== 1 ? 's' : ''}`}
+                onClick={() => navigate('/inventory/locations')}
+              />
 
-            <DashboardMetricCard
-              title="Van Management"
-              icon={<IconTruckDelivery size={22} color='#800020' />}
-              value={`${activeRoutesCount} Active Route${activeRoutesCount !== 1 ? 's' : ''}`}
-              subtitle="Live delivery fleet &amp; route operations"
-              onClick={() => navigate('/van-management')}
-            />
-          </SimpleGrid>
-        </Stack>
+              <DashboardMetricCard
+                title="Van Management"
+                icon={<IconTruckDelivery size={22} color='#800020' />}
+                value={`${activeRoutesCount} Active Route${activeRoutesCount !== 1 ? 's' : ''}`}
+                subtitle="Live delivery fleet &amp; route operations"
+                onClick={() => navigate('/van-management')}
+              />
+            </SimpleGrid>
+          </Stack>
+        )}
       </Stack>
 
       {/* ── Custom Date Range Picker Modal ── */}

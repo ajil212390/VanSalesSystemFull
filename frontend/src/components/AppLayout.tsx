@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   AppShell,
   Burger,
@@ -50,6 +50,7 @@ import {
   IconPackages,
   IconFileInvoice,
   IconCalendar,
+  IconScale,
 } from '@tabler/icons-react';
 
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
@@ -57,6 +58,12 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
+
+interface NavSubItem {
+  label: string;
+  path: string;
+  icon: React.ComponentType<{ size?: number; stroke?: number }>;
+}
 
 export const AppLayout: React.FC = () => {
   const [opened, { toggle }] = useDisclosure();
@@ -70,6 +77,11 @@ export const AppLayout: React.FC = () => {
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
   const location = useLocation();
+
+  const role = (user?.role || '').toLowerCase();
+  const isAdmin = !role || role.includes('admin');
+  const isManager = role.includes('manager');
+  const isAccountant = role.includes('accountant');
 
   // Financial Years
   const { data: financialYears = [], refetch: refetchYears } = useQuery<any[]>({
@@ -98,6 +110,7 @@ export const AppLayout: React.FC = () => {
       const res = await apiClient.get('/end-route-drivers/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     },
+    enabled: !isAccountant,
     refetchInterval: 15000,
   });
 
@@ -108,28 +121,49 @@ export const AppLayout: React.FC = () => {
     navigate('/login');
   };
 
-  const vanOpsItems = [
-    { label: 'Drivers', path: '/drivers', icon: IconUser },
-    { label: 'Vehicles', path: '/vehicles', icon: IconTruck },
-    { label: 'Routes', path: '/routes', icon: IconRoute },
-    { label: 'Add User', path: '/users', icon: IconUsers },
-    { label: 'Allocations', path: '/allocations', icon: IconArrowsJoin2 },
-    { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
-    { label: 'Van Management', path: '/van-management', icon: IconTruckDelivery },
-  ];
+  const vanOpsItems = useMemo<NavSubItem[]>(() => {
+    if (isAccountant) return [];
+    const items: NavSubItem[] = [
+      { label: 'Drivers', path: '/drivers', icon: IconUser },
+      { label: 'Vehicles', path: '/vehicles', icon: IconTruck },
+      { label: 'Routes', path: '/routes', icon: IconRoute },
+    ];
+    if (isAdmin) {
+      items.push({ label: 'Add User', path: '/users', icon: IconUsers });
+    }
+    items.push(
+      { label: 'Allocations', path: '/allocations', icon: IconArrowsJoin2 },
+      { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
+      { label: 'Van Management', path: '/van-management', icon: IconTruckDelivery }
+    );
+    return items;
+  }, [isAdmin, isAccountant]);
 
-  const isVanOpsActive = vanOpsItems.some((item) =>
+  const isVanOpsActive = vanOpsItems.some((item: NavSubItem) =>
     location.pathname === item.path || location.pathname.startsWith('/van-management')
   );
 
-  const masterItems = [
-    { label: 'Category', path: '/categories', icon: IconCategory },
-    { label: 'Products', path: '/products', icon: IconPackage },
-    { label: 'Accounts', path: '/accounts', icon: IconBuildingBank },
-    { label: 'Packages', path: '/connection-packages', icon: IconPackages },
-  ];
+  const masterItems = useMemo<NavSubItem[]>(() => {
+    if (isAccountant) {
+      return [
+        { label: 'Accounts', path: '/accounts', icon: IconBuildingBank },
+      ];
+    }
+    if (isManager) {
+      return [
+        { label: 'Category', path: '/categories', icon: IconCategory },
+        { label: 'Products', path: '/products', icon: IconPackage },
+      ];
+    }
+    return [
+      { label: 'Category', path: '/categories', icon: IconCategory },
+      { label: 'Products', path: '/products', icon: IconPackage },
+      { label: 'Accounts', path: '/accounts', icon: IconBuildingBank },
+      { label: 'Packages', path: '/connection-packages', icon: IconPackages },
+    ];
+  }, [isAdmin, isManager, isAccountant]);
 
-  const isMasterActive = masterItems.some((item) =>
+  const isMasterActive = masterItems.some((item: NavSubItem) =>
     location.pathname === item.path ||
     (item.path === '/connection-packages' && location.pathname.startsWith('/connection-packages'))
   );
@@ -145,7 +179,10 @@ export const AppLayout: React.FC = () => {
   const getBreadcrumb = () => {
     switch (location.pathname) {
       case '/':
-        return { section: 'Overview', title: 'Dashboard' };
+        return {
+          section: isManager ? 'Operations' : (isAccountant ? 'Finance' : 'Overview'),
+          title: isManager ? 'Manager Dashboard' : (isAccountant ? 'Accountant Dashboard' : 'Dashboard'),
+        };
       case '/van-management':
         return { section: 'Van Operations', title: 'Van Management' };
       case '/drivers':
@@ -188,6 +225,8 @@ export const AppLayout: React.FC = () => {
         return { section: 'Operations', title: 'Receipt Notes' };
       case '/stock-analysis':
         return { section: 'Inventory', title: 'Stock Analysis' };
+      case '/ledger-analysis':
+        return { section: 'Finance', title: 'Ledger Analysis' };
       case '/stock-analysis/add-inventory':
         return { section: 'Inventory', title: 'Add Godown Inventory' };
       case '/inventory/products':
@@ -444,125 +483,127 @@ export const AppLayout: React.FC = () => {
               </Menu>
             )}
 
-            {/* Notification Bell Icon for Receipt Notes */}
-            <Menu shadow="lg" width={320} position="bottom-end" radius="md">
-              <Menu.Target>
-                <Tooltip label="Receipt Note Notifications" withArrow position="bottom">
-                  <Indicator
-                    inline
-                    size={16}
-                    offset={4}
-                    position="top-end"
-                    color="burgundy"
-                    label={pendingEndRoutes.length > 0 ? String(pendingEndRoutes.length) : undefined}
-                    disabled={pendingEndRoutes.length === 0}
-                    withBorder
-                    styles={{
-                      indicator: {
-                        backgroundColor: '#800020',
-                        fontWeight: 700,
-                        fontSize: 10,
-                        border: '2px solid #ffffff',
-                      },
-                    }}
-                  >
-                    <ActionIcon
-                      variant="light"
-                      color="gray"
-                      size={36}
-                      radius="md"
-                      style={{
-                        backgroundColor: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        color: '#475569',
-                        transition: 'all 150ms ease',
+            {/* Notification Bell Icon for Receipt Notes (Admins and Managers) */}
+            {(isAdmin || isManager) && (
+              <Menu shadow="lg" width={320} position="bottom-end" radius="md">
+                <Menu.Target>
+                  <Tooltip label="Receipt Note Notifications" withArrow position="bottom">
+                    <Indicator
+                      inline
+                      size={16}
+                      offset={4}
+                      position="top-end"
+                      color="burgundy"
+                      label={pendingEndRoutes.length > 0 ? String(pendingEndRoutes.length) : undefined}
+                      disabled={pendingEndRoutes.length === 0}
+                      withBorder
+                      styles={{
+                        indicator: {
+                          backgroundColor: '#800020',
+                          fontWeight: 700,
+                          fontSize: 10,
+                          border: '2px solid #ffffff',
+                        },
                       }}
                     >
-                      <IconBell size={19} stroke={1.75} />
-                    </ActionIcon>
-                  </Indicator>
-                </Tooltip>
-              </Menu.Target>
-
-              <Menu.Dropdown p="xs" style={{ borderColor: '#e2e8f0', backgroundColor: '#ffffff', minWidth: 320 }}>
-                <Group justify="space-between" align="center" px="xs" py={6} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <Group gap={6}>
-                    <IconClipboardCheck size={16} color="#800020" />
-                    <Text size="xs" fw={700} style={{ color: '#0f172a' }}>
-                      End Route Alerts
-                    </Text>
-                  </Group>
-                  <Badge size="xs" color="burgundy" variant="light" styles={{ root: { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 } }}>
-                    {pendingEndRoutes.length} Pending
-                  </Badge>
-                </Group>
-
-                <Box py={4}>
-                  {pendingEndRoutes.length === 0 ? (
-                    <Box px="xs" py="md" style={{ textAlign: 'center' }}>
-                      <Text size="xs" c="dimmed">
-                        No pending driver shift returns at the warehouse gate.
-                      </Text>
-                    </Box>
-                  ) : (
-                    pendingEndRoutes.slice(0, 5).map((item: any) => (
-                      <Menu.Item
-                        key={item.EndRouteDriverId}
-                        component={Link}
-                        to="/end-allocations"
+                      <ActionIcon
+                        variant="light"
+                        color="gray"
+                        size={36}
+                        radius="md"
                         style={{
-                          borderRadius: 6,
-                          padding: '8px 10px',
-                          marginBottom: 3,
-                          backgroundColor: '#fdf2f4',
-                          border: '1px solid #f5c2cb',
+                          backgroundColor: '#f8fafc',
+                          border: '1px solid #e2e8f0',
+                          color: '#475569',
+                          transition: 'all 150ms ease',
                         }}
                       >
-                        <Group justify="space-between" align="flex-start" wrap="nowrap">
-                          <Stack gap={2}>
-                            <Group gap={6} align="center">
-                              <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                                ERD-{item.EndRouteDriverId}
+                        <IconBell size={19} stroke={1.75} />
+                      </ActionIcon>
+                    </Indicator>
+                  </Tooltip>
+                </Menu.Target>
+
+                <Menu.Dropdown p="xs" style={{ borderColor: '#e2e8f0', backgroundColor: '#ffffff', minWidth: 320 }}>
+                  <Group justify="space-between" align="center" px="xs" py={6} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <Group gap={6}>
+                      <IconClipboardCheck size={16} color="#800020" />
+                      <Text size="xs" fw={700} style={{ color: '#0f172a' }}>
+                        End Route Alerts
+                      </Text>
+                    </Group>
+                    <Badge size="xs" color="burgundy" variant="light" styles={{ root: { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 } }}>
+                      {pendingEndRoutes.length} Pending
+                    </Badge>
+                  </Group>
+
+                  <Box py={4}>
+                    {pendingEndRoutes.length === 0 ? (
+                      <Box px="xs" py="md" style={{ textAlign: 'center' }}>
+                        <Text size="xs" c="dimmed">
+                          No pending driver shift returns at the warehouse gate.
+                        </Text>
+                      </Box>
+                    ) : (
+                      pendingEndRoutes.slice(0, 5).map((item: any) => (
+                        <Menu.Item
+                          key={item.EndRouteDriverId}
+                          component={Link}
+                          to="/end-allocations"
+                          style={{
+                            borderRadius: 6,
+                            padding: '8px 10px',
+                            marginBottom: 3,
+                            backgroundColor: '#fdf2f4',
+                            border: '1px solid #f5c2cb',
+                          }}
+                        >
+                          <Group justify="space-between" align="flex-start" wrap="nowrap">
+                            <Stack gap={2}>
+                              <Group gap={6} align="center">
+                                <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                                  ERD-{item.EndRouteDriverId}
+                                </Text>
+                                <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontSize: 10, height: 18, borderColor: '#e2e8f0', color: '#334155' } }}>
+                                  {item.vehicle_number}
+                                </Badge>
+                              </Group>
+                              <Text size="11px" c="dimmed">
+                                Driver: <strong style={{ color: '#334155' }}>{item.driver_name}</strong> • {item.total_filled || 0} Full, {item.total_empty || 0} Empties
                               </Text>
-                              <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontSize: 10, height: 18, borderColor: '#e2e8f0', color: '#334155' } }}>
-                                {item.vehicle_number}
-                              </Badge>
-                            </Group>
-                            <Text size="11px" c="dimmed">
-                              Driver: <strong style={{ color: '#334155' }}>{item.driver_name}</strong> • {item.total_filled || 0} Full, {item.total_empty || 0} Empties
+                              <Text size="10.5px" c="#800020" fw={600}>
+                                Total: ₹{(item.cash_amount + item.bank_amount).toLocaleString('en-IN', { minimumFractionDigits: 0 })} ({item.route_name})
+                              </Text>
+                            </Stack>
+                            <Text size="10px" c="#94a3b8" fw={500}>
+                              {item.ShiftDate}
                             </Text>
-                            <Text size="10.5px" c="#800020" fw={600}>
-                              Total: ₹{(item.cash_amount + item.bank_amount).toLocaleString('en-IN', { minimumFractionDigits: 0 })} ({item.route_name})
-                            </Text>
-                          </Stack>
-                          <Text size="10px" c="#94a3b8" fw={500}>
-                            {item.ShiftDate}
-                          </Text>
-                        </Group>
-                      </Menu.Item>
-                    ))
-                  )}
-                </Box>
+                          </Group>
+                        </Menu.Item>
+                      ))
+                    )}
+                  </Box>
 
-                <Divider style={{ borderColor: '#f1f5f9' }} />
+                  <Divider style={{ borderColor: '#f1f5f9' }} />
 
-                <Menu.Item
-                  component={Link}
-                  to="/end-allocations"
-                  style={{
-                    borderRadius: 6,
-                    textAlign: 'center',
-                    fontWeight: 700,
-                    fontSize: 12,
-                    color: '#800020',
-                    backgroundColor: '#fdf2f4',
-                    marginTop: 4,
-                  }}
-                >
-                  View All End Allocations &rarr;
-                </Menu.Item>
-              </Menu.Dropdown>
-            </Menu>
+                  <Menu.Item
+                    component={Link}
+                    to="/end-allocations"
+                    style={{
+                      borderRadius: 6,
+                      textAlign: 'center',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      color: '#800020',
+                      backgroundColor: '#fdf2f4',
+                      marginTop: 4,
+                    }}
+                  >
+                    View All End Allocations &rarr;
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            )}
 
             <Menu shadow="md" width={220} position="bottom-end" radius="md">
               <Menu.Target>
@@ -600,21 +641,28 @@ export const AppLayout: React.FC = () => {
 
               <Menu.Dropdown style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }} p="xs">
                 <Box px="xs" py="xs" mb={4} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <Text size="xs" fw={700} c="#0f172a">
-                    {user?.username}
-                  </Text>
+                  <Group justify="space-between" align="center" wrap="nowrap" mb={2}>
+                    <Text size="xs" fw={700} c="#0f172a">
+                      {user?.username}
+                    </Text>
+                    <Badge size="xs" color="burgundy" variant="light">
+                      {user?.role || 'Administrator'}
+                    </Badge>
+                  </Group>
                   <Text size="11px" c="dimmed">
                     {user?.company_name || 'Future Gas Operations'}
                   </Text>
                 </Box>
-                <Menu.Item
-                  component="a"
-                  href="http://localhost:8000/api/v1/docs/"
-                  target="_blank"
-                  leftSection={<IconExternalLink size={16} stroke={1.5} />}
-                >
-                  API Swagger
-                </Menu.Item>
+                {isAdmin && (
+                  <Menu.Item
+                    component="a"
+                    href="http://localhost:8000/api/v1/docs/"
+                    target="_blank"
+                    leftSection={<IconExternalLink size={16} stroke={1.5} />}
+                  >
+                    API Swagger
+                  </Menu.Item>
+                )}
                 <Menu.Divider style={{ borderColor: '#f1f5f9' }} />
                 <Menu.Item
                   color="red"
@@ -708,7 +756,7 @@ export const AppLayout: React.FC = () => {
             {renderDirectNavItem('Dashboard', '/', IconLayoutDashboard, location.pathname === '/')}
 
         {/* Van Management Group (Accordion in Expanded / Flyout in Collapsed) */}
-        {effectiveCollapsed ? (
+        {vanOpsItems.length > 0 && (effectiveCollapsed ? (
           <Menu
             position="right-start"
             offset={14}
@@ -752,7 +800,7 @@ export const AppLayout: React.FC = () => {
               <Menu.Label fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.6px', fontSize: '11px' }}>
                 Van Operations
               </Menu.Label>
-              {vanOpsItems.map((sub) => {
+              {vanOpsItems.map((sub: NavSubItem) => {
                 const SubIcon = sub.icon;
                 const isSubActive = location.pathname === sub.path;
                 const isEndAlloc = sub.path === '/end-allocations';
@@ -841,7 +889,7 @@ export const AppLayout: React.FC = () => {
               },
             }}
           >
-            {vanOpsItems.map((sub) => {
+            {vanOpsItems.map((sub: NavSubItem) => {
               const SubIcon = sub.icon;
               const isSubActive = location.pathname === sub.path;
               const isEndAlloc = sub.path === '/end-allocations';
@@ -897,10 +945,10 @@ export const AppLayout: React.FC = () => {
               );
             })}
           </NavLink>
-        )}
+        ))}
 
         {/* Master Group (Accordion in Expanded / Flyout in Collapsed) */}
-        {effectiveCollapsed ? (
+        {masterItems.length > 0 && (effectiveCollapsed ? (
           <Menu
             position="right-start"
             offset={14}
@@ -936,7 +984,7 @@ export const AppLayout: React.FC = () => {
               <Menu.Label fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.6px', fontSize: '11px' }}>
                 Master
               </Menu.Label>
-              {masterItems.map((sub) => {
+              {masterItems.map((sub: NavSubItem) => {
                 const SubIcon = sub.icon;
                 const isSubActive = location.pathname === sub.path;
                 return (
@@ -998,7 +1046,7 @@ export const AppLayout: React.FC = () => {
               },
             }}
           >
-            {masterItems.map((sub) => {
+            {masterItems.map((sub: NavSubItem) => {
               const SubIcon = sub.icon;
               const isSubActive = location.pathname === sub.path;
               return (
@@ -1039,17 +1087,18 @@ export const AppLayout: React.FC = () => {
               );
             })}
           </NavLink>
-        )}
+        ))}
 
         {/* Direct Links */}
-        {renderDirectNavItem('Sales', '/sales', IconFileInvoice, location.pathname.startsWith('/sales'))}
-        {renderDirectNavItem('Purchase', '/purchases', IconShoppingCart, location.pathname.startsWith('/purchases'))}
-        {renderDirectNavItem('Payment', '/payments', IconCreditCard, location.pathname.startsWith('/payments'))}
-        {renderDirectNavItem('Receipt', '/receipts', IconReceipt, location.pathname.startsWith('/receipts'))}
-        {renderDirectNavItem('Collections', '/collections', IconCash, location.pathname.startsWith('/collections'))}
-        {renderDirectNavItem('Delivery Notes', '/delivery-notes', IconClipboardList, location.pathname === '/delivery-notes')}
-        {renderDirectNavItem('Receipt Notes', '/receipt-notes', IconPackageImport, location.pathname === '/receipt-notes')}
-        {renderDirectNavItem('Stock Analysis', '/stock-analysis', IconChartBar, location.pathname === '/stock-analysis')}
+        {(isAdmin || isAccountant) && renderDirectNavItem('Sales', '/sales', IconFileInvoice, location.pathname.startsWith('/sales'))}
+        {(isAdmin || isAccountant) && renderDirectNavItem('Purchase', '/purchases', IconShoppingCart, location.pathname.startsWith('/purchases'))}
+        {(isAdmin || isAccountant) && renderDirectNavItem('Payment', '/payments', IconCreditCard, location.pathname.startsWith('/payments'))}
+        {(isAdmin || isAccountant) && renderDirectNavItem('Receipt', '/receipts', IconReceipt, location.pathname.startsWith('/receipts'))}
+        {(isAdmin || isAccountant) && renderDirectNavItem('Collections', '/collections', IconCash, location.pathname.startsWith('/collections'))}
+        {(isAdmin || isManager) && renderDirectNavItem('Delivery Notes', '/delivery-notes', IconClipboardList, location.pathname === '/delivery-notes')}
+        {(isAdmin || isManager) && renderDirectNavItem('Receipt Notes', '/receipt-notes', IconPackageImport, location.pathname === '/receipt-notes')}
+        {(isAdmin || isManager) && renderDirectNavItem('Stock Analysis', '/stock-analysis', IconChartBar, location.pathname === '/stock-analysis')}
+        {(isAdmin || isAccountant) && renderDirectNavItem('Ledger Analysis', '/ledger-analysis', IconScale, location.pathname === '/ledger-analysis')}
           </ScrollArea>
         </AppShell.Section>
 

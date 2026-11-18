@@ -178,7 +178,8 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                   },
                 ),
 
-              const SizedBox(height: 90),
+              // Responsive bottom clearance for floating pill navbar & classic 3-button navigation
+              SizedBox(height: 84 + MediaQuery.of(context).padding.bottom),
             ],
           ),
         ),
@@ -494,6 +495,8 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
 
   Widget _buildOrderCard(BuildContext context, AppState state, DeliveryOrder order) {
     final isCash = order.paymentMethod.toLowerCase() == 'cash';
+    final isCredit = order.paymentMethod.toLowerCase() == 'credit';
+    final isEmptyOnly = order.totalCylinders == 0 && order.totalEmpties > 0;
     final initial = order.customer.name.trim().isNotEmpty
         ? order.customer.name.trim().substring(0, 1).toUpperCase()
         : 'C';
@@ -546,208 +549,161 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
             borderRadius: BorderRadius.circular(14),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Row 1: Avatar + Customer Name + Amount & Payment Badge
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      // Avatar circle
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFDF2F4),
-                          borderRadius: BorderRadius.circular(9),
-                          border: Border.all(color: const Color(0xFFFCE7EC), width: 0.8),
-                        ),
-                        child: Center(
-                          child: Text(
-                            initial,
-                            style: GoogleFonts.inter(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF800020),
-                            ),
-                          ),
+                  // Avatar circle
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF2F4),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFFCE7EC), width: 0.8),
+                    ),
+                    child: Center(
+                      child: Text(
+                        initial,
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF800020),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
 
-                      // Customer Details
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                  // Customer Details
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          order.customer.name,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF0F172A),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
                           children: [
                             Text(
-                              order.customer.name,
-                              style: GoogleFonts.inter(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF0F172A),
+                              order.ticketId,
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF64748B),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(height: 1.5),
-                            Row(
-                              children: [
-                                Text(
-                                  order.ticketId,
-                                  style: GoogleFonts.jetBrainsMono(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  '• ${order.time}',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                    color: const Color(0xFF94A3B8),
-                                  ),
-                                ),
-                              ],
+                            const SizedBox(width: 5),
+                            Text(
+                              '• ${order.time}',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF94A3B8),
+                              ),
                             ),
                           ],
                         ),
-                      ),
-
-                      // Total Amount & Payment Badge
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
+                        if (order.pendingBalance > 0.01 && !isEmptyOnly) ...[
+                          const SizedBox(height: 2),
                           Text(
-                            '₹${order.amount.toStringAsFixed(0)}',
+                            'Pending: ₹${order.pendingBalance.toStringAsFixed(0)}',
                             style: GoogleFonts.inter(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              color: const Color(0xFF0F172A),
-                            ),
-                          ),
-                          const SizedBox(height: 2.5),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: isCash ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: isCash ? const Color(0xFFFCE7EC) : const Color(0xFFE2E8F0),
-                              ),
-                            ),
-                            child: Text(
-                              isCash ? 'CASH' : 'UPI / BANK',
-                              style: GoogleFonts.inter(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                                color: isCash ? const Color(0xFF800020) : const Color(0xFF334155),
-                              ),
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFFB45309),
                             ),
                           ),
                         ],
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(width: 8),
+
+                  // Total Amount & Payment Badge
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        isEmptyOnly ? '₹0' : '₹${order.amount.toStringAsFixed(0)}',
+                        style: GoogleFonts.inter(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w900,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(height: 2.5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: isEmptyOnly
+                              ? const Color(0xFFF1F5F9)
+                              : (isCredit
+                                  ? const Color(0xFFFEF3C7)
+                                  : (isCash ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9))),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: isEmptyOnly
+                                ? const Color(0xFFE2E8F0)
+                                : (isCredit
+                                    ? const Color(0xFFFDE68A)
+                                    : (isCash ? const Color(0xFFFCE7EC) : const Color(0xFFE2E8F0))),
+                          ),
+                        ),
+                        child: Text(
+                          isEmptyOnly
+                              ? 'EMPTY RETURN'
+                              : (isCredit ? 'CREDIT' : (isCash ? 'CASH' : 'UPI / BANK')),
+                          style: GoogleFonts.inter(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: isEmptyOnly
+                                ? const Color(0xFF475569)
+                                : (isCredit
+                                    ? const Color(0xFF92400E)
+                                    : (isCash ? const Color(0xFF800020) : const Color(0xFF334155))),
+                          ),
+                        ),
                       ),
                     ],
                   ),
 
-                  const SizedBox(height: 8),
+                  const SizedBox(width: 10),
 
-                  // Row 2: Summary chips + View Details toggle
-                  Row(
-                    children: [
-                      if (order.totalCylinders > 0)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFDF2F4),
-                            borderRadius: BorderRadius.circular(5),
-                            border: Border.all(color: const Color(0xFFFCE7EC)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.propane_tank_rounded, size: 11.5, color: Color(0xFF800020)),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${order.totalCylinders} Delivered',
-                                style: GoogleFonts.inter(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF800020),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                      if (hasEmpties) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(5),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.autorenew_rounded, size: 11.5, color: Color(0xFF64748B)),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${order.totalEmpties} Return',
-                                style: GoogleFonts.inter(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF475569),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      const Spacer(),
-
-                      // View Details / Collapse Pill
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: const Color(0xFFE2E8F0),
-                            width: 0.8,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              isExpanded ? 'Hide' : 'Details',
-                              style: GoogleFonts.inter(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF475569),
-                              ),
-                            ),
-                            const SizedBox(width: 3),
-                            AnimatedRotation(
-                              turns: isExpanded ? 0.5 : 0.0,
-                              duration: const Duration(milliseconds: 280),
-                              curve: Curves.fastOutSlowIn,
-                              child: const Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                size: 14,
-                                color: Color(0xFF475569),
-                              ),
-                            ),
-                          ],
+                  // Big Arrow at right end of the line
+                  AnimatedRotation(
+                    turns: isExpanded ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 260),
+                    curve: Curves.fastOutSlowIn,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: isExpanded ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isExpanded ? const Color(0xFFF5C2CB) : const Color(0xFFE2E8F0),
+                          width: 1,
                         ),
                       ),
-                    ],
+                      child: Center(
+                        child: Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 24,
+                          color: isExpanded ? const Color(0xFF800020) : const Color(0xFF64748B),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -774,6 +730,64 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Cylinder Details Summary Badges (Shown only inside the dropdown)
+                  if (order.totalCylinders > 0 || hasEmpties) ...[
+                    Row(
+                      children: [
+                        if (order.totalCylinders > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFDF2F4),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFFCE7EC)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.propane_tank_rounded, size: 12.5, color: Color(0xFF800020)),
+                                const SizedBox(width: 5),
+                                Text(
+                                  '${order.totalCylinders} Delivered',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF800020),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (hasEmpties) ...[
+                          if (order.totalCylinders > 0) const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.autorenew_rounded, size: 12.5, color: Color(0xFF64748B)),
+                                const SizedBox(width: 5),
+                                Text(
+                                  '${order.totalEmpties} Return',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF475569),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   if (deliveredItems.isNotEmpty) ...[
                     Text(
                       'DELIVERED CYLINDERS',
@@ -903,12 +917,23 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                 phone = matched.phone.trim();
                               } catch (_) {}
                             }
+                            final customMsg = InvoiceHelper.formatWhatsAppDeliveryMessage(
+                              customerName: order.customer.name,
+                              ticketId: order.ticketId,
+                              totalDelivered: order.totalCylinders,
+                              totalEmpties: order.totalEmpties,
+                              totalBill: order.totalBillValue,
+                              collectedAmount: order.amount,
+                              paymentMethod: order.paymentMethod,
+                              driverName: state.driverName,
+                            );
                             InvoiceHelper.sharePdfToWhatsApp(
                               context: context,
                               ticketId: order.ticketId,
                               customerName: order.customer.name,
                               customerPhone: phone,
                               salesId: order.salesId,
+                              customMessage: customMsg,
                             );
                           },
                           borderRadius: BorderRadius.circular(8),
@@ -1083,8 +1108,24 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
       return itemsList.fold(0.0, (sum, it) => sum + (it.deliveryQty * it.cylinder.price));
     }
 
+    final initialMethod = order.paymentMethod.isNotEmpty ? order.paymentMethod : 'Cash';
+    String selectedMethod = 'Cash';
+    final mLow = initialMethod.toLowerCase();
+    if (mLow == 'upi' || mLow == 'bank' || mLow == 'digital') {
+      selectedMethod = 'UPI';
+    } else if (mLow == 'split') {
+      selectedMethod = 'Split';
+    } else if (mLow == 'credit') {
+      selectedMethod = 'Credit';
+    }
+
     final amountController = TextEditingController(text: order.amount.toStringAsFixed(0));
-    String selectedMethod = order.paymentMethod.toLowerCase() == 'cash' ? 'Cash' : 'UPI';
+    final splitCashController = TextEditingController(
+      text: (order.cashAmount ?? 0) > 0 ? (order.cashAmount ?? 0).toStringAsFixed(0) : '',
+    );
+    final splitUpiController = TextEditingController(
+      text: (order.upiAmount ?? 0) > 0 ? (order.upiAmount ?? 0).toStringAsFixed(0) : '',
+    );
     bool isSaving = false;
 
     showModalBottomSheet(
@@ -1099,7 +1140,14 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
             constraints: BoxConstraints(
               maxHeight: MediaQuery.of(ctx).size.height * 0.88,
             ),
-            padding: EdgeInsets.fromLTRB(20, 14, 20, 20 + MediaQuery.of(ctx).viewInsets.bottom),
+            padding: EdgeInsets.fromLTRB(
+              20,
+              14,
+              20,
+              MediaQuery.of(ctx).viewInsets.bottom > 0
+                  ? (MediaQuery.of(ctx).viewInsets.bottom + 16)
+                  : (MediaQuery.of(ctx).padding.bottom + 16),
+            ),
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -1448,7 +1496,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
 
                   const SizedBox(height: 14),
 
-                  // Payment method selector: Cash and UPI / Bank (No Credit)
+                  // Payment method selector: Cash, UPI, Split, Credit
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
@@ -1471,14 +1519,34 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         ),
                         const SizedBox(height: 10),
                         Row(
-                          children: ['Cash', 'UPI'].map((m) {
+                          children: ['Cash', 'UPI', 'Split', 'Credit'].map((m) {
                             final isSel = selectedMethod.toLowerCase() == m.toLowerCase();
-                            final label = m == 'UPI' ? 'UPI / Bank' : 'Cash';
+                            final label = m == 'UPI' ? 'UPI' : m;
                             return Expanded(
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 2.5),
                                 child: InkWell(
-                                  onTap: () => setModalState(() => selectedMethod = m),
+                                  onTap: () {
+                                    setModalState(() {
+                                      selectedMethod = m;
+                                      if (m == 'Credit') {
+                                        amountController.text = '0';
+                                      } else if (m == 'Split') {
+                                        final half = (computedTotal / 2).roundToDouble();
+                                        if (splitCashController.text.isEmpty) {
+                                          splitCashController.text = half.toStringAsFixed(0);
+                                        }
+                                        if (splitUpiController.text.isEmpty) {
+                                          splitUpiController.text = (computedTotal - half).toStringAsFixed(0);
+                                        }
+                                        amountController.text = computedTotal.toStringAsFixed(0);
+                                      } else {
+                                        if (amountController.text == '0' || amountController.text.isEmpty) {
+                                          amountController.text = computedTotal.toStringAsFixed(0);
+                                        }
+                                      }
+                                    });
+                                  },
                                   borderRadius: BorderRadius.circular(9),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1494,7 +1562,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                       child: Text(
                                         label,
                                         style: GoogleFonts.inter(
-                                          fontSize: 13,
+                                          fontSize: 12.5,
                                           fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
                                           color: isSel ? Colors.white : const Color(0xFF475569),
                                         ),
@@ -1506,6 +1574,110 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                             );
                           }).toList(),
                         ),
+
+                        // Split Payment Inputs
+                        if (selectedMethod.toLowerCase() == 'split') ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Cash (₹)', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF475569))),
+                                          const SizedBox(height: 4),
+                                          TextField(
+                                            controller: splitCashController,
+                                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
+                                            ),
+                                            onChanged: (val) {
+                                              final c = double.tryParse(val) ?? 0;
+                                              final u = (computedTotal - c).clamp(0, computedTotal);
+                                              splitUpiController.text = u.toStringAsFixed(0);
+                                              setModalState(() {
+                                                amountController.text = (c + u).toStringAsFixed(0);
+                                              });
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('UPI / Bank (₹)', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF800020))),
+                                          const SizedBox(height: 4),
+                                          TextField(
+                                            controller: splitUpiController,
+                                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF800020)),
+                                            decoration: InputDecoration(
+                                              isDense: true,
+                                              filled: true,
+                                              fillColor: Colors.white,
+                                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFF800020))),
+                                            ),
+                                            onChanged: (val) {
+                                              final u = double.tryParse(val) ?? 0;
+                                              final c = double.tryParse(splitCashController.text) ?? 0;
+                                              setModalState(() {
+                                                amountController.text = (c + u).toStringAsFixed(0);
+                                              });
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
+                        // Credit Notice
+                        if (selectedMethod.toLowerCase() == 'credit') ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF2F2),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFFECACA)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF800020)),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Credit Delivery: ₹0 collected. Total ₹${computedTotal.toStringAsFixed(0)} will be added to customer pending balance.',
+                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF800020), fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1542,7 +1714,28 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                     return;
                                   }
 
-                                  final parsedAmt = double.tryParse(amountController.text.trim()) ?? computedTotal;
+                                  double parsedAmt = 0;
+                                  double? cashAmt;
+                                  double? upiAmt;
+
+                                  if (selectedMethod.toLowerCase() == 'credit') {
+                                    parsedAmt = 0;
+                                    cashAmt = 0;
+                                    upiAmt = 0;
+                                  } else if (selectedMethod.toLowerCase() == 'split') {
+                                    cashAmt = double.tryParse(splitCashController.text.trim()) ?? 0;
+                                    upiAmt = double.tryParse(splitUpiController.text.trim()) ?? 0;
+                                    parsedAmt = cashAmt + upiAmt;
+                                  } else if (selectedMethod.toLowerCase() == 'cash') {
+                                    parsedAmt = double.tryParse(amountController.text.trim()) ?? computedTotal;
+                                    cashAmt = parsedAmt;
+                                    upiAmt = 0;
+                                  } else {
+                                    parsedAmt = double.tryParse(amountController.text.trim()) ?? computedTotal;
+                                    cashAmt = 0;
+                                    upiAmt = parsedAmt;
+                                  }
+
                                   setModalState(() => isSaving = true);
 
                                   final ok = await state.updateOrderWithItems(
@@ -1550,12 +1743,15 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                     newAmount: parsedAmt,
                                     newPaymentMethod: selectedMethod,
                                     updatedItems: activeDeliveryItems,
+                                    cashAmount: cashAmt,
+                                    upiAmount: upiAmt,
                                   );
+                                  await InvoiceHelper.invalidateCachedPdf(order.ticketId);
 
                                   if (ctx.mounted) Navigator.pop(ctx);
                                   if (context.mounted) {
                                     if (ok) {
-                                      AppToast.success(context, 'Sale updated: ₹${parsedAmt.toStringAsFixed(0)} ($selectedMethod)');
+                                      AppToast.success(context, 'Sale updated & PDF regenerated: ₹${parsedAmt.toStringAsFixed(0)} ($selectedMethod)');
                                     } else {
                                       AppToast.error(context, 'Failed to update sale on server');
                                     }
@@ -1569,8 +1765,15 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
                           child: isSaving
-                              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                              : Text('Save Changes', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                              ? const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                                    SizedBox(width: 8),
+                                    Text('Updating & Syncing...', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
+                                  ],
+                                )
+                              : Text('Save & Regenerate PDF', style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700)),
                         ),
                       ),
                     ],

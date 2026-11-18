@@ -20,8 +20,8 @@ import {
   Box,
   Transition,
   Tooltip } from '@mantine/core';
-import { IconPencil, IconTrash, IconAlertCircle, IconSearch } from '@tabler/icons-react';
-import { } from 'react-router-dom';
+import { IconPencil, IconTrash, IconAlertCircle, IconSearch, IconArrowLeft } from '@tabler/icons-react';
+import { useNavigate } from 'react-router-dom';
 import { useForm, Controller, useWatch  } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -57,6 +57,7 @@ const defaultAllocationValues: AllocationFormValues = {
   Narration: '' };
 
 export const AllocationsPage: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [formOpened, setFormOpened] = useState(false);
   const [editingAllocation, setEditingAllocation] = useState<AllocationItem | null>(null);
@@ -303,6 +304,17 @@ export const AllocationsPage: React.FC = () => {
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
             Allocations
           </Title>

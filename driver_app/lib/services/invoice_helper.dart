@@ -24,7 +24,7 @@ class InvoiceHelper {
     return digits;
   }
 
-  /// Constructs the direct PDF download URL for an invoice ticket
+  /// Constructs the direct PDF download URL for an invoice ticket (with timestamp cache-buster)
   static String getPdfUrl(String ticketId, {int? salesId}) {
     final cleanBase = ApiService.baseUrl.replaceAll(RegExp(r'/+$'), '');
     final uriBuffer = StringBuffer('$cleanBase/sales/invoice-pdf/?');
@@ -32,7 +32,20 @@ class InvoiceHelper {
       uriBuffer.write('sales_id=$salesId&');
     }
     uriBuffer.write('ticket_id=${Uri.encodeComponent(ticketId)}');
+    uriBuffer.write('&_t=${DateTime.now().millisecondsSinceEpoch}');
     return uriBuffer.toString();
+  }
+
+  /// Deletes any cached local PDF copy so the newly regenerated invoice is always fetched
+  static Future<void> invalidateCachedPdf(String ticketId) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final safeTicket = ticketId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
+      final file = File('${tempDir.path}/Tax_Invoice_$safeTicket.pdf');
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
   }
 
   /// Opens the official GST Tax Invoice PDF in the system PDF viewer or browser
@@ -74,6 +87,94 @@ class InvoiceHelper {
     return null;
   }
 
+  /// Formats a professional customer WhatsApp message reflecting delivery details,
+  /// empty bottle collections, and outstanding pending balances / credit amounts.
+  static String formatWhatsAppDeliveryMessage({
+    required String customerName,
+    required String ticketId,
+    required int totalDelivered,
+    required int totalEmpties,
+    required double totalBill,
+    required double collectedAmount,
+    required String paymentMethod,
+    String? driverName,
+    String? dateStr,
+  }) {
+    final isCredit = paymentMethod.toUpperCase() == 'CREDIT';
+    final effectivePaid = isCredit ? 0.0 : collectedAmount;
+    final pending = isCredit
+        ? totalBill
+        : ((totalBill - collectedAmount) > 0.01 ? (totalBill - collectedAmount) : 0.0);
+
+    // Case 1: Empty Collection Only (No deliveries)
+    if (totalDelivered == 0 && totalEmpties > 0) {
+      final drv = (driverName != null && driverName.trim().isNotEmpty) ? driverName.trim() : 'our driver';
+      final dt = (dateStr != null && dateStr.trim().isNotEmpty) ? dateStr.trim() : 'today';
+      return 'Dear $customerName,\n\n'
+          '*FUTURE GAS - EMPTY CYLINDER RECEIPT*\n'
+          '-----------------------------------------\n'
+          'Received: $totalEmpties empty cylinder(s)\n'
+          'Date: $dt\n'
+          'Driver: $drv\n'
+          '-----------------------------------------\n'
+          'Thank you for choosing Future Gas!';
+    }
+
+    // Case 2: Zero Payment (Full Credit Delivery)
+    if (isCredit || effectivePaid <= 0.01) {
+      final billStr = totalBill.toStringAsFixed(2);
+      final cylInfo = totalDelivered > 0 ? '$totalDelivered cylinder(s)' : '';
+      final emptyInfo = totalEmpties > 0 ? ' • $totalEmpties empty return' : '';
+      return 'Dear $customerName,\n\n'
+          '*FUTURE GAS - CREDIT DELIVERY RECEIPT*\n'
+          '-----------------------------------------\n'
+          'Invoice/Ticket: #$ticketId\n'
+          'Delivered: $cylInfo$emptyInfo\n'
+          '-----------------------------------------\n'
+          'Total Bill: ₹$billStr\n'
+          'Amount Paid: ₹0.00 (CREDIT)\n'
+          '*Pending Balance Due: ₹$billStr*\n'
+          '-----------------------------------------\n'
+          'Official tax invoice is attached. Please clear the pending balance at your earliest convenience.\n'
+          'Thank you for choosing Future Gas!';
+    }
+
+    // Case 3: Partial Payment with Pending Balance
+    if (pending > 0.01) {
+      final billStr = totalBill.toStringAsFixed(2);
+      final paidStr = effectivePaid.toStringAsFixed(2);
+      final pendStr = pending.toStringAsFixed(2);
+      final cylInfo = totalDelivered > 0 ? '$totalDelivered cylinder(s)' : '';
+      final emptyInfo = totalEmpties > 0 ? ' • $totalEmpties empty return' : '';
+      return 'Dear $customerName,\n\n'
+          '*FUTURE GAS - DELIVERY RECEIPT*\n'
+          '-----------------------------------------\n'
+          'Invoice/Ticket: #$ticketId\n'
+          'Delivered: $cylInfo$emptyInfo\n'
+          '-----------------------------------------\n'
+          'Total Bill: ₹$billStr\n'
+          'Amount Paid: ₹$paidStr (${paymentMethod.toUpperCase()})\n'
+          '*Pending Balance: ₹$pendStr*\n'
+          '-----------------------------------------\n'
+          'Official tax invoice is attached. Thank you for choosing Future Gas!';
+    }
+
+    // Case 4: Fully Paid Standard Delivery
+    final billStr = (collectedAmount > 0 ? collectedAmount : totalBill).toStringAsFixed(2);
+    final cylInfo = totalDelivered > 0 ? '$totalDelivered cylinder(s)' : '';
+    final emptyInfo = totalEmpties > 0 ? ' • $totalEmpties empty return' : '';
+    return 'Dear $customerName,\n\n'
+        '*FUTURE GAS - DELIVERY RECEIPT*\n'
+        '-----------------------------------------\n'
+        'Invoice/Ticket: #$ticketId\n'
+        'Delivered: $cylInfo$emptyInfo\n'
+        '-----------------------------------------\n'
+        'Total Paid: ₹$billStr via ${paymentMethod.toUpperCase()}\n'
+        'Payment Status: FULLY PAID\n'
+        '-----------------------------------------\n'
+        'Official tax invoice is attached. Thank you for choosing Future Gas!';
+  }
+
   /// Directly sends the downloaded PDF invoice to the customer's WhatsApp chat
   static Future<bool> shareDirectToWhatsApp({
     required BuildContext context,
@@ -81,11 +182,12 @@ class InvoiceHelper {
     required String ticketId,
     required String customerName,
     String? customerPhone,
+    String? customMessage,
   }) async {
     final phone = (customerPhone != null && customerPhone.trim().isNotEmpty)
         ? cleanPhoneNumber(customerPhone)
         : '';
-    final message = 'Future Gas - GST Tax Invoice for $customerName (Bill #$ticketId)';
+    final message = customMessage ?? 'Future Gas - GST Tax Invoice for $customerName (Invoice #$ticketId)';
 
     bool directSuccess = false;
     try {
@@ -108,6 +210,7 @@ class InvoiceHelper {
         ticketId: ticketId,
         customerName: customerName,
         customerPhone: customerPhone,
+        customMessage: customMessage,
       );
     }
     return true;
@@ -120,6 +223,7 @@ class InvoiceHelper {
     required String ticketId,
     required String customerName,
     String? customerPhone,
+    String? customMessage,
   }) async {
     try {
       final safeTicket = ticketId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-]'), '_');
@@ -130,7 +234,7 @@ class InvoiceHelper {
         name: filename,
       );
 
-      final shareText = 'Future Gas - GST Tax Invoice for $customerName (Bill #$ticketId)';
+      final shareText = customMessage ?? 'Future Gas - GST Tax Invoice for $customerName (Invoice #$ticketId)';
 
       final result = await SharePlus.instance.share(
         ShareParams(
@@ -157,6 +261,7 @@ class InvoiceHelper {
     String? customerPhone,
     File? preloadedFile,
     int? salesId,
+    String? customMessage,
   }) async {
     try {
       File? file = preloadedFile;
@@ -172,6 +277,7 @@ class InvoiceHelper {
           ticketId: ticketId,
           customerName: customerName,
           customerPhone: customerPhone,
+          customMessage: customMessage,
         );
       } else {
         throw Exception('Could not fetch invoice PDF from server');

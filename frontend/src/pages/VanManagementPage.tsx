@@ -21,7 +21,9 @@ import {
   IconChevronRight,
   IconCylinder,
   IconReceipt,
-  IconWallet } from '@tabler/icons-react';
+  IconWallet,
+  IconArrowLeft,
+  IconPrinter } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../api/client';
@@ -68,6 +70,24 @@ export const VanManagementPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [manualRefresh, setManualRefresh] = useState(0);
+  const [printingRouteId, setPrintingRouteId] = useState<number | null>(null);
+
+  const handlePrintTripSheet = async (e: React.MouseEvent, routeId: number) => {
+    e.stopPropagation();
+    try {
+      setPrintingRouteId(routeId);
+      const res = await apiClient.get(`/routes/${routeId}/trip-sheet-pdf/`, {
+        responseType: 'blob',
+      });
+      const file = new Blob([res.data], { type: 'application/pdf' });
+      const fileURL = URL.createObjectURL(file);
+      window.open(fileURL, '_blank');
+    } catch (err: any) {
+      alert('Failed to generate Route Trip Sheet PDF.');
+    } finally {
+      setPrintingRouteId(null);
+    }
+  };
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery<VanManagementData>({
     queryKey: ['van-management', manualRefresh],
@@ -121,6 +141,17 @@ export const VanManagementPage: React.FC = () => {
       {/* ── 1. Page Header matching Executive Design System ── */}
       <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
         <div>
+          <Button
+            variant="subtle"
+            color="gray"
+            size="xs"
+            leftSection={<IconArrowLeft size={16} />}
+            onClick={() => navigate('/')}
+            mb={4}
+            styles={{ root: { paddingLeft: 0, paddingRight: 8, color: '#475569' } }}
+          >
+            Back to Dashboard
+          </Button>
           <Group gap="xs" align="center" wrap="wrap">
             <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 22, letterSpacing: '-0.02em' }}>
               Van Management
@@ -414,7 +445,7 @@ export const VanManagementPage: React.FC = () => {
                         <Badge
                           size="xs"
                           variant="dot"
-                          color={isLive ? 'teal' : route.status === 'settled' ? 'blue' : route.status === 'pending_approval' ? 'yellow' : 'gray'}
+                          color={isLive ? 'teal' : route.status === 'settled' ? 'burgundy' : route.status === 'pending_approval' ? 'yellow' : 'gray'}
                           radius="sm"
                           style={{ fontWeight: 600 }}
                         >
@@ -459,18 +490,30 @@ export const VanManagementPage: React.FC = () => {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <ActionIcon
-                          variant="subtle"
-                          size="sm"
-                          color="gray"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/van-management/${route.route_id}`);
-                          }}
-                          title="View Route Details"
-                        >
-                          <IconChevronRight size={16} />
-                        </ActionIcon>
+                        <Group gap={4} wrap="nowrap">
+                          <ActionIcon
+                            variant="subtle"
+                            size="sm"
+                            color="burgundy"
+                            loading={printingRouteId === route.route_id}
+                            onClick={(e) => handlePrintTripSheet(e, route.route_id)}
+                            title="Print Route Daily Trip Sheet PDF"
+                          >
+                            <IconPrinter size={16} />
+                          </ActionIcon>
+                          <ActionIcon
+                            variant="subtle"
+                            size="sm"
+                            color="gray"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/van-management/${route.route_id}`);
+                            }}
+                            title="View Route Details"
+                          >
+                            <IconChevronRight size={16} />
+                          </ActionIcon>
+                        </Group>
                       </Table.Td>
                     </Table.Tr>
                   );

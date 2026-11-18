@@ -42,9 +42,11 @@ import { SalesFormPage } from './pages/SalesFormPage';
 import { ConnectionSaleFormPage } from './pages/ConnectionSaleFormPage';
 import { GodownInventoryFormPage } from './pages/GodownInventoryFormPage';
 import { CollectionsPage } from './pages/CollectionsPage';
+import { LedgerAnalysisPage } from './pages/LedgerAnalysisPage';
 
 
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { RoleGuard } from './components/RoleGuard';
 import { AppLayout } from './components/AppLayout';
 
 const queryClient = new QueryClient({
@@ -138,44 +140,51 @@ export const App: React.FC = () => {
               }
             >
               <Route path="/" element={<DashboardPage />} />
-              <Route path="/drivers" element={<DriversPage />} />
-              <Route path="/vehicles" element={<VehiclesPage />} />
-              <Route path="/routes" element={<RoutesPage/>} />
-              <Route path="/allocations" element={<AllocationsPage/>} />
-              <Route path="/end-allocations" element={<EndAllocationsPage />} />
-              <Route path="/users" element={<UsersPage />} />
-              <Route path="/categories" element={<CategoriesPage />} />
-              <Route path="/products" element={<ProductsPage />} />
-              <Route path="/price-update" element={<PriceUpdatePage />} />
-              <Route path="/accounts" element={<AccountsPage />} />
-              <Route path="/purchases" element={<PurchaseListPage />} />
-              <Route path="/purchases/new" element={<PurchaseFormPage />} />
-              <Route path="/purchases/:id/edit" element={<PurchaseFormPage />} />
-              <Route path="/payments" element={<PaymentListPage />} />
-              <Route path="/payments/new" element={<PaymentFormPage />} />
-              <Route path="/payments/:id/edit" element={<PaymentFormPage />} />
-              <Route path="/receipts" element={<ReceiptListPage />} />
-              <Route path="/receipts/new" element={<ReceiptFormPage />} />
-              <Route path="/receipts/:id" element={<ReceiptFormPage />} />
-              <Route path="/receipts/:id/edit" element={<ReceiptFormPage />} />
-              <Route path="/delivery-notes" element={<DeliveryNotesPage />} />
-              <Route path="/receipt-notes" element={<ReceiptNotesPage />} />
-              <Route path="/stock-analysis" element={<StockAnalysisPage />} />
-              <Route path="/stock-analysis/add-inventory" element={<GodownInventoryFormPage />} />
-              <Route path="/van-management" element={<VanManagementPage />} />
-              <Route path="/van-management/:routeId" element={<RouteDetailsPage />} />
-              <Route path="/inventory/products" element={<InventoryByProductPage />} />
-              <Route path="/inventory/locations" element={<InventoryByLocationPage />} />
-              <Route path="/payables" element={<PayablesReportPage />} />
-              <Route path="/receivables" element={<ReceivablesReportPage />} />
-              <Route path="/connection-packages" element={<ConnectionPackagesPage />} />
-              <Route path="/connection-packages/new" element={<ConnectionPackageFormPage />} />
-              <Route path="/connection-packages/:id/edit" element={<ConnectionPackageFormPage />} />
-              <Route path="/sales" element={<SalesListPage />} />
-              <Route path="/sales/new" element={<SalesFormPage />} />
-              <Route path="/sales/:id/edit" element={<SalesFormPage />} />
-              <Route path="/sales/new-connection" element={<ConnectionSaleFormPage />} />
-              <Route path="/collections" element={<CollectionsPage />} />
+
+              {/* Van Operations & Stock: Administrator & Manager */}
+              <Route path="/drivers" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><DriversPage /></RoleGuard>} />
+              <Route path="/vehicles" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><VehiclesPage /></RoleGuard>} />
+              <Route path="/routes" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><RoutesPage/></RoleGuard>} />
+              <Route path="/allocations" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><AllocationsPage/></RoleGuard>} />
+              <Route path="/end-allocations" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><EndAllocationsPage /></RoleGuard>} />
+              <Route path="/delivery-notes" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><DeliveryNotesPage /></RoleGuard>} />
+              <Route path="/receipt-notes" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><ReceiptNotesPage /></RoleGuard>} />
+              <Route path="/stock-analysis" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><StockAnalysisPage /></RoleGuard>} />
+              <Route path="/stock-analysis/add-inventory" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><GodownInventoryFormPage /></RoleGuard>} />
+              <Route path="/van-management" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><VanManagementPage /></RoleGuard>} />
+              <Route path="/van-management/:routeId" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><RouteDetailsPage /></RoleGuard>} />
+              <Route path="/inventory/products" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><InventoryByProductPage /></RoleGuard>} />
+              <Route path="/inventory/locations" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><InventoryByLocationPage /></RoleGuard>} />
+              <Route path="/categories" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><CategoriesPage /></RoleGuard>} />
+              <Route path="/products" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><ProductsPage /></RoleGuard>} />
+              <Route path="/price-update" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><PriceUpdatePage /></RoleGuard>} />
+
+              {/* Administrator Only */}
+              <Route path="/users" element={<RoleGuard allowedRoles={['Administrator']}><UsersPage /></RoleGuard>} />
+              <Route path="/connection-packages" element={<RoleGuard allowedRoles={['Administrator']}><ConnectionPackagesPage /></RoleGuard>} />
+              <Route path="/connection-packages/new" element={<RoleGuard allowedRoles={['Administrator']}><ConnectionPackageFormPage /></RoleGuard>} />
+              <Route path="/connection-packages/:id/edit" element={<RoleGuard allowedRoles={['Administrator']}><ConnectionPackageFormPage /></RoleGuard>} />
+
+              {/* Accounting & Commercial: Administrator & Accountant */}
+              <Route path="/accounts" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><AccountsPage /></RoleGuard>} />
+              <Route path="/purchases" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><PurchaseListPage /></RoleGuard>} />
+              <Route path="/purchases/new" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><PurchaseFormPage /></RoleGuard>} />
+              <Route path="/purchases/:id/edit" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><PurchaseFormPage /></RoleGuard>} />
+              <Route path="/payments" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><PaymentListPage /></RoleGuard>} />
+              <Route path="/payments/new" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><PaymentFormPage /></RoleGuard>} />
+              <Route path="/payments/:id/edit" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><PaymentFormPage /></RoleGuard>} />
+              <Route path="/receipts" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><ReceiptListPage /></RoleGuard>} />
+              <Route path="/receipts/new" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><ReceiptFormPage /></RoleGuard>} />
+              <Route path="/receipts/:id" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><ReceiptFormPage /></RoleGuard>} />
+              <Route path="/receipts/:id/edit" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><ReceiptFormPage /></RoleGuard>} />
+              <Route path="/ledger-analysis" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><LedgerAnalysisPage /></RoleGuard>} />
+              <Route path="/payables" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><PayablesReportPage /></RoleGuard>} />
+              <Route path="/receivables" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><ReceivablesReportPage /></RoleGuard>} />
+              <Route path="/sales" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><SalesListPage /></RoleGuard>} />
+              <Route path="/sales/new" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><SalesFormPage /></RoleGuard>} />
+              <Route path="/sales/:id/edit" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><SalesFormPage /></RoleGuard>} />
+              <Route path="/sales/new-connection" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><ConnectionSaleFormPage /></RoleGuard>} />
+              <Route path="/collections" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><CollectionsPage /></RoleGuard>} />
 
 
             </Route>

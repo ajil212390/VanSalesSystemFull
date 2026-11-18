@@ -212,6 +212,18 @@ export const ConnectionSaleFormPage: React.FC = () => {
       });
     });
 
+    // 3. Labor / Fitting Charge Line
+    if (Number(activePackage.LaborCharge || 0) > 0) {
+      lines.push({
+        Product: 39,
+        ProductName: 'Fitting & Installation Charge',
+        Quantity: 1,
+        SalesPrice: Number(activePackage.LaborCharge),
+        TaxPercent: 18,
+        EmptyQuantity: 0,
+      });
+    }
+
     const finalTotal = customTotal !== '' ? Number(customTotal) : Number(activePackage.TotalAmount || 0);
 
     const payload = {

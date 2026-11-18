@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -292,7 +293,9 @@ class ApiService {
           'items': items,
           'payment_method': paymentMethod,
           'amount_collected': amountCollected,
+          // ignore: use_null_aware_elements
           if (cashAmount != null) 'cash_amount': cashAmount,
+          // ignore: use_null_aware_elements
           if (upiAmount != null) 'upi_amount': upiAmount,
           if (ticketId != null && ticketId.isNotEmpty) 'ticket_id': ticketId,
         }),
@@ -359,24 +362,36 @@ class ApiService {
   static Future<Map<String, dynamic>> updateSale({
     required String ticketId,
     required double amountCollected,
+    int? salesId,
     String? paymentMethod,
+    double? cashAmount,
+    double? upiAmount,
     List<Map<String, dynamic>>? items,
   }) async {
     try {
       final uri = Uri.parse('$baseUrl/delivery-notes/update_sale/');
+      final payload = {
+        'ticket_id': ticketId,
+        ...?salesId != null ? {'sales_id': salesId} : null,
+        'amount_collected': amountCollected,
+        ...?paymentMethod != null ? {'payment_method': paymentMethod} : null,
+        ...?cashAmount != null ? {'cash_amount': cashAmount} : null,
+        ...?upiAmount != null ? {'upi_amount': upiAmount} : null,
+        ...?items != null ? {'items': items} : null,
+      };
       final res = await http.post(
         uri,
         headers: await _headers(),
-        body: jsonEncode({
-          'ticket_id': ticketId,
-          'amount_collected': amountCollected,
-          ...?paymentMethod != null ? {'payment_method': paymentMethod} : null,
-          ...?items != null ? {'items': items} : null,
-        }),
+        body: jsonEncode(payload),
       ).timeout(requestTimeout);
-      return jsonDecode(res.body) as Map<String, dynamic>;
-    } catch (_) {
-      return {'success': false, 'message': 'Network error or timeout'};
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      return {'success': res.statusCode >= 200 && res.statusCode < 300};
+    } catch (e) {
+      debugPrint('updateSale API error: $e');
+      return {'success': false, 'message': 'Network error or timeout: $e'};
     }
   }
 
