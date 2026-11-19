@@ -15,32 +15,15 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> {
-  int _currentIndex = 0; // 0: Dashboard, 1: Allocate, 2: Revenue, 3: Inventory by Location
-
-  // --- Allocate Tab State ---
-  int? _selectedAllocationId;
-  int _selectedGodownId = 1; // Default to Main Godown (Central)
-  final TextEditingController _remarksController = TextEditingController();
-  final Map<int, TextEditingController> _cylinderQtyControllers = {};
-  bool _isAllocating = false;
+  int _currentIndex = 0; // 0: Overview, 1: Van Fleet, 2: Revenue, 3: Stock
   bool _isRefreshing = false;
 
   @override
   void initState() {
     super.initState();
-    // Hydrate live admin data when AdminScreen mounts
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshAdminData();
     });
-  }
-
-  @override
-  void dispose() {
-    _remarksController.dispose();
-    for (final c in _cylinderQtyControllers.values) {
-      c.dispose();
-    }
-    super.dispose();
   }
 
   Future<void> _refreshAdminData() async {
@@ -55,26 +38,11 @@ class _AdminScreenState extends State<AdminScreen> {
     }
   }
 
-  void _showFeedback(String message, {bool isError = false}) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
-        ),
-        backgroundColor: isError ? const Color(0xFF0F172A) : const Color(0xFF800020),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
   void _confirmAdminLogout(BuildContext context) async {
     final confirmed = await showSuperGasConfirmDialog(
       context: context,
       title: 'Sign Out?',
-      message: 'Are you sure you want to end your manager session?',
+      message: 'Are you sure you want to end your administrator session?',
       confirmLabel: 'Sign Out',
       icon: Icons.logout_rounded,
       iconColor: const Color(0xFF800020),
@@ -130,9 +98,9 @@ class _AdminScreenState extends State<AdminScreen> {
                 index: _currentIndex,
                 children: [
                   _buildDashboardTab(context, state),
-                  _buildAllocateTab(context, state),
+                  _buildVanFleetTab(context, state),
                   _buildRevenueTab(context, state),
-                  _buildInventoryByLocationTab(context, state),
+                  _buildStockTab(context, state),
                 ],
               ),
             ),
@@ -167,15 +135,15 @@ class _AdminScreenState extends State<AdminScreen> {
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _navItem(
-                      selectedIcon: Icons.grid_view_rounded,
-                      unselectedIcon: Icons.grid_view_outlined,
-                      label: 'Dashboard',
+                      selectedIcon: Icons.dashboard_rounded,
+                      unselectedIcon: Icons.dashboard_outlined,
+                      label: 'Overview',
                       index: 0,
                     ),
                     _navItem(
-                      selectedIcon: Icons.swap_horiz_rounded,
-                      unselectedIcon: Icons.swap_horiz_outlined,
-                      label: 'Allocate',
+                      selectedIcon: Icons.local_shipping_rounded,
+                      unselectedIcon: Icons.local_shipping_outlined,
+                      label: 'Van Fleet',
                       index: 1,
                     ),
                     _navItem(
@@ -187,7 +155,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     _navItem(
                       selectedIcon: Icons.warehouse_rounded,
                       unselectedIcon: Icons.warehouse_outlined,
-                      label: 'Locations',
+                      label: 'Stock',
                       index: 3,
                     ),
                   ],
@@ -238,16 +206,19 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  // ================= TOP APPBAR =================
   PreferredSizeWidget _buildSeamlessAppBar() {
-    String title = 'Manager Dashboard';
+    String title = 'Admin Dashboard';
+    String subtitle = 'Executive Fleet & Inventory Overview';
 
     if (_currentIndex == 1) {
-      title = 'Allocate Van Stock';
+      title = 'Van Fleet';
+      subtitle = 'Live Route & Delivery Monitoring';
     } else if (_currentIndex == 2) {
       title = 'Fleet Revenue';
+      subtitle = 'Collections & Trip Settlements';
     } else if (_currentIndex == 3) {
-      title = 'Inventory by Location';
+      title = 'Stock Inventory';
+      subtitle = 'Distribution Hubs & Onboard Stock';
     }
 
     return AppBar(
@@ -271,7 +242,7 @@ class _AdminScreenState extends State<AdminScreen> {
             ),
           ),
           Text(
-            'FutureGas Fleet & Depot Operations',
+            subtitle,
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w500,
@@ -281,7 +252,6 @@ class _AdminScreenState extends State<AdminScreen> {
         ],
       ),
       actions: [
-        // Live Refresh Button
         IconButton(
           onPressed: _isRefreshing ? null : _refreshAdminData,
           icon: _isRefreshing
@@ -300,7 +270,6 @@ class _AdminScreenState extends State<AdminScreen> {
                 ),
           tooltip: 'Sync Live Data',
         ),
-        // Logout Button
         Padding(
           padding: const EdgeInsets.only(right: 16),
           child: InkWell(
@@ -323,7 +292,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'Logout',
+                    'Sign Out',
                     style: GoogleFonts.inter(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w700,
@@ -339,13 +308,21 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  // ================= TAB 1: DASHBOARD =================
+  // ================= TAB 0: OVERVIEW (DASHBOARD) =================
   Widget _buildDashboardTab(BuildContext context, AppState state) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
     final centralGodownFilled = state.totalWarehouseFilled;
+    final totalWarehouseEmpty = state.totalWarehouseEmpty;
     final vansOnboardFilled = state.totalVansOnboardFilled;
     final activeVansCount = state.totalActiveVansCount;
     final totalRegisteredVans = state.totalRegisteredVansCount;
     final todayRevenue = state.adminTotalRevenueToday;
+
+    final totalFilledSystem = centralGodownFilled + vansOnboardFilled;
+    final totalSystemCylinders = totalFilledSystem + totalWarehouseEmpty;
+    final todayDeliveriesCount = state.adminSummary.containsKey('today_deliveries_count')
+        ? safeInt(state.adminSummary['today_deliveries_count'])
+        : state.todayDeliveredCount;
 
     final vanList = state.adminVans.isNotEmpty
         ? state.adminVans
@@ -354,36 +331,42 @@ class _AdminScreenState extends State<AdminScreen> {
               'DriverName': d.name,
               'RouteName': d.route,
               'TotalCylinders': d.cylindersOnboard,
+              'AllocatedCylinders': d.cylindersOnboard,
+              'DeliveredCylinders': 0,
+              'BalanceCylinders': d.cylindersOnboard,
+              'EmptyCylinders': 0,
               'Status': d.active ? 'ACTIVE' : 'IDLE',
             }).toList();
+
+    final filledRatio = totalSystemCylinders > 0 ? (totalFilledSystem / totalSystemCylinders) : 0.7;
 
     return RefreshIndicator(
       onRefresh: _refreshAdminData,
       color: const Color(0xFF800020),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-        padding: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 90),
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 96 + bottomPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 4 Clean Stat Tiles matching web portal cards
+            // 4 Executive KPI Tiles
             Row(
               children: [
                 Expanded(
                   child: _buildStatTile(
-                    title: 'CENTRAL GODOWN',
-                    value: '$centralGodownFilled filled',
-                    subtext: 'Central warehouse stock',
-                    icon: Icons.warehouse_rounded,
+                    title: 'ACTIVE FLEET',
+                    value: '$activeVansCount / $totalRegisteredVans',
+                    subtext: 'Delivery vans on route',
+                    icon: Icons.local_shipping_rounded,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildStatTile(
-                    title: 'VANS ONBOARD',
-                    value: '$vansOnboardFilled filled',
-                    subtext: '$activeVansCount active delivery vehicles',
-                    icon: Icons.local_shipping_rounded,
+                    title: 'TODAY DELIVERIES',
+                    value: '$todayDeliveriesCount orders',
+                    subtext: 'Completed sales today',
+                    icon: Icons.done_all_rounded,
                   ),
                 ),
               ],
@@ -393,19 +376,19 @@ class _AdminScreenState extends State<AdminScreen> {
               children: [
                 Expanded(
                   child: _buildStatTile(
-                    title: 'ACTIVE FLEET',
-                    value: '$activeVansCount / $totalRegisteredVans',
-                    subtext: 'Delivery vans ready',
-                    icon: Icons.alt_route_rounded,
+                    title: 'FLEET REVENUE',
+                    value: '₹${todayRevenue.toStringAsFixed(0)}',
+                    subtext: 'Depot collections today',
+                    icon: Icons.account_balance_wallet_rounded,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildStatTile(
-                    title: "TODAY'S SALES",
-                    value: '₹${todayRevenue.toStringAsFixed(0)}',
-                    subtext: 'Depot collections today',
-                    icon: Icons.trending_up_rounded,
+                    title: 'TOTAL STOCK',
+                    value: '$totalSystemCylinders cyl',
+                    subtext: '$totalFilledSystem filled • $totalWarehouseEmpty empty',
+                    icon: Icons.warehouse_rounded,
                   ),
                 ),
               ],
@@ -413,93 +396,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
             const SizedBox(height: 16),
 
-            // Burgundy Allocate Van Banner
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF5A0016), Color(0xFF800020)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x18800020),
-                    blurRadius: 10,
-                    offset: Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Center(
-                      child: Icon(
-                        Icons.swap_horiz_rounded,
-                        color: Colors.white,
-                        size: 22,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Allocate Van Stock',
-                          style: GoogleFonts.inter(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Transfer cylinders from Godown to Delivery Van',
-                          style: GoogleFonts.inter(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white.withValues(alpha: 0.85),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  ElevatedButton(
-                    onPressed: () => setState(() => _currentIndex = 1),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: const Color(0xFF800020),
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                    ),
-                    child: Text(
-                      'Load Van',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 18),
-
-            // Live Van Fleet List
+            // Cylinder Balance Visual Bar
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
@@ -522,7 +419,122 @@ class _AdminScreenState extends State<AdminScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'DELIVERY FLEET ON ROUTE',
+                        'SYSTEM CYLINDER BALANCE',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF64748B),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      Text(
+                        '$totalSystemCylinders Total',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Progress Stack Bar
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: SizedBox(
+                      height: 12,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: (filledRatio * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: const Color(0xFF800020)),
+                          ),
+                          Expanded(
+                            flex: ((1.0 - filledRatio) * 1000).toInt().clamp(1, 1000),
+                            child: Container(color: const Color(0xFFCBD5E1)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF800020),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$totalFilledSystem Filled (${(filledRatio * 100).toStringAsFixed(0)}%)',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFCBD5E1),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '$totalWarehouseEmpty Empty (${((1.0 - filledRatio) * 100).toStringAsFixed(0)}%)',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Active Fleet Overview Card
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x060F172A),
+                    blurRadius: 10,
+                    offset: Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'ACTIVE FLEET OVERVIEW',
                         style: GoogleFonts.inter(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w800,
@@ -530,12 +542,15 @@ class _AdminScreenState extends State<AdminScreen> {
                           letterSpacing: 0.5,
                         ),
                       ),
-                      Text(
-                        '${vanList.length} Vans',
-                        style: GoogleFonts.inter(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF800020),
+                      InkWell(
+                        onTap: () => setState(() => _currentIndex = 1),
+                        child: Text(
+                          'View All (${vanList.length})',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
                         ),
                       ),
                     ],
@@ -560,107 +575,117 @@ class _AdminScreenState extends State<AdminScreen> {
                       final plate = (van['VehicleNumber'] ?? van['plate_number'] ?? 'Vehicle').toString().toUpperCase();
                       final driver = (van['DriverName'] ?? van['driver_name'] ?? 'Driver').toString();
                       final route = (van['RouteName'] ?? van['route_name'] ?? 'Assigned Route').toString();
-                      final cylinders = safeInt(van['TotalCylinders'] ?? van['cylinders_onboard']);
+                      final cylinders = safeInt(van['TotalCylinders'] ?? van['BalanceCylinders'] ?? van['cylinders_onboard']);
                       final hasStock = cylinders > 0;
 
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: hasStock ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: hasStock ? const Color(0xFFF5C2CB) : const Color(0xFFE2E8F0),
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.local_shipping_rounded,
-                                  size: 19,
-                                  color: hasStock ? const Color(0xFF800020) : const Color(0xFF64748B),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        plate,
-                                        style: GoogleFonts.inter(
-                                          fontSize: 13.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: const Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: hasStock ? const Color(0xFFF0FDF4) : const Color(0xFFF1F5F9),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color: hasStock ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          hasStock ? 'ON ROUTE' : 'IDLE',
-                                          style: GoogleFonts.inter(
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.w700,
-                                            color: hasStock ? const Color(0xFF16A34A) : const Color(0xFF64748B),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
+                      return InkWell(
+                        onTap: () => setState(() => _currentIndex = 1),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: hasStock ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: hasStock ? const Color(0xFFF5C2CB) : const Color(0xFFE2E8F0),
                                   ),
-                                  const SizedBox(height: 2),
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    Icons.local_shipping_rounded,
+                                    size: 19,
+                                    color: hasStock ? const Color(0xFF800020) : const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            plate,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.inter(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w800,
+                                              color: const Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: hasStock ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: hasStock ? const Color(0xFFF5C2CB) : const Color(0xFFE2E8F0),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            hasStock ? 'LIVE ROUTE' : 'IDLE',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: hasStock ? const Color(0xFF800020) : const Color(0xFF64748B),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '$driver • $route',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w500,
+                                        color: const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
                                   Text(
-                                    '$driver • $route',
+                                    '$cylinders',
                                     style: GoogleFonts.inter(
-                                      fontSize: 11,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
+                                      color: hasStock ? const Color(0xFF800020) : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                  Text(
+                                    'cylinders',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 9.5,
                                       fontWeight: FontWeight.w500,
                                       color: const Color(0xFF64748B),
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '$cylinders',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                    color: hasStock ? const Color(0xFF800020) : const Color(0xFF64748B),
-                                  ),
-                                ),
-                                Text(
-                                  'cylinders',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.w500,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       );
                     }),
@@ -699,13 +724,17 @@ class _AdminScreenState extends State<AdminScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                title,
-                style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF64748B),
-                  letterSpacing: 0.5,
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF64748B),
+                    letterSpacing: 0.5,
+                  ),
                 ),
               ),
               Icon(icon, size: 17, color: const Color(0xFF800020)),
@@ -714,6 +743,8 @@ class _AdminScreenState extends State<AdminScreen> {
           const SizedBox(height: 6),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
               fontSize: 16,
               fontWeight: FontWeight.w800,
@@ -737,459 +768,132 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  // ================= TAB 2: ALLOCATE VAN STOCK =================
-  Widget _buildAllocateTab(BuildContext context, AppState state) {
-    final allocations = state.adminAllocations;
-    final godowns = state.adminGodowns;
-    final catalogProducts = state.adminCatalogProducts.isNotEmpty
-        ? state.adminCatalogProducts
-        : [
-            {'ProductId': 24, 'ProductName': 'LPG 17KG GAS CYLINDER', 'AppProductName': '17KG', 'SalesPrice': 1200.0},
-            {'ProductId': 23, 'ProductName': 'LPG 12KG GAS CYLINDER', 'AppProductName': '12KG', 'SalesPrice': 700.0},
-            {'ProductId': 25, 'ProductName': 'LPG 21KG GAS CYLINDER', 'AppProductName': '21KG', 'SalesPrice': 3160.0},
-            {'ProductId': 22, 'ProductName': 'LPG 04KG GAS CYLINDER', 'AppProductName': '04KG', 'SalesPrice': 550.0},
-          ];
+  // ================= TAB 1: VAN FLEET (FLEET MONITORING) =================
+  Widget _buildVanFleetTab(BuildContext context, AppState state) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final vanList = state.adminVans.isNotEmpty
+        ? state.adminVans
+        : state.fleetDrivers.map((d) => {
+              'VehicleNumber': d.vehicle,
+              'DriverName': d.name,
+              'RouteName': d.route,
+              'TotalCylinders': d.cylindersOnboard,
+              'AllocatedCylinders': d.cylindersOnboard,
+              'DeliveredCylinders': 0,
+              'BalanceCylinders': d.cylindersOnboard,
+              'EmptyCylinders': 0,
+              'CashCollection': d.mockCashIncome,
+              'BankCollection': d.mockUpiIncome,
+              'TotalCollection': d.mockCashIncome + d.mockUpiIncome,
+              'LiveSales': <Map<String, dynamic>>[],
+              'Phone': d.phone,
+            }).toList();
 
-    // Ensure controllers exist for all catalog products
-    for (final p in catalogProducts) {
-      final pid = safeInt(p['ProductId']);
-      if (!_cylinderQtyControllers.containsKey(pid)) {
-        _cylinderQtyControllers[pid] = TextEditingController(text: '');
-      }
-    }
-
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 90),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. SELECT VEHICLE & DRIVER CARD
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: const [
-                BoxShadow(color: Color(0x060F172A), blurRadius: 10, offset: Offset(0, 3)),
+    return RefreshIndicator(
+      onRefresh: _refreshAdminData,
+      color: const Color(0xFF800020),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 96 + bottomPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Top Header Banner
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'MONITORED DELIVERY VANS',
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF64748B),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                Text(
+                  '${vanList.length} Vehicles',
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF800020),
+                  ),
+                ),
               ],
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.local_shipping_rounded, size: 18, color: Color(0xFF800020)),
-                    const SizedBox(width: 8),
-                    Text(
-                      '1. SELECT DESTINATION VEHICLE',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF0F172A),
-                        letterSpacing: 0.5,
-                      ),
+
+            const SizedBox(height: 12),
+
+            if (vanList.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40),
+                child: Center(
+                  child: Text(
+                    'No delivery vehicles found.',
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: const Color(0xFF64748B),
                     ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
+              )
+            else
+              ...vanList.map((van) {
+                final plate = (van['VehicleNumber'] ?? van['plate_number'] ?? 'Vehicle').toString().toUpperCase();
+                final driver = (van['DriverName'] ?? van['driver_name'] ?? 'Driver').toString();
+                final route = (van['RouteName'] ?? van['route_name'] ?? 'Assigned Route').toString();
+                final phone = (van['Phone'] ?? van['DriverPhone'] ?? '').toString();
+
+                final allocated = safeInt(van['AllocatedCylinders'] ?? van['TotalCylinders']);
+                final delivered = safeInt(van['DeliveredCylinders']);
+                final balance = safeInt(van['BalanceCylinders'] ?? (allocated - delivered));
+                final empties = safeInt(van['EmptyCylinders']);
+
+                final gross = safeDouble(van['TotalCollection'] ?? (safeDouble(van['CashCollection']) + safeDouble(van['BankCollection'])));
+                final expenses = safeDouble(van['Expenses'] ?? 0.0);
+                final net = gross - expenses;
+
+                final isLive = balance > 0 || delivered > 0;
+                final liveSales = List<Map<String, dynamic>>.from(van['LiveSales'] as List? ?? []);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      isExpanded: true,
-                      value: _selectedAllocationId,
-                      hint: Text(
-                        'Choose vehicle & driver to load...',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: const Color(0xFF64748B),
-                        ),
-                      ),
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
-                      items: allocations.map((alloc) {
-                        final allocId = safeInt(alloc['RouteVehicleDriverId'] ?? alloc['id']);
-                        final plate = (alloc['VehicleNumber'] ?? alloc['vehicle_number'] ?? 'Van').toString();
-                        final driver = (alloc['DriverName'] ?? alloc['driver_name'] ?? 'Driver').toString();
-                        final route = (alloc['RouteName'] ?? alloc['route_name'] ?? 'Route').toString();
-                        return DropdownMenuItem<int>(
-                          value: allocId,
-                          child: Text(
-                            '$plate • $driver ($route)',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF0F172A),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (id) => setState(() => _selectedAllocationId = id),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 14),
-
-          // 2. SOURCE GODOWN SELECTION
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: const [
-                BoxShadow(color: Color(0x060F172A), blurRadius: 10, offset: Offset(0, 3)),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.warehouse_rounded, size: 18, color: Color(0xFF800020)),
-                    const SizedBox(width: 8),
-                    Text(
-                      '2. SOURCE STORAGE GODOWN',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF0F172A),
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      isExpanded: true,
-                      value: _selectedGodownId,
-                      icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF64748B)),
-                      items: godowns.map((g) {
-                        final gId = safeInt(g['GodownId']);
-                        final gName = (g['GodownName'] ?? 'Godown').toString();
-                        final filled = safeInt(g['FilledQty']);
-                        return DropdownMenuItem<int>(
-                          value: gId,
-                          child: Text(
-                            '$gName ($filled available)',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF0F172A),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (id) {
-                        if (id != null) setState(() => _selectedGodownId = id);
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 14),
-
-          // 3. CYLINDERS TO LOAD TABLE
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: const [
-                BoxShadow(color: Color(0x060F172A), blurRadius: 10, offset: Offset(0, 3)),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.propane_tank_rounded, size: 18, color: Color(0xFF800020)),
-                        const SizedBox(width: 8),
-                        Text(
-                          '3. CYLINDERS TO LOAD',
-                          style: GoogleFonts.inter(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF0F172A),
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Text(
-                      'Rate / Unit',
-                      style: GoogleFonts.inter(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // Table Header
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFDF2F4),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 6,
-                        child: Text(
-                          'Cylinder Product',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF800020),
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 4,
-                        child: Text(
-                          'Quantity (Qty)',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF800020),
-                          ),
-                        ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x060F172A),
+                        blurRadius: 10,
+                        offset: Offset(0, 3),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 4),
-
-                // Table Rows
-                ...catalogProducts.map((p) {
-                  final pid = safeInt(p['ProductId']);
-                  final name = (p['AppProductName'] != null && p['AppProductName'].toString().isNotEmpty)
-                      ? p['AppProductName'].toString()
-                      : (p['ProductName'] ?? 'Cylinder').toString();
-                  final rate = safeDouble(p['SalesPrice']);
-                  final controller = _cylinderQtyControllers[pid]!;
-
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: const BoxDecoration(
-                      border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 6,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF0F172A),
-                                ),
-                              ),
-                              Text(
-                                '₹${rate.toStringAsFixed(0)}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          flex: 4,
-                          child: Container(
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: TextField(
-                              controller: controller,
-                              keyboardType: TextInputType.number,
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.inter(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF0F172A),
-                              ),
-                              decoration: InputDecoration(
-                                hintText: '0',
-                                hintStyle: GoogleFonts.inter(
-                                  color: const Color(0xFF94A3B8),
-                                  fontSize: 13,
-                                ),
-                                border: InputBorder.none,
-                                contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // CONFIRM ALLOCATION BUTTON
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: _isAllocating ? null : () => _handleConfirmAllocation(state),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF800020),
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: _isAllocating
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.check_circle_outline_rounded, size: 19),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Confirm & Load Van Stock',
-                          style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800),
-                        ),
-                      ],
-                    ),
-            ),
-          ),
-
-          const SizedBox(height: 22),
-
-          // RECENT VAN STOCK LOADS (Delivery Notes)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFE2E8F0)),
-              boxShadow: const [
-                BoxShadow(color: Color(0x060F172A), blurRadius: 10, offset: Offset(0, 3)),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'RECENT DELIVERY NOTES',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF64748B),
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    Text(
-                      '${state.adminRecentNotes.length} Dispatches',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF800020),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                if (state.adminRecentNotes.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Center(
-                      child: Text(
-                        'No van stock loads recorded yet.',
-                        style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B)),
-                      ),
-                    ),
-                  )
-                else
-                  ...state.adminRecentNotes.map((dn) {
-                    final noteNo = (dn['DeliveryNoteNo'] ?? dn['note_no'] ?? 'DN').toString();
-                    final date = (dn['DeliveryDate'] ?? dn['date'] ?? '').toString();
-                    final vehicle = (dn['vehicle_number'] ?? dn['VehicleNumber'] ?? 'Van').toString();
-                    final driver = (dn['driver_name'] ?? dn['DriverName'] ?? 'Driver').toString();
-                    final totalCyl = safeInt(dn['total_cylinders'] ?? dn['TotalCylinders']);
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header: Plate + Route + Status
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            width: 36,
+                            height: 36,
                             decoration: BoxDecoration(
-                              color: const Color(0xFFFDF2F4),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFF5C2CB)),
+                              color: isLive ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isLive ? const Color(0xFFF5C2CB) : const Color(0xFFE2E8F0),
+                              ),
                             ),
-                            child: Text(
-                              noteNo,
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF800020),
+                            child: Center(
+                              child: Icon(
+                                Icons.local_shipping_rounded,
+                                size: 18,
+                                color: isLive ? const Color(0xFF800020) : const Color(0xFF64748B),
                               ),
                             ),
                           ),
@@ -1199,19 +903,21 @@ class _AdminScreenState extends State<AdminScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  '$vehicle • $driver',
+                                  plate,
                                   style: GoogleFonts.inter(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w800,
                                     color: const Color(0xFF0F172A),
                                   ),
                                 ),
                                 Text(
-                                  date,
+                                  route,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.inter(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w500,
-                                    color: const Color(0xFF64748B),
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF800020),
                                   ),
                                 ),
                               ],
@@ -1220,24 +926,178 @@ class _AdminScreenState extends State<AdminScreen> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF0FDF4),
+                              color: isLive ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFBBF7D0)),
+                              border: Border.all(
+                                color: isLive ? const Color(0xFFF5C2CB) : const Color(0xFFE2E8F0),
+                              ),
                             ),
                             child: Text(
-                              '$totalCyl LOADED',
+                              isLive ? 'LIVE ROUTE' : 'IDLE',
                               style: GoogleFonts.inter(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF16A34A),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                color: isLive ? const Color(0xFF800020) : const Color(0xFF64748B),
                               ),
                             ),
                           ),
                         ],
                       ),
-                    );
-                  }),
-              ],
+
+                      const SizedBox(height: 10),
+
+                      // Driver info row
+                      Row(
+                        children: [
+                          const Icon(Icons.person_rounded, size: 14, color: Color(0xFF64748B)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              phone.isNotEmpty ? '$driver • $phone' : driver,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF475569),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // 4-Stock Metrics Grid
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          children: [
+                            _buildCylinderMetric('Allocated', '$allocated'),
+                            _buildCylinderDivider(),
+                            _buildCylinderMetric('Delivered', '$delivered'),
+                            _buildCylinderDivider(),
+                            _buildCylinderMetric('Balance', '$balance'),
+                            _buildCylinderDivider(),
+                            _buildCylinderMetric('Empties', '$empties'),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Financial Collections Strip
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Gross: ₹${gross.toStringAsFixed(0)}',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF475569),
+                              ),
+                            ),
+                            Text(
+                              'Exp: ₹${expenses.toStringAsFixed(0)}',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                            Text(
+                              'Net: ₹${net.toStringAsFixed(0)}',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF800020),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      // Customer Deliveries View Button
+                      InkWell(
+                        onTap: () => _showVanDeliveriesModal(context, van),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFDF2F4),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFF5C2CB)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.receipt_long_rounded,
+                                size: 14,
+                                color: Color(0xFF800020),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                liveSales.isNotEmpty
+                                    ? 'View ${liveSales.length} Customer Deliveries'
+                                    : 'View Deliveries Details',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF800020),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCylinderMetric(String label, String value) {
+    return Expanded(
+      child: Column(
+        children: [
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF0F172A),
             ),
           ),
         ],
@@ -1245,69 +1105,274 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  Future<void> _handleConfirmAllocation(AppState state) async {
-    if (_selectedAllocationId == null) {
-      _showFeedback('Please select a destination vehicle to allocate', isError: true);
-      return;
-    }
-
-    final lines = <Map<String, dynamic>>[];
-    _cylinderQtyControllers.forEach((pid, controller) {
-      final qty = int.tryParse(controller.text.trim()) ?? 0;
-      if (qty > 0) {
-        lines.add({
-          'Product': pid,
-          'Quantity': qty,
-        });
-      }
-    });
-
-    if (lines.isEmpty) {
-      _showFeedback('Please enter quantity for at least one cylinder', isError: true);
-      return;
-    }
-
-    setState(() => _isAllocating = true);
-
-    try {
-      final res = await state.submitVehicleAllocation(
-        allocationId: _selectedAllocationId!,
-        godownId: _selectedGodownId,
-        lines: lines,
-        remarks: _remarksController.text.trim(),
-      );
-
-      if (!mounted) return;
-
-      if (res['success'] == true) {
-        // Clear inputs
-        for (final c in _cylinderQtyControllers.values) {
-          c.text = '';
-        }
-        _remarksController.clear();
-
-        final noteNo = res['data']?['DeliveryNoteNo'] ?? 'Note';
-        _showFeedback('Van stock loaded successfully ($noteNo)!');
-        setState(() => _currentIndex = 0); // Switch back to dashboard overview
-      } else {
-        _showFeedback(res['message'] ?? 'Failed to create delivery note', isError: true);
-      }
-    } catch (e) {
-      if (mounted) {
-        _showFeedback('Error submitting allocation: $e', isError: true);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isAllocating = false);
-      }
-    }
+  Widget _buildCylinderDivider() {
+    return Container(
+      width: 1,
+      height: 22,
+      color: const Color(0xFFE2E8F0),
+    );
   }
 
-  // ================= TAB 3: REVENUE =================
+  void _showVanDeliveriesModal(BuildContext context, Map<String, dynamic> van) {
+    final plate = (van['VehicleNumber'] ?? 'Vehicle').toString().toUpperCase();
+    final driver = (van['DriverName'] ?? 'Driver').toString();
+    final route = (van['RouteName'] ?? 'Route').toString();
+    final delivered = safeInt(van['DeliveredCylinders']);
+    final empties = safeInt(van['EmptyCylinders']);
+    final gross = safeDouble(van['TotalCollection'] ?? (safeDouble(van['CashCollection']) + safeDouble(van['BankCollection'])));
+    final liveSales = List<Map<String, dynamic>>.from(van['LiveSales'] as List? ?? []);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.65,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (_, scrollController) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top handle
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 10, bottom: 8),
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFCBD5E1),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '$plate Deliveries',
+                            style: GoogleFonts.inter(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                          Text(
+                            '$driver • $route',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Summary strip inside modal
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF2F4),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFF5C2CB)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        Text(
+                          '$delivered Sold',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                        Container(width: 1, height: 16, color: const Color(0xFFF5C2CB)),
+                        Text(
+                          '$empties Empties',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                        Container(width: 1, height: 16, color: const Color(0xFFF5C2CB)),
+                        Text(
+                          '₹${gross.toStringAsFixed(0)} Total',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                Expanded(
+                  child: liveSales.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.receipt_long_rounded,
+                                  size: 40,
+                                  color: Color(0xFFCBD5E1),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'No customer deliveries recorded today',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          controller: scrollController,
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                          itemCount: liveSales.length,
+                          separatorBuilder: (context, index) => const SizedBox(height: 10),
+                          itemBuilder: (_, idx) {
+                            final sale = liveSales[idx];
+                            final cust = (sale['CustomerName'] ?? 'Customer').toString();
+                            final ticket = (sale['TicketNo'] ?? '').toString();
+                            final amt = safeDouble(sale['TotalAmount']);
+                            final pMethod = (sale['PaymentMode'] ?? sale['PaymentMethod'] ?? 'CASH').toString().toUpperCase();
+                            final delCyls = safeInt(sale['DeliveredCylinders']);
+                            final items = List<Map<String, dynamic>>.from(sale['Items'] as List? ?? []);
+
+                            return Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          cust,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: const Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                      ),
+                                      Text(
+                                        '₹${amt.toStringAsFixed(0)}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w800,
+                                          color: const Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        ticket.isNotEmpty ? 'Ticket: $ticket • $delCyls cyl' : '$delCyls cylinders delivered',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: const Color(0xFF64748B),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: pMethod.contains('CASH') ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: pMethod.contains('CASH') ? const Color(0xFFF5C2CB) : const Color(0xFFCBD5E1),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          pMethod,
+                                          style: GoogleFonts.inter(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w700,
+                                            color: pMethod.contains('CASH') ? const Color(0xFF800020) : const Color(0xFF475569),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (items.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      items.map((it) => "${it['Qty']}x ${it['ProductName']}").join(', '),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w500,
+                                        color: const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ================= TAB 2: REVENUE (FINANCIAL MONITORING) =================
   Widget _buildRevenueTab(BuildContext context, AppState state) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
     final totalRevenue = state.adminTotalRevenueToday;
     final totalCash = state.adminTotalCashToday;
     final totalUpi = state.adminTotalUpiToday;
+    final totalExpenses = state.adminTotalExpensesToday;
+    final netHandover = totalRevenue - totalExpenses;
 
     final vanList = state.adminVans.isNotEmpty ? state.adminVans : state.fleetDrivers.map((d) => {
       'VehicleNumber': d.vehicle,
@@ -1317,6 +1382,7 @@ class _AdminScreenState extends State<AdminScreen> {
       'CashCollection': d.mockCashIncome,
       'BankCollection': d.mockUpiIncome,
       'TotalCollection': d.mockCashIncome + d.mockUpiIncome,
+      'Expenses': 0.0,
     }).toList();
 
     return RefreshIndicator(
@@ -1324,7 +1390,7 @@ class _AdminScreenState extends State<AdminScreen> {
       color: const Color(0xFF800020),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-        padding: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 90),
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 96 + bottomPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1364,218 +1430,322 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Cash vs UPI split
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Cash Collection',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '₹${totalCash.toStringAsFixed(0)}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: const Color(0xFF16A34A),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Bank / UPI',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF64748B),
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '₹${totalUpi.toStringAsFixed(0)}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: const Color(0xFF800020),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+                  // 3-Metric Summary Strip
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildFinancialSummaryCol('Gross Sales', '₹${totalRevenue.toStringAsFixed(0)}'),
+                        _buildCylinderDivider(),
+                        _buildFinancialSummaryCol('Trip Exp.', '₹${totalExpenses.toStringAsFixed(0)}'),
+                        _buildCylinderDivider(),
+                        _buildFinancialSummaryCol('Net Settlement', '₹${netHandover.toStringAsFixed(0)}', isHighlight: true),
+                      ],
+                    ),
                   ),
                 ],
               ),
+            ),
+
+            const SizedBox(height: 14),
+
+            // Cash vs UPI Split Cards
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x060F172A), blurRadius: 8, offset: Offset(0, 2)),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'CASH HANDOVER',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF64748B),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const Icon(Icons.payments_rounded, size: 16, color: Color(0xFF800020)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '₹${totalCash.toStringAsFixed(0)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Physical desk cash',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x060F172A), blurRadius: 8, offset: Offset(0, 2)),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'BANK & UPI',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF64748B),
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                            const Icon(Icons.account_balance_rounded, size: 16, color: Color(0xFF0F172A)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '₹${totalUpi.toStringAsFixed(0)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Digital direct transfer',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
 
             const SizedBox(height: 18),
 
-            // Driver-Wise Collections Breakdown
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: const [
-                  BoxShadow(color: Color(0x060F172A), blurRadius: 10, offset: Offset(0, 3)),
-                ],
+            // Route-wise Financial Breakdown Header
+            Text(
+              'ROUTE-WISE SETTLEMENT BREAKDOWN',
+              style: GoogleFonts.inter(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF64748B),
+                letterSpacing: 0.5,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'FLEET SALES BY VEHICLE',
-                    style: GoogleFonts.inter(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF64748B),
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
+            ),
 
-                  if (vanList.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Center(
-                        child: Text(
-                          'No vehicle sales recorded yet.',
-                          style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B)),
+            const SizedBox(height: 10),
+
+            if (vanList.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 30),
+                child: Center(
+                  child: Text(
+                    'No route financial data available.',
+                    style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B)),
+                  ),
+                ),
+              )
+            else
+              ...vanList.map((van) {
+                final plate = (van['VehicleNumber'] ?? van['plate_number'] ?? 'Vehicle').toString().toUpperCase();
+                final driver = (van['DriverName'] ?? van['driver_name'] ?? 'Driver').toString();
+                final route = (van['RouteName'] ?? van['route_name'] ?? 'Route').toString();
+
+                final cash = safeDouble(van['CashCollection']);
+                final bank = safeDouble(van['BankCollection']);
+                final exp = safeDouble(van['Expenses']);
+                final net = (cash + bank) - exp;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x060F172A), blurRadius: 8, offset: Offset(0, 2)),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              plate,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                          Text(
+                            'Net: ₹${net.toStringAsFixed(0)}',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF800020),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$driver • $route',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF64748B),
                         ),
                       ),
-                    )
-                  else
-                    ...vanList.map((v) {
-                      final plate = (v['VehicleNumber'] ?? v['plate_number'] ?? 'Van').toString();
-                      final driver = (v['DriverName'] ?? v['driver_name'] ?? 'Driver').toString();
-                      final route = (v['RouteName'] ?? v['route_name'] ?? 'Route').toString();
-                      final cash = safeDouble(v['CashCollection']);
-                      final upi = safeDouble(v['BankCollection']);
-                      final total = safeDouble(v['TotalCollection']);
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        padding: const EdgeInsets.all(12),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: const Color(0xFFE2E8F0)),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  plate,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFF0F172A),
-                                  ),
-                                ),
-                                Text(
-                                  '₹${total.toStringAsFixed(0)}',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 14.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: const Color(0xFF800020),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 2),
                             Text(
-                              '$driver • $route',
+                              'Cash: ₹${cash.toStringAsFixed(0)}',
                               style: GoogleFonts.inter(
                                 fontSize: 11,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF475569),
+                              ),
+                            ),
+                            Text(
+                              'UPI: ₹${bank.toStringAsFixed(0)}',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF475569),
+                              ),
+                            ),
+                            Text(
+                              'Exp: ₹${exp.toStringAsFixed(0)}',
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
                                 color: const Color(0xFF64748B),
                               ),
                             ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Text(
-                                  'Cash: ₹${cash.toStringAsFixed(0)}',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF16A34A),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'UPI: ₹${upi.toStringAsFixed(0)}',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ),
-                              ],
-                            ),
                           ],
                         ),
-                      );
-                    }),
-                ],
-              ),
-            ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
           ],
         ),
       ),
     );
   }
 
-  // ================= TAB 4: INVENTORY BY LOCATION =================
-  Widget _buildInventoryByLocationTab(BuildContext context, AppState state) {
+  Widget _buildFinancialSummaryCol(String label, String value, {bool isHighlight = false}) {
+    return Column(
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF64748B),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: GoogleFonts.inter(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w800,
+            color: isHighlight ? const Color(0xFF800020) : const Color(0xFF0F172A),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ================= TAB 3: STOCK (INVENTORY MONITORING) =================
+  Widget _buildStockTab(BuildContext context, AppState state) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
     final godowns = state.adminGodowns;
     final vans = state.adminVans;
 
     final totalLocations = godowns.length + vans.length;
-    final totalFilledSystem = state.totalWarehouseFilled + state.totalVansOnboardFilled;
-    final totalEmptySystem = state.totalWarehouseEmpty;
+    final totalFilledGodown = state.totalWarehouseFilled;
+    final totalEmptyGodown = state.totalWarehouseEmpty;
+    final totalFilledVans = state.totalVansOnboardFilled;
+    final totalEmptyVans = vans.fold<int>(0, (sum, v) => sum + safeInt(v['EmptyCylinders']));
+
+    final grandTotalFilled = totalFilledGodown + totalFilledVans;
+    final grandTotalEmpty = totalEmptyGodown + totalEmptyVans;
+    final grandTotalAll = grandTotalFilled + grandTotalEmpty;
+
+    final catalogProducts = state.warehouseItems;
 
     return RefreshIndicator(
       onRefresh: _refreshAdminData,
       color: const Color(0xFF800020),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-        padding: const EdgeInsets.only(left: 16, right: 16, top: 10, bottom: 90),
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 96 + bottomPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1598,7 +1768,7 @@ class _AdminScreenState extends State<AdminScreen> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        'TOTAL LOCATIONS',
+                        'SYSTEM INVENTORY BALANCE',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
@@ -1609,9 +1779,9 @@ class _AdminScreenState extends State<AdminScreen> {
                       const Icon(Icons.warehouse_rounded, size: 18, color: Color(0xFF800020)),
                     ],
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
-                    '$totalLocations locations',
+                    '$grandTotalAll Cylinders',
                     style: GoogleFonts.inter(
                       fontSize: 22,
                       fontWeight: FontWeight.w800,
@@ -1621,11 +1791,41 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${godowns.length} godowns • ${vans.length} delivery vans',
+                    '$totalLocations locations (${godowns.length} godowns • ${vans.length} delivery vans)',
                     style: GoogleFonts.inter(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w500,
                       color: const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF2F4),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFF5C2CB)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Total Filled: $grandTotalFilled',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                        Text(
+                          'Total Empty: $grandTotalEmpty',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -1650,7 +1850,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'STORAGE GODOWNS',
+                    'DISTRIBUTION HUBS (GODOWNS)',
                     style: GoogleFonts.inter(
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800,
@@ -1702,7 +1902,7 @@ class _AdminScreenState extends State<AdminScreen> {
                                     ),
                                   ),
                                   Text(
-                                    isCentral ? 'Primary Storage Hub' : 'Sub-Godown',
+                                    isCentral ? 'Primary Storage Hub' : 'Sub-Godown Depot',
                                     style: GoogleFonts.inter(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w500,
@@ -1784,7 +1984,7 @@ class _AdminScreenState extends State<AdminScreen> {
                       final plate = (v['VehicleNumber'] ?? 'Van').toString();
                       final driver = (v['DriverName'] ?? 'Driver').toString();
                       final route = (v['RouteName'] ?? 'Route').toString();
-                      final filled = safeInt(v['TotalCylinders'] ?? v['AllocatedCylinders']);
+                      final filled = safeInt(v['BalanceCylinders'] ?? v['TotalCylinders']);
                       final empty = safeInt(v['EmptyCylinders']);
 
                       return Container(
@@ -1813,6 +2013,8 @@ class _AdminScreenState extends State<AdminScreen> {
                                   ),
                                   Text(
                                     '$driver • $route',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                     style: GoogleFonts.inter(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w500,
@@ -1851,39 +2053,101 @@ class _AdminScreenState extends State<AdminScreen> {
               ),
             ),
 
-            const SizedBox(height: 16),
+            if (catalogProducts.isNotEmpty) ...[
+              const SizedBox(height: 16),
 
-            // SYSTEM TOTALS CARD
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFDF2F4),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFF5C2CB)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'TOTAL SYSTEM CYLINDERS',
-                    style: GoogleFonts.inter(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF800020),
+              // Product Breakdown Card
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x060F172A), blurRadius: 10, offset: Offset(0, 3)),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PRODUCT INVENTORY BREAKDOWN',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF64748B),
+                        letterSpacing: 0.5,
+                      ),
                     ),
-                  ),
-                  Text(
-                    '$totalFilledSystem Filled • $totalEmptySystem Empty',
-                    style: GoogleFonts.inter(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF800020),
-                    ),
-                  ),
-                ],
+                    const SizedBox(height: 12),
+                    ...catalogProducts.map((p) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    p.weight,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  Text(
+                                    p.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  '${p.filledStock} in stock',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF0F172A),
+                                  ),
+                                ),
+                                if (p.price > 0)
+                                  Text(
+                                    '₹${p.price.toStringAsFixed(0)}',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF800020),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),

@@ -191,7 +191,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Enter your staff login to start your delivery shift.',
+                    'Enter your administrator or driver credentials.',
                     style: GoogleFonts.inter(
                       fontSize: 13,
                       fontWeight: FontWeight.w400,
