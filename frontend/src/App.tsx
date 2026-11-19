@@ -141,18 +141,20 @@ export const App: React.FC = () => {
             >
               <Route path="/" element={<DashboardPage />} />
 
-              {/* Van Operations & Stock: Administrator & Manager */}
-              <Route path="/drivers" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><DriversPage /></RoleGuard>} />
-              <Route path="/vehicles" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><VehiclesPage /></RoleGuard>} />
-              <Route path="/routes" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><RoutesPage/></RoleGuard>} />
-              <Route path="/allocations" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><AllocationsPage/></RoleGuard>} />
+              {/* Van Operations: Administrator Only (Manager only has Van Management) */}
+              <Route path="/drivers" element={<RoleGuard allowedRoles={['Administrator']}><DriversPage /></RoleGuard>} />
+              <Route path="/vehicles" element={<RoleGuard allowedRoles={['Administrator']}><VehiclesPage /></RoleGuard>} />
+              <Route path="/routes" element={<RoleGuard allowedRoles={['Administrator']}><RoutesPage/></RoleGuard>} />
+              <Route path="/allocations" element={<RoleGuard allowedRoles={['Administrator']}><AllocationsPage/></RoleGuard>} />
               <Route path="/end-allocations" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><EndAllocationsPage /></RoleGuard>} />
+
+              {/* Van Management & Stock Operations: Administrator & Manager */}
+              <Route path="/van-management" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><VanManagementPage /></RoleGuard>} />
+              <Route path="/van-management/:routeId" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><RouteDetailsPage /></RoleGuard>} />
               <Route path="/delivery-notes" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><DeliveryNotesPage /></RoleGuard>} />
               <Route path="/receipt-notes" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><ReceiptNotesPage /></RoleGuard>} />
               <Route path="/stock-analysis" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><StockAnalysisPage /></RoleGuard>} />
               <Route path="/stock-analysis/add-inventory" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><GodownInventoryFormPage /></RoleGuard>} />
-              <Route path="/van-management" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><VanManagementPage /></RoleGuard>} />
-              <Route path="/van-management/:routeId" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><RouteDetailsPage /></RoleGuard>} />
               <Route path="/inventory/products" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><InventoryByProductPage /></RoleGuard>} />
               <Route path="/inventory/locations" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><InventoryByLocationPage /></RoleGuard>} />
               <Route path="/categories" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><CategoriesPage /></RoleGuard>} />

@@ -108,6 +108,7 @@ class User(AbstractBaseUser):
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
     UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
     DriverId = models.BigIntegerField(null=True, blank=True, db_column='DriverId')
+    GodownId = models.BigIntegerField(null=True, blank=True, db_column='GodownId')
 
     objects = CustomUserManager()
 
@@ -140,6 +141,16 @@ class User(AbstractBaseUser):
             else:
                 self._cached_company = None
         return self._cached_company
+
+    @property
+    def godown(self):
+        if not hasattr(self, '_cached_godown'):
+            if self.GodownId:
+                from .models import Godown
+                self._cached_godown = Godown.objects.filter(GodownId=self.GodownId).first()
+            else:
+                self._cached_godown = None
+        return self._cached_godown
 
     def __str__(self):
         return self.Username
@@ -207,11 +218,28 @@ class Route(models.Model):
         return self.RouteName
 
 
+class PaymentGroup(models.Model):
+    PaymentGroupId = models.BigAutoField(primary_key=True, db_column='PaymentGroupId')
+    PaymentGroupName = models.CharField(max_length=150, db_column='PaymentGroupName')
+    IsActive = models.BooleanField(default=True, db_column='IsActive')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+    CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
+    UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
+
+    class Meta:
+        managed = False
+        db_table = '"PaymentGroup"'
+
+    def __str__(self):
+        return self.PaymentGroupName
+
+
 class RouteVehicleDriver(models.Model):
     RouteVehicleDriverId = models.BigAutoField(primary_key=True, db_column='RouteVehicleDriverId')
     Route = models.ForeignKey(Route, on_delete=models.CASCADE, db_column='RouteId')
     Vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, db_column='VehicleId')
     Driver = models.ForeignKey(Driver, on_delete=models.CASCADE, db_column='DriverId')
+    PaymentGroup = models.ForeignKey(PaymentGroup, on_delete=models.SET_NULL, null=True, blank=True, db_column='PaymentGroupId')
     AssignmentDate = models.DateField(null=True, blank=True, db_column='AssignmentDate')
     IsActive = models.BooleanField(default=True, db_column='IsActive')
     CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
@@ -271,6 +299,7 @@ class Ledger(models.Model):
     PAN = models.CharField(max_length=10, null=True, blank=True, db_column='PAN')
     IsBillWise = models.BooleanField(default=False, db_column='IsBillWise')
     CreditPeriodDays = models.IntegerField(default=0, db_column='CreditPeriodDays')
+    DeliveryFrequencyDays = models.IntegerField(default=15, db_column='DeliveryFrequencyDays')
     CreditLimit = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='CreditLimit')
     BankName = models.CharField(max_length=150, null=True, blank=True, db_column='BankName')
     BankAccountNumber = models.CharField(max_length=50, null=True, blank=True, db_column='BankAccountNumber')
@@ -733,6 +762,8 @@ class DeliveryNote(models.Model):
         related_name='delivery_notes'
     )
     CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    GodownId = models.BigIntegerField(null=True, blank=True, db_column='GodownId')
+    CreatedById = models.BigIntegerField(null=True, blank=True, db_column='CreatedById')
     Remarks = models.TextField(null=True, blank=True, db_column='Remarks')
     Status = models.CharField(max_length=50, default='LOADED', db_column='Status')  # LOADED, SETTLED, CANCELLED
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
@@ -776,6 +807,9 @@ class ReceiptNote(models.Model):
         related_name='receipt_notes'
     )
     CompanyId = models.BigIntegerField(default=0, db_column='CompanyId')
+    GodownId = models.BigIntegerField(null=True, blank=True, db_column='GodownId')
+    SourceGodownId = models.BigIntegerField(null=True, blank=True, db_column='SourceGodownId')
+    CreatedById = models.BigIntegerField(null=True, blank=True, db_column='CreatedById')
     Remarks = models.TextField(null=True, blank=True, db_column='Remarks')
     Status = models.CharField(max_length=50, default='RECEIPT_PENDING', db_column='Status')  # RECEIPT_PENDING, SETTLED, CANCELLED
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')

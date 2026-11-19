@@ -19,8 +19,10 @@ import {
   ActionIcon,
   Box,
   Transition,
-  Tooltip } from '@mantine/core';
-import { IconPencil, IconTrash, IconAlertCircle, IconSearch, IconArrowLeft } from '@tabler/icons-react';
+  Tooltip,
+  Modal,
+  Divider } from '@mantine/core';
+import { IconPencil, IconTrash, IconAlertCircle, IconSearch, IconArrowLeft, IconPlus } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, Controller, useWatch  } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -33,9 +35,12 @@ interface AllocationItem {
   Route: number;
   Vehicle: number;
   Driver: number;
+  PaymentGroup?: number | null;
   RouteName: string;
   VehicleNumber: string;
   DriverName: string;
+  PaymentGroupName?: string | null;
+  payment_group_name?: string | null;
   AssignmentDate?: string;
   Narration?: string;
   IsActive: boolean;
@@ -45,6 +50,7 @@ interface AllocationFormValues {
   Route: string;
   Vehicle: string;
   Driver: string;
+  PaymentGroup: string;
   AssignmentDate: string;
   Narration: string;
 }
@@ -53,6 +59,7 @@ const defaultAllocationValues: AllocationFormValues = {
   Route: '',
   Vehicle: '',
   Driver: '',
+  PaymentGroup: '',
   AssignmentDate: new Date().toISOString().split('T')[0],
   Narration: '' };
 
@@ -117,6 +124,27 @@ export const AllocationsPage: React.FC = () => {
       const res = await apiClient.get('/users/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     } });
+
+  // 2b. Fetch Payment Groups
+  const { data: paymentGroups = [] } = useQuery<any[]>({
+    queryKey: ['payment-groups'],
+    queryFn: async () => {
+      const res = await apiClient.get('/payment-groups/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    }
+  });
+
+  const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+
+  const paymentGroupOptions = useMemo(() => {
+    return paymentGroups
+      .filter((pg: any) => pg.IsActive !== false)
+      .map((pg: any) => ({
+        value: String(pg.PaymentGroupId),
+        label: pg.PaymentGroupName,
+      }));
+  }, [paymentGroups]);
 
   // 3. Form Setup
   const {
@@ -205,6 +233,7 @@ export const AllocationsPage: React.FC = () => {
         Route: parseInt(data.Route, 10),
         Vehicle: parseInt(data.Vehicle, 10),
         Driver: parseInt(data.Driver, 10),
+        PaymentGroup: data.PaymentGroup ? parseInt(data.PaymentGroup, 10) : null,
         AssignmentDate: data.AssignmentDate || null,
         Narration: data.Narration?.trim() || null,
         IsActive: true };
@@ -283,6 +312,7 @@ export const AllocationsPage: React.FC = () => {
       Route: String(item.Route || ''),
       Vehicle: String(item.Vehicle || ''),
       Driver: String(item.Driver || ''),
+      PaymentGroup: item.PaymentGroup ? String(item.PaymentGroup) : '',
       AssignmentDate: item.AssignmentDate || new Date().toISOString().split('T')[0],
       Narration: item.Narration || '' });
     setFormOpened(true);
@@ -351,9 +381,14 @@ export const AllocationsPage: React.FC = () => {
 
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(btnStyles) => (
-              <Button color="burgundy" radius={10} onClick={handleAddNew} style={btnStyles}>
-                + New Allocation
-              </Button>
+              <Group gap="xs" style={btnStyles}>
+                <Button variant="outline" color="burgundy" radius={10} onClick={() => setManageGroupsOpen(true)}>
+                  Payment Groups
+                </Button>
+                <Button color="burgundy" radius={10} onClick={handleAddNew}>
+                  + New Allocation
+                </Button>
+              </Group>
             )}
           </Transition>
         </Group>
@@ -471,7 +506,24 @@ export const AllocationsPage: React.FC = () => {
                 </Alert>
               )}
 
-              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+              <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+                <Controller
+                  name="PaymentGroup"
+                  control={control}
+                  render={({ field }) => (
+                    <Select
+                      label="Payment Group"
+                      placeholder="Choose payment group (optional)"
+                      data={paymentGroupOptions}
+                      value={field.value ? String(field.value) : null}
+                      onChange={(val) => field.onChange(val || '')}
+                      searchable
+                      clearable
+                      nothingFoundMessage="No payment groups found"
+                    />
+                  )}
+                />
+
                 <TextInput
                   label="Assignment Date"
                   type="date"
@@ -551,6 +603,7 @@ export const AllocationsPage: React.FC = () => {
                     <Table.Th>Route</Table.Th>
                     <Table.Th>Vehicle</Table.Th>
                     <Table.Th>Driver</Table.Th>
+                    <Table.Th>Payment Group</Table.Th>
                     <Table.Th>Assignment Date</Table.Th>
                     <Table.Th>Notes</Table.Th>
                     <Table.Th style={{ textAlign: 'center', width: 100, minWidth: 95 }}>Status</Table.Th>
@@ -563,6 +616,15 @@ export const AllocationsPage: React.FC = () => {
                       <Table.Td style={{ fontWeight: 600 }}>{a.RouteName || `Route #${a.Route}`}</Table.Td>
                       <Table.Td>{a.VehicleNumber || `Vehicle #${a.Vehicle}`}</Table.Td>
                       <Table.Td>{a.DriverName || `Driver #${a.Driver}`}</Table.Td>
+                      <Table.Td>
+                        {a.PaymentGroupName || (a as any).payment_group_name ? (
+                          <Badge size="sm" variant="light" color="burgundy" style={{ fontWeight: 600 }}>
+                            {a.PaymentGroupName || (a as any).payment_group_name}
+                          </Badge>
+                        ) : (
+                          <Text size="xs" c="dimmed">—</Text>
+                        )}
+                      </Table.Td>
                       <Table.Td>{a.AssignmentDate || '-'}</Table.Td>
                       <Table.Td>{a.Narration || '-'}</Table.Td>
                       <Table.Td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
@@ -622,6 +684,92 @@ export const AllocationsPage: React.FC = () => {
         )}
       </Transition>
       </Box>
+
+      {/* Manage Payment Groups Modal */}
+      <Modal
+        opened={manageGroupsOpen}
+        onClose={() => setManageGroupsOpen(false)}
+        title={
+          <Group gap="xs">
+            <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
+              Payment Groups Management
+            </Text>
+          </Group>
+        }
+        radius="md"
+        size="md"
+      >
+        <Stack gap="md">
+          <Text size="xs" c="dimmed">
+            Manage operational Payment Groups for fleet route allocations (table: <code>PaymentGroup</code>).
+          </Text>
+
+          <Paper p="sm" withBorder radius="sm" style={{ backgroundColor: '#fdf2f4', borderColor: '#fbcfe8' }}>
+            <Group align="flex-end" gap="sm">
+              <TextInput
+                label="New Payment Group Name"
+                placeholder="e.g. Central Fleet Group, North Depo Cash"
+                value={newGroupName}
+                onChange={(e) => setNewGroupName(e.currentTarget.value)}
+                style={{ flexGrow: 1 }}
+                size="sm"
+              />
+              <Button
+                color="burgundy"
+                size="sm"
+                leftSection={<IconPlus size={16} />}
+                disabled={!newGroupName.trim()}
+                onClick={async () => {
+                  if (!newGroupName.trim()) return;
+                  try {
+                    await apiClient.post('/payment-groups/', { PaymentGroupName: newGroupName.trim(), IsActive: true });
+                    setNewGroupName('');
+                    queryClient.invalidateQueries({ queryKey: ['payment-groups'] });
+                    notifications.show({ title: 'Success', message: 'Payment Group created.', color: 'green' });
+                  } catch (err: any) {
+                    notifications.show({ title: 'Error', message: err.response?.data?.detail || 'Failed to create payment group.', color: 'red' });
+                  }
+                }}
+              >
+                Add
+              </Button>
+            </Group>
+          </Paper>
+
+          <Divider label="Active Payment Groups" labelPosition="left" />
+
+          {paymentGroups.length === 0 ? (
+            <Text size="sm" c="dimmed" ta="center" py="md">No payment groups found. Create one above.</Text>
+          ) : (
+            <Table highlightOnHover withTableBorder>
+              <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
+                <Table.Tr>
+                  <Table.Th>ID</Table.Th>
+                  <Table.Th>Payment Group Name</Table.Th>
+                  <Table.Th style={{ textAlign: 'center' }}>Status</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {paymentGroups.map((pg: any) => (
+                  <Table.Tr key={pg.PaymentGroupId}>
+                    <Table.Td style={{ fontFamily: 'monospace', fontSize: 12 }}>#{pg.PaymentGroupId}</Table.Td>
+                    <Table.Td fw={600} style={{ color: '#0f172a' }}>{pg.PaymentGroupName}</Table.Td>
+                    <Table.Td style={{ textAlign: 'center' }}>
+                      <Badge size="xs" variant="outline" color={pg.IsActive !== false ? 'burgundy' : 'gray'}>
+                        {pg.IsActive !== false ? 'ACTIVE' : 'INACTIVE'}
+                      </Badge>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
+
+          <Group justify="flex-end" mt="sm">
+            <Button variant="default" onClick={() => setManageGroupsOpen(false)}>Close</Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* Custom Delete Confirmation Modal */}
       <DeleteConfirmModal

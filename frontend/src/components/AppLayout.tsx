@@ -39,7 +39,6 @@ import {
   IconPackage,
   IconBuildingBank,
   IconChevronDown,
-  IconExternalLink,
   IconReceipt,
   IconCash,
   IconCreditCard,
@@ -116,6 +115,20 @@ export const AppLayout: React.FC = () => {
 
   const pendingEndRoutes = endRouteDrivers.filter((n: any) => n.Status?.toUpperCase() === 'PENDING');
 
+  const { data: receiptNotes = [] } = useQuery<any[]>({
+    queryKey: ['receipt-notes'],
+    queryFn: async () => {
+      const res = await apiClient.get('/receipt-notes/');
+      return Array.isArray(res.data) ? res.data : [];
+    },
+    enabled: isAdmin || isManager,
+    refetchInterval: 15000,
+  });
+
+  const pendingReceiptNotesCount = useMemo(() => {
+    return receiptNotes.filter((rn: any) => rn.status === 'pending' || rn.Status === 'RECEIPT_PENDING').length;
+  }, [receiptNotes]);
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -123,21 +136,23 @@ export const AppLayout: React.FC = () => {
 
   const vanOpsItems = useMemo<NavSubItem[]>(() => {
     if (isAccountant) return [];
+    if (isManager) {
+      return [
+        { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
+        { label: 'Van Management', path: '/van-management', icon: IconTruckDelivery },
+      ];
+    }
     const items: NavSubItem[] = [
       { label: 'Drivers', path: '/drivers', icon: IconUser },
       { label: 'Vehicles', path: '/vehicles', icon: IconTruck },
       { label: 'Routes', path: '/routes', icon: IconRoute },
-    ];
-    if (isAdmin) {
-      items.push({ label: 'Add User', path: '/users', icon: IconUsers });
-    }
-    items.push(
+      { label: 'Add User', path: '/users', icon: IconUsers },
       { label: 'Allocations', path: '/allocations', icon: IconArrowsJoin2 },
       { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
-      { label: 'Van Management', path: '/van-management', icon: IconTruckDelivery }
-    );
+      { label: 'Van Management', path: '/van-management', icon: IconTruckDelivery },
+    ];
     return items;
-  }, [isAdmin, isAccountant]);
+  }, [isAdmin, isManager, isAccountant]);
 
   const isVanOpsActive = vanOpsItems.some((item: NavSubItem) =>
     location.pathname === item.path || location.pathname.startsWith('/van-management')
@@ -310,31 +325,40 @@ export const AppLayout: React.FC = () => {
     label: string,
     to: string,
     IconComponent: React.ComponentType<{ size?: number; stroke?: number }>,
-    isActive: boolean
+    isActive: boolean,
+    badgeCount?: number
   ) => {
     if (effectiveCollapsed) {
       return (
         <Tooltip label={label} position="right" withArrow key={to}>
           <Box style={{ width: '100%', display: 'flex', justifyContent: 'center' }} mb={4}>
-            <ActionIcon
-              component={Link}
-              to={to}
-              size={44}
-              variant="subtle"
-              onClick={() => opened && toggle()}
-              style={{
-                borderRadius: '13px',
-                width: 44,
-                height: 44,
-                backgroundColor: isActive ? '#800020' : 'transparent',
-                color: isActive ? '#ffffff' : '#475569',
-                boxShadow: 'none',
-                transform: 'scale(1)',
-                transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
-              }}
+            <Indicator
+              disabled={!badgeCount || badgeCount === 0}
+              color="red"
+              size={8}
+              offset={4}
+              inline
             >
-              <IconComponent size={22} stroke={1.75} />
-            </ActionIcon>
+              <ActionIcon
+                component={Link}
+                to={to}
+                size={44}
+                variant="subtle"
+                onClick={() => opened && toggle()}
+                style={{
+                  borderRadius: '13px',
+                  width: 44,
+                  height: 44,
+                  backgroundColor: isActive ? '#800020' : 'transparent',
+                  color: isActive ? '#ffffff' : '#475569',
+                  boxShadow: 'none',
+                  transform: 'scale(1)',
+                  transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1)',
+                }}
+              >
+                <IconComponent size={22} stroke={1.75} />
+              </ActionIcon>
+            </Indicator>
           </Box>
         </Tooltip>
       );
@@ -347,6 +371,13 @@ export const AppLayout: React.FC = () => {
         to={to}
         label={label}
         leftSection={<IconComponent size={21} stroke={1.75} />}
+        rightSection={
+          badgeCount && badgeCount > 0 ? (
+            <Badge size="xs" color="red" variant="filled" circle>
+              {badgeCount}
+            </Badge>
+          ) : undefined
+        }
         active={isActive}
         color="burgundy"
         variant="light"
@@ -483,7 +514,7 @@ export const AppLayout: React.FC = () => {
               </Menu>
             )}
 
-            {/* Notification Bell Icon for Receipt Notes (Admins and Managers) */}
+            {/* Notification Bell Icon for Receipt Notes & End Allocations (Administrator & Manager) */}
             {(isAdmin || isManager) && (
               <Menu shadow="lg" width={320} position="bottom-end" radius="md">
                 <Menu.Target>
@@ -653,16 +684,6 @@ export const AppLayout: React.FC = () => {
                     {user?.company_name || 'Future Gas Operations'}
                   </Text>
                 </Box>
-                {isAdmin && (
-                  <Menu.Item
-                    component="a"
-                    href="http://localhost:8000/api/v1/docs/"
-                    target="_blank"
-                    leftSection={<IconExternalLink size={16} stroke={1.5} />}
-                  >
-                    API Swagger
-                  </Menu.Item>
-                )}
                 <Menu.Divider style={{ borderColor: '#f1f5f9' }} />
                 <Menu.Item
                   color="red"
@@ -1096,7 +1117,7 @@ export const AppLayout: React.FC = () => {
         {(isAdmin || isAccountant) && renderDirectNavItem('Receipt', '/receipts', IconReceipt, location.pathname.startsWith('/receipts'))}
         {(isAdmin || isAccountant) && renderDirectNavItem('Collections', '/collections', IconCash, location.pathname.startsWith('/collections'))}
         {(isAdmin || isManager) && renderDirectNavItem('Delivery Notes', '/delivery-notes', IconClipboardList, location.pathname === '/delivery-notes')}
-        {(isAdmin || isManager) && renderDirectNavItem('Receipt Notes', '/receipt-notes', IconPackageImport, location.pathname === '/receipt-notes')}
+        {(isAdmin || isManager) && renderDirectNavItem('Receipt Notes', '/receipt-notes', IconPackageImport, location.pathname === '/receipt-notes', pendingReceiptNotesCount)}
         {(isAdmin || isManager) && renderDirectNavItem('Stock Analysis', '/stock-analysis', IconChartBar, location.pathname === '/stock-analysis')}
         {(isAdmin || isAccountant) && renderDirectNavItem('Ledger Analysis', '/ledger-analysis', IconScale, location.pathname === '/ledger-analysis')}
           </ScrollArea>

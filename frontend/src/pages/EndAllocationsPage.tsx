@@ -20,7 +20,9 @@ import {
   Loader,
   Center,
   Select,
-  Modal } from '@mantine/core';
+  Modal,
+  Grid,
+  ThemeIcon } from '@mantine/core';
 import {
   IconSearch,
   IconRefresh,
@@ -37,7 +39,9 @@ import {
   IconHistory,
   IconEdit,
   IconArrowRight,
-  IconArrowUpRight } from '@tabler/icons-react';
+  IconArrowUpRight,
+  IconTruckDelivery,
+  IconBuildingWarehouse } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -135,6 +139,7 @@ export const EndAllocationsPage: React.FC = () => {
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<EndRouteDriverItem | null>(null);
 
   // Per-line receiving godown selection for unsold full and empties
+  const [selectedTargetGodown, setSelectedTargetGodown] = useState<string>('');
   const [unsoldGodowns, setUnsoldGodowns] = useState<Record<number, string>>({});
   const [emptyGodowns, setEmptyGodowns] = useState<Record<number, string>>({});
   const [printingId, setPrintingId] = useState<number | null>(null);
@@ -291,6 +296,7 @@ export const EndAllocationsPage: React.FC = () => {
     setIsDetailOpen(true);
 
     const defaultGid = String(item.source_godown_id || 1);
+    setSelectedTargetGodown(defaultGid);
     const initialUnsold: Record<number, string> = {};
     const initialEmpty: Record<number, string> = {};
     (item.lines || []).forEach((l) => {
@@ -307,12 +313,14 @@ export const EndAllocationsPage: React.FC = () => {
 
     const modalLinesList = selectedItem.lines || [];
     const splitsPayload: Record<number, any[]> = {};
-    const defaultGid = Number(selectedItem.source_godown_id || 1);
+    const sourceGid = Number(selectedItem.source_godown_id || 1);
+    const targetGid = Number(selectedTargetGodown || sourceGid);
+    const isCross = targetGid !== sourceGid;
 
     for (const line of modalLinesList) {
       const pid = line.Product || line.EndRouteDriverLineId;
-      const unsoldGid = Number(unsoldGodowns[pid] || defaultGid);
-      const emptyGid = Number(emptyGodowns[pid] || defaultGid);
+      const unsoldGid = Number(unsoldGodowns[pid] || targetGid);
+      const emptyGid = Number(emptyGodowns[pid] || targetGid);
       const totalF = Number(line.FilledQty) || 0;
       const totalE = Number(line.EmptyQty) || 0;
 
@@ -340,13 +348,11 @@ export const EndAllocationsPage: React.FC = () => {
       }
     }
 
-    const firstLinePid = modalLinesList.length > 0 ? (modalLinesList[0].Product || modalLinesList[0].EndRouteDriverLineId) : null;
-    const finalGodownId = firstLinePid ? Number(unsoldGodowns[firstLinePid] || defaultGid) : defaultGid;
-
     settleMutation.mutate({
       id: selectedItem.EndRouteDriverId,
-      godown_id: finalGodownId,
-      godown_splits: splitsPayload });
+      godown_id: targetGid,
+      godown_splits: isCross ? undefined : splitsPayload,
+    });
   };
 
   // Helper to extract amounts from backend API attributes or fallback remarks
@@ -382,6 +388,14 @@ export const EndAllocationsPage: React.FC = () => {
   const modalLines = selectedItem?.lines || [];
   const modalTotalFilled = modalLines.reduce((acc, l) => acc + (Number(l.FilledQty) || 0), 0);
   const modalTotalEmpty = modalLines.reduce((acc, l) => acc + (Number(l.EmptyQty) || 0), 0);
+
+  const sourceGodownId = selectedItem?.source_godown_id || 1;
+  const sourceGodownObj = godowns.find((g: any) => Number(g.GodownId) === Number(sourceGodownId));
+  const sourceGodownName = selectedItem?.source_godown_name || sourceGodownObj?.GodownName || 'Main Godown';
+  const targetGodownId = Number(selectedTargetGodown || sourceGodownId);
+  const targetGodownObj = godowns.find((g: any) => Number(g.GodownId) === targetGodownId);
+  const targetGodownName = targetGodownObj?.GodownName || 'Target Godown';
+  const isCrossDepot = targetGodownId !== Number(sourceGodownId);
 
   return (
     <Stack gap="lg">
@@ -715,6 +729,95 @@ export const EndAllocationsPage: React.FC = () => {
                 </Paper>
               )}
 
+              {/* Target Godown / Cross-Depot Selection Card */}
+              {selectedItem.Status?.toUpperCase() === 'PENDING' && (
+                <Paper
+                  p="sm"
+                  radius="sm"
+                  style={{
+                    backgroundColor: isCrossDepot ? '#fdf2f4' : '#f8fafc',
+                    border: `1.5px solid ${isCrossDepot ? '#800020' : '#cbd5e1'}`,
+                  }}
+                >
+                  <Grid align="center">
+                    <Grid.Col span={{ base: 12, sm: 7 }}>
+                      <Group gap="xs">
+                        <ThemeIcon
+                          size={36}
+                          radius="md"
+                          variant="light"
+                          color="burgundy"
+                        >
+                          {isCrossDepot ? <IconTruckDelivery size={20} /> : <IconBuildingWarehouse size={20} />}
+                        </ThemeIcon>
+                        <div>
+                          <Text size="xs" fw={700} c={isCrossDepot ? '#800020' : '#0f172a'} tt="uppercase">
+                            {isCrossDepot ? 'Cross-Godown Transfer Destination' : 'Shift Settlement Godown'}
+                          </Text>
+                          <Text size="11px" c="#64748b">
+                            {isCrossDepot
+                              ? `Van stock will be forwarded to ${targetGodownName} as a Transfer Delivery Note & pending Receipt Note.`
+                              : `Van stock will be settled directly into ${sourceGodownName}.`}
+                          </Text>
+                        </div>
+                      </Group>
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, sm: 5 }}>
+                      <Select
+                        size="xs"
+                        label="Receiving Godown / Depot"
+                        data={(godowns.length > 0 ? godowns : [
+                          { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
+                          { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
+                        ]).map((g: any) => ({
+                          value: String(g.GodownId),
+                          label: `${g.GodownName}${Number(g.GodownId) === Number(sourceGodownId) ? ' (Shift Origin)' : ''}`,
+                        }))}
+                        value={selectedTargetGodown}
+                        onChange={(val) => {
+                          if (val) {
+                            setSelectedTargetGodown(val);
+                            const nextUnsold: Record<number, string> = {};
+                            const nextEmpty: Record<number, string> = {};
+                            (selectedItem?.lines || []).forEach((l) => {
+                              const pid = l.Product || l.EndRouteDriverLineId;
+                              nextUnsold[pid] = val;
+                              nextEmpty[pid] = val;
+                            });
+                            setUnsoldGodowns(nextUnsold);
+                            setEmptyGodowns(nextEmpty);
+                          }
+                        }}
+                        styles={{
+                          input: {
+                            fontWeight: 700,
+                            fontSize: 12,
+                            borderColor: isCrossDepot ? '#3b82f6' : '#cbd5e1',
+                            color: isCrossDepot ? '#1d4ed8' : '#0f172a',
+                          },
+                        }}
+                      />
+                    </Grid.Col>
+                  </Grid>
+
+                  {isCrossDepot && (
+                    <Box
+                      mt="xs"
+                      p="xs"
+                      style={{
+                        backgroundColor: '#dbeafe',
+                        borderRadius: 6,
+                        border: '1px solid #bfdbfe',
+                      }}
+                    >
+                      <Text size="11px" c="#1e40af" fw={600}>
+                        <strong>Cross-Depot Forwarding:</strong> {modalTotalFilled} full and {modalTotalEmpty} empty cylinders will be unloaded from the van and forwarded to <strong>{targetGodownName}</strong>. An incoming pending Receipt Note will appear under {targetGodownName}'s Receipt Notes for verification and inward acceptance.
+                      </Text>
+                    </Box>
+                  )}
+                </Paper>
+              )}
+
               {/* Returned Stocks & Cylinders */}
               <Stack gap="xs">
                 <Group justify="space-between" align="center">
@@ -883,13 +986,57 @@ export const EndAllocationsPage: React.FC = () => {
                       <Table.Tbody>
                         {selectedItem.sales.map((sale) => {
                           const hasEdits = Boolean(sale.IsEdited || sale.is_edited || (sale.edit_history && sale.edit_history.length > 0));
+                          const inv = String(sale.InvoiceNo || `INV-${sale.SalesId}`);
+                          const isEmtrtn = inv.startsWith('EMTRTN-');
+                          const isRcpt = inv.startsWith('RCPT-');
+
                           return (
                             <Table.Tr key={sale.SalesId}>
                               <Table.Td>
                                 <Group gap={6} wrap="nowrap" align="center">
                                   <Text fw={700} size="xs" c="#0f172a" ff="monospace">
-                                    {sale.InvoiceNo || `INV-${sale.SalesId}`}
+                                    {inv}
                                   </Text>
+                                  {isEmtrtn && (
+                                    <Badge
+                                      size="xs"
+                                      color="blue"
+                                      variant="light"
+                                      styles={{
+                                        root: {
+                                          backgroundColor: '#eff6ff',
+                                          color: '#1d4ed8',
+                                          border: '1px solid #bfdbfe',
+                                          fontWeight: 700,
+                                          flexShrink: 0,
+                                          overflow: 'visible',
+                                          whiteSpace: 'nowrap'
+                                        }
+                                      }}
+                                    >
+                                      EMPTY RETURN
+                                    </Badge>
+                                  )}
+                                  {isRcpt && (
+                                    <Badge
+                                      size="xs"
+                                      color="teal"
+                                      variant="light"
+                                      styles={{
+                                        root: {
+                                          backgroundColor: '#ecfdf5',
+                                          color: '#047857',
+                                          border: '1px solid #a7f3d0',
+                                          fontWeight: 700,
+                                          flexShrink: 0,
+                                          overflow: 'visible',
+                                          whiteSpace: 'nowrap'
+                                        }
+                                      }}
+                                    >
+                                      RECEIPT
+                                    </Badge>
+                                  )}
                                   {hasEdits && (
                                     <Tooltip label="Click to inspect invoice revision history" withArrow position="top">
                                       <Badge
@@ -941,14 +1088,30 @@ export const EndAllocationsPage: React.FC = () => {
                                 <Badge
                                   size="xs"
                                   variant="light"
-                                  color={sale.PaymentMethod?.toLowerCase() === 'cash' ? 'gray' : 'burgundy'}
+                                  color={isEmtrtn ? 'gray' : (sale.PaymentMethod?.toLowerCase() === 'cash' ? 'gray' : 'burgundy')}
                                   styles={{ root: { fontWeight: 600 } }}
                                 >
-                                  {sale.PaymentMethod || 'Cash'}
+                                  {isEmtrtn ? 'N/A' : (sale.PaymentMethod || 'Cash')}
                                 </Badge>
                               </Table.Td>
                               <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
-                                ₹{sale.GrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                {isRcpt ? (
+                                  <>
+                                    <span style={{ color: '#047857' }}>
+                                      ₹{Number(sale.PaidAmount || sale.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                    <div style={{ fontSize: 10, color: '#047857', fontWeight: 700 }}>
+                                      COLLECTED
+                                    </div>
+                                  </>
+                                ) : isEmtrtn ? (
+                                  <>
+                                    <span style={{ color: '#64748b' }}>₹0.00</span>
+                                    <div style={{ fontSize: 10, color: '#94a3b8' }}>RETURN ONLY</div>
+                                  </>
+                                ) : (
+                                  `₹${sale.GrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                )}
                               </Table.Td>
                               <Table.Td style={{ textAlign: 'center' }}>
                                 {hasEdits ? (
@@ -1059,16 +1222,19 @@ export const EndAllocationsPage: React.FC = () => {
                   <Button
                     color="burgundy"
                     radius="sm"
-                    leftSection={<IconCheck size={16} />}
+                    leftSection={isCrossDepot ? <IconTruckDelivery size={17} /> : <IconCheck size={16} />}
                     loading={settleMutation.isPending}
                     onClick={handleApproveSettlement}
                     style={{
                       backgroundColor: '#800020',
                       color: '#ffffff',
                       fontWeight: 700,
-                      letterSpacing: '0.2px' }}
+                      letterSpacing: '0.2px',
+                    }}
                   >
-                    Submit & Approve Settlement
+                    {isCrossDepot
+                      ? `Send to ${targetGodownName}`
+                      : `Approve & Settle into ${sourceGodownName}`}
                   </Button>
                 ) : (
                   <Badge size="lg" radius="sm" variant="light" color="burgundy" style={{ fontWeight: 700, borderColor: '#fbcfe8' }}>
@@ -1167,18 +1333,33 @@ export const EndAllocationsPage: React.FC = () => {
                   ),
                   value: 'all' },
               ]}
+              radius="xl"
+              transitionDuration={250}
+              transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
               styles={{
                 root: {
                   backgroundColor: '#f1f5f9',
                   border: '1px solid #e2e8f0',
                   padding: 3,
-                  borderRadius: 8 },
+                  borderRadius: 9999,
+                  boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+                },
+                control: {
+                  border: 'none',
+                },
                 indicator: {
                   backgroundColor: '#800020',
-                  boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
-                  borderRadius: 6 },
+                  boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                  borderRadius: 9999,
+                  border: 'none',
+                  outline: 'none',
+                },
                 label: {
-                  padding: '4px 12px' } }}
+                  padding: '5px 14px',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  transition: 'color 150ms ease, font-weight 150ms ease',
+                } }}
             />
 
             <TextInput
@@ -1288,6 +1469,12 @@ export const EndAllocationsPage: React.FC = () => {
                         </Text>
                         <Text size="xs" c="dimmed" truncate>
                           {item.route_name || 'Route'} &bull; Driver: <Text component="span" fw={600} c="#0f172a">{item.driver_name || 'Driver'}</Text>
+                        </Text>
+                        <Text size="11px" c="#64748b" mt={2} truncate>
+                          Depot: <Text component="span" fw={700} style={{ color: '#800020' }}>{item.source_godown_name || (item as any).godown_name || 'Main Godown'}</Text>
+                          {(item as any).created_by_name && (
+                            <> &bull; By: <Text component="span" fw={600} c="#334155">{(item as any).created_by_name}</Text></>
+                          )}
                         </Text>
                       </div>
                     </Group>

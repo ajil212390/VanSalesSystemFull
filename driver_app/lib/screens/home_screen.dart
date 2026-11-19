@@ -1373,7 +1373,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ================= 7. END SHIFT ACTION BUTTON =================
   Widget _buildEndShiftButton(BuildContext context, AppState state) {
-    final bool isSettled = state.endShiftStatus.toUpperCase() == 'SETTLED';
+    final bool isSettled = state.isSettledShift;
     if (isSettled) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1424,7 +1424,7 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
 
-    final bool isPending = state.endShiftStatus.toUpperCase() == 'PENDING';
+    final bool isPending = state.isPendingApproval;
     if (isPending) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

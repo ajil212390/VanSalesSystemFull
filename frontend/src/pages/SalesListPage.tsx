@@ -438,6 +438,9 @@ export const SalesListPage: React.FC = () => {
                 filteredSales.map((sale: any) => {
                   const isCredit = (sale.PaymentMethod || '').toUpperCase() === 'CREDIT';
                   const isPkg = isPackageSale(sale);
+                  const invStr = String(sale.InvoiceNo || sale.SalesNo || '');
+                  const isEmtrtn = invStr.startsWith('EMTRTN-');
+                  const isRcpt = invStr.startsWith('RCPT-');
 
                   return (
                     <Table.Tr key={sale.SalesId}>
@@ -446,6 +449,42 @@ export const SalesListPage: React.FC = () => {
                           <Text fw={700} size="sm" ff="monospace" style={{ color: '#800020', whiteSpace: 'nowrap' }}>
                             {sale.InvoiceNo || sale.SalesNo || `#${sale.SalesId}`}
                           </Text>
+                          {isEmtrtn && (
+                            <Badge
+                              size="xs"
+                              color="blue"
+                              variant="light"
+                              styles={{
+                                root: {
+                                  backgroundColor: '#eff6ff',
+                                  color: '#1d4ed8',
+                                  border: '1px solid #bfdbfe',
+                                  fontWeight: 700,
+                                  flexShrink: 0,
+                                  overflow: 'visible',
+                                  whiteSpace: 'nowrap' } }}
+                            >
+                              EMPTY RETURN
+                            </Badge>
+                          )}
+                          {isRcpt && (
+                            <Badge
+                              size="xs"
+                              color="teal"
+                              variant="light"
+                              styles={{
+                                root: {
+                                  backgroundColor: '#ecfdf5',
+                                  color: '#047857',
+                                  border: '1px solid #a7f3d0',
+                                  fontWeight: 700,
+                                  flexShrink: 0,
+                                  overflow: 'visible',
+                                  whiteSpace: 'nowrap' } }}
+                            >
+                              RECEIPT
+                            </Badge>
+                          )}
                           {isPkg && (
                             <Badge
                               size="xs"
@@ -566,18 +605,38 @@ export const SalesListPage: React.FC = () => {
                           variant="outline"
                           style={{
                             fontWeight: 700,
-                            backgroundColor: isCredit ? '#fdf2f4' : '#f8fafc',
-                            color: isCredit ? '#800020' : '#475569',
-                            borderColor: isCredit ? '#f5c2cb' : '#cbd5e1' }}
+                            backgroundColor: isEmtrtn ? '#f1f5f9' : (isCredit ? '#fdf2f4' : '#f8fafc'),
+                            color: isEmtrtn ? '#64748b' : (isCredit ? '#800020' : '#475569'),
+                            borderColor: isEmtrtn ? '#cbd5e1' : (isCredit ? '#f5c2cb' : '#cbd5e1') }}
                         >
-                          {sale.PaymentMethod || 'CASH'}
+                          {isEmtrtn ? 'N/A' : (sale.PaymentMethod || 'CASH')}
                         </Badge>
                       </Table.Td>
 
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="sm" fw={800} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                          ₹{Number(sale.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </Text>
+                        {isRcpt ? (
+                          <>
+                            <Text size="sm" fw={800} style={{ color: '#047857', fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{Number(sale.PaidAmount || sale.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Text>
+                            <Text size="10px" c="#047857" fw={700}>
+                              COLLECTED
+                            </Text>
+                          </>
+                        ) : isEmtrtn ? (
+                          <>
+                            <Text size="sm" fw={700} style={{ color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                              ₹0.00
+                            </Text>
+                            <Text size="10px" c="dimmed">
+                              EMPTY RETURN
+                            </Text>
+                          </>
+                        ) : (
+                          <Text size="sm" fw={800} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                            ₹{Number(sale.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </Text>
+                        )}
                       </Table.Td>
 
                       <Table.Td style={{ textAlign: 'center' }}>

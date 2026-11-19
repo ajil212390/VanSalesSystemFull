@@ -36,6 +36,8 @@ interface UserItem {
   role_name: string;
   DriverId?: number;
   driver_name?: string;
+  GodownId?: number;
+  godown_name?: string;
   IsActive: boolean;
   CreatedAt: string;
   delete_block_reason?: string | null;
@@ -46,6 +48,7 @@ interface UserFormValues {
   password: string;
   UserRole: string;
   DriverId: string;
+  GodownId: string;
   IsActive: boolean; 
 }
 
@@ -92,6 +95,14 @@ export const UsersPage: React.FC = () => {
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
     } });
 
+  // 3b. Fetch Godowns for allocating Managers / Accountants
+  const { data: godowns = [] } = useQuery<any[]>({
+    queryKey: ['godowns'],
+    queryFn: async () => {
+      const res = await apiClient.get<any>('/godowns/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    } });
+
   // 4. Form setup
   const {
     control,
@@ -104,6 +115,7 @@ export const UsersPage: React.FC = () => {
       password: '',
       UserRole: '',
       DriverId: '',
+      GodownId: '',
       IsActive: true } });
 
   // 5. Mutation to create or edit user
@@ -113,7 +125,8 @@ export const UsersPage: React.FC = () => {
         Username: data.Username.trim(),
         UserRole: parseInt(data.UserRole, 10),
         DriverId: data.DriverId ? parseInt(data.DriverId, 10) : null,
-        IsActive: Boolean(data.IsActive), // <-- CHANGE THIS
+        GodownId: data.GodownId ? parseInt(data.GodownId, 10) : null,
+        IsActive: Boolean(data.IsActive),
       };
 
       if (data.password && data.password.trim()) {
@@ -186,6 +199,7 @@ export const UsersPage: React.FC = () => {
       password: '',
       UserRole: user.UserRole ? String(user.UserRole) : '',
       DriverId: user.DriverId ? String(user.DriverId) : '',
+      GodownId: user.GodownId ? String(user.GodownId) : '',
       IsActive: user.IsActive });
     setFormOpened(true);
   };
@@ -202,6 +216,7 @@ export const UsersPage: React.FC = () => {
       password: '',
       UserRole: '',
       DriverId: '',
+      GodownId: '',
       IsActive: true });
     setFormOpened(true);
   };
@@ -355,10 +370,32 @@ export const UsersPage: React.FC = () => {
                       value={field.value}
                       onChange={field.onChange}
                       searchable
-                      nothingFoundMessage="No route found"
+                      nothingFoundMessage="No driver found"
                     />
                   )}
-                />                <Controller
+                />
+
+                <Controller
+                  name="GodownId"
+                  control={control}
+                  render={({ field }) => (
+                    <Select
+                      label="Allocated Godown (For Manager / Accountant)"
+                      placeholder="Select Godown (Main or Secondary)"
+                      clearable
+                      data={godowns.map((g: any) => ({
+                        value: String(g.GodownId),
+                        label: `${g.GodownName} (${g.GodownCode || (g.IsCentral ? 'Central' : 'Secondary')})`
+                      }))}
+                      value={field.value}
+                      onChange={field.onChange}
+                      searchable
+                      nothingFoundMessage="No godown found"
+                    />
+                  )}
+                />
+
+                <Controller
                   name="IsActive"
                   control={control}
                   render={({ field }) => (
@@ -432,6 +469,7 @@ export const UsersPage: React.FC = () => {
                   <Table.Tr>
                     <Table.Th>Username</Table.Th>
                     <Table.Th>Role</Table.Th>
+                    <Table.Th>Allocated Godown</Table.Th>
                     <Table.Th>Linked Driver</Table.Th>
                     <Table.Th>Status</Table.Th>
                     <Table.Th style={{ textAlign: 'right' }}>Actions</Table.Th>
@@ -445,6 +483,15 @@ export const UsersPage: React.FC = () => {
                         <Badge variant="outline" color="burgundy" size="sm" style={{ borderColor: '#f5c2cb', color: '#800020' }}>
                           {u.role_name || `Role #${u.UserRole}`}
                         </Badge>
+                      </Table.Td>
+                      <Table.Td>
+                        {u.godown_name ? (
+                          <Badge variant="light" color="burgundy" size="sm">
+                            {u.godown_name}
+                          </Badge>
+                        ) : (
+                          <Text size="xs" c="dimmed">All Godowns</Text>
+                        )}
                       </Table.Td>
                       <Table.Td>{u.driver_name || '-'}</Table.Td>
                       <Table.Td>

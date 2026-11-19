@@ -4,6 +4,9 @@ export interface User {
   role: string;
   company_id: number;
   company_name: string;
+  godown_id?: number | null;
+  GodownId?: number | null;
+  godown_name?: string | null;
 }
 
 export interface AuthResponse {

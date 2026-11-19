@@ -88,6 +88,8 @@ class Customer {
   final String? shopId;
   final String type; // Regular, Premium, etc.
   final double creditLimit;
+  final int creditPeriodDays;
+  final double emptyStockLimit;
   double outstanding;
 
   Customer({
@@ -98,6 +100,8 @@ class Customer {
     this.shopId,
     this.type = 'Regular',
     this.creditLimit = 15000,
+    this.creditPeriodDays = 15,
+    this.emptyStockLimit = 0,
     this.outstanding = 0,
   });
 }
@@ -321,6 +325,12 @@ class AppState extends ChangeNotifier {
       endShiftStatus.toUpperCase() == 'PENDING_APPROVAL' ||
       endShiftStatus.toUpperCase() == 'SETTLED' ||
       endShiftStatus.toUpperCase() == 'APPROVED';
+  bool get isPendingApproval =>
+      endShiftStatus.toUpperCase() == 'PENDING' ||
+      endShiftStatus.toUpperCase() == 'PENDING_APPROVAL';
+  bool get isSettledShift =>
+      endShiftStatus.toUpperCase() == 'SETTLED' ||
+      endShiftStatus.toUpperCase() == 'APPROVED';
   bool isLoadingFromBackend = false;
   DateTime? lastSyncTime;
 
@@ -436,6 +446,9 @@ class AppState extends ChangeNotifier {
             phone: phone,
             address: addr,
             outstanding: balance,
+            creditLimit: safeDouble(c['CreditLimit']),
+            creditPeriodDays: safeInt(c['CreditPeriodDays']),
+            emptyStockLimit: safeDouble(c['EmptyStockLimit']),
           ));
         }
         notifyListeners();
@@ -532,8 +545,8 @@ class AppState extends ChangeNotifier {
             }
           } catch (_) {}
 
-          if (isShiftLocked || endShiftStatus.toUpperCase() != 'ACTIVE') {
-            // Shift is ended (awaiting approval or settled): wipe all live sales, expenses, and zero all inventory on driver's device
+          if (isSettledShift) {
+            // Shift is settled & approved: wipe all live sales, expenses, and zero all inventory on driver's device awaiting next allocation
             orders.clear();
             expenses.clear();
             collectedAmount = 0.0;
@@ -548,7 +561,7 @@ class AppState extends ChangeNotifier {
               p.initialStock = 0;
             }
           } else {
-            // Shift is ACTIVE: load live van stock, sales orders, and trip expenses
+            // Shift is ACTIVE or PENDING approval: load and retain live van stock, sales orders, and trip expenses
             final vanStock = await ApiService.getVanStock(currentAllocationId!);
             if (vanStock.isNotEmpty) {
               // Separate Cylinders from Other Items (stoves, burners, lighters, etc.)
@@ -821,19 +834,33 @@ class AppState extends ChangeNotifier {
   }
 
   bool get canSubmitDelivery {
+    final isEmptiesOnly = totalCylinders == 0 && totalOtherDeliveryCount == 0 && totalEmpties > 0;
     return selectedCustomer != null &&
         (totalCylinders > 0 || totalOtherDeliveryCount > 0 || totalEmpties > 0) &&
-        paymentMethod.isNotEmpty;
+        (paymentMethod.isNotEmpty || (isEmptiesOnly && collectedAmount <= 0));
   }
 
   String _generateTicketId() {
     final now = DateTime.now();
     final randomSuffix = (10000 + (now.microsecondsSinceEpoch % 90000)).toString();
+    final isEmptiesOnly = totalCylinders == 0 && totalOtherDeliveryCount == 0 && totalEmpties > 0;
+    if (isEmptiesOnly) {
+      if (collectedAmount <= 0) {
+        return 'EMTRTN-$randomSuffix';
+      } else {
+        return 'RCPT-$randomSuffix';
+      }
+    }
     return 'INV-$randomSuffix';
   }
 
   Future<bool> completeDelivery() async {
     if (!canSubmitDelivery) return false;
+
+    final isEmptiesOnly = totalCylinders == 0 && totalOtherDeliveryCount == 0 && totalEmpties > 0;
+    if (isEmptiesOnly && collectedAmount <= 0) {
+      paymentMethod = 'N/A';
+    }
 
     _stopCounter++;
     final now = TimeOfDay.now();
@@ -1319,20 +1346,7 @@ class AppState extends ChangeNotifier {
       );
       if (res['success'] == true) {
         endShiftStatus = 'PENDING';
-        // When shift ends and waits for approval, all live data resets to zero
-        orders.clear();
-        expenses.clear();
-        collectedAmount = 0.0;
-        for (final cyl in cylinders) {
-          cyl.emptyStock = 0;
-          cyl.filledStock = 0;
-          cyl.initialFilledStock = 0;
-        }
-        for (final op in otherProducts) {
-          op.balanceStock = 0;
-          op.initialStock = 0;
-          op.deliveredStock = 0;
-        }
+        // When shift ends and waits for approval, store all data in the mobile app until admin approval is completed!
       }
       lastSyncTime = DateTime.now();
       notifyListeners();
@@ -1450,8 +1464,6 @@ class AppState extends ChangeNotifier {
       return false;
     });
   }
-
-  bool get isSettledShift => endShiftStatus.toUpperCase() == 'SETTLED';
 
   double get cashIncome => isSettledShift ? 0.0 : orders
       .fold(0.0, (sum, o) {

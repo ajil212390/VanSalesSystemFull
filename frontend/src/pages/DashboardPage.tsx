@@ -348,6 +348,59 @@ export const DashboardPage: React.FC = () => {
     refetchInterval: 5000,
   });
 
+  // Manager Operational Queries (End Allocations, Receipt Notes, Delivery Notes)
+  const { data: managerEndAllocations = [] } = useQuery<any[]>({
+    queryKey: ['manager-end-allocations'],
+    queryFn: async () => {
+      const res = await apiClient.get('/end-route-drivers/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    },
+    enabled: isAdmin || isManager,
+    refetchInterval: 10000,
+  });
+
+  const { data: managerReceiptNotes = [] } = useQuery<any[]>({
+    queryKey: ['manager-receipt-notes'],
+    queryFn: async () => {
+      const res = await apiClient.get('/receipt-notes/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    },
+    enabled: isAdmin || isManager,
+    refetchInterval: 10000,
+  });
+
+  const { data: managerDeliveryNotes = [] } = useQuery<any[]>({
+    queryKey: ['manager-delivery-notes'],
+    queryFn: async () => {
+      const res = await apiClient.get('/delivery-notes/');
+      return Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    },
+    enabled: isAdmin || isManager,
+    refetchInterval: 10000,
+  });
+
+  const pendingEndAllocationsCount = useMemo(() => {
+    return managerEndAllocations.filter((e: any) => e.Status === 'PENDING').length;
+  }, [managerEndAllocations]);
+
+  const pendingReceiptNotesCount = useMemo(() => {
+    return managerReceiptNotes.filter((r: any) => r.Status === 'RECEIPT_PENDING' || r.status === 'pending').length;
+  }, [managerReceiptNotes]);
+
+  const todayDispatchedCylinders = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    return managerDeliveryNotes
+      .filter((d: any) => d.DeliveryDate === todayStr)
+      .reduce((sum: number, d: any) => sum + (Number(d.total_cylinders) || 0), 0);
+  }, [managerDeliveryNotes]);
+
+  const todayActiveVansCount = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayDns = managerDeliveryNotes.filter((d: any) => d.DeliveryDate === todayStr);
+    const vanSet = new Set(todayDns.map((d: any) => d.RouteVehicleDriver));
+    return vanSet.size || (stockAnalysis?.active_vans?.length || 0);
+  }, [managerDeliveryNotes, stockAnalysis]);
+
   // Separate Customers & Suppliers
   const customerLedgerIds = useMemo(() => {
     return new Set(
@@ -581,13 +634,18 @@ export const DashboardPage: React.FC = () => {
   const receivableBalance = totalCustomerOpeningReceivable + totalSales - totalCustomerReceipts;
 
   // Row 3 Calculations: Inventory & Van Operations
+  const userGodownId = user?.godown_id || user?.GodownId;
   const stockProducts = stockAnalysis?.products || [];
 
   const stockLocations = useMemo(() => {
     // 1. Dynamic Godowns List (Central + Secondary Godowns)
-    const godownList = (stockAnalysis?.godowns && stockAnalysis.godowns.length > 0)
+    let godownList = (stockAnalysis?.godowns && stockAnalysis.godowns.length > 0)
       ? stockAnalysis.godowns
       : (godownsList && godownsList.length > 0 ? godownsList : []);
+
+    if (userGodownId && !isAdmin) {
+      godownList = godownList.filter((g: any) => Number(g.GodownId) === Number(userGodownId));
+    }
 
     let godownEntries: any[] = [];
 
@@ -702,12 +760,24 @@ export const DashboardPage: React.FC = () => {
   }, [stockProducts, stockAnalysis?.godowns, stockAnalysis?.all_vans, stockAnalysis?.active_vans, stockAnalysis?.idle_vans, godownsList, vehicles]);
 
   const totalProductFilled = useMemo(() => {
+    if (userGodownId && !isAdmin) {
+      return stockProducts.reduce((sum: number, p: any) => {
+        const mg = (p.Godowns || []).find((pg: any) => Number(pg.GodownId) === Number(userGodownId));
+        return sum + (mg ? Number(mg.FilledQty || 0) : 0);
+      }, 0);
+    }
     return stockProducts.reduce((sum: number, p: any) => sum + (Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0), 0);
-  }, [stockProducts]);
+  }, [stockProducts, userGodownId, isAdmin]);
 
   const totalProductEmpty = useMemo(() => {
+    if (userGodownId && !isAdmin) {
+      return stockProducts.reduce((sum: number, p: any) => {
+        const mg = (p.Godowns || []).find((pg: any) => Number(pg.GodownId) === Number(userGodownId));
+        return sum + (mg ? Number(mg.EmptyQty || 0) : 0);
+      }, 0);
+    }
     return stockProducts.reduce((sum: number, p: any) => sum + (Number(p.EmptyQty) || 0), 0);
-  }, [stockProducts]);
+  }, [stockProducts, userGodownId, isAdmin]);
 
   const godownCount = useMemo(() => {
     return stockLocations.filter((l: any) => l.type === 'godown').length || (godownsList.length > 0 ? godownsList.length : 1);
@@ -744,9 +814,14 @@ export const DashboardPage: React.FC = () => {
               }}
             >
               {user?.company_name || 'Future Gas'}
+              {user?.godown_name && !isAdmin && (
+                <Text component="span" size="md" fw={700} c="#800020" ml="xs">
+                  ({user.godown_name})
+                </Text>
+              )}
             </Title>
             <Text size="xs" c="dimmed" mt={2} fw={500}>
-              {todayFormatted} &bull; {isManager ? 'Fleet & Godown Stock Operations Overview' : (isAccountant ? 'Commercial, Accounting & Cashflow Overview' : 'Executive Operations & Commercial Overview')} &bull; Showing {dateRange.label}
+              {todayFormatted} &bull; {user?.godown_name && !isAdmin ? `${user.godown_name} • ` : ''}{isManager ? 'Godown Stock & Fleet Operations Overview' : (isAccountant ? 'Commercial, Accounting & Cashflow Overview' : 'Executive Operations & Commercial Overview')} &bull; Showing {dateRange.label}
             </Text>
           </Box>
 
@@ -1072,6 +1147,87 @@ export const DashboardPage: React.FC = () => {
                 value={`${activeRoutesCount} Active Route${activeRoutesCount !== 1 ? 's' : ''}`}
                 subtitle="Live delivery fleet &amp; route operations"
                 onClick={() => navigate('/van-management')}
+              />
+            </SimpleGrid>
+          </Stack>
+        )}
+
+        {/* ROW 4: Depot Gate & Fleet Operations (Manager & Admin) */}
+        {(isAdmin || isManager) && (
+          <Stack gap="sm">
+            <Group gap={10} align="center">
+              <Box style={{ width: 4, height: 16, borderRadius: 2, backgroundColor: '#800020' }} />
+              <Text size="xs" fw={700} c="#800020" tt="uppercase" style={{ letterSpacing: '0.8px', fontSize: 11.5 }}>
+                Depot Gate &amp; Fleet Operations
+              </Text>
+              <Box style={{ flex: 1, height: 1, backgroundColor: '#f1f5f9' }} />
+            </Group>
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+              <DashboardMetricCard
+                title="Active Fleet Vans"
+                icon={<IconTruckDelivery size={22} color='#800020' />}
+                value={<CountUp value={todayActiveVansCount} decimals={0} />}
+                subtitle={`${todayDispatchedCylinders} Cylinders Dispatched`}
+                onClick={() => navigate('/van-management')}
+              />
+
+              <DashboardMetricCard
+                title="Pending End Allocations"
+                icon={<IconReceipt size={22} color='#800020' />}
+                value={
+                  <Text
+                    fw={800}
+                    style={{
+                      color: pendingEndAllocationsCount > 0 ? '#800020' : '#0f172a',
+                      fontSize: '28px',
+                      fontVariantNumeric: 'tabular-nums',
+                      letterSpacing: '-0.03em',
+                      lineHeight: 1.15,
+                    }}
+                  >
+                    <CountUp value={pendingEndAllocationsCount} decimals={0} />
+                  </Text>
+                }
+                subtitle={pendingEndAllocationsCount > 0 ? 'Awaiting Gate Verification' : 'All Shifts Settled'}
+                onClick={() => navigate('/end-allocations')}
+              />
+
+              <DashboardMetricCard
+                title="Pending Depot Receipts"
+                icon={<IconBuildingFactory2 size={22} color='#800020' />}
+                value={
+                  <Text
+                    fw={800}
+                    style={{
+                      color: pendingReceiptNotesCount > 0 ? '#800020' : '#0f172a',
+                      fontSize: '28px',
+                      fontVariantNumeric: 'tabular-nums',
+                      letterSpacing: '-0.03em',
+                      lineHeight: 1.15,
+                    }}
+                  >
+                    <CountUp value={pendingReceiptNotesCount} decimals={0} />
+                  </Text>
+                }
+                subtitle={pendingReceiptNotesCount > 0 ? 'Awaiting Inward Acceptance' : 'Inward Stock Up to Date'}
+                onClick={() => navigate('/receipt-notes')}
+              />
+
+              <DashboardMetricCard
+                title="Today's Stock Outflow"
+                icon={<IconPackage size={22} color='#800020' />}
+                value={
+                  <Group align="baseline" gap={4}>
+                    <Text fw={800} style={{ color: '#0f172a', fontSize: '28px', fontVariantNumeric: 'tabular-nums' }}>
+                      <CountUp value={todayDispatchedCylinders} decimals={0} />
+                    </Text>
+                    <Text size="xs" fw={700} c="#800020">
+                      CYLS
+                    </Text>
+                  </Group>
+                }
+                subtitle="Dispatched on Delivery Notes"
+                onClick={() => navigate('/delivery-notes')}
               />
             </SimpleGrid>
           </Stack>

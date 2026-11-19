@@ -49,10 +49,13 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       return;
     }
 
-    final isCredit = state.paymentMethod.toLowerCase() == 'credit';
+    final isEmptiesOnly = state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties > 0;
     final isSplit = state.paymentMethod.toLowerCase() == 'split';
+    final textTrim = _amountController.text.trim();
+    final enteredAmount = double.tryParse(textTrim.replaceAll(',', '')) ?? 0;
 
-    if (isCredit) {
+    if (isEmptiesOnly && (textTrim.isEmpty || textTrim == '0' || textTrim == '0.0' || enteredAmount <= 0)) {
+      state.setPaymentMethod('N/A');
       state.setCollectedAmount(0.0);
     } else if (isSplit) {
       final cashVal = double.tryParse(_splitCashController.text.replaceAll(',', '').trim()) ?? 0;
@@ -61,18 +64,14 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       state.setSplitAmounts(cashVal, upiVal);
       state.setCollectedAmount(splitSum);
     } else {
-      final textTrim = _amountController.text.trim();
       if (textTrim == '0' || textTrim == '0.0') {
         state.setCollectedAmount(0.0);
+      } else if (enteredAmount > 0) {
+        state.setCollectedAmount(enteredAmount);
+      } else if (textTrim.isEmpty) {
+        state.setCollectedAmount(isEmptiesOnly ? 0.0 : state.totalBillAmount);
       } else {
-        final enteredAmount = double.tryParse(textTrim.replaceAll(',', '')) ?? 0;
-        if (enteredAmount > 0) {
-          state.setCollectedAmount(enteredAmount);
-        } else if (textTrim.isEmpty) {
-          state.setCollectedAmount(state.totalBillAmount);
-        } else {
-          state.setCollectedAmount(0.0);
-        }
+        state.setCollectedAmount(0.0);
       }
     }
 
@@ -111,12 +110,12 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   @override
   Widget build(BuildContext context) {
     final state = AppStateProvider.of(context);
-    if (state.paymentMethod.isEmpty) {
+    final isEmptiesOnly = state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties > 0;
+    if (state.paymentMethod.isEmpty && !isEmptiesOnly) {
       state.paymentMethod = 'Cash';
     }
 
     final isSplit = state.paymentMethod.toLowerCase() == 'split';
-    final isCredit = state.paymentMethod.toLowerCase() == 'credit';
     final splitCash = double.tryParse(_splitCashController.text.replaceAll(',', '').trim()) ?? 0;
     final splitUpi = double.tryParse(_splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
     final splitSum = splitCash + splitUpi;
@@ -124,28 +123,28 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final enteredAmount = isSplit
         ? splitSum
         : (double.tryParse(_amountController.text.replaceAll(',', '').trim()) ?? 0);
-    final effectiveAmount = isCredit
-        ? 0.0
-        : (enteredAmount > 0
-            ? enteredAmount
-            : (_amountController.text.trim() == '0'
-                ? 0.0
-                : (state.collectedAmount > 0 ? state.collectedAmount : state.totalBillAmount)));
+    final effectiveAmount = enteredAmount > 0
+        ? enteredAmount
+        : (_amountController.text.trim() == '0'
+            ? 0.0
+            : (state.collectedAmount > 0 ? state.collectedAmount : (isEmptiesOnly ? 0.0 : state.totalBillAmount)));
 
     final hasItems = state.totalCylinders > 0 || state.totalOtherDeliveryCount > 0 || state.totalEmpties > 0;
-    final hasValidAmount = isCredit || _amountController.text.trim() == '0' || effectiveAmount >= 0;
+    final hasValidAmount = _amountController.text.trim() == '0' || effectiveAmount >= 0;
 
     final canSubmit = !state.isShiftLocked &&
         state.endShiftStatus.toUpperCase() == 'ACTIVE' &&
         state.selectedCustomer != null &&
         hasItems &&
-        state.paymentMethod.isNotEmpty;
+        (isEmptiesOnly
+            ? (enteredAmount <= 0 || state.paymentMethod.isNotEmpty)
+            : state.paymentMethod.isNotEmpty);
 
     // Calculate completion progress (1: Customer, 2: Cylinders/Products, 3: Payment & Amount)
     int completedStepCount = 0;
     if (state.selectedCustomer != null) completedStepCount++;
     if (hasItems) completedStepCount++;
-    if (state.paymentMethod.isNotEmpty) completedStepCount++;
+    if (isEmptiesOnly || state.paymentMethod.isNotEmpty) completedStepCount++;
     final double completionProgress = completedStepCount / 3.0;
 
     return Scaffold(
@@ -364,8 +363,8 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
 
                     const SizedBox(height: 14),
 
-                    // 4. Redesigned Bill Amount Collection Card (Hidden for Split & Credit)
-                    if (!isSplit && !isCredit) ...[
+                    // 4. Redesigned Bill Amount Collection Card (Hidden for Split)
+                    if (!isSplit) ...[
                       _buildRedesignedBillAmountCard(state),
                       const SizedBox(height: 14),
                     ],
@@ -1228,11 +1227,15 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
 
   // ================= 3. PAYMENT METHOD SECTION =================
   Widget _buildPaymentMethodSection(AppState state) {
+    final isEmptiesOnly = state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties > 0;
+    final textTrim = _amountController.text.trim();
+    final enteredAmount = double.tryParse(textTrim.replaceAll(',', '')) ?? 0;
+    final isZeroAmount = textTrim.isEmpty || textTrim == '0' || textTrim == '0.0' || enteredAmount <= 0;
+
     final methods = [
       {'key': 'Cash', 'title': 'Cash', 'icon': Icons.payments_outlined},
       {'key': 'UPI', 'title': 'Bank', 'icon': Icons.qr_code_2_rounded},
       {'key': 'Split', 'title': 'Split', 'icon': Icons.call_split_rounded},
-      {'key': 'Credit', 'title': 'Credit', 'icon': Icons.credit_score_rounded},
     ];
 
     return Container(
@@ -1265,6 +1268,64 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             ),
             const SizedBox(height: 10),
 
+            if (isEmptiesOnly && isZeroAmount) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline_rounded, color: Color(0xFF1D4ED8), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Empty Return Only (₹0): No payment needed. An Empty Return Voucher (EMTRTN) will be generated. To collect payment towards customer account balance, enter amount in Paid Amount below.',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF1E40AF),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+
+            if (isEmptiesOnly && !isZeroAmount) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFDF5),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFA7F3D0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF047857), size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Payment on Empty Return (₹${enteredAmount.toStringAsFixed(0)}): Select payment mode below. Official Receipt (RCPT) will be generated.',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF065F46),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+
             // Payment Option Cards
             Row(
               children: methods.map((m) {
@@ -1273,15 +1334,11 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   child: GestureDetector(
                     onTap: () {
                       state.setPaymentMethod(m['key'] as String);
-                      if (m['key'] == 'Credit') {
-                        state.setCollectedAmount(0.0);
-                        _amountController.text = '0';
-                      }
                       setState(() {});
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
-                      margin: EdgeInsets.only(right: m['key'] != 'Credit' ? 6 : 0),
+                      margin: EdgeInsets.only(right: m['key'] != 'Split' ? 6 : 0),
                       padding: const EdgeInsets.symmetric(vertical: 11),
                       decoration: BoxDecoration(
                         color: isSelected ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
@@ -1323,35 +1380,6 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 );
               }).toList(),
             ),
-
-            if (state.paymentMethod == 'Credit') ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFFDE68A)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline_rounded, color: Color(0xFFB45309), size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Credit Delivery: ₹0 paid now. Total bill ₹${state.totalBillAmount.toStringAsFixed(0)} will be added to customer pending balance.',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF92400E),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
 
             if (state.paymentMethod == 'Split') ...[
               const SizedBox(height: 12),
@@ -1565,26 +1593,34 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     bool hasItems,
   ) {
     String buttonLabel;
-    final isCredit = state.paymentMethod.toLowerCase() == 'credit';
+    final isEmptiesOnly = state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties > 0;
     final textTrim = _amountController.text.trim();
-    final isZeroPayment = isCredit ||
-        (state.paymentMethod.toLowerCase() != 'split' &&
-            (textTrim.isEmpty || textTrim == '0' || textTrim == '0.0' || effectiveAmount == 0));
+    final enteredAmount = double.tryParse(textTrim.replaceAll(',', '')) ?? 0;
+    final isZeroPayment = state.paymentMethod.toLowerCase() != 'split' &&
+        (textTrim.isEmpty || textTrim == '0' || textTrim == '0.0' || effectiveAmount == 0);
 
     if (!canSubmit) {
       if (state.selectedCustomer == null) {
         buttonLabel = 'SELECT CUSTOMER FIRST';
       } else if (!hasItems) {
-        buttonLabel = 'SELECT CYLINDERS TO DELIVER';
-      } else if (state.paymentMethod.isEmpty) {
+        buttonLabel = 'SELECT CYLINDERS TO DELIVER OR RETURN';
+      } else if (!isEmptiesOnly && state.paymentMethod.isEmpty) {
+        buttonLabel = 'SELECT PAYMENT METHOD';
+      } else if (isEmptiesOnly && enteredAmount > 0 && state.paymentMethod.isEmpty) {
         buttonLabel = 'SELECT PAYMENT METHOD';
       } else {
         buttonLabel = 'COMPLETE DELIVERY';
       }
+    } else if (isEmptiesOnly) {
+      if (enteredAmount > 0) {
+        buttonLabel = 'RECEIVE PAYMENT & EMPTIES (₹${enteredAmount.toStringAsFixed(0)})';
+      } else {
+        buttonLabel = 'RECORD EMPTY RETURN (₹0)';
+      }
     } else if (effectiveAmount > 0 && !isZeroPayment) {
       buttonLabel = 'COMPLETE DELIVERY (₹${effectiveAmount.toStringAsFixed(0)})';
     } else {
-      buttonLabel = 'COMPLETE DELIVERY';
+      buttonLabel = 'COMPLETE DELIVERY (₹0)';
     }
 
     return SizedBox(
@@ -1610,7 +1646,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
           child: InkWell(
             onTap: () {
               if (canSubmit) {
-                if (isZeroPayment) {
+                if (isEmptiesOnly && enteredAmount <= 0) {
+                  _showZeroPaymentConfirmationDialog(context, state);
+                } else if (!isEmptiesOnly && isZeroPayment) {
                   _showZeroPaymentConfirmationDialog(context, state);
                 } else {
                   _submitDelivery(state);
@@ -1621,8 +1659,10 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   msg = 'Please select a customer first';
                 } else if (!hasItems) {
                   msg = 'Please select at least 1 cylinder to deliver or return';
-                } else if (state.paymentMethod.isEmpty) {
-                  msg = 'Please select payment method (Cash, Bank, Split, or Credit)';
+                } else if (!isEmptiesOnly && state.paymentMethod.isEmpty) {
+                  msg = 'Please select payment method (Cash, Bank, or Split)';
+                } else if (isEmptiesOnly && enteredAmount > 0 && state.paymentMethod.isEmpty) {
+                  msg = 'Please select payment method for collected amount';
                 } else if (!hasValidAmount) {
                   msg = 'Please enter a valid bill amount';
                 }
@@ -1631,23 +1671,31 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             },
             borderRadius: BorderRadius.circular(14),
             child: Center(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    buttonLabel,
-                    style: TextStyle(
-                      fontSize: canSubmit ? 13.5 : 12.5,
-                      fontWeight: FontWeight.w800,
-                      color: canSubmit ? Colors.white : const Color(0xFF94A3B8),
-                      letterSpacing: 0.5,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        buttonLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: canSubmit ? 13.5 : 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: canSubmit ? Colors.white : const Color(0xFF94A3B8),
+                          letterSpacing: 0.4,
+                        ),
+                      ),
                     ),
-                  ),
-                  if (canSubmit) ...[
-                    const SizedBox(width: 8),
-                    const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.white),
+                    if (canSubmit) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.arrow_forward_rounded, size: 18, color: Colors.white),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -1656,12 +1704,13 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     );
   }
 
-  // ================= ZERO PAYMENT CONFIRMATION DIALOG =================
+  // ================= ZERO PAYMENT / EMPTY RETURN CONFIRMATION DIALOG =================
   void _showZeroPaymentConfirmationDialog(BuildContext context, AppState state) {
     final customer = state.selectedCustomer;
     final customerName = customer?.name ?? 'Customer';
     final customerPhone = customer?.phone.trim() ?? '';
     final totalBill = state.totalBillAmount;
+    final isEmptiesOnly = state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties > 0;
 
     showDialog(
       context: context,
@@ -1671,12 +1720,14 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
         elevation: 12,
         backgroundColor: Colors.white,
         insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-        child: Padding(
-          padding: const EdgeInsets.all(22),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               // Header Row: Burgundy Accent Icon + Title & Subtitle
               Row(
                 children: [
@@ -1684,11 +1735,15 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                     width: 44,
                     height: 44,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFDF2F4),
+                      color: isEmptiesOnly ? const Color(0xFFEFF6FF) : const Color(0xFFFDF2F4),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFF5C2CB)),
+                      border: Border.all(color: isEmptiesOnly ? const Color(0xFFBFDBFE) : const Color(0xFFF5C2CB)),
                     ),
-                    child: const Icon(Icons.credit_score_rounded, color: Color(0xFF800020), size: 24),
+                    child: Icon(
+                      isEmptiesOnly ? Icons.assignment_return_rounded : Icons.receipt_long_rounded,
+                      color: isEmptiesOnly ? const Color(0xFF1D4ED8) : const Color(0xFF800020),
+                      size: 24,
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -1696,7 +1751,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Confirm Credit Delivery',
+                          isEmptiesOnly ? 'Confirm Empty Return' : 'Confirm Unpaid Delivery',
                           style: GoogleFonts.inter(
                             fontSize: 16.5,
                             fontWeight: FontWeight.w800,
@@ -1706,7 +1761,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Zero payment collected • Added to balance',
+                          isEmptiesOnly
+                              ? 'Returning ${state.totalEmpties} empty cylinder(s) • ₹0 payment'
+                              : 'Zero payment collected • Added to balance',
                           style: GoogleFonts.inter(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w500,
@@ -1774,16 +1831,29 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       ],
                     ),
                     const Divider(height: 20, color: Color(0xFFE2E8F0)),
-                    _buildZeroPaymentRow('Total Bill Amount', '₹${totalBill.toStringAsFixed(2)}', isBold: true),
-                    const SizedBox(height: 8),
-                    _buildZeroPaymentRow('Collected Now', '₹0.00 (CREDIT)', valueColor: const Color(0xFF475569), isBold: true),
-                    const Divider(height: 18, color: Color(0xFFE2E8F0)),
-                    _buildZeroPaymentRow(
-                      'Pending Balance Added',
-                      '+₹${totalBill.toStringAsFixed(2)}',
-                      valueColor: const Color(0xFF800020),
-                      isBold: true,
-                    ),
+                    if (isEmptiesOnly) ...[
+                      _buildZeroPaymentRow('Returned Empties', '${state.totalEmpties} NOS', isBold: true),
+                      const SizedBox(height: 8),
+                      _buildZeroPaymentRow('Collected Amount', '₹0.00 (NO PAYMENT)', valueColor: const Color(0xFF1D4ED8), isBold: true),
+                      const Divider(height: 18, color: Color(0xFFE2E8F0)),
+                      _buildZeroPaymentRow(
+                        'Document Type',
+                        'EMTRTN Voucher',
+                        valueColor: const Color(0xFF1D4ED8),
+                        isBold: true,
+                      ),
+                    ] else ...[
+                      _buildZeroPaymentRow('Total Bill Amount', '₹${totalBill.toStringAsFixed(2)}', isBold: true),
+                      const SizedBox(height: 8),
+                      _buildZeroPaymentRow('Collected Now', '₹0.00 (UNPAID)', valueColor: const Color(0xFF475569), isBold: true),
+                      const Divider(height: 18, color: Color(0xFFE2E8F0)),
+                      _buildZeroPaymentRow(
+                        'Pending Balance Added',
+                        '+₹${totalBill.toStringAsFixed(2)}',
+                        valueColor: const Color(0xFF800020),
+                        isBold: true,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1809,9 +1879,13 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        customerPhone.isNotEmpty
-                            ? 'Credit receipt will be sent to $customerPhone via WhatsApp.'
-                            : 'Credit receipt will be generated and shared via WhatsApp.',
+                        isEmptiesOnly
+                            ? (customerPhone.isNotEmpty
+                                ? 'Empty return voucher (EMTRTN) will be sent to $customerPhone via WhatsApp.'
+                                : 'Empty return voucher (EMTRTN) will be shared via WhatsApp.')
+                            : (customerPhone.isNotEmpty
+                                ? 'Delivery receipt will be sent to $customerPhone via WhatsApp.'
+                                : 'Delivery receipt will be generated and shared via WhatsApp.'),
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
@@ -1863,13 +1937,20 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       child: ElevatedButton.icon(
                         onPressed: () {
                           Navigator.pop(dialogCtx);
-                          state.setPaymentMethod('Credit');
-                          state.setCollectedAmount(0.0);
+                          if (isEmptiesOnly) {
+                            state.setPaymentMethod('N/A');
+                            state.setCollectedAmount(0.0);
+                          } else {
+                            if (state.paymentMethod.isEmpty) {
+                              state.setPaymentMethod('Cash');
+                            }
+                            state.setCollectedAmount(0.0);
+                          }
                           _submitDelivery(state, autoShareWhatsApp: true);
                         },
                         icon: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
                         label: Text(
-                          'Confirm & Send',
+                          isEmptiesOnly ? 'Confirm Return' : 'Confirm & Send',
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w800,
@@ -1889,6 +1970,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );
@@ -2490,6 +2572,44 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
                                 ),
                               ),
                             ),
+                            if (_selectedCustomer!.creditLimit > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFFBFDBFE), width: 0.5),
+                                ),
+                                child: Text(
+                                  'Limit: ₹${_selectedCustomer!.creditLimit.toStringAsFixed(0)}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF1D4ED8),
+                                  ),
+                                ),
+                              ),
+                            ],
+                            if (_selectedCustomer!.emptyStockLimit > 0) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFDF2F4),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFFFBCFE8), width: 0.5),
+                                ),
+                                child: Text(
+                                  'Empty Limit: ${_selectedCustomer!.emptyStockLimit.toStringAsFixed(0)}',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFF800020),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ],

@@ -198,22 +198,45 @@ def generate_tax_invoice_pdf(sale):
     date_formatted = sale.SalesDate.strftime('%d/%m/%Y') if hasattr(sale.SalesDate, 'strftime') else (str(sale.SalesDate) if sale.SalesDate else datetime.now().strftime('%d/%m/%Y'))
     pm_upper = (sale.PaymentMethod or 'CASH').upper()
     is_credit = pm_upper == 'CREDIT' or getattr(sale, 'PaidAmount', None) == Decimal('0.00')
-    if is_credit:
-        payment_mode_display = f"<b>Payment Mode:</b> <font color='#92400E'><b>CREDIT (Rs. 0.00 Paid)</b></font><br/>"
-    else:
-        payment_mode_display = f"<b>Payment Mode:</b> {pm_upper}<br/>"
-    if pm_upper == 'SPLIT':
-        c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-        u_m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-        c_str = f"Rs. {float(c_m.group(1).replace(',', '')):.2f}" if c_m else ''
-        u_str = f"Rs. {float(u_m.group(1).replace(',', '')):.2f}" if u_m else ''
-        if c_str or u_str:
-            payment_mode_display = (
-                f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
-                f"&nbsp;&bull; Cash: {c_str} &nbsp;|&nbsp; UPI: {u_str}<br/>"
-            )
+
+    s_no = str(sale.SalesNo or sale.InvoiceNo or '')
+    is_empty_return = s_no.startswith('EMTRTN-') or (int(sale.TotalDeliveredQty or 0) == 0 and int(sale.TotalEmptyQty or 0) > 0 and Decimal(str(sale.GrandTotal or 0)) <= Decimal('0.00') and Decimal(str(sale.PaidAmount or 0)) <= Decimal('0.00'))
+    is_money_receipt = s_no.startswith('RCPT-') or (int(sale.TotalDeliveredQty or 0) == 0 and int(sale.TotalEmptyQty or 0) > 0 and Decimal(str(sale.PaidAmount or 0)) > Decimal('0.00'))
+
+    if is_empty_return:
+        doc_title = "EMPTY RETURN VOUCHER"
+        doc_no_label = "Voucher No:"
+        payment_mode_display = "<b>Status:</b> <font color='#1D4ED8'><b>EMPTY RETURN (Rs. 0.00)</b></font><br/>"
+    elif is_money_receipt:
+        doc_title = "OFFICIAL RECEIPT"
+        doc_no_label = "Receipt No:"
+        if pm_upper == 'SPLIT':
+            c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+            u_m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+            c_str = f"Rs. {float(c_m.group(1).replace(',', '')):.2f}" if c_m else ''
+            u_str = f"Rs. {float(u_m.group(1).replace(',', '')):.2f}" if u_m else ''
+            payment_mode_display = f"<b>Payment Mode:</b> SPLIT (Cash: {c_str} | UPI: {u_str})<br/>"
         else:
-            payment_mode_display = f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
+            payment_mode_display = f"<b>Payment Mode:</b> {pm_upper}<br/>"
+    else:
+        doc_title = "TAX INVOICE"
+        doc_no_label = "Invoice No:"
+        if is_credit:
+            payment_mode_display = f"<b>Payment Mode:</b> <font color='#92400E'><b>CREDIT (Rs. 0.00 Paid)</b></font><br/>"
+        elif pm_upper == 'SPLIT':
+            c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+            u_m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+            c_str = f"Rs. {float(c_m.group(1).replace(',', '')):.2f}" if c_m else ''
+            u_str = f"Rs. {float(u_m.group(1).replace(',', '')):.2f}" if u_m else ''
+            if c_str or u_str:
+                payment_mode_display = (
+                    f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
+                    f"&nbsp;&bull; Cash: {c_str} &nbsp;|&nbsp; UPI: {u_str}<br/>"
+                )
+            else:
+                payment_mode_display = f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
+        else:
+            payment_mode_display = f"<b>Payment Mode:</b> {pm_upper}<br/>"
 
     rev_display = ""
     if getattr(sale, 'IsEdited', False):
@@ -226,7 +249,7 @@ def generate_tax_invoice_pdf(sale):
     header_data = [
         [
             Paragraph(f"<b>{company_name}</b>", c_title),
-            Paragraph("<b>TAX INVOICE</b>", inv_badge)
+            Paragraph(f"<b>{doc_title}</b>", inv_badge)
         ],
         [
             Paragraph(
@@ -237,7 +260,7 @@ def generate_tax_invoice_pdf(sale):
                 c_sub
             ),
             Paragraph(
-                f"<b>Invoice No:</b> {sale.SalesNo}<br/>"
+                f"<b>{doc_no_label}</b> {sale.SalesNo}<br/>"
                 f"{rev_display}"
                 f"<b>Date:</b> {date_formatted}<br/>"
                 f"{payment_mode_display}"
@@ -317,6 +340,24 @@ def generate_tax_invoice_pdf(sale):
 
     table_rows = [th_cells]
 
+    # Determine Paid Amount early for line item generation & summaries
+    paid_amt = Decimal('0.00')
+    if pm_upper == 'CREDIT':
+        paid_amt = Decimal('0.00')
+    elif hasattr(sale, 'PaidAmount') and sale.PaidAmount is not None:
+        paid_amt = Decimal(str(sale.PaidAmount))
+    else:
+        vl = VoucherLine.objects.filter(
+            Voucher__ReferenceTable='Sales',
+            Voucher__ReferenceId=sale.SalesId,
+            CreditAmount__gt=0,
+            Ledger=customer
+        ).first() if customer else None
+        if vl:
+            paid_amt = vl.CreditAmount
+        elif pm_upper in ['CASH', 'UPI', 'BANK', 'ONLINE']:
+            paid_amt = Decimal(str(sale.GrandTotal or 0))
+
     total_taxable_sum = Decimal('0.00')
     total_cgst_sum = Decimal('0.00')
     total_sgst_sum = Decimal('0.00')
@@ -326,7 +367,56 @@ def generate_tax_invoice_pdf(sale):
     lines = sale.lines.select_related('Product', 'Unit').all()
     is_intra_customer = (not customer or not customer.StateId or customer.StateId in [12, 32])
 
-    if not lines.exists():
+    if is_empty_return:
+        for idx, line in enumerate(lines, 1):
+            prod = line.Product
+            hsn = prod.HSNCode if prod and prod.HSNCode else "271109"
+            eqty = Decimal(str(line.EmptyQuantity or line.Quantity or 0))
+            if eqty <= 0:
+                eqty = Decimal(str(sale.TotalEmptyQty or 1))
+            table_rows.append([
+                Paragraph(str(idx), ParagraphStyle('C1', parent=cell_norm, alignment=1)),
+                Paragraph(f"<b>{line.ProductName} (Empty Cylinder Return)</b>", cell_bold),
+                Paragraph(hsn, ParagraphStyle('C2', parent=cell_muted, alignment=1)),
+                Paragraph(f"{int(eqty)} NOS", ParagraphStyle('C3', parent=cell_norm, alignment=1)),
+                Paragraph("0.00", cell_right),
+                Paragraph("0.00", cell_right_bold),
+            ])
+        if len(table_rows) == 1:
+            table_rows.append([
+                Paragraph("1", ParagraphStyle('C1', parent=cell_norm, alignment=1)),
+                Paragraph("<b>Empty LPG Cylinder Return</b>", cell_bold),
+                Paragraph("271109", ParagraphStyle('C2', parent=cell_muted, alignment=1)),
+                Paragraph(f"{int(sale.TotalEmptyQty or 1)} NOS", ParagraphStyle('C3', parent=cell_norm, alignment=1)),
+                Paragraph("0.00", cell_right),
+                Paragraph("0.00", cell_right_bold),
+            ])
+    elif is_money_receipt:
+        table_rows.append([
+            Paragraph("1", ParagraphStyle('C1', parent=cell_norm, alignment=1)),
+            Paragraph("<b>Payment on Account / Customer Outstanding Settlement</b>", cell_bold),
+            Paragraph("997159", ParagraphStyle('C2', parent=cell_muted, alignment=1)),
+            Paragraph("1 NOS", ParagraphStyle('C3', parent=cell_norm, alignment=1)),
+            Paragraph(f"{paid_amt:.2f}", cell_right),
+            Paragraph(f"{paid_amt:.2f}", cell_right_bold),
+        ])
+        total_taxable_sum = paid_amt
+        total_gross_sum = paid_amt
+        line_idx = 2
+        for line in lines:
+            if line.EmptyQuantity > 0:
+                prod = line.Product
+                hsn = prod.HSNCode if prod and prod.HSNCode else "271109"
+                table_rows.append([
+                    Paragraph(str(line_idx), ParagraphStyle('C1', parent=cell_norm, alignment=1)),
+                    Paragraph(f"<b>{line.ProductName} (Empty Return)</b>", cell_bold),
+                    Paragraph(hsn, ParagraphStyle('C2', parent=cell_muted, alignment=1)),
+                    Paragraph(f"{int(line.EmptyQuantity)} NOS", ParagraphStyle('C3', parent=cell_norm, alignment=1)),
+                    Paragraph("0.00", cell_right),
+                    Paragraph("0.00", cell_right_bold),
+                ])
+                line_idx += 1
+    elif not lines.exists():
         # Synthetic single line fallback
         gross_val = Decimal(str(sale.GrandTotal or 0))
         taxable_val = Decimal(str(sale.SubTotal or gross_val))
@@ -500,19 +590,37 @@ def generate_tax_invoice_pdf(sale):
                 Q(Voucher__VoucherDate__lt=this_vch.VoucherDate) |
                 Q(Voucher__VoucherDate=this_vch.VoucherDate, Voucher_id__lt=this_vch.VoucherId)
             )
-        else:
-            prior_vl_qs = prior_vl_qs.filter(
-                Voucher__VoucherDate__lte=sale.SalesDate
+            prior_agg = prior_vl_qs.aggregate(
+                dr=Sum('DebitAmount'), cr=Sum('CreditAmount')
             )
+            prior_dr = prior_agg['dr'] or Decimal('0.00')
+            prior_cr = prior_agg['cr'] or Decimal('0.00')
+            previous_bill_pending = max(Decimal('0.00'), op_net + prior_dr - prior_cr)
+        else:
+            from core.models import Sales, Payment
+            prior_sales_qs = Sales.objects.filter(
+                CustomerLedger=customer, CompanyId=sale.CompanyId
+            ).exclude(Status='CANCELLED').exclude(SalesId=sale.SalesId)
+            if sale.SalesDate:
+                prior_sales_qs = prior_sales_qs.filter(
+                    Q(SalesDate__lt=sale.SalesDate) |
+                    Q(SalesDate=sale.SalesDate, SalesId__lt=sale.SalesId)
+                )
+            prior_sales_total = prior_sales_qs.aggregate(s=Sum('GrandTotal'))['s'] or Decimal('0.00')
 
-        prior_agg = prior_vl_qs.aggregate(
-            dr=Sum('DebitAmount'), cr=Sum('CreditAmount')
-        )
-        prior_dr = prior_agg['dr'] or Decimal('0.00')
-        prior_cr = prior_agg['cr'] or Decimal('0.00')
+            prior_payments_qs = Payment.objects.filter(PartyLedger=customer)
+            if sale.SalesDate:
+                prior_payments_qs = prior_payments_qs.filter(CreatedAt__date__lte=sale.SalesDate)
+            prior_payments_total = prior_payments_qs.aggregate(s=Sum('Amount'))['s'] or Decimal('0.00')
 
-        previous_bill_pending = max(Decimal('0.00'), op_net + prior_dr - prior_cr)
-        closing_balance = max(Decimal('0.00'), previous_bill_pending + current_bill_amount - adv_adj - paid_amt)
+            previous_bill_pending = max(Decimal('0.00'), op_net + prior_sales_total - prior_payments_total)
+
+        if is_money_receipt:
+            closing_balance = max(Decimal('0.00'), previous_bill_pending - paid_amt)
+        elif is_empty_return:
+            closing_balance = previous_bill_pending
+        else:
+            closing_balance = max(Decimal('0.00'), previous_bill_pending + current_bill_amount - adv_adj - paid_amt)
     else:
         # Walk-in customer
         previous_bill_pending = Decimal('0.00')
@@ -535,43 +643,62 @@ def generate_tax_invoice_pdf(sale):
 
     # Left Box: Customer Account Summary (Handwritten layout)
     # Right Box: Tax Breakdown (Handwritten layout)
-    cust_summary_rows = [
-        [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
-        [Paragraph("Previous Bill pending :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)],
-        [Paragraph("Current Bill :", cell_norm), Paragraph(f"(+) Rs. {current_bill_amount:.2f}", cell_right)],
-    ]
-    if adv_adj > Decimal('0.00'):
-        cust_summary_rows.append([
-            Paragraph("Advance Adjusted :", ParagraphStyle('AdvLbl', parent=cell_bold, textColor=colors.HexColor('#0D9488'))),
-            Paragraph(f"(-) Rs. {adv_adj:.2f}", ParagraphStyle('AdvVal', parent=cell_right_bold, textColor=colors.HexColor('#0D9488')))
-        ])
-    if is_split:
-        cust_summary_rows.append([
-            Paragraph("<b>Paid Amount (Split) :</b>", cell_bold),
-            Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right_bold)
-        ])
-        cust_summary_rows.append([
-            Paragraph("&nbsp;&nbsp;&bull; Cash Paid :", ParagraphStyle('CshLbl', parent=cell_muted, fontSize=8)),
-            Paragraph(f"Rs. {c_split:.2f}", ParagraphStyle('CshVal', parent=cell_right, fontSize=8))
-        ])
-        cust_summary_rows.append([
-            Paragraph("&nbsp;&nbsp;&bull; UPI / Bank :", ParagraphStyle('UpiLbl', parent=cell_muted, fontSize=8)),
-            Paragraph(f"Rs. {u_split:.2f}", ParagraphStyle('UpiVal', parent=cell_right, fontSize=8))
-        ])
-    elif is_credit or paid_amt == Decimal('0.00'):
-        cust_summary_rows.append([
-            Paragraph("<b>Paid Amount :</b>", cell_bold),
-            Paragraph("<font color='#92400E'><b>Rs. 0.00 (CREDIT)</b></font>", cell_right_bold)
-        ])
+    if is_empty_return:
+        cust_summary_rows = [
+            [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
+            [Paragraph("Previous Balance :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)],
+            [Paragraph("Returned Cylinders :", cell_norm), Paragraph(f"<b>{empty_qty_int} NOS</b>", cell_right_bold)],
+            [Paragraph("Amount Paid :", cell_norm), Paragraph("Rs. 0.00", cell_right)],
+            [Paragraph("<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
+            [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
+        ]
+    elif is_money_receipt:
+        cust_summary_rows = [
+            [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
+            [Paragraph("Previous Balance :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)],
+            [Paragraph("<b>Payment Received :</b>", cell_bold), Paragraph(f"<b>(-) Rs. {paid_amt:.2f}</b>", ParagraphStyle('RcvAmt', parent=cell_right_bold, textColor=colors.HexColor('#047857')))],
+            [Paragraph("Payment Mode :", cell_muted), Paragraph(f"<b>{pm_upper}</b>", cell_right)],
+            [Paragraph("<b>Remaining Balance :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
+            [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
+        ]
     else:
-        cust_summary_rows.append([
-            Paragraph("Paid Amount :", cell_norm),
-            Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right)
+        cust_summary_rows = [
+            [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
+            [Paragraph("Previous Bill Pending :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)],
+            [Paragraph("Current Bill :", cell_norm), Paragraph(f"(+) Rs. {current_bill_amount:.2f}", cell_right)],
+        ]
+        if adv_adj > Decimal('0.00'):
+            cust_summary_rows.append([
+                Paragraph("Advance Adjusted :", ParagraphStyle('AdvLbl', parent=cell_bold, textColor=colors.HexColor('#0D9488'))),
+                Paragraph(f"(-) Rs. {adv_adj:.2f}", ParagraphStyle('AdvVal', parent=cell_right_bold, textColor=colors.HexColor('#0D9488')))
+            ])
+        if is_split:
+            cust_summary_rows.append([
+                Paragraph("<b>Paid Amount (Split) :</b>", cell_bold),
+                Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right_bold)
+            ])
+            cust_summary_rows.append([
+                Paragraph("&nbsp;&nbsp;&bull; Cash Paid :", ParagraphStyle('CshLbl', parent=cell_muted, fontSize=8)),
+                Paragraph(f"Rs. {c_split:.2f}", ParagraphStyle('CshVal', parent=cell_right, fontSize=8))
+            ])
+            cust_summary_rows.append([
+                Paragraph("&nbsp;&nbsp;&bull; UPI / Bank :", ParagraphStyle('UpiLbl', parent=cell_muted, fontSize=8)),
+                Paragraph(f"Rs. {u_split:.2f}", ParagraphStyle('UpiVal', parent=cell_right, fontSize=8))
+            ])
+        elif is_credit or paid_amt == Decimal('0.00'):
+            cust_summary_rows.append([
+                Paragraph("<b>Paid Amount :</b>", cell_bold),
+                Paragraph("<font color='#92400E'><b>Rs. 0.00 (CREDIT)</b></font>", cell_right_bold)
+            ])
+        else:
+            cust_summary_rows.append([
+                Paragraph("Paid Amount :", cell_norm),
+                Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right)
+            ])
+        cust_summary_rows.extend([
+            [Paragraph("<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
+            [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
         ])
-    cust_summary_rows.extend([
-        [Paragraph("<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
-        [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
-    ])
 
     cust_summary_table = Table(cust_summary_rows, colWidths=[130, 125])
     cust_summary_table.setStyle(TableStyle([
@@ -585,16 +712,39 @@ def generate_tax_invoice_pdf(sale):
         ('RIGHTPADDING', (0, 0), (-1, -1), 4),
     ]))
 
-    tax_summary_table = Table([
-        [Paragraph("<b>TAX & INVOICE BREAKDOWN</b>", section_title), Paragraph("", cell_norm)],
-        [Paragraph("Gross Amount (Taxable) :", cell_norm), Paragraph(f"Rs. {total_taxable_sum:.2f}", cell_right_bold)],
-        [Paragraph("CGST :", cell_muted), Paragraph(f"Rs. {total_cgst_sum:.2f}", cell_right)],
-        [Paragraph("SGST :", cell_muted), Paragraph(f"Rs. {total_sgst_sum:.2f}", cell_right)],
-        [Paragraph("IGST :", cell_muted), Paragraph(f"Rs. {total_igst_sum:.2f}", cell_right)],
-        [Paragraph("<b>Total GST :</b>", cell_bold), Paragraph(f"<b>Rs. {total_gst_sum:.2f}</b>", cell_right_bold)],
-        [Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
-         Paragraph(f"<b>Rs. {current_bill_amount:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
-    ], colWidths=[140, 130])
+    if is_empty_return:
+        tax_summary_table = Table([
+            [Paragraph("<b>EMPTY RETURN VERIFICATION</b>", section_title), Paragraph("", cell_norm)],
+            [Paragraph("Empties Inward Qty :", cell_norm), Paragraph(f"<b>{int(sale.TotalEmptyQty or 0)} NOS</b>", cell_right_bold)],
+            [Paragraph("Bill Amount :", cell_muted), Paragraph("Rs. 0.00", cell_right)],
+            [Paragraph("Amount Collected :", cell_muted), Paragraph("Rs. 0.00", cell_right)],
+            [Paragraph("Stock Destination :", cell_muted), Paragraph("Van Stock", cell_right)],
+            [Paragraph("<b>Inspection Status :</b>", cell_bold), Paragraph("<b>VERIFIED</b>", cell_right_bold)],
+            [Paragraph("<b>Total Collected :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
+             Paragraph("<b>Rs. 0.00</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
+        ], colWidths=[140, 130])
+    elif is_money_receipt:
+        tax_summary_table = Table([
+            [Paragraph("<b>PAYMENT RECEIPT BREAKDOWN</b>", section_title), Paragraph("", cell_norm)],
+            [Paragraph("Amount Received :", cell_norm), Paragraph(f"<b>Rs. {paid_amt:.2f}</b>", cell_right_bold)],
+            [Paragraph("Payment Mode :", cell_muted), Paragraph(f"<b>{pm_upper}</b>", cell_right)],
+            [Paragraph("Empties Collected :", cell_muted), Paragraph(f"{int(sale.TotalEmptyQty or 0)} NOS", cell_right)],
+            [Paragraph("Current Bill :", cell_muted), Paragraph("Rs. 0.00", cell_right)],
+            [Paragraph("<b>Credited To :</b>", cell_bold), Paragraph("<b>Customer Account</b>", cell_right_bold)],
+            [Paragraph("<b>Net Amount Paid :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
+             Paragraph(f"<b>Rs. {paid_amt:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
+        ], colWidths=[140, 130])
+    else:
+        tax_summary_table = Table([
+            [Paragraph("<b>TAX & INVOICE BREAKDOWN</b>", section_title), Paragraph("", cell_norm)],
+            [Paragraph("Gross Amount (Taxable) :", cell_norm), Paragraph(f"Rs. {total_taxable_sum:.2f}", cell_right_bold)],
+            [Paragraph("CGST :", cell_muted), Paragraph(f"Rs. {total_cgst_sum:.2f}", cell_right)],
+            [Paragraph("SGST :", cell_muted), Paragraph(f"Rs. {total_sgst_sum:.2f}", cell_right)],
+            [Paragraph("IGST :", cell_muted), Paragraph(f"Rs. {total_igst_sum:.2f}", cell_right)],
+            [Paragraph("<b>Total GST :</b>", cell_bold), Paragraph(f"<b>Rs. {total_gst_sum:.2f}</b>", cell_right_bold)],
+            [Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
+             Paragraph(f"<b>Rs. {current_bill_amount:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
+        ], colWidths=[140, 130])
     tax_summary_table.setStyle(TableStyle([
         ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
         ('LINEBELOW', (0, 5), (-1, 5), 1, BORDER_COLOR),
@@ -625,15 +775,21 @@ def generate_tax_invoice_pdf(sale):
     # -------------------------------------------------------------
     # 5. AMOUNT IN WORDS & TERMS
     # -------------------------------------------------------------
-    words_total = amount_to_words(current_bill_amount)
+    if is_empty_return:
+        words_total = "Zero Rupees Only"
+        terms_text = "<b>Empty Cylinders Return Voucher:</b> The returned empty cylinder(s) detailed above have been physically inspected and accepted into van inventory. No monetary payment was collected for this transaction."
+    elif is_money_receipt:
+        words_total = amount_to_words(paid_amt)
+        terms_text = "<b>Official Payment Receipt:</b> Received with thanks the amount mentioned above towards customer account ledger balance. This receipt confirms valid payment settlement."
+    else:
+        words_total = amount_to_words(current_bill_amount)
+        terms_text = "<b>Terms & Conditions:</b> Goods received in good order and sound condition. LPG Cylinders remain the property of Future Gas and must be returned on demand. Subject to Kozhikode Jurisdiction."
+
     terms_box = Table([
         [
             Paragraph(
                 f"<b>Net Amount in Words:</b> <i>{words_total}</i><br/>"
-                f"<font size=7 color='#64748B'>"
-                f"<b>Terms & Conditions:</b> Goods received in good order and sound condition. "
-                f"LPG Cylinders remain the property of Future Gas and must be returned on demand. "
-                f"Subject to Kozhikode Jurisdiction.</font>",
+                f"<font size=7 color='#64748B'>{terms_text}</font>",
                 cell_norm
             )
         ]
@@ -2412,6 +2568,259 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
     ftr_data = [[
         Paragraph(f"<font size=6 color='#64748B'>Future Gas Cloud ERP &bull; Official Receipt Note / Transfer Challan &bull; Generated {now_time}</font>", ParagraphStyle('RnFtrL', fontName=FONT_NAME, fontSize=6, textColor=MUTED_COLOR)),
         Paragraph("<font size=6 color='#64748B'>Physical Stock Verification Document</font>", ParagraphStyle('RnFtrR', fontName=FONT_NAME, fontSize=6, textColor=MUTED_COLOR, alignment=2))
+    ]]
+    ftr_table = Table(ftr_data, colWidths=[345, 200])
+    ftr_table.setStyle(TableStyle([
+        ('LINEABOVE', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(ftr_table)
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+def generate_delivery_note_pdf(delivery_note, company_id=1):
+    """
+    Generates an official Delivery Note / Van Stock Loading Challan PDF.
+    Accommodates:
+    1. Morning Van Stock Allocations (Loading Notes)
+    2. Inter-depot / Inter-godown transfers (Transfer Delivery Notes - TDN)
+    3. Bulk delivery dispatches
+    """
+    from core.models import Company, Product, Godown
+    company = Company.objects.filter(CompanyId=company_id).first() or Company.objects.first()
+    company_name = company.Name if company else "FUTURE GAS"
+    company_addr = f"{company.AddressLine1 or ''}, {company.AddressLine2 or ''}, {company.AddressLine3 or ''} - {company.Pincode or ''}".strip(', -')
+    company_gstin = company.GstNo or "32ABCDE1234F1Z5"
+    company_phone = company.Phone or "9876543210"
+    company_email = company.Email or "info@futuregas.com"
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=22,
+        bottomMargin=22
+    )
+    story = []
+
+    alloc = getattr(delivery_note, 'RouteVehicleDriver', None)
+    veh_num = alloc.Vehicle.VehicleNumber if alloc and alloc.Vehicle else 'Fleet Transport'
+    driver_name = alloc.Driver.DriverName if alloc and alloc.Driver else 'Driver / Dispatcher'
+    route_name = alloc.Route.RouteName if alloc and alloc.Route else 'General Route'
+
+    godown = Godown.objects.filter(GodownId=delivery_note.GodownId).first() if delivery_note.GodownId else None
+    godown_name = godown.GodownName if godown else "Central Godown"
+
+    remarks = delivery_note.Remarks or ''
+    is_transfer = (delivery_note.DeliveryNoteNo and delivery_note.DeliveryNoteNo.startswith('TDN')) or any(k in remarks.lower() for k in ['transfer', 'inter-godown', 'depot'])
+    title_text = "TRANSFER DELIVERY NOTE / INTER-DEPOT CHALLAN" if is_transfer else "DELIVERY NOTE / VAN LOADING CHALLAN"
+    badge_bg = colors.HexColor('#9A3412') if is_transfer else PRIMARY_COLOR
+
+    c_title = ParagraphStyle('DnTitle', fontName=FONT_BOLD, fontSize=17, leading=21, textColor=PRIMARY_COLOR)
+    c_sub = ParagraphStyle('DnSub', fontName=FONT_NAME, fontSize=8, leading=11, textColor=MUTED_COLOR)
+    dn_badge = ParagraphStyle('DnBadge', fontName=FONT_BOLD, fontSize=11, leading=14, alignment=2, textColor=badge_bg)
+    dn_meta = ParagraphStyle('DnMeta', fontName=FONT_NAME, fontSize=8.5, leading=12, alignment=2, textColor=DARK_COLOR)
+    th_style = ParagraphStyle('DnPth', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=colors.white, alignment=1)
+    cell_norm = ParagraphStyle('DnCell', fontName=FONT_NAME, fontSize=8.5, leading=11.5, textColor=DARK_COLOR)
+    cell_bold = ParagraphStyle('DnCellB', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, textColor=DARK_COLOR)
+    cell_center = ParagraphStyle('DnCellC', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, alignment=1, textColor=DARK_COLOR)
+
+    date_str = delivery_note.DeliveryDate.strftime('%d/%m/%Y') if delivery_note.DeliveryDate else datetime.now().strftime('%d/%m/%Y')
+
+    # Top Header
+    header_data = [
+        [
+            Paragraph(f"<b>{company_name}</b>", c_title),
+            Paragraph(f"<b>{title_text}</b>", dn_badge)
+        ],
+        [
+            Paragraph(
+                f"LPG Cylinders &amp; Logistics Infrastructure<br/>"
+                f"{company_addr}<br/>"
+                f"<b>GSTIN:</b> {company_gstin} &nbsp;|&nbsp; <b>State:</b> Kerala (Code: 32)<br/>"
+                f"<b>Phone:</b> {company_phone} &nbsp;|&nbsp; <b>Email:</b> {company_email}",
+                c_sub
+            ),
+            Paragraph(
+                f"<b>Challan / Note No:</b> {delivery_note.DeliveryNoteNo}<br/>"
+                f"<b>Date:</b> {date_str}<br/>"
+                f"<b>Status:</b> {(delivery_note.Status or 'COMPLETED').upper()}<br/>"
+                f"<b>Vehicle:</b> {veh_num}<br/>"
+                f"<b>Route / Van:</b> {route_name}",
+                dn_meta
+            )
+        ]
+    ]
+    hdr_table = Table(header_data, colWidths=[330, 215])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+    ]))
+    story.append(hdr_table)
+    story.append(Spacer(1, 10))
+
+    # Location Details Card
+    src_text = f"<b>Dispatching Depot / Godown:</b> {godown_name}"
+    dest_text = f"<b>Assigned Vehicle &amp; Driver:</b> {veh_num} &bull; {driver_name}"
+    if "From:" in remarks:
+        try:
+            src_text = "<b>Source:</b> " + remarks.split("From:")[1].split("•")[0].split("|")[0].strip()
+        except:
+            pass
+    if "To:" in remarks:
+        try:
+            dest_text = "<b>Destination:</b> " + remarks.split("To:")[1].split("•")[0].split("|")[0].strip()
+        except:
+            pass
+
+    loc_box = [
+        [
+            Paragraph("<b>DISPATCH / MOVEMENT SUMMARY</b>", ParagraphStyle('DnTitleCard', fontName=FONT_BOLD, fontSize=9, textColor=PRIMARY_COLOR)),
+            Paragraph(f"<b>Category:</b> {'Depot Transfer Outward' if is_transfer else 'Morning Route Van Allocation'}", ParagraphStyle('DnCat', fontName=FONT_BOLD, fontSize=8.5, alignment=2, textColor=DARK_COLOR))
+        ],
+        [
+            Paragraph(f"{src_text}<br/>{dest_text}", cell_norm),
+            Paragraph(f"<b>Associated Route:</b> {route_name}<br/><b>Purpose:</b> {'Stock Transfer to Depot' if is_transfer else 'Daily Distribution &amp; Customer Deliveries'}", cell_norm)
+        ]
+    ]
+    loc_table = Table(loc_box, colWidths=[340, 205])
+    loc_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
+        ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    story.append(loc_table)
+    story.append(Spacer(1, 10))
+
+    # Items Table
+    col_widths = [35, 230, 95, 95, 90]
+    th_cells = [
+        Paragraph("Sl no.", th_style),
+        Paragraph("Item / Cylinder Description", ParagraphStyle('ThLeftDn', parent=th_style, alignment=0)),
+        Paragraph("Full Cylinders", th_style),
+        Paragraph("Empty Cylinders", th_style),
+        Paragraph("Total Units", th_style),
+    ]
+    table_rows = [th_cells]
+
+    lines = list(delivery_note.lines.select_related('Product', 'Unit').all())
+    tot_full = 0
+    tot_empty = 0
+    tot_units = 0
+
+    if not lines:
+        table_rows.append([
+            Paragraph("1", cell_center),
+            Paragraph("Commercial / Domestic Gas Cylinders", cell_bold),
+            Paragraph("0 NOS", cell_center),
+            Paragraph("0 NOS", cell_center),
+            Paragraph("0 NOS", cell_center),
+        ])
+    else:
+        for idx, ln in enumerate(lines, 1):
+            p_name = ln.Product.ProductName if ln.Product else f"Product #{ln.Product_id}"
+            qty = int(ln.Quantity or 0)
+            f_qty = qty
+            e_qty = 0
+            if "empty" in p_name.lower():
+                f_qty = 0
+                e_qty = qty
+            tot_full += f_qty
+            tot_empty += e_qty
+            tot_units += qty
+
+            table_rows.append([
+                Paragraph(str(idx), cell_center),
+                Paragraph(p_name, cell_bold),
+                Paragraph(f"{f_qty} NOS" if f_qty > 0 else "-", cell_center),
+                Paragraph(f"{e_qty} NOS" if e_qty > 0 else "-", cell_center),
+                Paragraph(f"<b>{qty} NOS</b>", cell_center),
+            ])
+
+    # Totals Row
+    table_rows.append([
+        Paragraph("", cell_center),
+        Paragraph("<b>GRAND TOTAL DISPATCH QUANTITY</b>", cell_bold),
+        Paragraph(f"<b>{tot_full} NOS</b>", cell_center),
+        Paragraph(f"<b>{tot_empty} NOS</b>", cell_center),
+        Paragraph(f"<b>{tot_units} NOS</b>", cell_center),
+    ])
+
+    items_table = Table(table_rows, colWidths=col_widths)
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND', (0, -1), (-1, -1), LIGHT_BG),
+    ]))
+    story.append(items_table)
+    story.append(Spacer(1, 10))
+
+    # Remarks / Operational Notes
+    notes_box = [
+        [
+            Paragraph("<b>OPERATIONAL NOTES &amp; INSTRUCTIONS:</b>", ParagraphStyle('DnNtT', fontName=FONT_BOLD, fontSize=8, textColor=PRIMARY_COLOR)),
+        ],
+        [
+            Paragraph(
+                f"&bull; <b>Remarks:</b> {remarks or 'Stock dispatched from depot to vehicle as morning route inventory allocation.'}<br/>"
+                "&bull; Driver must verify physical serial seals, net weight, and safety caps before vehicle departs gate.<br/>"
+                "&bull; Any leakage, tare-weight deficit, or seal tampering must be reported immediately before accepting dispatch.",
+                cell_norm
+            )
+        ]
+    ]
+    nt_table = Table(notes_box, colWidths=[545])
+    nt_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
+        ('BOX', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(nt_table)
+    story.append(Spacer(1, 15))
+
+    # Dual Signatures: Dispatched By & Received By
+    sig_data = [
+        [
+            Paragraph("<b>DISPATCHED / ISSUED BY:</b>", cell_bold),
+            Paragraph("<b>LOADED &amp; RECEIVED BY:</b>", cell_bold)
+        ],
+        [
+            Paragraph(f"<br/><br/>____________________________________<br/>Warehouse Supervisor / Storekeeper<br/><font size=7 color='#64748B'>{godown_name} &bull; Gate Outward</font>", cell_norm),
+            Paragraph(f"<br/><br/>____________________________________<br/>Route Driver / Fleet In-Charge<br/><font size=7 color='#64748B'>{driver_name} &bull; {veh_num}</font>", cell_norm)
+        ]
+    ]
+    sig_table = Table(sig_data, colWidths=[272, 273])
+    sig_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(KeepTogether(sig_table))
+    story.append(Spacer(1, 15))
+
+    # Footer
+    now_time = datetime.now().strftime('%d/%m/%Y %I:%M %p')
+    ftr_data = [[
+        Paragraph(f"<font size=6 color='#64748B'>Future Gas Cloud ERP &bull; Official Delivery Note / Van Stock Loading Challan &bull; Generated {now_time}</font>", ParagraphStyle('DnFtrL', fontName=FONT_NAME, fontSize=6, textColor=MUTED_COLOR)),
+        Paragraph("<font size=6 color='#64748B'>Outward Stock Verification Document</font>", ParagraphStyle('DnFtrR', fontName=FONT_NAME, fontSize=6, textColor=MUTED_COLOR, alignment=2))
     ]]
     ftr_table = Table(ftr_data, colWidths=[345, 200])
     ftr_table.setStyle(TableStyle([

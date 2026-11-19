@@ -29,9 +29,12 @@ import {
   IconArrowUpRight,
   IconArrowLeft,
   IconChevronRight,
+  IconRotateClockwise2,
+  IconBuildingWarehouse,
 } from '@tabler/icons-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
 interface VanProduct {
   ProductId: number;
@@ -185,7 +188,11 @@ interface StockAnalysisResponse {
   summary: {
     total_system_cylinders: number;
     total_godown_cylinders: number;
+    total_godown_filled?: number;
+    total_godown_empty?: number;
     total_allocated_cylinders: number;
+    total_allocated_filled?: number;
+    total_allocated_empty?: number;
     total_system_value: number;
     active_vans_count: number;
     total_registered_vans: number;
@@ -221,6 +228,11 @@ export const StockAnalysisPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const productParam = searchParams.get('product');
   const locationParam = searchParams.get('location');
+
+  const user = useAuthStore((s) => s.user);
+  const role = (user?.role || '').toLowerCase();
+  const isAdmin = !role || role.includes('admin');
+  const userGodownId = user?.godown_id || user?.GodownId;
 
   // Section-specific search states (compact, non-spoiling inputs)
   const [productSearch, setProductSearch] = useState<string>('');
@@ -262,7 +274,10 @@ export const StockAnalysisPage: React.FC = () => {
     });
   }, [products, productSearch]);
   const inventoryLocations = useMemo<StockLocation[]>(() => {
-    const godownList = (data?.godowns && data.godowns.length > 0) ? data.godowns : [];
+    let godownList = (data?.godowns && data.godowns.length > 0) ? data.godowns : [];
+    if (userGodownId && !isAdmin) {
+      godownList = godownList.filter((g) => Number(g.GodownId) === Number(userGodownId));
+    }
     let godownLocations: StockLocation[] = [];
 
     if (godownList.length > 0) {
@@ -402,8 +417,11 @@ export const StockAnalysisPage: React.FC = () => {
       };
     });
 
+    if (userGodownId && !isAdmin) {
+      return godownLocations;
+    }
     return [...godownLocations, ...allVansList];
-  }, [products, data?.godowns, data?.active_vans, data?.idle_vans, data?.all_vans]);
+  }, [products, data?.godowns, data?.active_vans, data?.idle_vans, data?.all_vans, userGodownId, isAdmin]);
 
   const filteredLocations = useMemo(() => {
     const q = locationSearch.toLowerCase().trim();
@@ -431,12 +449,24 @@ export const StockAnalysisPage: React.FC = () => {
   }, [locationParam, inventoryLocations]);
 
   const totalProductFilled = useMemo(() => {
+    if (userGodownId && !isAdmin) {
+      return filteredProducts.reduce((sum, p) => {
+        const mg = (p.Godowns || []).find((g: any) => Number(g.GodownId) === Number(userGodownId));
+        return sum + (mg ? Number(mg.FilledQty || 0) : Number(p.GodownFilledQty ?? p.GodownQty ?? 0));
+      }, 0);
+    }
     return filteredProducts.reduce((sum, p) => sum + (Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0), 0);
-  }, [filteredProducts]);
+  }, [filteredProducts, userGodownId, isAdmin]);
 
   const totalProductEmpty = useMemo(() => {
+    if (userGodownId && !isAdmin) {
+      return filteredProducts.reduce((sum, p) => {
+        const mg = (p.Godowns || []).find((g: any) => Number(g.GodownId) === Number(userGodownId));
+        return sum + (mg ? Number(mg.EmptyQty || 0) : Number(p.GodownEmptyQty ?? p.EmptyQty ?? 0));
+      }, 0);
+    }
     return filteredProducts.reduce((sum, p) => sum + (Number(p.EmptyQty) || 0), 0);
-  }, [filteredProducts]);
+  }, [filteredProducts, userGodownId, isAdmin]);
 
   const totalLocationFilled = useMemo(() => {
     return filteredLocations.reduce((sum, l) => sum + (Number(l.filledQuantity) || 0), 0);
@@ -449,7 +479,11 @@ export const StockAnalysisPage: React.FC = () => {
   const summary = data?.summary || {
     total_system_cylinders: 0,
     total_godown_cylinders: 0,
+    total_godown_filled: 0,
+    total_godown_empty: 0,
     total_allocated_cylinders: 0,
+    total_allocated_filled: 0,
+    total_allocated_empty: 0,
     total_system_value: 0,
     active_vans_count: 0,
     total_registered_vans: 0,
@@ -463,25 +497,39 @@ export const StockAnalysisPage: React.FC = () => {
   // DETAIL SCREEN 1: PRODUCT ALLOCATION BREAKDOWN
   // ==========================================
   if (selectedProduct) {
-    const altTotal = selectedProduct.AltQty ?? ((selectedProduct.TotalQty || 0) * (selectedProduct.UnitConversion || 1));
-    const altUnit = selectedProduct.AltUnitName || 'KG';
-    const totalQty = selectedProduct.TotalQty || 0;
     const isCyl = selectedProduct.IsCylinder !== false && (selectedProduct.IsCylinder === true || /cylinder|lpg|kg/i.test(selectedProduct.ProductName || ''));
-
     const godownEmptyForSelected = selectedProduct.GodownEmptyQty ?? (
       isCyl && (!selectedProduct.Vans || selectedProduct.Vans.every((v) => (v.EmptyQty || 0) === 0))
         ? (selectedProduct.EmptyQty || 0)
         : 0
     );
 
-    const isGodownMatch = ((selectedProduct.GodownQty || 0) > 0 || godownEmptyForSelected > 0) && (
+    const godownsForDetail = (selectedProduct.Godowns && selectedProduct.Godowns.length > 0)
+      ? (selectedProduct.Godowns || []).filter((g: any) => !userGodownId || isAdmin || Number(g.GodownId) === Number(userGodownId))
+      : [];
+
+    const totalGodownFilledDetail = godownsForDetail.length > 0
+      ? godownsForDetail.reduce((sum: number, g: any) => sum + (g.FilledQty || 0), 0)
+      : (selectedProduct.GodownQty || 0);
+    const totalGodownEmptyDetail = godownsForDetail.length > 0
+      ? godownsForDetail.reduce((sum: number, g: any) => sum + (g.EmptyQty || 0), 0)
+      : godownEmptyForSelected;
+
+    const totalQty = (userGodownId && !isAdmin) ? (totalGodownFilledDetail + (isCyl ? totalGodownEmptyDetail : 0)) : (selectedProduct.TotalQty || 0);
+    const altTotal = totalQty * (selectedProduct.UnitConversion || 1);
+    const altUnit = selectedProduct.AltUnitName || 'KG';
+    const rateVal = selectedProduct.Rate ?? selectedProduct.PurchasePrice ?? 0;
+    const valuationVal = (userGodownId && !isAdmin) ? (altTotal * rateVal) : (selectedProduct.TotalValue || 0);
+
+    const isGodownMatch = (godownsForDetail.length > 0 || (selectedProduct.GodownQty || 0) > 0 || godownEmptyForSelected > 0) && (
       !allocationSearch.trim() ||
+      'godown'.includes(allocationSearch.toLowerCase().trim()) ||
+      (user?.godown_name && user.godown_name.toLowerCase().includes(allocationSearch.toLowerCase().trim())) ||
       'central godown'.includes(allocationSearch.toLowerCase().trim()) ||
-      'main storage godown'.includes(allocationSearch.toLowerCase().trim()) ||
-      'godown'.includes(allocationSearch.toLowerCase().trim())
+      'main storage godown'.includes(allocationSearch.toLowerCase().trim())
     );
 
-    const filteredVans = selectedProduct.Vans.filter((van) => {
+    const filteredVans = (userGodownId && !isAdmin) ? [] : selectedProduct.Vans.filter((van) => {
       const q = allocationSearch.toLowerCase().trim();
       if (!q) return true;
       return (
@@ -491,9 +539,9 @@ export const StockAnalysisPage: React.FC = () => {
       );
     });
 
-    const filteredAllocationsCount = (isGodownMatch ? 1 : 0) + filteredVans.length;
-    const totalFilledAlloc = (isGodownMatch ? (selectedProduct.GodownQty || 0) : 0) + filteredVans.reduce((sum, v) => sum + (v.BalanceQty ?? v.Qty), 0);
-    const totalEmptyAlloc = (isGodownMatch ? godownEmptyForSelected : 0) + filteredVans.reduce((sum, v) => sum + (v.EmptyQty ?? 0), 0);
+    const filteredAllocationsCount = (isGodownMatch ? (godownsForDetail.length || 1) : 0) + filteredVans.length;
+    const totalFilledAlloc = (isGodownMatch ? totalGodownFilledDetail : 0) + filteredVans.reduce((sum, v) => sum + (v.BalanceQty ?? v.Qty), 0);
+    const totalEmptyAlloc = (isGodownMatch ? totalGodownEmptyDetail : 0) + filteredVans.reduce((sum, v) => sum + (v.EmptyQty ?? 0), 0);
     const filteredAllocationsTotalQty = totalFilledAlloc + totalEmptyAlloc;
 
     return (
@@ -559,7 +607,7 @@ export const StockAnalysisPage: React.FC = () => {
               Total Stock Valuation
             </Text>
             <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={4}>
-              ₹{selectedProduct.TotalValue?.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{valuationVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
             <Text size="xs" c="dimmed" mt={4}>
               Formula: {altTotal} {altUnit} &times; ₹{(selectedProduct.Rate ?? selectedProduct.PurchasePrice).toFixed(2)}
@@ -652,16 +700,38 @@ export const StockAnalysisPage: React.FC = () => {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {isGodownMatch && (
+                {isGodownMatch && godownsForDetail.length > 0 && godownsForDetail.map((g: any) => (
+                  <Table.Tr key={`godown-${g.GodownId}`} style={{ height: 44 }}>
+                    <Table.Td>
+                      <Group gap={8}>
+                        <IconBuildingFactory2 size={16} color="#800020" />
+                        <Text size="sm" fw={700} c="#0f172a">{g.GodownName || 'Godown'}</Text>
+                      </Group>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" c="dimmed">{g.Location ? `${g.Location} Depot` : (g.IsCentral ? 'Main Storage Godown' : 'Secondary Depot')}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                      {g.FilledQty || 0}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
+                      {isCyl ? (g.EmptyQty || 0) : '—'}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
+                      {(g.FilledQty || 0) + (isCyl ? (g.EmptyQty || 0) : 0)}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+                {isGodownMatch && godownsForDetail.length === 0 && (
                   <Table.Tr style={{ height: 44 }}>
                     <Table.Td>
                       <Group gap={8}>
                         <IconBuildingFactory2 size={16} color="#800020" />
-                        <Text size="sm" fw={700} c="#0f172a">Central Godown</Text>
+                        <Text size="sm" fw={700} c="#0f172a">{user?.godown_name || 'Central Godown'}</Text>
                       </Group>
                     </Table.Td>
                     <Table.Td>
-                      <Text size="sm" c="dimmed">Main Storage Godown</Text>
+                      <Text size="sm" c="dimmed">Warehouse Storage</Text>
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                       {selectedProduct.GodownQty || 0}
@@ -1258,10 +1328,10 @@ export const StockAnalysisPage: React.FC = () => {
             Back to Dashboard
           </Button>
           <Title order={2} style={{ color: '#800020', fontWeight: 700 }}>
-            Stock Analysis
+            Stock Analysis {user?.godown_name && !isAdmin ? `— ${user.godown_name}` : ''}
           </Title>
           <Text size="sm" c="dimmed">
-            Central warehouse inventory balance and live van fleet allocations
+            {user?.godown_name && !isAdmin ? `Live stock and inventory breakdown for ${user.godown_name}` : 'Central warehouse inventory balance and live van fleet allocations'}
           </Text>
         </div>
         {/* Right Actions: Live Sync & Refresh */}
@@ -1335,12 +1405,12 @@ export const StockAnalysisPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Total System Stock
+              {userGodownId && !isAdmin ? `${user?.godown_name || 'Godown'} Total Stock` : 'Total System Stock'}
             </Text>
             <IconPackage size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {summary.total_system_cylinders.toLocaleString()}
+            {(userGodownId && !isAdmin ? summary.total_godown_cylinders : summary.total_system_cylinders).toLocaleString()}
           </Text>
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
@@ -1349,7 +1419,7 @@ export const StockAnalysisPage: React.FC = () => {
             <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
           </Group>
         </Paper>
-        {/* Card 2: Central Godown Stock */}
+        {/* Card 2: Central Godown Stock / Filled Stock */}
         <Paper
           p="md"
           radius="md"
@@ -1373,21 +1443,21 @@ export const StockAnalysisPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Central Godown Stock
+              {userGodownId && !isAdmin ? 'Filled Stock Available' : (user?.godown_name ? `${user.godown_name} Stock` : 'Central Godown Stock')}
             </Text>
             <IconBuildingFactory2 size={20} color="#800020" stroke={1.75} />
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {summary.total_godown_cylinders.toLocaleString()}
+            {(summary.total_godown_filled || 0).toLocaleString()}
           </Text>
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
-              {summary.godown_percentage}% ready for loading
+              {userGodownId && !isAdmin ? 'Full cylinders ready for distribution' : `${summary.godown_percentage}% ready for loading`}
             </Text>
             <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
           </Group>
         </Paper>
-        {/* Card 3: Allocated to Van Fleet */}
+        {/* Card 3: Allocated to Van Fleet / Empty Cylinders */}
         <Paper
           p="md"
           radius="md"
@@ -1411,61 +1481,84 @@ export const StockAnalysisPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Allocated to Van
+              {userGodownId && !isAdmin ? 'Empty Cylinders in Depot' : 'Allocated to Van'}
             </Text>
-            <IconTruckDelivery size={20} color="#800020" stroke={1.75} />
+            {userGodownId && !isAdmin ? (
+              <IconRotateClockwise2 size={20} color="#800020" stroke={1.75} />
+            ) : (
+              <IconTruckDelivery size={20} color="#800020" stroke={1.75} />
+            )}
           </Group>
           <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {summary.total_allocated_cylinders.toLocaleString()}
+            {((userGodownId && !isAdmin ? summary.total_godown_empty : summary.total_allocated_cylinders) || 0).toLocaleString()}
           </Text>
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
-              {summary.allocated_percentage}% onboard active vans
+              {userGodownId && !isAdmin ? 'Returned empty cylinders stored' : `${summary.allocated_percentage}% onboard active vans`}
             </Text>
             <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
           </Group>
         </Paper>
-        {/* Card 4: Active Delivery Vans */}
+        {/* Card 4: Active Delivery Vans / Depot Status */}
         <Paper
           p="md"
           radius="md"
           withBorder
-          onClick={() => navigate('/allocations')}
+          onClick={() => {
+            if (isAdmin) navigate('/allocations');
+          }}
           style={{
             backgroundColor: '#ffffff',
             borderColor: '#e2e8f0',
-            cursor: 'pointer',
+            cursor: isAdmin ? 'pointer' : 'default',
             boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
             transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-            e.currentTarget.style.borderColor = '#cbd5e1';
+            if (isAdmin) {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
+              e.currentTarget.style.borderColor = '#cbd5e1';
+            }
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'none';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-            e.currentTarget.style.borderColor = '#e2e8f0';
+            if (isAdmin) {
+              e.currentTarget.style.transform = 'none';
+              e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
+              e.currentTarget.style.borderColor = '#e2e8f0';
+            }
           }}
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Active Delivery Vans
+              {userGodownId && !isAdmin ? 'Depot Status' : 'Active Delivery Vans'}
             </Text>
-            <IconTruck size={20} color="#800020" stroke={1.75} />
+            {userGodownId && !isAdmin ? (
+              <IconBuildingWarehouse size={20} color="#800020" stroke={1.75} />
+            ) : (
+              <IconTruck size={20} color="#800020" stroke={1.75} />
+            )}
           </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em' }}>
-            {summary.active_vans_count}{' '}
-            <Text component="span" size="sm" c="dimmed" fw={600}>
-              Vans &bull; {summary.total_registered_vans} Total
+          {userGodownId && !isAdmin ? (
+            <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em' }}>
+              {filteredProducts.length}{' '}
+              <Text component="span" size="sm" c="dimmed" fw={600}>
+                Active Products
+              </Text>
             </Text>
-          </Text>
+          ) : (
+            <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em' }}>
+              {summary.active_vans_count}{' '}
+              <Text component="span" size="sm" c="dimmed" fw={600}>
+                Vans &bull; {summary.total_registered_vans} Total
+              </Text>
+            </Text>
+          )}
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
-              Holding active route stock
+              {userGodownId && !isAdmin ? (user?.godown_name || 'Active Warehouse Depot') : 'Holding active route stock'}
             </Text>
-            <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
+            {isAdmin && <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />}
           </Group>
         </Paper>
       </SimpleGrid>
@@ -1582,8 +1675,9 @@ export const StockAnalysisPage: React.FC = () => {
                     <Table.Tbody>
                       {filteredProducts.map((product) => {
                         const isCyl = product.IsCylinder !== false;
-                        const filled = product.FilledQty ?? (product.GodownQty + (product.AllocatedQty || 0));
-                        const empty = product.EmptyQty ?? 0;
+                        const mg = userGodownId && !isAdmin ? (product.Godowns || []).find((g: any) => Number(g.GodownId) === Number(userGodownId)) : null;
+                        const filled = mg ? Number(mg.FilledQty || 0) : (product.GodownFilledQty ?? product.FilledQty ?? (product.GodownQty + (product.AllocatedQty || 0)));
+                        const empty = mg ? Number(mg.EmptyQty || 0) : (product.GodownEmptyQty ?? product.EmptyQty ?? 0);
                         return (
                           <Table.Tr
                             key={product.ProductId}

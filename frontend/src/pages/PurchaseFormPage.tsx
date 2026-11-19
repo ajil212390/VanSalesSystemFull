@@ -742,15 +742,15 @@ export const PurchaseFormPage: React.FC = () => {
               verticalSpacing={0}
               horizontalSpacing={4}
               highlightOnHover
-              style={{ tableLayout: 'fixed', width: '100%', minWidth: 880 }}
+              style={{ tableLayout: 'fixed', width: '100%', minWidth: 960 }}
               styles={{
-                td: { paddingTop: 1, paddingBottom: 1, paddingLeft: 4, paddingRight: 4 },
+                td: { paddingTop: 4, paddingBottom: 4, paddingLeft: 4, paddingRight: 4 },
                 th: { paddingTop: 3, paddingBottom: 3, paddingLeft: 4, paddingRight: 4 },
               }}
             >
               <colgroup>
                 <col style={{ width: 38 }} />
-                <col style={{ width: 235 }} /> {/* Product: fits 220px select */}
+                <col style={{ width: 340 }} /> {/* Product: spacious product selector */}
                 <col style={{ width: '21%' }} /> {/* Qty & Unit */}
                 <col style={{ width: '15%' }} /> {/* Rate */}
                 <col style={{ width: '16%' }} /> {/* Taxable */}
@@ -789,10 +789,10 @@ export const PurchaseFormPage: React.FC = () => {
                         searchable
                         size="xs"
                         radius="sm"
-                        style={{ width: 220, maxWidth: '100%' }}
-                        comboboxProps={{ width: 220 }}
+                        style={{ width: '100%' }}
+                        comboboxProps={{ width: 340 }}
                         nothingFoundMessage={selectedLedgerId ? "No products found" : "Please select supplier first"}
-                        styles={{ input: { height: 24, minHeight: 24, fontSize: 12 } }}
+                        styles={{ input: { height: 32, minHeight: 32, fontSize: 13 } }}
                       />
                     </Table.Td>
 
@@ -824,10 +824,10 @@ export const PurchaseFormPage: React.FC = () => {
                           style={{ width: 42, flexShrink: 0 }}
                           styles={{
                             input: {
-                              height: 24,
-                              minHeight: 24,
-                              paddingLeft: 2,
-                              paddingRight: 2,
+                              height: 32,
+                              minHeight: 32,
+                              paddingLeft: 4,
+                              paddingRight: 4,
                               textAlign: 'center',
                               fontWeight: 600,
                               fontSize: 13,
@@ -881,8 +881,8 @@ export const PurchaseFormPage: React.FC = () => {
                           style={{ width: 115 }}
                           styles={{
                             input: {
-                              height: 24,
-                              minHeight: 24,
+                              height: 32,
+                              minHeight: 32,
                               fontWeight: 600,
                               fontSize: 13,
                               backgroundColor: '#ffffff',
@@ -1001,14 +1001,14 @@ export const PurchaseFormPage: React.FC = () => {
         <Table
           verticalSpacing="xs"
           horizontalSpacing="xs"
-          style={{ tableLayout: 'fixed', width: '100%', minWidth: 880, borderBottom: 'none' }}
+          style={{ tableLayout: 'fixed', width: '100%', minWidth: 960, borderBottom: 'none' }}
           styles={{
             td: { border: 'none', paddingTop: 8, paddingBottom: 8, paddingLeft: 4, paddingRight: 4 },
           }}
         >
           <colgroup>
             <col style={{ width: 38 }} />
-            <col style={{ width: 235 }} /> {/* Product */}
+            <col style={{ width: 340 }} /> {/* Product */}
             <col style={{ width: '21%' }} /> {/* Qty & Unit */}
             <col style={{ width: '15%' }} /> {/* Rate */}
             <col style={{ width: '16%' }} /> {/* Taxable */}

@@ -77,6 +77,7 @@ export interface LedgerItem {
   PAN?: string;
   IsBillWise: boolean;
   CreditPeriodDays: number;
+  DeliveryFrequencyDays?: number;
   CreditLimit: number;
   BankName?: string;
   BankAccountNumber?: string;
@@ -111,6 +112,7 @@ interface LedgerFormValues {
   PAN: string;
   IsBillWise: boolean;
   CreditPeriodDays: number | string;
+  DeliveryFrequencyDays: number | string;
   CreditLimit: number | string;
   BankName: string;
   BankAccountNumber: string;
@@ -143,6 +145,7 @@ const defaultLedgerValues: LedgerFormValues = {
   PAN: '',
   IsBillWise: true,
   CreditPeriodDays: '',
+  DeliveryFrequencyDays: '',
   CreditLimit: '',
   BankName: '',
   BankAccountNumber: '',
@@ -242,6 +245,7 @@ export const AccountsPage: React.FC = () => {
         PAN: safeStr(data.PAN)?.toUpperCase() || null,
         IsBillWise: Boolean(data.IsBillWise),
         CreditPeriodDays: Math.round(safeNum(data.CreditPeriodDays, 0)),
+        DeliveryFrequencyDays: Math.round(safeNum(data.DeliveryFrequencyDays, 15)),
         CreditLimit: safeNum(data.CreditLimit, 0),
         BankName: safeStr(data.BankName),
         BankAccountNumber: safeStr(data.BankAccountNumber),
@@ -400,6 +404,7 @@ export const AccountsPage: React.FC = () => {
       PAN: ledger.PAN || '',
       IsBillWise: ledger.IsBillWise,
       CreditPeriodDays: Number(ledger.CreditPeriodDays) !== 0 ? Number(ledger.CreditPeriodDays) : '',
+      DeliveryFrequencyDays: Number(ledger.DeliveryFrequencyDays) !== 0 ? Number(ledger.DeliveryFrequencyDays) : '',
       CreditLimit: Number(ledger.CreditLimit) !== 0 ? Number(ledger.CreditLimit) : '',
       BankName: ledger.BankName || '',
       BankAccountNumber: ledger.BankAccountNumber || '',
@@ -795,10 +800,10 @@ export const AccountsPage: React.FC = () => {
                       color="#e2e8f0"
                     />
 
-                    {/* Row 3: Credit Terms & Stock Limit */}
-                    <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                    {/* Row 3: Credit Terms, Delivery Cycle & Stock Limit */}
+                    <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
                       <Controller
-                        name="CreditPeriodDays"
+                        name="DeliveryFrequencyDays"
                         control={control}
                         render={({ field }) => (
                           <NumberInput
@@ -813,11 +818,26 @@ export const AccountsPage: React.FC = () => {
                       />
 
                       <Controller
+                        name="CreditPeriodDays"
+                        control={control}
+                        render={({ field }) => (
+                          <NumberInput
+                            label="Credit Days / Grace Period (Days)"
+                            placeholder="e.g. 15, 30 days"
+                            min={0}
+                            hideControls
+                            value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}
+                            onChange={(val) => field.onChange(val === '' ? '' : val)}
+                          />
+                        )}
+                      />
+
+                      <Controller
                         name="CreditLimit"
                         control={control}
                         render={({ field }) => (
                           <NumberInput
-                            label="Credit Limit"
+                            label="Credit Limit (₹)"
                             placeholder="0.00"
                             min={0}
                             decimalScale={2}
@@ -834,8 +854,8 @@ export const AccountsPage: React.FC = () => {
                         control={control}
                         render={({ field }) => (
                           <NumberInput
-                            label="Empty Stock Limit"
-                            placeholder="0"
+                            label="Empty Cylinder Credit Limit"
+                            placeholder="e.g. 50 cylinders"
                             min={0}
                             hideControls
                             value={field.value === '' || field.value === null || field.value === undefined ? '' : field.value}

@@ -266,8 +266,8 @@ export const ReceiptFormPage: React.FC = () => {
         isDebtor: bInfo?.isDebtor ?? false,
         absBal: bInfo?.absBal ?? 0,
         balType: bInfo?.balType ?? 'Dr',
-        formattedBal: bInfo?.formatted ?? '₹0.00',
-        balanceText: bInfo ? `${bInfo.label}: ${bInfo.formatted}` : '',
+        formattedBal: bInfo?.formatted ?? '₹0.00 Dr',
+        balanceText: bInfo ? bInfo.formatted : '',
       };
     });
   }, [ledgers]);
@@ -956,20 +956,26 @@ export const ReceiptFormPage: React.FC = () => {
                 const item = bankAndCashOptions.find((o) => o.value === option.value);
                 const isCr = item?.balType === 'Cr';
                 return (
-                  <Group justify="space-between" wrap="nowrap" style={{ width: '100%' }}>
+                  <Group justify="space-between" wrap="nowrap" style={{ width: '100%', padding: '4px 2px' }}>
                     <Text size="sm" fw={500}>{option.label}</Text>
                     {item?.balance && (
                       <Badge
-                        size="xs"
+                        size="sm"
                         variant="light"
+                        tt="none"
                         style={{
                           backgroundColor: isCr ? '#fef2f2' : '#fdf2f4',
                           color: isCr ? '#b91c1c' : '#800020',
                           border: `1px solid ${isCr ? '#fecaca' : '#fecdd3'}`,
-                          fontWeight: 700,
+                          fontWeight: 600,
+                          fontSize: 11,
+                          letterSpacing: '0.3px',
+                          padding: '3px 8px',
+                          borderRadius: 6,
+                          fontVariantNumeric: 'tabular-nums',
                         }}
                       >
-                        Bal: {item.balance}
+                        {item.balance}
                       </Badge>
                     )}
                   </Group>
@@ -1012,13 +1018,13 @@ export const ReceiptFormPage: React.FC = () => {
             >
               <colgroup>
                 <col style={{ width: 44 }} /> {/* # */}
-                <col style={{ width: '45%' }} /> {/* Particulars (Ledger) */}
-                <col style={{ width: 170 }} /> {/* Amount */}
-                <col style={{ width: 220 }} /> {/* Bill Allocation Action */}
+                <col style={{ width: '50%' }} /> {/* Particulars (Ledger) */}
+                <col style={{ width: 160 }} /> {/* Amount */}
+                <col style={{ width: 210 }} /> {/* Bill Allocation Action */}
                 <col style={{ width: 50 }} /> {/* Delete */}
               </colgroup>
               <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <Table.Tr style={{ height: 28 }}>
+                <Table.Tr style={{ height: 32 }}>
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textAlign: 'left' }}>#</Table.Th>
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textAlign: 'left' }}>
                     PARTICULARS (LEDGER)
@@ -1041,7 +1047,7 @@ export const ReceiptFormPage: React.FC = () => {
                   const hasAllocations = allocatedSum > 0;
 
                   return (
-                    <Table.Tr key={row.id} style={{ minHeight: 42, verticalAlign: 'middle' }}>
+                    <Table.Tr key={row.id} style={{ minHeight: 48, verticalAlign: 'middle' }}>
                       {/* # */}
                       <Table.Td style={{ textAlign: 'left' }}>
                         <Text size="xs" fw={600} c="dimmed">
@@ -1050,10 +1056,10 @@ export const ReceiptFormPage: React.FC = () => {
                       </Table.Td>
 
                       {/* Particulars (Ledger Select) */}
-                      <Table.Td style={{ padding: '4px 6px' }}>
+                      <Table.Td style={{ padding: '6px 6px' }}>
                         {(() => {
                           const balInfo = getLedgerBalanceInfo(selectedLedger);
-                          const hasBal = Boolean(balInfo && selectedLedger);
+                          
                           return (
                             <Box style={{ position: 'relative' }}>
                               <Select
@@ -1072,29 +1078,32 @@ export const ReceiptFormPage: React.FC = () => {
                                 }}
                                 searchable
                                 clearable
-                                size="xs"
-                                radius="sm"
+                                size="sm"
+                                radius="md"
                                 renderOption={({ option }) => {
                                   const item = allLedgerOptions.find((o) => o.value === option.value);
                                   const isDebtor = item?.isDebtor;
                                   return (
-                                    <Group justify="space-between" wrap="nowrap" style={{ width: '100%', padding: '2px 0' }}>
-                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 8 }}>
-                                        <Text size="xs" fw={600} c="#0f172a" truncate>
+                                    <Group justify="space-between" wrap="nowrap" style={{ width: '100%', padding: '4px 2px' }}>
+                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, marginRight: 12 }}>
+                                        <Text size="sm" fw={600} c="#0f172a" truncate>
                                           {option.label}
                                         </Text>
                                       </div>
                                       {item && item.balanceText && (
                                         <Badge
-                                          size="xs"
+                                          size="sm"
                                           variant="light"
+                                          tt="none"
                                           style={{
                                             backgroundColor: isDebtor ? '#fdf2f4' : '#f8fafc',
                                             color: isDebtor ? '#800020' : '#475569',
                                             border: `1px solid ${isDebtor ? '#f5c2cb' : '#e2e8f0'}`,
-                                            fontWeight: 800,
-                                            fontSize: 10,
-                                            letterSpacing: '0.2px',
+                                            fontWeight: 600,
+                                            fontSize: 11,
+                                            letterSpacing: '0.3px',
+                                            padding: '3px 8px',
+                                            borderRadius: 6,
                                             flexShrink: 0,
                                             fontVariantNumeric: 'tabular-nums',
                                           }}
@@ -1105,76 +1114,46 @@ export const ReceiptFormPage: React.FC = () => {
                                     </Group>
                                   );
                                 }}
-                                rightSection={
-                                  hasBal && balInfo ? (
-                                    <Tooltip label={`Click to fill ₹${balInfo.absBal.toFixed(2)} into Amount`} withArrow position="top">
-                                      <Badge
-                                        size="xs"
-                                        variant="filled"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (balInfo.absBal > 0) {
-                                            updateRowAmount(index, balInfo.absBal);
-                                          }
-                                        }}
-                                        style={{
-                                          cursor: 'pointer',
-                                          backgroundColor: '#800020',
-                                          color: '#ffffff',
-                                          border: '1px solid #800020',
-                                          fontWeight: 800,
-                                          fontSize: 10,
-                                          letterSpacing: '0.3px',
-                                          padding: '2px 7px',
-                                          borderRadius: 4,
-                                          marginRight: 2,
-                                          boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
-                                          whiteSpace: 'nowrap',
-                                          userSelect: 'none',
-                                          lineHeight: '16px',
-                                        }}
-                                      >
-                                        {balInfo.isDebtor ? 'Receivable: ' : 'Bal: '}₹{balInfo.absBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} {balInfo.balType}
-                                      </Badge>
-                                    </Tooltip>
-                                  ) : undefined
-                                }
-                                rightSectionWidth={hasBal ? 175 : 28}
-                                rightSectionPointerEvents="auto"
                                 styles={{
                                   input: {
-                                    height: 28,
-                                    minHeight: 28,
-                                    fontSize: 12,
-                                    paddingRight: hasBal ? 180 : 28,
+                                    height: 38,
+                                    minHeight: 38,
+                                    fontSize: 13,
+                                    fontWeight: 500,
+                                    borderColor: '#cbd5e1',
                                   },
                                 }}
                               />
                               {selectedLedger && balInfo && (
                                 <Group justify="space-between" align="center" gap={4} mt={3} px={2} wrap="nowrap">
-                                  <Text size="10px" c="dimmed" truncate style={{ maxWidth: '50%' }}>
+                                  <Text size="10px" c="dimmed" truncate style={{ maxWidth: '40%' }}>
                                     {selectedLedger.group_name || 'Ledger'}
                                   </Text>
-                                  <Group gap={4} wrap="nowrap">
-                                    <Text size="10px" fw={700} style={{ color: '#800020' }}>
+                                  <Group gap={6} align="center" wrap="nowrap">
+                                    <Text size="11px" c="#64748b" fw={500}>
                                       {balInfo.isDebtor ? 'Balance Receivable:' : 'Current Balance:'}
                                     </Text>
                                     <Tooltip label="Click to autofill this receivable amount" withArrow position="top">
-                                      <Text
-                                        size="11px"
-                                        fw={800}
+                                      <Badge
+                                        size="sm"
+                                        variant="light"
+                                        color="burgundy"
                                         style={{
-                                          color: '#800020',
                                           cursor: 'pointer',
-                                          textDecoration: 'underline dotted',
+                                          backgroundColor: '#fdf2f4',
+                                          color: '#800020',
+                                          borderColor: '#fbcfe8',
+                                          fontWeight: 700,
+                                          fontSize: 11,
                                           fontVariantNumeric: 'tabular-nums',
+                                          padding: '2px 8px',
                                         }}
                                         onClick={() => {
                                           if (balInfo.absBal > 0) updateRowAmount(index, balInfo.absBal);
                                         }}
                                       >
                                         ₹{balInfo.absBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balInfo.balType}
-                                      </Text>
+                                      </Badge>
                                     </Tooltip>
                                   </Group>
                                 </Group>
@@ -1188,8 +1167,8 @@ export const ReceiptFormPage: React.FC = () => {
                       <Table.Td style={{ textAlign: 'right', paddingRight: 4 }}>
                         <Box style={{ display: 'flex', justifyContent: 'flex-end' }}>
                           <NumberInput
-                            size="xs"
-                            radius="sm"
+                            size="sm"
+                            radius="md"
                             min={0}
                             decimalScale={2}
                             hideControls
@@ -1198,19 +1177,19 @@ export const ReceiptFormPage: React.FC = () => {
                             value={row.amount}
                             onFocus={(e) => e.currentTarget.select()}
                             onChange={(val: any) => updateRowAmount(index, val)}
-                            style={{ width: 125 }}
+                            style={{ width: 140 }}
                             styles={{
                               input: {
-                                height: 24,
-                                minHeight: 24,
+                                height: 38,
+                                minHeight: 38,
                                 fontWeight: 600,
                                 fontSize: 13,
                                 backgroundColor: '#ffffff',
                                 borderColor: '#cbd5e1',
                                 color: '#0f172a',
                                 textAlign: 'right',
-                                paddingLeft: 4,
-                                paddingRight: 6,
+                                paddingLeft: 8,
+                                paddingRight: 8,
                                 fontVariantNumeric: 'tabular-nums',
                               },
                             }}
@@ -1223,10 +1202,11 @@ export const ReceiptFormPage: React.FC = () => {
                         {row.ledgerId ? (
                           <Group gap={6} justify="center" wrap="nowrap">
                             <Button
-                              size="compact-xs"
+                              size="xs"
+                              radius="md"
                               variant={hasAllocations ? 'filled' : 'light'}
                               color="burgundy"
-                              leftSection={<IconReceipt size={13} />}
+                              leftSection={<IconReceipt size={14} />}
                               disabled={!row.amount || Number(row.amount) <= 0}
                               onClick={() => handleOpenAllocationModal(index)}
                               title={
@@ -1234,15 +1214,16 @@ export const ReceiptFormPage: React.FC = () => {
                                   ? 'Enter line amount first to allocate bills'
                                   : undefined
                               }
-                              style={
-                                !row.amount || Number(row.amount) <= 0
+                              style={{
+                                height: 38,
+                                ...(!row.amount || Number(row.amount) <= 0
                                   ? { backgroundColor: '#f1f5f9', color: '#94a3b8', cursor: 'not-allowed' }
                                   : hasAllocations
                                   ? { backgroundColor: '#800020', color: '#ffffff', fontWeight: 600 }
                                   : isSundryParty
                                   ? { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 600 }
-                                  : { backgroundColor: '#f8fafc', color: '#64748b' }
-                              }
+                                  : { backgroundColor: '#f8fafc', color: '#64748b' }),
+                              }}
                             >
                               {hasAllocations
                                 ? `Allocated ₹${allocatedSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
@@ -1313,9 +1294,9 @@ export const ReceiptFormPage: React.FC = () => {
           >
             <colgroup>
               <col style={{ width: 44 }} />
-              <col style={{ width: '45%' }} />
-              <col style={{ width: 170 }} />
-              <col style={{ width: 220 }} />
+              <col style={{ width: '50%' }} />
+              <col style={{ width: 160 }} />
+              <col style={{ width: 210 }} />
               <col style={{ width: 50 }} />
             </colgroup>
             <Table.Tbody>
@@ -1458,7 +1439,7 @@ export const ReceiptFormPage: React.FC = () => {
                   ₹{modalTotals.rowAmt.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </span>
               </Text>
-              <Text size="sm" fw={600} c={modalTotals.hasOverRowAmt ? '#dc2626' : '#16a34a'}>
+              <Text size="sm" fw={600} c={modalTotals.hasOverRowAmt ? '#dc2626' : '#800020'}>
                 Allocated:{' '}
                 <span style={{ fontWeight: 700 }}>
                   ₹{modalTotals.totalAllocated.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
@@ -1602,7 +1583,7 @@ export const ReceiptFormPage: React.FC = () => {
                                   {bill.BillReference}
                                 </Text>
                                 {saleId && (String(bill.SalesId) === String(saleId) || String(bill.PurchaseId) === String(saleId)) && (
-                                  <Badge size="xs" color="teal" variant="light" radius="sm">
+                                  <Badge size="xs" color="burgundy" variant="light" radius="sm">
                                     New Bill
                                   </Badge>
                                 )}
@@ -1624,7 +1605,7 @@ export const ReceiptFormPage: React.FC = () => {
                               <Text size="xs" c="dimmed">—</Text>
                             ) : (
                               <Group gap={4} justify="flex-end" align="center" wrap="nowrap">
-                                <Text size="xs" fw={600} c={bill.AllocatedSoFar > 0 ? '#15803d' : '#64748b'}>
+                                <Text size="xs" fw={600} c={bill.AllocatedSoFar > 0 ? '#800020' : '#64748b'}>
                                   ₹{bill.AllocatedSoFar.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                 </Text>
                                 {bill.AllocatedSoFar > 0 && (

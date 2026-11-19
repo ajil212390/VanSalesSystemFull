@@ -42,6 +42,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { useAuthStore } from '../store/authStore';
 import { DateInputDDMMYY, formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 interface EmptyBreakdownItem {
@@ -75,11 +76,19 @@ export const ReceiptNotesPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
+  type DateFilterType = 'all' | 'today' | 'this_week' | 'this_month' | 'custom';
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
   const [selectedNote, setSelectedNote] = useState<ReceiptNoteItem | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [deleteNote, setDeleteNote] = useState<ReceiptNoteItem | null>(null);
-  const [selectedReceivingGodown, setSelectedReceivingGodown] = useState<string>('1');
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'Administrator';
+  const defaultGodown = user?.GodownId && !isAdmin ? String(user.GodownId) : '1';
+
+  const [selectedReceivingGodown, setSelectedReceivingGodown] = useState<string>(defaultGodown);
 
   // Fetch Godowns for receiving warehouse selection
   const { data: godowns = [] } = useQuery<any[]>({
@@ -435,9 +444,41 @@ export const ReceiptNotesPage: React.FC = () => {
         color: 'red' });
     } });
 
+  const isDateInFilter = (dateStr: string) => {
+    if (!dateStr || dateFilter === 'all') return true;
+    const d = dateStr.slice(0, 10);
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    if (dateFilter === 'today') {
+      return d === todayStr;
+    }
+    if (dateFilter === 'this_week') {
+      const day = today.getDay();
+      const diff = (day === 0 ? -6 : 1) - day;
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+      const mondayStr = monday.toISOString().split('T')[0];
+      return d >= mondayStr && d <= todayStr;
+    }
+    if (dateFilter === 'this_month') {
+      const monthStartStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+      return d >= monthStartStr && d <= todayStr;
+    }
+    if (dateFilter === 'custom') {
+      if (customStartDate && d < customStartDate) return false;
+      if (customEndDate && d > customEndDate) return false;
+      return true;
+    }
+    return true;
+  };
+
   // Filtered Notes: Settled first, then pending, then remaining
   const filteredNotes = useMemo(() => {
     const list = receiptNotes.filter((n) => {
+      // 1. Date filter
+      if (!isDateInFilter(n.date)) return false;
+
       const q = searchQuery.toLowerCase().trim();
       const matchSearch =
         !q ||
@@ -551,7 +592,7 @@ export const ReceiptNotesPage: React.FC = () => {
                     ? 'Dispatch empty cylinders to supplier for refilling.'
                     : createMode === 'GODOWN_TRANSFER'
                     ? 'Transfer stock between warehouse godowns.'
-                    : 'Record unsold full & empty cylinders returned by route delivery vans into Central Godown.'}
+                    : `Record unsold full & empty cylinders returned by route delivery vans into ${user?.godown_name || 'Central Godown'}.`}
                 </Text>
               </div>
               <CloseButton
@@ -658,6 +699,8 @@ export const ReceiptNotesPage: React.FC = () => {
                   <Select
                     label="Receiving Godown"
                     placeholder="Receiving Godown"
+                    description={!isAdmin && user?.godown_name ? `Locked to ${user.godown_name}` : undefined}
+                    disabled={!isAdmin && Boolean(user?.GodownId)}
                     data={godownOptions}
                     value={createDestId}
                     onChange={(val) => setCreateDestId(val)}
@@ -1057,7 +1100,7 @@ export const ReceiptNotesPage: React.FC = () => {
                   ),
                   value: 'all' },
               ]}
-              radius="sm"
+              radius="xl"
               size="xs"
               transitionDuration={250}
               transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
@@ -1065,15 +1108,78 @@ export const ReceiptNotesPage: React.FC = () => {
                 root: {
                   backgroundColor: '#f1f5f9',
                   padding: 3,
-                  borderRadius: 8,
+                  borderRadius: 9999,
                   border: '1px solid #e2e8f0' },
                 indicator: {
                   backgroundColor: '#800020',
-                  boxShadow: '0 1px 3px rgba(128, 0, 32, 0.25)',
-                  borderRadius: 6 },
+                  boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                  borderRadius: 9999 },
                 label: {
-                  padding: '4px 12px' } }}
+                  padding: '5px 14px' } }}
             />
+
+            {/* Date Range SegmentedControl */}
+            <SegmentedControl
+              value={dateFilter}
+              onChange={(val) => setDateFilter(val as any)}
+              color="burgundy"
+              data={[
+                { label: 'All', value: 'all' },
+                { label: 'Today', value: 'today' },
+                { label: 'This Week', value: 'this_week' },
+                { label: 'This Month', value: 'this_month' },
+                { label: 'Custom', value: 'custom' },
+              ]}
+              radius="xl"
+              size="xs"
+              transitionDuration={250}
+              transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+              styles={{
+                root: {
+                  backgroundColor: '#f1f5f9',
+                  padding: 3,
+                  borderRadius: 9999,
+                  border: '1px solid #e2e8f0',
+                  boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+                },
+                control: {
+                  border: 'none',
+                },
+                indicator: {
+                  backgroundColor: '#800020',
+                  boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                  borderRadius: 9999,
+                  border: 'none',
+                  outline: 'none',
+                },
+                label: {
+                  padding: '5px 14px',
+                  fontWeight: 600,
+                  fontSize: 12,
+                  transition: 'color 150ms ease, font-weight 150ms ease',
+                }
+              }}
+            />
+
+            {dateFilter === 'custom' && (
+              <Group gap="xs" align="center">
+                <Box style={{ width: 125 }}>
+                  <DateInputDDMMYY
+                    placeholder="From Date"
+                    value={customStartDate}
+                    onChange={(val) => setCustomStartDate(val)}
+                  />
+                </Box>
+                <Text size="xs" c="dimmed">to</Text>
+                <Box style={{ width: 125 }}>
+                  <DateInputDDMMYY
+                    placeholder="To Date"
+                    value={customEndDate}
+                    onChange={(val) => setCustomEndDate(val)}
+                  />
+                </Box>
+              </Group>
+            )}
 
             {/* Search Input matching System */}
             <TextInput
@@ -1444,7 +1550,8 @@ export const ReceiptNotesPage: React.FC = () => {
             {selectedNote.status === 'pending' && (
               <Select
                 label="Receiving Godown"
-                description="Accept returned cylinders into this godown location"
+                description={!isAdmin && user?.godown_name ? `Accept returned cylinders into ${user.godown_name}` : 'Accept returned cylinders into this godown location'}
+                disabled={!isAdmin && Boolean(user?.GodownId)}
                 size="xs"
                 value={selectedReceivingGodown}
                 onChange={(val) => setSelectedReceivingGodown(val || '1')}

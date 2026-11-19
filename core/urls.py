@@ -9,12 +9,13 @@ from core.views import (
     GroupViewSet, LedgerViewSet, ProductPriceAuditViewSet, CustomerProductPriceViewSet,
     PurchaseViewSet, PaymentViewSet, LedgerLineViewSet, DeliveryNoteViewSet, ReceiptNoteViewSet,
     EndRouteDriverViewSet, SalesViewSet, ConnectionPackageViewSet, GodownViewSet,
-    FinancialYearViewSet
+    FinancialYearViewSet, PaymentGroupViewSet
 )
 
 
 router = DefaultRouter()
 router.register(r'godowns', GodownViewSet, basename='godown')
+router.register(r'payment-groups', PaymentGroupViewSet, basename='payment-group')
 router.register(r'financial-years', FinancialYearViewSet, basename='financial-year')
 router.register(r'drivers', DriverViewSet, basename='driver')
 router.register(r'vehicles', VehicleViewSet, basename='vehicle')

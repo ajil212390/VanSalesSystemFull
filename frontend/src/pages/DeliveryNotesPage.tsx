@@ -18,7 +18,8 @@ import {
   Box,
   Tooltip,
   CloseButton,
-  Divider
+  Divider,
+  SegmentedControl
 } from '@mantine/core';
 import {
   IconClipboardList,
@@ -28,12 +29,14 @@ import {
   IconSearch,
   IconPackage,
   IconArrowLeft,
-  IconBuildingFactory2
+  IconBuildingFactory2,
+  IconPrinter
 } from '@tabler/icons-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { useAuthStore } from '../store/authStore';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 import { DateInputDDMMYY, formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
@@ -77,13 +80,24 @@ export const DeliveryNotesPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const user = useAuthStore((s) => s.user);
+  const isAdmin = user?.role === 'Administrator';
+  const defaultGodown = user?.GodownId && !isAdmin ? String(user.GodownId) : '1';
+
   const [formOpened, setFormOpened] = useState(false);
   const [editingNote, setEditingNote] = useState<DeliveryNote | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; no: string } | null>(null);
 
+  // Filters State
+  type DateFilterType = 'all' | 'today' | 'this_week' | 'this_month' | 'custom';
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [selectedGodownFilter, setSelectedGodownFilter] = useState<string>('all');
+
   // Form State for Delivery Note
-  const [selectedGodownId, setSelectedGodownId] = useState<string>('1');
+  const [selectedGodownId, setSelectedGodownId] = useState<string>(defaultGodown);
   const [selectedAllocation, setSelectedAllocation] = useState<string | null>(null);
   const [deliveryDate, setDeliveryDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [remarks, setRemarks] = useState('');
@@ -339,17 +353,57 @@ export const DeliveryNotesPage: React.FC = () => {
     }
   });
 
+  const isDateInFilter = (dateStr: string) => {
+    if (!dateStr || dateFilter === 'all') return true;
+    const d = dateStr.slice(0, 10);
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+
+    if (dateFilter === 'today') {
+      return d === todayStr;
+    }
+    if (dateFilter === 'this_week') {
+      const day = today.getDay();
+      const diff = (day === 0 ? -6 : 1) - day;
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+      const mondayStr = monday.toISOString().split('T')[0];
+      return d >= mondayStr && d <= todayStr;
+    }
+    if (dateFilter === 'this_month') {
+      const monthStartStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+      return d >= monthStartStr && d <= todayStr;
+    }
+    if (dateFilter === 'custom') {
+      if (customStartDate && d < customStartDate) return false;
+      if (customEndDate && d > customEndDate) return false;
+      return true;
+    }
+    return true;
+  };
+
   const filteredNotes = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return deliveryNotes;
-    return deliveryNotes.filter(
-      (dn) =>
+    return deliveryNotes.filter((dn) => {
+      // 1. Date filter
+      if (!isDateInFilter(dn.DeliveryDate)) return false;
+
+      // 2. Godown filter
+      if (selectedGodownFilter !== 'all') {
+        const gid = String((dn as any).GodownId || '');
+        if (gid && gid !== selectedGodownFilter) return false;
+      }
+
+      // 3. Search query
+      if (!q) return true;
+      return (
         dn.DeliveryNoteNo.toLowerCase().includes(q) ||
         (dn.vehicle_number && dn.vehicle_number.toLowerCase().includes(q)) ||
         (dn.driver_name && dn.driver_name.toLowerCase().includes(q)) ||
         (dn.route_name && dn.route_name.toLowerCase().includes(q))
-    );
-  }, [deliveryNotes, searchQuery]);
+      );
+    });
+  }, [deliveryNotes, searchQuery, dateFilter, customStartDate, customEndDate, selectedGodownFilter]);
 
   const totalLoadedCylinders = useMemo(() => {
     return deliveryNotes.reduce((acc, dn) => acc + (dn.total_cylinders || 0), 0);
@@ -445,6 +499,8 @@ export const DeliveryNotesPage: React.FC = () => {
             <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="sm">
               <Select
                 label="Dispatch From Godown"
+                description={!isAdmin && user?.godown_name ? `Locked to ${user.godown_name}` : undefined}
+                disabled={!isAdmin && Boolean(user?.GodownId)}
                 data={(godowns.length > 0 ? godowns : [
                   { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
                   { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
@@ -693,6 +749,107 @@ export const DeliveryNotesPage: React.FC = () => {
             </Paper>
           </SimpleGrid>
 
+          {/* Date & Godown Filters Toolbar */}
+          <Paper
+            p="sm"
+            radius="md"
+            withBorder
+            style={{
+              backgroundColor: '#ffffff',
+              borderColor: '#e2e8f0',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
+            }}
+          >
+            <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+              <Group gap="xs" align="center" wrap="wrap">
+                <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  Date Filter:
+                </Text>
+                <SegmentedControl
+                  size="xs"
+                  radius="xl"
+                  color="burgundy"
+                  transitionDuration={250}
+                  transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+                  value={dateFilter}
+                  onChange={(val) => setDateFilter(val as any)}
+                  data={[
+                    { label: 'All', value: 'all' },
+                    { label: 'Today', value: 'today' },
+                    { label: 'This Week', value: 'this_week' },
+                    { label: 'This Month', value: 'this_month' },
+                    { label: 'Custom', value: 'custom' },
+                  ]}
+                  styles={{
+                    root: {
+                      backgroundColor: '#f1f5f9',
+                      border: '1px solid #e2e8f0',
+                      padding: 3,
+                      borderRadius: 9999,
+                      boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+                    },
+                    control: {
+                      border: 'none',
+                    },
+                    indicator: {
+                      backgroundColor: '#800020',
+                      borderRadius: 9999,
+                      boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                      border: 'none',
+                      outline: 'none',
+                    },
+                    label: {
+                      fontSize: 12,
+                      fontWeight: 600,
+                      padding: '5px 14px',
+                      transition: 'color 150ms ease, font-weight 150ms ease',
+                    },
+                  }}
+                />
+
+                {dateFilter === 'custom' && (
+                  <Group gap="xs" align="center">
+                    <Box style={{ width: 130 }}>
+                      <DateInputDDMMYY
+                        placeholder="From Date"
+                        value={customStartDate}
+                        onChange={(val) => setCustomStartDate(val)}
+                      />
+                    </Box>
+                    <Text size="xs" c="dimmed">to</Text>
+                    <Box style={{ width: 130 }}>
+                      <DateInputDDMMYY
+                        placeholder="To Date"
+                        value={customEndDate}
+                        onChange={(val) => setCustomEndDate(val)}
+                      />
+                    </Box>
+                  </Group>
+                )}
+              </Group>
+
+              <Group gap="xs" align="center">
+                {godowns.length > 1 && (
+                  <Select
+                    size="xs"
+                    radius="md"
+                    placeholder="All Godowns"
+                    value={selectedGodownFilter}
+                    onChange={(val) => setSelectedGodownFilter(val || 'all')}
+                    data={[
+                      { value: 'all', label: 'All Godowns' },
+                      ...godowns.map((g: any) => ({ value: String(g.GodownId), label: g.GodownName }))
+                    ]}
+                    style={{ width: 160 }}
+                  />
+                )}
+                <Badge variant="light" color="gray" size="sm">
+                  {filteredNotes.length} {filteredNotes.length === 1 ? 'Note' : 'Notes'}
+                </Badge>
+              </Group>
+            </Group>
+          </Paper>
+
           {/* Table */}
           <Paper radius="md" withBorder style={{ overflow: 'hidden', backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
             {isLoading ? (
@@ -782,6 +939,19 @@ export const DeliveryNotesPage: React.FC = () => {
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>
                         <Group gap={4} justify="center" wrap="nowrap">
+                          <Tooltip label="Print Loading Note / Challan PDF" withArrow position="top">
+                            <ActionIcon
+                              variant="subtle"
+                              color="burgundy"
+                              onClick={() => {
+                                window.open(`${apiClient.defaults.baseURL}/delivery-notes/${dn.DeliveryNoteId}/pdf/?_t=${Date.now()}`, '_blank');
+                              }}
+                              styles={{ root: { color: '#800020' } }}
+                            >
+                              <IconPrinter size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+
                           {dn.Status === 'COMPLETED' || dn.Status === 'SETTLED' ? (
                             <>
                               <Tooltip label="Shift settled & cylinders unloaded to Godown — Note is finalized" withArrow>

@@ -5,6 +5,7 @@ from django.contrib.auth import authenticate
 from drf_spectacular.utils import extend_schema_field
 from core.models import (
     User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver,
+    PaymentGroup,
     Category, Unit, Product, Group, Ledger, ProductPriceAudit, CustomerProductPrice,
     Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
     Payment, PaymentLine, BillwiseAllocation, LedgerLine,
@@ -34,10 +35,21 @@ class UserMeSerializer(serializers.ModelSerializer):
     company_name = serializers.SerializerMethodField()
     driver_id = serializers.SerializerMethodField()
     DriverId = serializers.SerializerMethodField()
+    godown_id = serializers.IntegerField(source='GodownId', read_only=True, allow_null=True)
+    GodownId = serializers.IntegerField(read_only=True, allow_null=True)
+    godown_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'role', 'company_id', 'company_name', 'driver_id', 'DriverId']
+        fields = ['id', 'username', 'role', 'company_id', 'company_name', 'driver_id', 'DriverId', 'godown_id', 'GodownId', 'godown_name']
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_godown_name(self, obj):
+        if obj.GodownId:
+            from .models import Godown
+            g = Godown.objects.filter(GodownId=obj.GodownId).first()
+            return g.GodownName if g else None
+        return None
 
     @extend_schema_field(serializers.CharField)
     def get_company_name(self, obj):
@@ -95,6 +107,7 @@ class LoginSerializer(serializers.Serializer):
         refresh['username'] = user.Username
         refresh['role'] = user.UserRole.RoleName if user.UserRole else ''
         refresh['company_id'] = user.CompanyId
+        refresh['godown_id'] = user.GodownId
 
         return {
             'access': str(refresh.access_token),
@@ -289,20 +302,29 @@ class RouteSerializer(serializers.ModelSerializer):
         return None
 
 
+class PaymentGroupSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PaymentGroup
+        fields = ['PaymentGroupId', 'PaymentGroupName', 'IsActive', 'CompanyId', 'CreatedAt', 'UpdatedAt']
+        read_only_fields = ['PaymentGroupId', 'CreatedAt', 'UpdatedAt']
+
+
 class RouteVehicleDriverSerializer(serializers.ModelSerializer):
     RouteName = serializers.CharField(source='Route.RouteName', read_only=True)
     VehicleNumber = serializers.CharField(source='Vehicle.VehicleNumber', read_only=True)
     DriverName = serializers.CharField(source='Driver.DriverName', read_only=True)
+    PaymentGroupName = serializers.CharField(source='PaymentGroup.PaymentGroupName', read_only=True)
     route_name = serializers.CharField(source='Route.RouteName', read_only=True)
     vehicle_number = serializers.CharField(source='Vehicle.VehicleNumber', read_only=True)
     driver_name = serializers.CharField(source='Driver.DriverName', read_only=True)
+    payment_group_name = serializers.CharField(source='PaymentGroup.PaymentGroupName', read_only=True)
 
     class Meta:
         model = RouteVehicleDriver
         fields = [
-            'RouteVehicleDriverId', 'Route', 'Vehicle', 'Driver',
-            'RouteName', 'VehicleNumber', 'DriverName',
-            'route_name', 'vehicle_number', 'driver_name',
+            'RouteVehicleDriverId', 'Route', 'Vehicle', 'Driver', 'PaymentGroup',
+            'RouteName', 'VehicleNumber', 'DriverName', 'PaymentGroupName',
+            'route_name', 'vehicle_number', 'driver_name', 'payment_group_name',
             'AssignmentDate', 'Narration', 'IsActive',
             'CreatedAt', 'UpdatedAt', 'CompanyId'
         ]
@@ -364,21 +386,29 @@ class UserManagementSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False, allow_blank=True, min_length=6)
     role_name = serializers.CharField(source='UserRole.RoleName', read_only=True)
     driver_name = serializers.SerializerMethodField()
+    godown_name = serializers.SerializerMethodField()
     delete_block_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = [
             'UserId', 'Username', 'password', 'UserRole', 'role_name',
-            'DriverId', 'driver_name', 'IsActive', 'CreatedAt',
+            'DriverId', 'driver_name', 'GodownId', 'godown_name', 'IsActive', 'CreatedAt',
             'delete_block_reason'
         ]
-        read_only_fields = ['UserId', 'CreatedAt', 'role_name', 'driver_name', 'delete_block_reason']
+        read_only_fields = ['UserId', 'CreatedAt', 'role_name', 'driver_name', 'godown_name', 'delete_block_reason']
 
     def get_driver_name(self, obj):
         if obj.DriverId:
             driver = Driver.objects.filter(DriverId=obj.DriverId).first()
             return driver.DriverName if driver else None
+        return None
+
+    def get_godown_name(self, obj):
+        if obj.GodownId:
+            from .models import Godown
+            g = Godown.objects.filter(GodownId=obj.GodownId).first()
+            return g.GodownName if g else None
         return None
 
     def get_delete_block_reason(self, obj):
@@ -408,6 +438,7 @@ class UserManagementSerializer(serializers.ModelSerializer):
             Username=validated_data['Username'],
             UserRole=validated_data['UserRole'],
             DriverId=validated_data.get('DriverId'),
+            GodownId=validated_data.get('GodownId'),
             CompanyId=company_id,
             IsActive=validated_data.get('IsActive', True),
         )
@@ -642,6 +673,7 @@ class LedgerSerializer(serializers.ModelSerializer):
             'PAN',
             'IsBillWise',
             'CreditPeriodDays',
+            'DeliveryFrequencyDays',
             'CreditLimit',
             'BankName',
             'BankAccountNumber',
@@ -999,6 +1031,8 @@ class DeliveryNoteSerializer(serializers.ModelSerializer):
     total_cylinders = serializers.SerializerMethodField()
     target_godown_name = serializers.SerializerMethodField()
     is_godown_transfer = serializers.SerializerMethodField()
+    godown_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = DeliveryNote
@@ -1012,6 +1046,10 @@ class DeliveryNoteSerializer(serializers.ModelSerializer):
             'driver_name',
             'target_godown_name',
             'is_godown_transfer',
+            'GodownId',
+            'godown_name',
+            'CreatedById',
+            'created_by_name',
             'Remarks',
             'Status',
             'CompanyId',
@@ -1031,6 +1069,23 @@ class DeliveryNoteSerializer(serializers.ModelSerializer):
     def get_is_godown_transfer(self, obj):
         from core.models import Godown
         return Godown.objects.filter(RouteVehicleDriver_id=obj.RouteVehicleDriver_id).exists()
+
+    def get_godown_name(self, obj):
+        from core.models import Godown
+        if obj.GodownId:
+            g = Godown.objects.filter(GodownId=obj.GodownId).first()
+            if g:
+                return g.GodownName
+        return 'Main Godown (Central)'
+
+    def get_created_by_name(self, obj):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        if obj.CreatedById:
+            u = User.objects.filter(UserId=obj.CreatedById).first()
+            if u:
+                return u.Username
+        return None
 
 
 class ReceiptNoteLineSerializer(serializers.ModelSerializer):
@@ -1061,6 +1116,9 @@ class ReceiptNoteSerializer(serializers.ModelSerializer):
     vehicle_number = serializers.CharField(source='RouteVehicleDriver.Vehicle.VehicleNumber', read_only=True)
     driver_name = serializers.CharField(source='RouteVehicleDriver.Driver.DriverName', read_only=True)
     total_quantity = serializers.SerializerMethodField()
+    godown_name = serializers.SerializerMethodField()
+    source_godown_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = ReceiptNote
@@ -1072,6 +1130,12 @@ class ReceiptNoteSerializer(serializers.ModelSerializer):
             'route_name',
             'vehicle_number',
             'driver_name',
+            'GodownId',
+            'godown_name',
+            'SourceGodownId',
+            'source_godown_name',
+            'CreatedById',
+            'created_by_name',
             'Remarks',
             'Status',
             'CompanyId',
@@ -1082,6 +1146,31 @@ class ReceiptNoteSerializer(serializers.ModelSerializer):
 
     def get_total_quantity(self, obj):
         return sum(line.Quantity for line in obj.lines.all())
+
+    def get_godown_name(self, obj):
+        from core.models import Godown
+        if obj.GodownId:
+            g = Godown.objects.filter(GodownId=obj.GodownId).first()
+            if g:
+                return g.GodownName
+        return 'Main Godown (Central)'
+
+    def get_source_godown_name(self, obj):
+        from core.models import Godown
+        if obj.SourceGodownId:
+            g = Godown.objects.filter(GodownId=obj.SourceGodownId).first()
+            if g:
+                return g.GodownName
+        return None
+
+    def get_created_by_name(self, obj):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        if obj.CreatedById:
+            u = User.objects.filter(UserId=obj.CreatedById).first()
+            if u:
+                return u.Username
+        return None
 
 
 class EndRouteDriverLineSerializer(serializers.Serializer):
@@ -1106,6 +1195,10 @@ class EndRouteDriverSerializer(serializers.Serializer):
     Ledger = serializers.IntegerField(required=False, default=24)
     ledger_name = serializers.CharField(required=False, allow_blank=True)
     CompanyId = serializers.IntegerField(required=False, default=1)
+    GodownId = serializers.IntegerField(required=False, allow_null=True)
+    godown_name = serializers.CharField(required=False, allow_blank=True)
+    CreatedById = serializers.IntegerField(required=False, allow_null=True)
+    created_by_name = serializers.CharField(required=False, allow_blank=True)
     Remarks = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     Status = serializers.CharField(required=False, default='PENDING')
     CreatedAt = serializers.CharField(required=False)

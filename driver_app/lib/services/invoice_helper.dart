@@ -106,17 +106,39 @@ class InvoiceHelper {
         ? totalBill
         : ((totalBill - collectedAmount) > 0.01 ? (totalBill - collectedAmount) : 0.0);
 
-    // Case 1: Empty Collection Only (No deliveries)
-    if (totalDelivered == 0 && totalEmpties > 0) {
+    // Case 1A: Pure Empty Cylinder Return (No payment, EMTRTN document)
+    if (ticketId.startsWith('EMTRTN-') || (totalDelivered == 0 && totalEmpties > 0 && (collectedAmount <= 0.01 || paymentMethod.toUpperCase() == 'N/A'))) {
       final drv = (driverName != null && driverName.trim().isNotEmpty) ? driverName.trim() : 'our driver';
       final dt = (dateStr != null && dateStr.trim().isNotEmpty) ? dateStr.trim() : 'today';
       return 'Dear $customerName,\n\n'
-          '*FUTURE GAS - EMPTY CYLINDER RECEIPT*\n'
+          '*FUTURE GAS - EMPTY CYLINDER RETURN VOUCHER*\n'
           '-----------------------------------------\n'
-          'Received: $totalEmpties empty cylinder(s)\n'
+          'Voucher No: #$ticketId\n'
+          'Returned Empties: $totalEmpties cylinder(s)\n'
+          'Amount Paid: ₹0.00 (No Payment)\n'
           'Date: $dt\n'
           'Driver: $drv\n'
           '-----------------------------------------\n'
+          'Empty cylinders have been verified and returned into van stock.\n'
+          'Official Empty Return Voucher is attached.\n'
+          'Thank you for choosing Future Gas!';
+    }
+
+    // Case 1B: Empty Collection + Customer Payment on Account (RCPT document)
+    if (ticketId.startsWith('RCPT-') || (totalDelivered == 0 && totalEmpties > 0 && collectedAmount > 0.01)) {
+      final drv = (driverName != null && driverName.trim().isNotEmpty) ? driverName.trim() : 'our driver';
+      final dt = (dateStr != null && dateStr.trim().isNotEmpty) ? dateStr.trim() : 'today';
+      final paidStr = collectedAmount.toStringAsFixed(2);
+      return 'Dear $customerName,\n\n'
+          '*FUTURE GAS - OFFICIAL PAYMENT & EMPTY RECEIPT*\n'
+          '-----------------------------------------\n'
+          'Receipt No: #$ticketId\n'
+          'Amount Received: ₹$paidStr (${paymentMethod.toUpperCase()})\n'
+          'Returned Empties: $totalEmpties cylinder(s)\n'
+          'Date: $dt\n'
+          'Driver: $drv\n'
+          '-----------------------------------------\n'
+          'Official money receipt is attached. The amount has been credited towards your customer balance.\n'
           'Thank you for choosing Future Gas!';
     }
 

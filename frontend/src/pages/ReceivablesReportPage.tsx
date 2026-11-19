@@ -27,13 +27,13 @@ import {
   IconSearch,
   IconCoins,
   IconFileInvoice,
-  IconCash,
   IconUsers,
   IconRefresh,
   IconPrinter,
   IconPlus,
   IconTrash,
   IconArrowUpRight,
+  IconCash,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -72,7 +72,8 @@ export const ReceivablesReportPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
-  const [debtorFilter, setDebtorFilter] = useState<'ALL' | 'REGULAR' | 'DEFAULTERS'>('ALL');
+  type DebtorFilterType = 'ALL' | 'REGULAR' | 'DEFAULTERS' | 'OVERDUE_BILLS' | 'EMPTY_LIMIT';
+  const [debtorFilter, setDebtorFilter] = useState<DebtorFilterType>('ALL');
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
   const [forceDelete, setForceDelete] = useState(false);
@@ -90,13 +91,13 @@ export const ReceivablesReportPage: React.FC = () => {
     if (!selectedCustomer) return;
     try {
       await apiClient.patch(`/ledgers/${selectedCustomer.id}/`, {
-        CreditPeriodDays: editingTermDays,
+        DeliveryFrequencyDays: editingTermDays,
       });
-      setSelectedCustomer((prev: any) => ({ ...prev, creditPeriod: editingTermDays }));
+      setSelectedCustomer((prev: any) => ({ ...prev, deliveryFrequency: editingTermDays }));
       queryClient.invalidateQueries({ queryKey: ['ledgers'] });
       notifications.show({
         title: 'Delivery Frequency Updated',
-        message: `${selectedCustomer.name}'s delivery frequency set to every ${editingTermDays} days.`,
+        message: `${selectedCustomer.name}'s refill frequency set to every ${editingTermDays} days.`,
         color: 'teal',
       });
       setTermModalOpen(false);
@@ -277,25 +278,65 @@ export const ReceivablesReportPage: React.FC = () => {
         const opDebit = openingType === 'DR' ? openingBal : -openingBal;
         const receivable = opDebit + totalBilled - totalReceived;
 
-        // Defaulter detection: last sale date + delivery frequency < today
+        // Empty stock tracking & holding calculation
+        const custAllSales = sales.filter(
+          (s: any) => Number(s.CustomerLedger) === l.LedgerId && s.Status !== 'CANCELLED'
+        );
+        const deliveredCylinders = custAllSales.reduce((acc: number, s: any) => acc + Number(s.TotalDeliveredQty || s.total_delivered_qty || 0), 0);
+        const returnedEmptyCylinders = custAllSales.reduce((acc: number, s: any) => acc + Number(s.TotalEmptyQty || s.total_empty_qty || 0), 0);
+        const heldEmptyCylinders = Math.max(0, deliveredCylinders - returnedEmptyCylinders);
+        const emptyStockLimit = Number(l.EmptyStockLimit || 0);
+        const isEmptyLimitExceeded = emptyStockLimit > 0 && heldEmptyCylinders > emptyStockLimit;
+        const excessEmptyCylinders = Math.max(0, heldEmptyCylinders - emptyStockLimit);
+
+        // 1. Delivery Cycle (Refill Frequency) Overdue
         const custLastSale = sales
           .filter((s: any) => Number(s.CustomerLedger) === l.LedgerId && s.Status !== 'CANCELLED' && s.SalesDate)
           .sort((a: any, b: any) => b.SalesDate.localeCompare(a.SalesDate))[0];
-        let isDefaulter = false;
-        let overdueDays = 0;
-        let nextDueDate: Date | null = null;
         const lastPurchaseDate = custLastSale?.SalesDate || null;
+        const deliveryFrequency = Number(l.DeliveryFrequencyDays || l.CreditPeriodDays || 15);
+        let nextRefillDate: Date | null = null;
+        let isDeliveryOverdue = false;
+        let deliveryOverdueDays = 0;
         if (custLastSale?.SalesDate) {
-          const freq = Number(l.CreditPeriodDays) || 15;
-          nextDueDate = new Date(custLastSale.SalesDate);
-          nextDueDate.setDate(nextDueDate.getDate() + freq);
+          nextRefillDate = new Date(custLastSale.SalesDate);
+          nextRefillDate.setDate(nextRefillDate.getDate() + deliveryFrequency);
           const today = new Date();
           today.setHours(0, 0, 0, 0);
-          if (nextDueDate < today) {
-            isDefaulter = true;
-            overdueDays = Math.ceil((today.getTime() - nextDueDate.getTime()) / (1000 * 60 * 60 * 24));
+          if (nextRefillDate < today) {
+            isDeliveryOverdue = true;
+            deliveryOverdueDays = Math.ceil((today.getTime() - nextRefillDate.getTime()) / (1000 * 60 * 60 * 24));
           }
         }
+
+        // 2. Overdue Payment Bills (Unpaid balance past credit period)
+        const creditPeriodDays = Number(l.CreditPeriodDays || 0);
+        let isBillOverdue = false;
+        let billOverdueDays = 0;
+        if (receivable > 0) {
+          if (creditPeriodDays > 0 && custLastSale?.SalesDate) {
+            const billDueDate = new Date(custLastSale.SalesDate);
+            billDueDate.setDate(billDueDate.getDate() + creditPeriodDays);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (billDueDate < today) {
+              isBillOverdue = true;
+              billOverdueDays = Math.ceil((today.getTime() - billDueDate.getTime()) / (1000 * 60 * 60 * 24));
+            }
+          } else if (creditPeriodDays === 0 && receivable > 0) {
+            isBillOverdue = true;
+            if (custLastSale?.SalesDate) {
+              const sDate = new Date(custLastSale.SalesDate);
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              billOverdueDays = Math.max(1, Math.ceil((today.getTime() - sDate.getTime()) / (1000 * 60 * 60 * 24)));
+            } else {
+              billOverdueDays = 1;
+            }
+          }
+        }
+
+        const isAnyDefaulter = isBillOverdue || isEmptyLimitExceeded || isDeliveryOverdue;
 
         return {
           id: l.LedgerId,
@@ -311,22 +352,40 @@ export const ReceivablesReportPage: React.FC = () => {
           totalReceived,
           receivable,
           advanceBalance: Number(l.advance_balance || 0),
-          creditPeriod: Number(l.CreditPeriodDays) || 15,
+          creditPeriod: creditPeriodDays,
+          deliveryFrequency,
+          creditLimit: Number(l.CreditLimit || 0),
           deleteBlockReason: l.delete_block_reason || null,
-          isDefaulter,
-          overdueDays,
-          nextDueDate,
+          isBillOverdue,
+          billOverdueDays,
+          isDeliveryOverdue,
+          deliveryOverdueDays,
+          nextRefillDate,
           lastPurchaseDate,
+          deliveredCylinders,
+          returnedEmptyCylinders,
+          heldEmptyCylinders,
+          emptyStockLimit,
+          isEmptyLimitExceeded,
+          excessEmptyCylinders,
+          isAnyDefaulter,
+          overdueDays: Math.max(billOverdueDays, deliveryOverdueDays),
         };
       })
       .sort((a, b) => b.receivable - a.receivable);
   }, [ledgers, sales, payments]);
 
-  // Defaulters & Regular Counts
-  const defaultersCount = useMemo(() => debtorsList.filter((d) => d.isDefaulter).length, [debtorsList]);
-  const regularCount = useMemo(() => debtorsList.filter((d) => !d.isDefaulter).length, [debtorsList]);
+  // Section Counts & Aggregates
+  const overdueBillsCount = useMemo(() => debtorsList.filter((d) => d.isBillOverdue).length, [debtorsList]);
+  const overdueBillsAmount = useMemo(() => debtorsList.filter((d) => d.isBillOverdue).reduce((s, d) => s + Math.max(0, d.receivable), 0), [debtorsList]);
 
-  // Filtered Debtors
+  const emptyLimitExceededCount = useMemo(() => debtorsList.filter((d) => d.isEmptyLimitExceeded).length, [debtorsList]);
+  const totalExcessEmpties = useMemo(() => debtorsList.filter((d) => d.isEmptyLimitExceeded).reduce((s, d) => s + d.excessEmptyCylinders, 0), [debtorsList]);
+
+  const deliveryOverdueCount = useMemo(() => debtorsList.filter((d) => d.isDeliveryOverdue).length, [debtorsList]);
+  const regularCount = useMemo(() => debtorsList.filter((d) => !d.isAnyDefaulter).length, [debtorsList]);
+
+  // Filtered Debtors by active section & search query
   const filteredDebtors = useMemo(() => {
     let list = debtorsList;
     const q = searchQuery.toLowerCase().trim();
@@ -339,9 +398,13 @@ export const ReceivablesReportPage: React.FC = () => {
       );
     }
     if (debtorFilter === 'DEFAULTERS') {
-      list = list.filter((d) => d.isDefaulter);
+      list = list.filter((d) => d.isDeliveryOverdue);
+    } else if (debtorFilter === 'OVERDUE_BILLS') {
+      list = list.filter((d) => d.isBillOverdue);
+    } else if (debtorFilter === 'EMPTY_LIMIT') {
+      list = list.filter((d) => d.isEmptyLimitExceeded);
     } else if (debtorFilter === 'REGULAR') {
-      list = list.filter((d) => !d.isDefaulter);
+      list = list.filter((d) => !d.isAnyDefaulter);
     }
     return list;
   }, [debtorsList, searchQuery, debtorFilter]);
@@ -1036,7 +1099,7 @@ export const ReceivablesReportPage: React.FC = () => {
         </Group>
       </Group>
 
-      {/* 2. Summary KPI Cards */}
+      {/* 2. Summary / KPI Cards */}
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
         {/* Card 1: Total Debtors */}
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
@@ -1054,7 +1117,7 @@ export const ReceivablesReportPage: React.FC = () => {
           </Text>
         </Paper>
 
-        {/* Card 2: Total Sales Billed */}
+        {/* Card 2: Total Sales */}
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -1070,7 +1133,7 @@ export const ReceivablesReportPage: React.FC = () => {
           </Text>
         </Paper>
 
-        {/* Card 3: Total Collections Received */}
+        {/* Card 3: Collections Received */}
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
@@ -1122,7 +1185,7 @@ export const ReceivablesReportPage: React.FC = () => {
               style={{ minWidth: 260, maxWidth: 360 }}
             />
 
-            {/* Defaulter / Regular Filter Tabs */}
+            {/* Defaulters, Regular, Overdue & Empty Limit Section Tabs */}
             <SegmentedControl
               value={debtorFilter}
               onChange={(v: any) => setDebtorFilter(v)}
@@ -1143,21 +1206,16 @@ export const ReceivablesReportPage: React.FC = () => {
                 label: {
                   fontWeight: 600,
                   fontSize: 12,
-                  padding: '5px 12px',
+                  padding: '5px 14px',
                   transition: 'color 150ms ease',
                 },
               }}
               data={[
                 { label: `All (${debtorsList.length})`, value: 'ALL' },
                 { label: `Regular (${regularCount})`, value: 'REGULAR' },
-                {
-                  label: (
-                    <Group gap={4} wrap="nowrap">
-                      <span>Defaulters ({defaultersCount})</span>
-                    </Group>
-                  ),
-                  value: 'DEFAULTERS',
-                },
+                { label: `Defaulters (${deliveryOverdueCount})`, value: 'DEFAULTERS' },
+                { label: `Overdue Bills (${overdueBillsCount})`, value: 'OVERDUE_BILLS' },
+                { label: `Empty Limit Exceeded (${emptyLimitExceededCount})`, value: 'EMPTY_LIMIT' },
               ]}
             />
           </Group>
@@ -1192,7 +1250,7 @@ export const ReceivablesReportPage: React.FC = () => {
                 No customers found
               </Text>
               <Text size="xs" c="dimmed">
-                No debtor records match your search criteria.
+                No debtor records match your active section or search query.
               </Text>
             </Stack>
           </Center>
@@ -1204,18 +1262,78 @@ export const ReceivablesReportPage: React.FC = () => {
                   <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                     Customer Name &amp; Contact
                   </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
-                    Opening Bal (₹)
-                  </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
-                    Sales Billed (₹)
-                  </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
-                    Collections (₹)
-                  </Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 160 }}>
-                    Receivable Balance (₹)
-                  </Table.Th>
+
+                  {debtorFilter === 'EMPTY_LIMIT' ? (
+                    <>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 120 }}>
+                        Delivered
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 120 }}>
+                        Returned
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 130 }}>
+                        Held Empties
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 120 }}>
+                        Allowed Limit
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 140 }}>
+                        Excess Over Limit
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
+                        Receivable (₹)
+                      </Table.Th>
+                    </>
+                  ) : debtorFilter === 'OVERDUE_BILLS' ? (
+                    <>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 140 }}>
+                        Credit Terms
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 140 }}>
+                        Last Bill Date
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 150 }}>
+                        Overdue Status
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 170 }}>
+                        Overdue Balance (₹)
+                      </Table.Th>
+                    </>
+                  ) : debtorFilter === 'DEFAULTERS' ? (
+                    <>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 150 }}>
+                        Refill Frequency
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 140 }}>
+                        Last Delivered
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 140 }}>
+                        Next Refill Due
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 150 }}>
+                        Refill Status
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
+                        Current Balance (₹)
+                      </Table.Th>
+                    </>
+                  ) : (
+                    <>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
+                        Opening Bal (₹)
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
+                        Sales Billed (₹)
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 150 }}>
+                        Collections (₹)
+                      </Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 160 }}>
+                        Receivable Balance (₹)
+                      </Table.Th>
+                    </>
+                  )}
+
                   <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'center', width: 140, paddingRight: 16 }}>
                     Actions
                   </Table.Th>
@@ -1228,8 +1346,8 @@ export const ReceivablesReportPage: React.FC = () => {
                     style={{
                       cursor: 'pointer',
                       height: 48,
-                      backgroundColor: debtor.isDefaulter ? '#fff8f8' : undefined,
-                      borderLeft: debtor.isDefaulter ? '3px solid #800020' : undefined,
+                      backgroundColor: debtor.isAnyDefaulter ? '#fff8f8' : undefined,
+                      borderLeft: debtor.isAnyDefaulter ? '3px solid #800020' : undefined,
                     }}
                     onClick={() => {
                       setSelectedCustomer(debtor);
@@ -1250,7 +1368,21 @@ export const ReceivablesReportPage: React.FC = () => {
                               Adv: ₹{debtor.advanceBalance.toFixed(2)}
                             </Badge>
                           )}
-                          {debtor.isDefaulter && (
+                          {debtor.heldEmptyCylinders > 0 && (
+                            <Badge
+                              size="xs"
+                              variant={debtor.isEmptyLimitExceeded ? 'filled' : 'light'}
+                              color={debtor.isEmptyLimitExceeded ? 'burgundy' : 'gray'}
+                              styles={{
+                                root: debtor.isEmptyLimitExceeded
+                                  ? { backgroundColor: '#800020', color: '#ffffff', fontWeight: 700 }
+                                  : { backgroundColor: '#f1f5f9', color: '#475569', fontWeight: 600 }
+                              }}
+                            >
+                              Empties: {debtor.heldEmptyCylinders}{debtor.emptyStockLimit > 0 ? ` / ${debtor.emptyStockLimit} limit` : ''}
+                            </Badge>
+                          )}
+                          {debtor.isBillOverdue && (
                             <Badge
                               size="xs"
                               variant="light"
@@ -1263,7 +1395,23 @@ export const ReceivablesReportPage: React.FC = () => {
                                 },
                               }}
                             >
-                              Overdue {debtor.overdueDays}d
+                              Bill Overdue {debtor.billOverdueDays}d
+                            </Badge>
+                          )}
+                          {debtor.isDeliveryOverdue && (
+                            <Badge
+                              size="xs"
+                              variant="light"
+                              styles={{
+                                root: {
+                                  backgroundColor: '#fdf2f4',
+                                  color: '#800020',
+                                  borderColor: '#f5c2cb',
+                                  fontWeight: 600,
+                                },
+                              }}
+                            >
+                              Overdue {debtor.deliveryOverdueDays}d
                             </Badge>
                           )}
                         </Group>
@@ -1272,43 +1420,123 @@ export const ReceivablesReportPage: React.FC = () => {
                             {debtor.phone} {debtor.city !== '—' ? `• ${debtor.city}` : ''}
                           </Text>
                           <Text size="xs" c={debtor.lastPurchaseDate ? '#64748b' : '#94a3b8'} fw={500}>
-                            • Last Sale: {debtor.lastPurchaseDate ? formatDateDDMMYY(debtor.lastPurchaseDate) : 'Never'}
+                            • Last Delivery: {debtor.lastPurchaseDate ? formatDateDDMMYY(debtor.lastPurchaseDate) : 'Never'}
                           </Text>
                         </Group>
                       </Stack>
                     </Table.Td>
 
-                    {/* Opening Balance */}
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text style={{ fontSize: 13.5, fontWeight: 600, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
-                        ₹{debtor.openingBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                        <Text component="span" size="xs" fw={700} c="#800020">
-                          {debtor.openingType}
-                        </Text>
-                      </Text>
-                    </Table.Td>
+                    {debtorFilter === 'EMPTY_LIMIT' ? (
+                      <>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                          {debtor.deliveredCylinders}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                          {debtor.returnedEmptyCylinders}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>
+                          <Badge size="sm" variant="light" color="gray" fw={700}>
+                            {debtor.heldEmptyCylinders} Cyls
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 600, color: '#64748b' }}>
+                          {debtor.emptyStockLimit} Cyls
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right' }}>
+                          <Badge size="sm" variant="light" styles={{ root: { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 } }}>
+                            +{debtor.excessEmptyCylinders} Over Limit
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                          ₹{Math.abs(debtor.receivable).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Table.Td>
+                      </>
+                    ) : debtorFilter === 'OVERDUE_BILLS' ? (
+                      <>
+                        <Table.Td style={{ textAlign: 'center' }}>
+                          <Badge size="xs" variant="outline" color="gray">
+                            {debtor.creditPeriod > 0 ? `${debtor.creditPeriod} Days` : 'No Credit'}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'center', fontSize: 13, color: '#475569' }}>
+                          {debtor.lastPurchaseDate ? formatDateDDMMYY(debtor.lastPurchaseDate) : '—'}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'center' }}>
+                          <Badge size="sm" variant="light" styles={{ root: { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 } }}>
+                            Overdue {debtor.billOverdueDays}d
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                          ₹{Math.abs(debtor.receivable).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Table.Td>
+                      </>
+                    ) : debtorFilter === 'DEFAULTERS' ? (
+                      <>
+                        <Table.Td style={{ textAlign: 'center' }}>
+                          <Badge size="xs" variant="outline" color="gray">
+                            Every {debtor.deliveryFrequency} Days
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'center', fontSize: 13, color: '#475569' }}>
+                          {debtor.lastPurchaseDate ? formatDateDDMMYY(debtor.lastPurchaseDate) : '—'}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
+                          {debtor.nextRefillDate ? formatDateDDMMYY(debtor.nextRefillDate.toISOString().split('T')[0]) : '—'}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'center' }}>
+                          <Badge size="sm" variant="light" styles={{ root: { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 } }}>
+                            Overdue {debtor.deliveryOverdueDays}d
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                          ₹{Math.abs(debtor.receivable).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Table.Td>
+                      </>
+                    ) : (
+                      <>
+                        {/* Opening Balance */}
+                        <Table.Td style={{ textAlign: 'right' }}>
+                          <Text style={{ fontSize: 13.5, fontWeight: 600, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                            ₹{debtor.openingBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                            <Text component="span" size="xs" fw={700} c="#800020">
+                              {debtor.openingType}
+                            </Text>
+                          </Text>
+                        </Table.Td>
 
-                    {/* Sales Billed */}
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                      ₹{debtor.totalBilled.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </Table.Td>
+                        {/* Sales Billed */}
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          ₹{debtor.totalBilled.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Table.Td>
 
-                    {/* Collections Received */}
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                      ₹{debtor.totalReceived.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </Table.Td>
+                        {/* Collections Received */}
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          ₹{debtor.totalReceived.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </Table.Td>
 
-                    {/* Receivable Balance */}
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
-                      ₹{Math.abs(debtor.receivable).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                      <Text component="span" size="xs" fw={700} c="#800020">
-                        {debtor.receivable >= 0 ? 'Dr' : 'Cr'}
-                      </Text>
-                    </Table.Td>
+                        {/* Receivable Balance */}
+                        <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                          ₹{Math.abs(debtor.receivable).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                          <Text component="span" size="xs" fw={700} c="#800020">
+                            {debtor.receivable >= 0 ? 'Dr' : 'Cr'}
+                          </Text>
+                        </Table.Td>
+                      </>
+                    )}
 
-                    {/* Actions: Print Statement, Delete */}
+                    {/* Actions: Quick Receive, Print Statement, Delete */}
                     <Table.Td style={{ textAlign: 'center', paddingRight: 16 }}>
                       <Group gap={6} justify="center" wrap="nowrap" onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          size="compact-xs"
+                          variant="light"
+                          color="burgundy"
+                          onClick={() => navigate(`/receipts/new?party_id=${debtor.id}`)}
+                          style={{ backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 600 }}
+                        >
+                          Receive
+                        </Button>
+
                         <Tooltip label="Print Statement PDF" withArrow position="top">
                           <ActionIcon
                             size="sm"
@@ -1341,27 +1569,72 @@ export const ReceivablesReportPage: React.FC = () => {
                 <Table.Tr style={{ height: 48 }}>
                   <Table.Td>
                     <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      TOTAL ({filteredDebtors.length} DEBTORS)
+                      TOTAL ({filteredDebtors.length} CUSTOMERS)
                     </Text>
                   </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
-                    ₹{Math.abs(totalOpeningSum).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                    <Text component="span" size="xs" fw={700}>
-                      {totalOpeningSum >= 0 ? 'Dr' : 'Cr'}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                    ₹{filteredDebtors.reduce((s, d) => s + d.totalBilled, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                    ₹{filteredDebtors.reduce((s, d) => s + d.totalReceived, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 900, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
-                    ₹{Math.abs(filteredDebtors.reduce((s, d) => s + d.receivable, 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-                    <Text component="span" size="xs" fw={800} c="#800020">
-                      {totalReceivableSum >= 0 ? 'Dr' : 'Cr'}
-                    </Text>
-                  </Table.Td>
+
+                  {debtorFilter === 'EMPTY_LIMIT' ? (
+                    <>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 700 }}>
+                        {filteredDebtors.reduce((s, d) => s + d.deliveredCylinders, 0)}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 700 }}>
+                        {filteredDebtors.reduce((s, d) => s + d.returnedEmptyCylinders, 0)}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, color: '#0f172a' }}>
+                        {filteredDebtors.reduce((s, d) => s + d.heldEmptyCylinders, 0)} Cyls
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 600 }}>
+                        {filteredDebtors.reduce((s, d) => s + d.emptyStockLimit, 0)}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, color: '#800020' }}>
+                        +{totalExcessEmpties} Excess
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 900, fontSize: 15, color: '#800020' }}>
+                        ₹{Math.abs(filteredDebtors.reduce((s, d) => s + d.receivable, 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Table.Td>
+                    </>
+                  ) : debtorFilter === 'OVERDUE_BILLS' ? (
+                    <>
+                      <Table.Td colSpan={3} style={{ textAlign: 'center', fontWeight: 700, color: '#800020' }}>
+                        {overdueBillsCount} Overdue Customer Accounts
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 900, fontSize: 15, color: '#800020' }}>
+                        ₹{overdueBillsAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Table.Td>
+                    </>
+                  ) : debtorFilter === 'DEFAULTERS' ? (
+                    <>
+                      <Table.Td colSpan={4} style={{ textAlign: 'center', fontWeight: 700, color: '#800020' }}>
+                        {deliveryOverdueCount} Overdue Defaulter Customers
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 900, fontSize: 15, color: '#800020' }}>
+                        ₹{Math.abs(filteredDebtors.reduce((s, d) => s + d.receivable, 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Table.Td>
+                    </>
+                  ) : (
+                    <>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: '#475569', fontVariantNumeric: 'tabular-nums' }}>
+                        ₹{Math.abs(totalOpeningSum).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                        <Text component="span" size="xs" fw={700}>
+                          {totalOpeningSum >= 0 ? 'Dr' : 'Cr'}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                        ₹{filteredDebtors.reduce((s, d) => s + d.totalBilled, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                        ₹{filteredDebtors.reduce((s, d) => s + d.totalReceived, 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right', fontWeight: 900, fontSize: 15, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
+                        ₹{Math.abs(filteredDebtors.reduce((s, d) => s + d.receivable, 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                        <Text component="span" size="xs" fw={800} c="#800020">
+                          {totalReceivableSum >= 0 ? 'Dr' : 'Cr'}
+                        </Text>
+                      </Table.Td>
+                    </>
+                  )}
+
                   <Table.Td style={{ border: 'none' }}>&nbsp;</Table.Td>
                 </Table.Tr>
               </Table.Tfoot>

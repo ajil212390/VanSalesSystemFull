@@ -154,10 +154,19 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
 
       // Order created successfully
       final lastOrder = state.orders.isNotEmpty ? state.orders.first : null;
+      final isEmtrtn = lastOrder != null && lastOrder.ticketId.startsWith('EMTRTN-');
+      final isRcpt = lastOrder != null && lastOrder.ticketId.startsWith('RCPT-');
+      final stageDocName = isEmtrtn
+          ? 'Generating Return Voucher...'
+          : (isRcpt ? 'Generating Official Receipt...' : 'Generating Tax Invoice...');
+      final readyDocName = isEmtrtn
+          ? 'Return Voucher Ready for WhatsApp'
+          : (isRcpt ? 'Official Receipt Ready for WhatsApp' : 'Invoice Ready for WhatsApp');
+
       setState(() {
         _activeOrder = lastOrder;
         _processingStep = 2;
-        _processingStage = 'Generating Tax Invoice...';
+        _processingStage = stageDocName;
       });
 
       if (lastOrder != null) {
@@ -169,7 +178,7 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
           setState(() {
             _downloadedPdf = pdf;
             _processingStep = 3;
-            _processingStage = 'Invoice Ready for WhatsApp';
+            _processingStage = readyDocName;
           });
         }
       }
