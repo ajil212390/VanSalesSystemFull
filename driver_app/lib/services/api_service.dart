@@ -4,28 +4,34 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // Production API domain for Royal Agencies VPS deployment
-  static String baseUrl = 'https://api.royalagencies.online/api/v1';
+  // Production API domain for Royal Agencies VPS deployment (secured with active SSL)
+  static String baseUrl = 'https://royalagencies.online/api/v1';
 
   static const String _tokenKey = 'auth_token';
   static const String _refreshTokenKey = 'auth_refresh_token';
   static const String _userKey = 'auth_user';
   static const String _customUrlKey = 'custom_base_url';
 
-  static const Duration requestTimeout = Duration(seconds: 10);
+  static const Duration requestTimeout = Duration(seconds: 15);
 
   /// Initialize custom base URL if configured by user
   static Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
     final savedUrl = prefs.getString(_customUrlKey);
     if (savedUrl != null && savedUrl.isNotEmpty) {
-      if (savedUrl.contains('192.168.') || savedUrl.contains('devtunnels.ms') || savedUrl.contains('//api/v1')) {
-        // Automatically migrate stale development URLs to production
-        baseUrl = 'https://api.royalagencies.online/api/v1';
+      if (savedUrl.contains('192.168.') ||
+          savedUrl.contains('devtunnels.ms') ||
+          savedUrl.contains('api.royalagencies.online') ||
+          savedUrl.contains('//api/v1')) {
+        // Automatically migrate stale development or uncertified subdomain URLs to live production SSL
+        baseUrl = 'https://royalagencies.online/api/v1';
         await prefs.setString(_customUrlKey, baseUrl);
       } else {
         baseUrl = savedUrl.replaceAll(RegExp(r'/+$'), '');
       }
+    } else {
+      baseUrl = 'https://royalagencies.online/api/v1';
+      await prefs.setString(_customUrlKey, baseUrl);
     }
   }
 
