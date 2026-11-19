@@ -2417,20 +2417,32 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
     story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceAfter=8))
 
     # Location Details Card
+    from core.models import Godown
     src_text = f"<b>Dispatching Unit / Source:</b> {veh_num} • {driver_name} ({route_name})"
-    dest_text = "<b>Receiving Destination:</b> Central Main Godown"
-    if "From:" in remarks:
+    dest_name = "Central Main Godown"
+    if receipt_note.GodownId:
+        g_dest = Godown.objects.filter(GodownId=receipt_note.GodownId).first()
+        if g_dest:
+            dest_name = g_dest.GodownName
+    if receipt_note.SourceGodownId:
+        g_src = Godown.objects.filter(GodownId=receipt_note.SourceGodownId).first()
+        if g_src:
+            src_text = f"<b>Source:</b> {g_src.GodownName} (Van {veh_num} • {driver_name})"
+
+    if "From:" in remarks and not receipt_note.SourceGodownId:
         try:
             src_text = "<b>Source:</b> " + remarks.split("From:")[1].split("•")[0].split("|")[0].strip()
         except:
             pass
-    if "To:" in remarks:
+    if "To:" in remarks and not receipt_note.GodownId:
         try:
-            dest_text = "<b>Destination:</b> " + remarks.split("To:")[1].split("•")[0].split("|")[0].strip()
+            dest_name = remarks.split("To:")[1].split("•")[0].split("|")[0].strip()
         except:
             pass
     elif is_supplier_refill:
-        dest_text = "<b>Destination (Supplier):</b> Refilling Supplier"
+        dest_name = "Refilling Supplier"
+
+    dest_text = f"<b>Receiving Destination:</b> {dest_name}"
 
     loc_box = [
         [
@@ -2454,6 +2466,26 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
     ]))
     story.append(loc_table)
     story.append(Spacer(1, 10))
+
+    # Parse filled and empty cylinder counts from remarks audit trail if present
+    f_by_prod = {}
+    e_by_prod = {}
+    if 'Filled:' in remarks and 'Empty:' in remarks:
+        try:
+            f_sec = remarks.split('Filled:')[1].split('•')[0].strip()
+            if f_sec and f_sec != '0':
+                for part in f_sec.split(','):
+                    if 'x' in part:
+                        p_nm, q_s = part.split('x')
+                        f_by_prod[p_nm.strip().lower()] = int(float(q_s.strip()))
+            e_sec = remarks.split('Empty:')[1].split('•')[0].split('|')[0].strip()
+            if e_sec and e_sec != '0':
+                for part in e_sec.split(','):
+                    if 'x' in part:
+                        p_nm, q_s = part.split('x')
+                        e_by_prod[p_nm.strip().lower()] = int(float(q_s.strip()))
+        except Exception:
+            pass
 
     # Items Table
     col_widths = [35, 230, 95, 95, 90]
@@ -2483,21 +2515,25 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
         for idx, ln in enumerate(lines, 1):
             p_name = ln.Product.ProductName if ln.Product else f"Product #{ln.Product_id}"
             qty = int(ln.Quantity or 0)
-            f_qty = 0
-            e_qty = qty
-            if "filled" in p_name.lower():
-                f_qty = qty
-                e_qty = 0
+            p_key = p_name.strip().lower()
+            f_qty = f_by_prod.get(p_key, 0)
+            e_qty = e_by_prod.get(p_key, 0)
+            if f_qty == 0 and e_qty == 0:
+                if "filled" in p_key:
+                    f_qty = qty
+                else:
+                    e_qty = qty
+            line_tot = (f_qty + e_qty) if (f_qty + e_qty) > 0 else qty
             tot_full += f_qty
             tot_empty += e_qty
-            tot_units += qty
+            tot_units += line_tot
 
             table_rows.append([
                 Paragraph(str(idx), cell_center),
                 Paragraph(p_name, cell_bold),
                 Paragraph(f"{f_qty} NOS" if f_qty > 0 else "-", cell_center),
                 Paragraph(f"{e_qty} NOS" if e_qty > 0 else "-", cell_center),
-                Paragraph(f"{qty} NOS", cell_center),
+                Paragraph(f"{line_tot} NOS", cell_center),
             ])
 
     # Totals Row

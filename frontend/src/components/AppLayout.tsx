@@ -125,9 +125,12 @@ export const AppLayout: React.FC = () => {
     refetchInterval: 15000,
   });
 
-  const pendingReceiptNotesCount = useMemo(() => {
-    return receiptNotes.filter((rn: any) => rn.status === 'pending' || rn.Status === 'RECEIPT_PENDING').length;
+  const pendingReceiptNotes = useMemo(() => {
+    return receiptNotes.filter((rn: any) => rn.status === 'pending' || rn.Status === 'RECEIPT_PENDING');
   }, [receiptNotes]);
+
+  const pendingReceiptNotesCount = pendingReceiptNotes.length;
+  const totalAlertsCount = pendingEndRoutes.length + pendingReceiptNotesCount;
 
   const handleLogout = () => {
     logout();
@@ -334,9 +337,10 @@ export const AppLayout: React.FC = () => {
           <Box style={{ width: '100%', display: 'flex', justifyContent: 'center' }} mb={4}>
             <Indicator
               disabled={!badgeCount || badgeCount === 0}
-              color="red"
+              color="burgundy"
               size={8}
               offset={4}
+              styles={{ indicator: { backgroundColor: '#800020' } }}
               inline
             >
               <ActionIcon
@@ -373,9 +377,18 @@ export const AppLayout: React.FC = () => {
         leftSection={<IconComponent size={21} stroke={1.75} />}
         rightSection={
           badgeCount && badgeCount > 0 ? (
-            <Badge size="xs" color="red" variant="filled" circle>
-              {badgeCount}
-            </Badge>
+            <Box
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: isActive ? '#ffffff' : '#800020',
+                boxShadow: isActive
+                  ? '0 0 0 2px rgba(255, 255, 255, 0.5), 0 0 4px #ffffff'
+                  : '0 0 0 2px #ffffff, 0 0 4px rgba(128, 0, 32, 0.4)',
+                marginRight: 4,
+              }}
+            />
           ) : undefined
         }
         active={isActive}
@@ -516,17 +529,17 @@ export const AppLayout: React.FC = () => {
 
             {/* Notification Bell Icon for Receipt Notes & End Allocations (Administrator & Manager) */}
             {(isAdmin || isManager) && (
-              <Menu shadow="lg" width={320} position="bottom-end" radius="md">
+              <Menu shadow="lg" width={340} position="bottom-end" radius="md">
                 <Menu.Target>
-                  <Tooltip label="Receipt Note Notifications" withArrow position="bottom">
+                  <Tooltip label="Pending Notifications" withArrow position="bottom">
                     <Indicator
                       inline
                       size={16}
                       offset={4}
                       position="top-end"
                       color="burgundy"
-                      label={pendingEndRoutes.length > 0 ? String(pendingEndRoutes.length) : undefined}
-                      disabled={pendingEndRoutes.length === 0}
+                      label={totalAlertsCount > 0 ? String(totalAlertsCount) : undefined}
+                      disabled={totalAlertsCount === 0}
                       withBorder
                       styles={{
                         indicator: {
@@ -555,83 +568,149 @@ export const AppLayout: React.FC = () => {
                   </Tooltip>
                 </Menu.Target>
 
-                <Menu.Dropdown p="xs" style={{ borderColor: '#e2e8f0', backgroundColor: '#ffffff', minWidth: 320 }}>
+                <Menu.Dropdown p="xs" style={{ borderColor: '#e2e8f0', backgroundColor: '#ffffff', minWidth: 330 }}>
                   <Group justify="space-between" align="center" px="xs" py={6} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <Group gap={6}>
-                      <IconClipboardCheck size={16} color="#800020" />
+                      <IconBell size={16} color="#800020" />
                       <Text size="xs" fw={700} style={{ color: '#0f172a' }}>
-                        End Route Alerts
+                        Pending Notifications
                       </Text>
                     </Group>
                     <Badge size="xs" color="burgundy" variant="light" styles={{ root: { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 } }}>
-                      {pendingEndRoutes.length} Pending
+                      {totalAlertsCount} Pending
                     </Badge>
                   </Group>
 
                   <Box py={4}>
-                    {pendingEndRoutes.length === 0 ? (
+                    {/* 1. Pending Inward Receipt Notes (e.g. Cross-depot transfers or driver returns to this godown) */}
+                    {pendingReceiptNotesCount > 0 && (
+                      <Box mb={6}>
+                        <Group justify="space-between" px="xs" py={3}>
+                          <Text size="11px" fw={700} c="#800020" tt="uppercase">
+                            Incoming Stock Receipts ({pendingReceiptNotesCount})
+                          </Text>
+                        </Group>
+                        {pendingReceiptNotes.slice(0, 3).map((rn: any) => (
+                          <Menu.Item
+                            key={rn.id || rn.receiptNoteId}
+                            component={Link}
+                            to="/receipt-notes"
+                            style={{
+                              borderRadius: 6,
+                              padding: '8px 10px',
+                              marginBottom: 3,
+                              backgroundColor: '#fdf2f4',
+                              border: '1px solid #f5c2cb',
+                            }}
+                          >
+                            <Group justify="space-between" align="flex-start" wrap="nowrap">
+                              <Stack gap={2}>
+                                <Group gap={6} align="center">
+                                  <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                                    {rn.noteNumber || `RN-${rn.receiptNoteId}`}
+                                  </Text>
+                                  <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontSize: 10, height: 18, borderColor: '#e2e8f0', color: '#334155' } }}>
+                                    {rn.vehicleNumber}
+                                  </Badge>
+                                </Group>
+                                <Text size="11px" c="dimmed">
+                                  Driver: <strong style={{ color: '#334155' }}>{rn.driverName}</strong> • {rn.filledCylindersTotal || 0} Full, {rn.emptyCylindersTotal || 0} Empty
+                                </Text>
+                                <Text size="10.5px" c="#800020" fw={600}>
+                                  To: {rn.godownName || 'Depot'} {rn.sourceGodownName ? `(From ${rn.sourceGodownName})` : ''}
+                                </Text>
+                              </Stack>
+                              <Text size="10px" c="#94a3b8" fw={500}>
+                                {rn.date}
+                              </Text>
+                            </Group>
+                          </Menu.Item>
+                        ))}
+                      </Box>
+                    )}
+
+                    {/* 2. Pending Driver Shift End Allocations */}
+                    {pendingEndRoutes.length > 0 && (
+                      <Box mb={4}>
+                        <Group justify="space-between" px="xs" py={3}>
+                          <Text size="11px" fw={700} c="#0f172a" tt="uppercase">
+                            Driver Shift Returns ({pendingEndRoutes.length})
+                          </Text>
+                        </Group>
+                        {pendingEndRoutes.slice(0, 3).map((item: any) => (
+                          <Menu.Item
+                            key={item.EndRouteDriverId}
+                            component={Link}
+                            to="/end-allocations"
+                            style={{
+                              borderRadius: 6,
+                              padding: '8px 10px',
+                              marginBottom: 3,
+                              backgroundColor: '#f8fafc',
+                              border: '1px solid #e2e8f0',
+                            }}
+                          >
+                            <Group justify="space-between" align="flex-start" wrap="nowrap">
+                              <Stack gap={2}>
+                                <Group gap={6} align="center">
+                                  <Text size="xs" fw={700} style={{ color: '#0f172a' }}>
+                                    ERD-{item.EndRouteDriverId}
+                                  </Text>
+                                  <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontSize: 10, height: 18, borderColor: '#e2e8f0', color: '#334155' } }}>
+                                    {item.vehicle_number}
+                                  </Badge>
+                                </Group>
+                                <Text size="11px" c="dimmed">
+                                  Driver: <strong style={{ color: '#334155' }}>{item.driver_name}</strong> • {item.total_filled || 0} Full, {item.total_empty || 0} Empties
+                                </Text>
+                                <Text size="10.5px" c="#800020" fw={600}>
+                                  Total: ₹{(item.cash_amount + item.bank_amount).toLocaleString('en-IN', { minimumFractionDigits: 0 })} ({item.route_name})
+                                </Text>
+                              </Stack>
+                              <Text size="10px" c="#94a3b8" fw={500}>
+                                {item.ShiftDate}
+                              </Text>
+                            </Group>
+                          </Menu.Item>
+                        ))}
+                      </Box>
+                    )}
+
+                    {totalAlertsCount === 0 && (
                       <Box px="xs" py="md" style={{ textAlign: 'center' }}>
                         <Text size="xs" c="dimmed">
-                          No pending driver shift returns at the warehouse gate.
+                          No pending actions, driver returns, or inward notes.
                         </Text>
                       </Box>
-                    ) : (
-                      pendingEndRoutes.slice(0, 5).map((item: any) => (
-                        <Menu.Item
-                          key={item.EndRouteDriverId}
-                          component={Link}
-                          to="/end-allocations"
-                          style={{
-                            borderRadius: 6,
-                            padding: '8px 10px',
-                            marginBottom: 3,
-                            backgroundColor: '#fdf2f4',
-                            border: '1px solid #f5c2cb',
-                          }}
-                        >
-                          <Group justify="space-between" align="flex-start" wrap="nowrap">
-                            <Stack gap={2}>
-                              <Group gap={6} align="center">
-                                <Text size="xs" fw={700} style={{ color: '#800020' }}>
-                                  ERD-{item.EndRouteDriverId}
-                                </Text>
-                                <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontSize: 10, height: 18, borderColor: '#e2e8f0', color: '#334155' } }}>
-                                  {item.vehicle_number}
-                                </Badge>
-                              </Group>
-                              <Text size="11px" c="dimmed">
-                                Driver: <strong style={{ color: '#334155' }}>{item.driver_name}</strong> • {item.total_filled || 0} Full, {item.total_empty || 0} Empties
-                              </Text>
-                              <Text size="10.5px" c="#800020" fw={600}>
-                                Total: ₹{(item.cash_amount + item.bank_amount).toLocaleString('en-IN', { minimumFractionDigits: 0 })} ({item.route_name})
-                              </Text>
-                            </Stack>
-                            <Text size="10px" c="#94a3b8" fw={500}>
-                              {item.ShiftDate}
-                            </Text>
-                          </Group>
-                        </Menu.Item>
-                      ))
                     )}
                   </Box>
 
                   <Divider style={{ borderColor: '#f1f5f9' }} />
 
-                  <Menu.Item
-                    component={Link}
-                    to="/end-allocations"
-                    style={{
-                      borderRadius: 6,
-                      textAlign: 'center',
-                      fontWeight: 700,
-                      fontSize: 12,
-                      color: '#800020',
-                      backgroundColor: '#fdf2f4',
-                      marginTop: 4,
-                    }}
-                  >
-                    View All End Allocations &rarr;
-                  </Menu.Item>
+                  <Group grow gap="xs" mt={4}>
+                    {pendingReceiptNotesCount > 0 && (
+                      <Button
+                        component={Link}
+                        to="/receipt-notes"
+                        variant="light"
+                        color="burgundy"
+                        size="xs"
+                        styles={{ root: { fontWeight: 700, fontSize: 11 } }}
+                      >
+                        Receipt Notes ({pendingReceiptNotesCount}) &rarr;
+                      </Button>
+                    )}
+                    <Button
+                      component={Link}
+                      to="/end-allocations"
+                      variant="subtle"
+                      color="gray"
+                      size="xs"
+                      styles={{ root: { fontWeight: 600, fontSize: 11 } }}
+                    >
+                      End Allocations &rarr;
+                    </Button>
+                  </Group>
                 </Menu.Dropdown>
               </Menu>
             )}
@@ -929,8 +1008,10 @@ export const AppLayout: React.FC = () => {
                           width: 8,
                           height: 8,
                           borderRadius: '50%',
-                          backgroundColor: '#800020',
-                          boxShadow: '0 0 0 2px #ffffff, 0 0 4px rgba(128, 0, 32, 0.4)',
+                          backgroundColor: isSubActive ? '#ffffff' : '#800020',
+                          boxShadow: isSubActive
+                            ? '0 0 0 2px rgba(255, 255, 255, 0.5), 0 0 4px #ffffff'
+                            : '0 0 0 2px #ffffff, 0 0 4px rgba(128, 0, 32, 0.4)',
                         }}
                       />
                     ) : null

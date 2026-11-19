@@ -221,20 +221,20 @@ export const PaymentFormPage: React.FC = () => {
     return bankAndCashLedgers.map((l) => {
       const bal = Number(l.CurrentBalance ?? l.OpeningBalance ?? 0);
       const balType = bal > 0 ? 'Dr' : (bal < 0 ? 'Cr' : (l.OpeningBalanceType || 'Dr'));
-      const formattedBal = `₹${Math.abs(bal).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ${balType}`;
+      const absBal = Math.abs(bal);
+      const formattedAmount = `₹${absBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const formattedBal = `${formattedAmount} ${balType}`;
       return {
         value: String(l.LedgerId),
         label: `${l.LedgerName} (${l.group_name || 'Account'})`,
         ledgerName: l.LedgerName,
         groupName: l.group_name || 'Account',
+        formattedAmount,
         balance: formattedBal,
         balType: balType,
       };
     });
   }, [bankAndCashLedgers]);
-
-
-
 
   // Selected Bank/Cash ledger object
   const selectedAccountLedger = useMemo(() => {
@@ -253,14 +253,17 @@ export const PaymentFormPage: React.FC = () => {
   const allLedgerOptions = useMemo(() => {
     return ledgers.map((l) => {
       const bInfo = getLedgerBalanceInfo(l);
+      const absBal = bInfo?.absBal ?? 0;
+      const formattedAmount = `₹${absBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       return {
         value: String(l.LedgerId),
         label: `${l.LedgerName} (${l.group_name || 'Ledger'})`,
         ledgerName: l.LedgerName,
         groupName: l.group_name || 'Ledger',
         isCreditor: bInfo?.isCreditor ?? false,
-        absBal: bInfo?.absBal ?? 0,
+        absBal,
         balType: bInfo?.balType ?? 'Dr',
+        formattedAmount,
         formattedBal: bInfo?.formatted ?? '₹0.00 Dr',
         balanceText: bInfo ? bInfo.formatted : '',
       };
@@ -822,18 +825,27 @@ export const PaymentFormPage: React.FC = () => {
                         variant="light"
                         tt="none"
                         style={{
+                          width: 108,
+                          minWidth: 108,
+                          height: 24,
                           backgroundColor: isCr ? '#fef2f2' : '#fdf2f4',
                           color: isCr ? '#b91c1c' : '#800020',
                           border: `1px solid ${isCr ? '#fecaca' : '#fecdd3'}`,
                           fontWeight: 600,
                           fontSize: 11,
-                          letterSpacing: '0.3px',
-                          padding: '3px 8px',
+                          padding: '0 8px',
                           borderRadius: 6,
-                          fontVariantNumeric: 'tabular-nums',
+                          flexShrink: 0,
                         }}
                       >
-                        {item.balance}
+                        <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1 }}>
+                            {item.formattedAmount || (item.balance ? item.balance.replace(/\s*(Dr|Cr|DR|CR)$/, '') : '')}
+                          </span>
+                          <span style={{ fontWeight: 700, fontSize: 10.5, marginLeft: 6, width: 20, textAlign: 'right', color: isCr ? '#b91c1c' : '#800020' }}>
+                            {item.balType}
+                          </span>
+                        </div>
                       </Badge>
                     )}
                   </Group>
@@ -953,19 +965,27 @@ export const PaymentFormPage: React.FC = () => {
                                           variant="light"
                                           tt="none"
                                           style={{
+                                            width: 108,
+                                            minWidth: 108,
+                                            height: 24,
                                             backgroundColor: isCreditor ? '#fdf2f4' : '#f8fafc',
                                             color: isCreditor ? '#800020' : '#475569',
                                             border: `1px solid ${isCreditor ? '#f5c2cb' : '#e2e8f0'}`,
                                             fontWeight: 600,
                                             fontSize: 11,
-                                            letterSpacing: '0.3px',
-                                            padding: '3px 8px',
+                                            padding: '0 8px',
                                             borderRadius: 6,
                                             flexShrink: 0,
-                                            fontVariantNumeric: 'tabular-nums',
                                           }}
                                         >
-                                          {item.balanceText}
+                                          <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1 }}>
+                                              {item.formattedAmount || (item.balanceText ? item.balanceText.replace(/\s*(Dr|Cr|DR|CR)$/, '') : '')}
+                                            </span>
+                                            <span style={{ fontWeight: 700, fontSize: 10.5, marginLeft: 6, width: 20, textAlign: 'right', color: isCreditor ? '#800020' : (item.balType === 'Cr' ? '#0284c7' : '#64748b') }}>
+                                              {item.balType}
+                                            </span>
+                                          </div>
                                         </Badge>
                                       )}
                                     </Group>

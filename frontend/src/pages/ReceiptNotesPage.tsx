@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Title,
   Text,
@@ -36,8 +36,7 @@ import {
   IconPlus,
   IconArrowLeft,
   IconTrash,
-  IconGasStation,
-  IconBrandWhatsapp } from '@tabler/icons-react';
+  IconGasStation } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -67,6 +66,11 @@ interface ReceiptNoteItem {
   emptyBreakdown: EmptyBreakdownItem[];
   cashCollected: number;
   digitalCollected: number;
+  godownId?: number;
+  godownName?: string;
+  sourceGodownId?: number;
+  sourceGodownName?: string;
+  canVerify?: boolean;
   status: 'pending' | 'settled';
   notes?: string;
 }
@@ -76,7 +80,7 @@ export const ReceiptNotesPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'pending' | 'settled' | 'all'>('pending');
-  type DateFilterType = 'all' | 'today' | 'this_week' | 'this_month' | 'custom';
+  type DateFilterType = 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
   const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
@@ -89,6 +93,12 @@ export const ReceiptNotesPage: React.FC = () => {
   const defaultGodown = user?.GodownId && !isAdmin ? String(user.GodownId) : '1';
 
   const [selectedReceivingGodown, setSelectedReceivingGodown] = useState<string>(defaultGodown);
+
+  useEffect(() => {
+    if (selectedNote?.godownId) {
+      setSelectedReceivingGodown(String(selectedNote.godownId));
+    }
+  }, [selectedNote]);
 
   // Fetch Godowns for receiving warehouse selection
   const { data: godowns = [] } = useQuery<any[]>({
@@ -353,7 +363,7 @@ export const ReceiptNotesPage: React.FC = () => {
       setIsDetailModalOpen(false);
       notifications.show({
         title: 'Receipt Note Verified',
-        message: data.message || 'Returned empty cylinders verified and accepted into Central Godown.',
+        message: data.message || 'Returned cylinders verified and accepted into godown.',
         color: 'burgundy' });
     },
     onError: (err: any) => {
@@ -453,6 +463,11 @@ export const ReceiptNotesPage: React.FC = () => {
     if (dateFilter === 'today') {
       return d === todayStr;
     }
+    if (dateFilter === 'yesterday') {
+      const y = new Date(today);
+      y.setDate(today.getDate() - 1);
+      return d === y.toISOString().split('T')[0];
+    }
     if (dateFilter === 'this_week') {
       const day = today.getDay();
       const diff = (day === 0 ? -6 : 1) - day;
@@ -502,7 +517,7 @@ export const ReceiptNotesPage: React.FC = () => {
       const aId = a.receiptNoteId || a.deliveryNoteId || Number(a.id) || 0;
       return bId - aId;
     });
-  }, [receiptNotes, searchQuery, statusFilter]);
+  }, [receiptNotes, searchQuery, statusFilter, dateFilter, customStartDate, customEndDate]);
 
   // Real KPI Metrics derived from live backend data
   const settledCount = receiptNotes.filter((n) => n.status === 'settled').length;
@@ -530,7 +545,7 @@ export const ReceiptNotesPage: React.FC = () => {
             Receipt Notes
           </Title>
           <Text size="sm" c="dimmed">
-            Driver route returns, empty cylinder receipts & settlement verification into Central Godown
+            Driver route returns, empty cylinder receipts & settlement verification into {user?.godown_name || 'Warehouse Depot'}
           </Text>
         </div>
 
@@ -886,7 +901,7 @@ export const ReceiptNotesPage: React.FC = () => {
           </div>
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" truncate>
-              Reconciled with central godown ledger
+              Reconciled with godown ledger
             </Text>
           </Group>
         </Paper>
@@ -1024,7 +1039,7 @@ export const ReceiptNotesPage: React.FC = () => {
           boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
       >
         {/* Table Toolbar */}
-        <Group justify="space-between" align="center" p="sm" px="md" style={{ borderBottom: '1px solid #f1f5f9' }}>
+        <Group justify="space-between" align="center" p="sm" px="md" wrap="wrap" gap="sm" style={{ borderBottom: '1px solid #f1f5f9' }}>
           <div>
             <Group gap="xs" align="center">
               <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
@@ -1044,14 +1059,55 @@ export const ReceiptNotesPage: React.FC = () => {
               >
                 {filteredNotes.length} Notes
               </Badge>
+              {user?.godown_name && (
+                <Badge
+                  variant="outline"
+                  size="xs"
+                  styles={{
+                    root: {
+                      borderColor: '#cbd5e1',
+                      color: '#475569',
+                      fontWeight: 600,
+                      fontSize: 10.5,
+                      height: 20
+                    }
+                  }}
+                >
+                  📍 {user.godown_name}
+                </Badge>
+              )}
             </Group>
             <Text size="xs" c="dimmed" mt={2}>
-              Review driver returns, verify empty cylinder counts, and accept inventory into Central Godown
+              Review driver returns, verify empty cylinder counts, and accept inventory into {user?.godown_name || 'depot'}
             </Text>
           </div>
 
-          <Group gap="xs" align="center" wrap="wrap">
-            {/* Filter Toggle: Pending first, then Settled, then All */}
+          {/* Search Input */}
+          <TextInput
+            placeholder="Search receipt notes, vehicles, drivers..."
+            size="xs"
+            radius="md"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.currentTarget.value)}
+            leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
+            rightSection={searchQuery ? <CloseButton size="xs" onClick={() => setSearchQuery('')} /> : null}
+            style={{ width: 260 }}
+            styles={{
+              input: {
+                height: 34,
+                minHeight: 34,
+                fontSize: 12,
+                borderColor: '#e2e8f0',
+                backgroundColor: '#f8fafc',
+              }
+            }}
+          />
+        </Group>
+
+        {/* Filter Controls Row */}
+        <Box px="md" py="xs" style={{ backgroundColor: '#fafbfc', borderBottom: '1px solid #e2e8f0' }}>
+          <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+            {/* Left: Status Toggle (Pending, Settled, All) */}
             <SegmentedControl
               value={statusFilter}
               onChange={(val) => setStatusFilter(val as any)}
@@ -1118,90 +1174,76 @@ export const ReceiptNotesPage: React.FC = () => {
                   padding: '5px 14px' } }}
             />
 
-            {/* Date Range SegmentedControl */}
-            <SegmentedControl
-              value={dateFilter}
-              onChange={(val) => setDateFilter(val as any)}
-              color="burgundy"
-              data={[
-                { label: 'All', value: 'all' },
-                { label: 'Today', value: 'today' },
-                { label: 'This Week', value: 'this_week' },
-                { label: 'This Month', value: 'this_month' },
-                { label: 'Custom', value: 'custom' },
-              ]}
-              radius="xl"
-              size="xs"
-              transitionDuration={250}
-              transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
-              styles={{
-                root: {
-                  backgroundColor: '#f1f5f9',
-                  padding: 3,
-                  borderRadius: 9999,
-                  border: '1px solid #e2e8f0',
-                  boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
-                },
-                control: {
-                  border: 'none',
-                },
-                indicator: {
-                  backgroundColor: '#800020',
-                  boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
-                  borderRadius: 9999,
-                  border: 'none',
-                  outline: 'none',
-                },
-                label: {
-                  padding: '5px 14px',
-                  fontWeight: 600,
-                  fontSize: 12,
-                  transition: 'color 150ms ease, font-weight 150ms ease',
-                }
-              }}
-            />
+            {/* Right: Date Filter Pills */}
+            <Group gap="xs" align="center" wrap="wrap">
+              <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                Date Filter:
+              </Text>
+              <SegmentedControl
+                value={dateFilter}
+                onChange={(val) => setDateFilter(val as any)}
+                color="burgundy"
+                data={[
+                  { label: 'All', value: 'all' },
+                  { label: 'Today', value: 'today' },
+                  { label: 'Yesterday', value: 'yesterday' },
+                  { label: 'This Week', value: 'this_week' },
+                  { label: 'This Month', value: 'this_month' },
+                  { label: 'Custom', value: 'custom' },
+                ]}
+                radius="xl"
+                size="xs"
+                transitionDuration={250}
+                transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+                styles={{
+                  root: {
+                    backgroundColor: '#f1f5f9',
+                    padding: 3,
+                    borderRadius: 9999,
+                    border: '1px solid #e2e8f0',
+                    boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+                  },
+                  control: {
+                    border: 'none',
+                  },
+                  indicator: {
+                    backgroundColor: '#800020',
+                    boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                    borderRadius: 9999,
+                    border: 'none',
+                    outline: 'none',
+                  },
+                  label: {
+                    padding: '5px 14px',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    transition: 'color 150ms ease, font-weight 150ms ease',
+                  }
+                }}
+              />
 
-            {dateFilter === 'custom' && (
-              <Group gap="xs" align="center">
-                <Box style={{ width: 125 }}>
-                  <DateInputDDMMYY
-                    placeholder="From Date"
-                    value={customStartDate}
-                    onChange={(val) => setCustomStartDate(val)}
-                  />
-                </Box>
-                <Text size="xs" c="dimmed">to</Text>
-                <Box style={{ width: 125 }}>
-                  <DateInputDDMMYY
-                    placeholder="To Date"
-                    value={customEndDate}
-                    onChange={(val) => setCustomEndDate(val)}
-                  />
-                </Box>
-              </Group>
-            )}
-
-            {/* Search Input matching System */}
-            <TextInput
-              placeholder="Search receipt notes, vehicles, drivers..."
-              size="xs"
-              radius="md"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.currentTarget.value)}
-              leftSection={<IconSearch size={14} stroke={1.5} color="#800020" />}
-              rightSection={searchQuery ? <CloseButton size="xs" onClick={() => setSearchQuery('')} /> : null}
-              style={{ width: 230 }}
-              styles={{
-                input: {
-                  height: 32,
-                  minHeight: 32,
-                  fontSize: 12,
-                  borderColor: '#e2e8f0',
-                  backgroundColor: '#ffffff',
-                  '&:focus': { borderColor: '#800020' } } }}
-            />
+              {dateFilter === 'custom' && (
+                <Group gap="xs" align="center">
+                  <Box style={{ width: 125 }}>
+                    <DateInputDDMMYY
+                      placeholder="From Date"
+                      value={customStartDate}
+                      onChange={(val) => setCustomStartDate(val)}
+                    />
+                  </Box>
+                  <Text size="xs" c="dimmed">to</Text>
+                  <Box style={{ width: 125 }}>
+                    <DateInputDDMMYY
+                      placeholder="To Date"
+                      value={customEndDate}
+                      onChange={(val) => setCustomEndDate(val)}
+                    />
+                  </Box>
+                </Group>
+              )}
+            </Group>
           </Group>
-        </Group>
+        </Box>
 
         {/* Table Content */}
         {isLoading ? (
@@ -1227,6 +1269,9 @@ export const ReceiptNotesPage: React.FC = () => {
                   </Table.Th>
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     VEHICLE & ROUTE
+                  </Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', width: 160 }}>
+                    RECEIVING DEPOT
                   </Table.Th>
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', width: 130 }}>
                     DELIVERY REF
@@ -1277,6 +1322,34 @@ export const ReceiptNotesPage: React.FC = () => {
                             </Text>
                           </div>
                         </Group>
+                      </Table.Td>
+
+                      {/* Receiving Depot */}
+                      <Table.Td>
+                        <Stack gap={2}>
+                          <Badge
+                            variant="light"
+                            size="xs"
+                            styles={{
+                              root: {
+                                backgroundColor: note.godownId === 2 ? '#fdf2f4' : '#f1f5f9',
+                                color: note.godownId === 2 ? '#800020' : '#334155',
+                                borderColor: note.godownId === 2 ? '#f5c2cb' : '#cbd5e1',
+                                border: '1px solid',
+                                fontWeight: 700,
+                                fontSize: 10.5,
+                                height: 20
+                              }
+                            }}
+                          >
+                            {note.godownName || (note.godownId === 2 ? 'Thalassery Godown' : 'Main Godown (Central)')}
+                          </Badge>
+                          {note.sourceGodownName && (
+                            <Text size="xs" c="dimmed" style={{ fontSize: 10 }}>
+                              From: {note.sourceGodownName}
+                            </Text>
+                          )}
+                        </Stack>
                       </Table.Td>
 
                       {/* Delivery Ref */}
@@ -1368,6 +1441,9 @@ export const ReceiptNotesPage: React.FC = () => {
                               size="sm"
                               onClick={() => {
                                 setSelectedNote(note);
+                                if (note.godownId) {
+                                  setSelectedReceivingGodown(String(note.godownId));
+                                }
                                 setIsDetailModalOpen(true);
                               }}
                               style={{ color: '#475569' }}
@@ -1377,18 +1453,35 @@ export const ReceiptNotesPage: React.FC = () => {
                           </Tooltip>
 
                           {isPending && (
-                            <Tooltip label="Verify & Settle into Godown" withArrow position="top">
-                              <ActionIcon
-                                variant="subtle"
-                                color="burgundy"
-                                size="sm"
-                                onClick={() => verifyNoteMutation.mutate(note.receiptNoteId || note.deliveryNoteId || Number(note.id))}
-                                loading={verifyNoteMutation.isPending}
-                                style={{ color: '#800020' }}
-                              >
-                                <IconCheck size={16} />
-                              </ActionIcon>
-                            </Tooltip>
+                            note.canVerify !== false ? (
+                              <Tooltip label={`Verify & Receive into ${note.godownName || 'Godown'}`} withArrow position="top">
+                                <ActionIcon
+                                  variant="subtle"
+                                  color="burgundy"
+                                  size="sm"
+                                  onClick={() => verifyNoteMutation.mutate({
+                                    noteId: note.receiptNoteId || note.deliveryNoteId || Number(note.id),
+                                    godownId: note.godownId
+                                  })}
+                                  loading={verifyNoteMutation.isPending}
+                                  style={{ color: '#800020' }}
+                                >
+                                  <IconCheck size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            ) : (
+                              <Tooltip label={`Awaiting receipt verification by ${note.godownName || 'Destination Godown'} Manager`} withArrow position="top">
+                                <ActionIcon
+                                  variant="subtle"
+                                  color="gray"
+                                  size="sm"
+                                  disabled
+                                  style={{ opacity: 0.4 }}
+                                >
+                                  <IconClock size={15} />
+                                </ActionIcon>
+                              </Tooltip>
+                            )
                           )}
 
                           <Tooltip label="Print Note / Challan PDF" withArrow position="top">
@@ -1403,32 +1496,6 @@ export const ReceiptNotesPage: React.FC = () => {
                               style={{ color: '#475569' }}
                             >
                               <IconPrinter size={16} />
-                            </ActionIcon>
-                          </Tooltip>
-
-                          <Tooltip label="Share on WhatsApp" withArrow position="top">
-                            <ActionIcon
-                              variant="subtle"
-                              color="green"
-                              size="sm"
-                              onClick={() => {
-                                const noteId = note.receiptNoteId || note.deliveryNoteId || note.id;
-                                const pdfUrl = `${window.location.origin}/api/v1/receipt-notes/${noteId}/pdf/?_t=${Date.now()}`;
-                                const text = encodeURIComponent(
-                                  `*Future Gas - Stock Receipt / Refill Note: ${note.noteNumber}*\n` +
-                                  `Date: ${note.date}\n` +
-                                  `Vehicle: ${note.vehicleNumber}\n` +
-                                  `Driver: ${note.driverName}\n` +
-                                  `Full: ${note.filledCylindersTotal} • Empty: ${note.emptyCylindersTotal}\n` +
-                                  `Status: ${note.status.toUpperCase()}\n` +
-                                  (note.notes ? `Remarks: ${note.notes}\n` : '') +
-                                  `\nChallan PDF: ${pdfUrl}`
-                                );
-                                window.open(`https://wa.me/?text=${text}`, '_blank');
-                              }}
-                              style={{ color: '#16a34a' }}
-                            >
-                              <IconBrandWhatsapp size={16} />
                             </ActionIcon>
                           </Tooltip>
 
@@ -1541,27 +1608,67 @@ export const ReceiptNotesPage: React.FC = () => {
               </Table.Tbody>
             </Table>
 
+            {selectedNote.cashCollected > 0 && (
+              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#fdf2f4', borderColor: '#f5c2cb' }}>
+                <Group justify="space-between" align="center">
+                  <Text size="xs" fw={700} c="#800020">Driver Cash Collection Handover:</Text>
+                  <Text size="sm" fw={800} c="#800020">₹{selectedNote.cashCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+                </Group>
+              </Paper>
+            )}
+
             {selectedNote.notes && (
               <Text size="xs" c="dimmed">
                 <strong>Gate Remarks:</strong> {selectedNote.notes}
               </Text>
             )}
 
-            {selectedNote.status === 'pending' && (
-              <Select
-                label="Receiving Godown"
-                description={!isAdmin && user?.godown_name ? `Accept returned cylinders into ${user.godown_name}` : 'Accept returned cylinders into this godown location'}
-                disabled={!isAdmin && Boolean(user?.GodownId)}
-                size="xs"
-                value={selectedReceivingGodown}
-                onChange={(val) => setSelectedReceivingGodown(val || '1')}
-                data={(godowns.length > 0 ? godowns : [
-                  { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
-                  { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
-                ]).map((g: any) => ({
-                  value: String(g.GodownId),
-                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}` }))}
-              />
+            {/* Receiving Destination Godown Card */}
+            <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
+              <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+                <div>
+                  <Text size="xs" fw={700} c="#1e293b">Receiving Destination Godown</Text>
+                  <Text size="11px" c="dimmed">
+                    {selectedNote.sourceGodownName
+                      ? `Incoming shift transfer from ${selectedNote.sourceGodownName}`
+                      : 'Stock will be accepted into this godown location upon verification'}
+                  </Text>
+                </div>
+                <Badge
+                  size="md"
+                  variant="filled"
+                  radius="sm"
+                  styles={{ root: { backgroundColor: '#800020', color: '#ffffff', fontWeight: 700 } }}
+                >
+                  {selectedNote.godownName || (godowns.find((g: any) => String(g.GodownId) === selectedReceivingGodown)?.GodownName) || 'Main Godown (Central)'}
+                </Badge>
+              </Group>
+              {isAdmin && !selectedNote.godownId && (
+                <Select
+                  mt="xs"
+                  label="Select Destination Godown"
+                  size="xs"
+                  value={selectedReceivingGodown}
+                  onChange={(val) => setSelectedReceivingGodown(val || '1')}
+                  data={(godowns.length > 0 ? godowns : [
+                    { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
+                    { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
+                  ]).map((g: any) => ({
+                    value: String(g.GodownId),
+                    label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}` }))}
+                />
+              )}
+            </Paper>
+
+            {selectedNote.status === 'pending' && selectedNote.canVerify === false && (
+              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#fffbeb', borderColor: '#fef3c7' }}>
+                <Group gap="xs">
+                  <IconClock size={16} color="#d97706" />
+                  <Text size="xs" fw={600} c="#92400e">
+                    Awaiting verification by {selectedNote.godownName || 'Destination Godown'} Manager. You do not have custody permission to verify receipts for this depot.
+                  </Text>
+                </Group>
+              </Paper>
             )}
 
             <Group justify="space-between" mt="md" wrap="wrap" gap="sm">
@@ -1579,30 +1686,6 @@ export const ReceiptNotesPage: React.FC = () => {
                 >
                   Print Challan / Note PDF
                 </Button>
-                <Button
-                  variant="light"
-                  color="green"
-                  size="xs"
-                  leftSection={<IconBrandWhatsapp size={16} />}
-                  onClick={() => {
-                    const noteId = selectedNote.receiptNoteId || selectedNote.deliveryNoteId || selectedNote.id;
-                    const pdfUrl = `${window.location.origin}/api/v1/receipt-notes/${noteId}/pdf/?_t=${Date.now()}`;
-                    const text = encodeURIComponent(
-                      `*Future Gas - Stock Receipt / Refill Note: ${selectedNote.noteNumber}*\n` +
-                      `Date: ${selectedNote.date}\n` +
-                      `Vehicle: ${selectedNote.vehicleNumber}\n` +
-                      `Driver: ${selectedNote.driverName}\n` +
-                      `Full: ${selectedNote.filledCylindersTotal} • Empty: ${selectedNote.emptyCylindersTotal}\n` +
-                      `Status: ${selectedNote.status.toUpperCase()}\n` +
-                      (selectedNote.notes ? `Remarks: ${selectedNote.notes}\n` : '') +
-                      `\nChallan PDF: ${pdfUrl}`
-                    );
-                    window.open(`https://wa.me/?text=${text}`, '_blank');
-                  }}
-                  styles={{ root: { fontWeight: 600 } }}
-                >
-                  Share on WhatsApp
-                </Button>
               </Group>
 
               <Group gap="xs">
@@ -1616,11 +1699,12 @@ export const ReceiptNotesPage: React.FC = () => {
                     leftSection={<IconCheck size={16} />}
                     onClick={() => verifyNoteMutation.mutate({
                       noteId: selectedNote.receiptNoteId || selectedNote.deliveryNoteId || Number(selectedNote.id),
-                      godownId: Number(selectedReceivingGodown) || 1 })}
+                      godownId: Number(selectedReceivingGodown || selectedNote.godownId || 1)
+                    })}
                     loading={verifyNoteMutation.isPending}
-                    styles={{ root: { backgroundColor: '#800020', fontWeight: 600 } }}
+                    disabled={selectedNote.canVerify === false}
                   >
-                    Verify & Accept into Godown
+                    Verify & Accept into {selectedNote.godownName || 'Godown'}
                   </Button>
                 )}
               </Group>

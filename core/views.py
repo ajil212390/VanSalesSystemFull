@@ -6779,7 +6779,8 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
         user_godown_id = getattr(user, 'GodownId', None)
         user_role = getattr(user.UserRole, 'RoleName', '') if hasattr(user, 'UserRole') and user.UserRole else ''
         if user_godown_id and user_role not in ('Administrator',):
-            qs = qs.filter(Q(GodownId=user_godown_id) | Q(SourceGodownId=user_godown_id) | Q(CreatedById=getattr(user, 'UserId', None)))
+            # Non-admin depot managers only see incoming receipts destined for their own godown
+            qs = qs.filter(GodownId=user_godown_id)
         return qs.select_related(
             'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Route', 'RouteVehicleDriver__Driver'
         ).prefetch_related('lines__Product').order_by('-ReceiptDate', '-ReceiptNoteId')
@@ -6787,6 +6788,11 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         notes_qs = self.get_queryset()
         company_id = getattr(request.user, 'CompanyId', 1) or 1
+        user = request.user
+        user_godown_id = getattr(user, 'GodownId', None)
+        user_role = getattr(user.UserRole, 'RoleName', '') if hasattr(user, 'UserRole') and user.UserRole else ''
+        from core.models import Godown
+        godowns_map = {g.GodownId: g.GodownName for g in Godown.objects.filter(CompanyId=company_id)}
         results = []
 
         for n in notes_qs:
@@ -6856,6 +6862,10 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
                 except Exception:
                     pass
 
+            godown_name = godowns_map.get(n.GodownId, f"Godown #{n.GodownId}" if n.GodownId else '')
+            source_godown_name = godowns_map.get(n.SourceGodownId, f"Godown #{n.SourceGodownId}" if n.SourceGodownId else '')
+            can_verify = (user_role in ('Administrator',) or (user_godown_id and user_godown_id == n.GodownId))
+
             results.append({
                 'id': str(n.ReceiptNoteId),
                 'receiptNoteId': n.ReceiptNoteId,
@@ -6873,6 +6883,11 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
                 'filledBreakdown': full_breakdown,
                 'cashCollected': cash_coll,
                 'digitalCollected': 0.0,
+                'godownId': n.GodownId,
+                'godownName': godown_name,
+                'sourceGodownId': n.SourceGodownId,
+                'sourceGodownName': source_godown_name,
+                'canVerify': can_verify,
                 'status': 'pending' if n.Status == 'RECEIPT_PENDING' else 'settled',
                 'notes': n.Remarks or '',
             })
@@ -7211,6 +7226,16 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
         if not rn:
             return Response({'success': False, 'message': 'Receipt Note not found or already processed.'}, status=status.HTTP_404_NOT_FOUND)
 
+        user = request.user
+        user_godown_id = getattr(user, 'GodownId', None)
+        user_role = getattr(user.UserRole, 'RoleName', '') if hasattr(user, 'UserRole') and user.UserRole else ''
+        if user_godown_id and user_role not in ('Administrator',):
+            if rn.GodownId and rn.GodownId != user_godown_id:
+                return Response({
+                    'success': False,
+                    'message': f'Unauthorized: This Receipt Note belongs to destination depot #{rn.GodownId}. Only that godown manager or an Administrator can verify and accept it into stock.'
+                }, status=status.HTTP_403_FORBIDDEN)
+
         company_id = getattr(request.user, 'CompanyId', 1) or 1
         alloc_id = rn.RouteVehicleDriver_id
 
@@ -7446,6 +7471,8 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
         qs = DeliveryNote.objects.filter(
             CompanyId=company_id,
             Status__in=['PENDING_APPROVAL', 'COMPLETED', 'SETTLED']
+        ).exclude(
+            Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
         )
         user_godown_id = getattr(u, 'GodownId', None)
         user_role = getattr(u.UserRole, 'RoleName', '') if hasattr(u, 'UserRole') and u.UserRole else ''
@@ -7468,6 +7495,8 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
         dn_qs = DeliveryNote.objects.filter(
             CompanyId=company_id,
             Status__in=['PENDING_APPROVAL', 'COMPLETED', 'SETTLED']
+        ).exclude(
+            Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
         )
         if user_godown_id and user_role not in ('Administrator',):
             dn_qs = dn_qs.filter(Q(GodownId=user_godown_id) | Q(CreatedById=getattr(user, 'UserId', None)))
@@ -8335,7 +8364,9 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
         driver_id = request.query_params.get('driver_id')
         company_id = getattr(request.user, 'CompanyId', 1) or 1
 
-        dn_qs = DeliveryNote.objects.filter(CompanyId=company_id)
+        dn_qs = DeliveryNote.objects.filter(CompanyId=company_id).exclude(
+            Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
+        )
         if allocation_id:
             dn_qs = dn_qs.filter(RouteVehicleDriver_id=allocation_id)
         elif driver_id:

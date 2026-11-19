@@ -638,7 +638,7 @@ export const PurchaseFormPage: React.FC = () => {
       <Paper p={8} radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
         <Group wrap="wrap" gap={8} align="flex-start">
           {/* Party / Supplier + More Details */}
-          <div style={{ flex: '2 1 240px', minWidth: 220 }}>
+          <div style={{ flex: '3 1 340px', minWidth: 280 }}>
             <Group justify="space-between" align="center" mb={2}>
               <Text size="xs" fw={600} c="#334155">Party / Supplier *</Text>
               <Button

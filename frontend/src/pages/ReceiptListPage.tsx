@@ -256,6 +256,116 @@ export const ReceiptListPage: React.FC = () => {
         </Group>
       </Group>
 
+      {/* Date Filter & Sort Card */}
+      <Paper
+        p="xs"
+        radius="xl"
+        withBorder
+        style={{
+          backgroundColor: '#ffffff',
+          borderColor: '#e2e8f0',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+        }}
+      >
+        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+          <Group gap="xs" align="center" wrap="wrap">
+            <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+              Date Filter:
+            </Text>
+            <SegmentedControl
+              size="xs"
+              radius="xl"
+              color="burgundy"
+              transitionDuration={250}
+              transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+              value={dateFilter}
+              onChange={(val) => setDateFilter(val as any)}
+              data={[
+                { label: 'All', value: 'all' },
+                { label: 'Today', value: 'today' },
+                { label: 'Yesterday', value: 'yesterday' },
+                { label: 'This Week', value: 'this_week' },
+                { label: 'This Month', value: 'this_month' },
+                { label: 'Custom', value: 'custom' },
+              ]}
+              styles={{
+                root: {
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  padding: 3,
+                  borderRadius: 9999,
+                  boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+                },
+                control: {
+                  border: 'none',
+                },
+                indicator: {
+                  backgroundColor: '#800020',
+                  borderRadius: 9999,
+                  boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                  border: 'none',
+                  outline: 'none',
+                },
+                label: {
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '5px 14px',
+                  transition: 'color 150ms ease, font-weight 150ms ease',
+                },
+              }}
+            />
+
+            {dateFilter === 'custom' && (
+              <Group gap="xs" align="center">
+                <Box style={{ width: 130 }}>
+                  <DateInputDDMMYY
+                    placeholder="From Date"
+                    value={customStartDate}
+                    onChange={(val) => setCustomStartDate(val)}
+                  />
+                </Box>
+                <Text size="xs" c="dimmed">to</Text>
+                <Box style={{ width: 130 }}>
+                  <DateInputDDMMYY
+                    placeholder="To Date"
+                    value={customEndDate}
+                    onChange={(val) => setCustomEndDate(val)}
+                  />
+                </Box>
+              </Group>
+            )}
+          </Group>
+
+          {/* Sort Option */}
+          <Group gap="xs" align="center">
+            <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+              Sort:
+            </Text>
+            <Select
+              size="xs"
+              radius="xl"
+              value={sortBy}
+              onChange={(val) => setSortBy(val || 'date_desc')}
+              data={[
+                { label: 'Date: Newest First', value: 'date_desc' },
+                { label: 'Date: Oldest First', value: 'date_asc' },
+                { label: 'Amount: High to Low', value: 'amount_desc' },
+                { label: 'Amount: Low to High', value: 'amount_asc' },
+              ]}
+              style={{ width: 180 }}
+              styles={{
+                input: {
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  fontWeight: 600,
+                  fontSize: 12,
+                },
+              }}
+            />
+          </Group>
+        </Group>
+      </Paper>
+
       {/* Main Table Card */}
       <Paper radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
         {isLoading ? (
