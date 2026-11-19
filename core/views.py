@@ -4695,7 +4695,9 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         user = request.user
         user_godown_id = getattr(user, 'GodownId', None)
         user_role = getattr(user.UserRole, 'RoleName', '') if hasattr(user, 'UserRole') and user.UserRole else ''
-        is_scoped_godown = bool(user_godown_id and user_role not in ('Administrator',))
+        user_godown = Godown.objects.filter(CompanyId=company_id, GodownId=user_godown_id).first() if user_godown_id else None
+        is_central_godown = user_godown.IsCentral if user_godown else False
+        is_scoped_godown = bool(user_godown_id and not is_central_godown and user_role not in ('Administrator',))
 
         if is_scoped_godown:
             godowns_list_qs = list(Godown.objects.filter(CompanyId=company_id, GodownId=user_godown_id, IsActive=True).select_related('RouteVehicleDriver'))

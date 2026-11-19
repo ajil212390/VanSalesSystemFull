@@ -635,6 +635,8 @@ export const DashboardPage: React.FC = () => {
 
   // Row 3 Calculations: Inventory & Van Operations
   const userGodownId = user?.godown_id || user?.GodownId;
+  const userGodown = godownsList?.find((g: any) => Number(g.GodownId) === Number(userGodownId));
+  const isSecondaryGodownManager = isManager && userGodownId && userGodown && !userGodown.IsCentral;
   const stockProducts = stockAnalysis?.products || [];
 
   const stockLocations = useMemo(() => {
@@ -643,7 +645,7 @@ export const DashboardPage: React.FC = () => {
       ? stockAnalysis.godowns
       : (godownsList && godownsList.length > 0 ? godownsList : []);
 
-    if (userGodownId && !isAdmin && !isManager) {
+    if (userGodownId && !isAdmin && isSecondaryGodownManager) {
       godownList = godownList.filter((g: any) => Number(g.GodownId) === Number(userGodownId));
     }
 
@@ -760,24 +762,24 @@ export const DashboardPage: React.FC = () => {
   }, [stockProducts, stockAnalysis?.godowns, stockAnalysis?.all_vans, stockAnalysis?.active_vans, stockAnalysis?.idle_vans, godownsList, vehicles]);
 
   const totalProductFilled = useMemo(() => {
-    if (userGodownId && !isAdmin && !isManager) {
+    if (userGodownId && !isAdmin && isSecondaryGodownManager) {
       return stockProducts.reduce((sum: number, p: any) => {
         const mg = (p.Godowns || []).find((pg: any) => Number(pg.GodownId) === Number(userGodownId));
         return sum + (mg ? Number(mg.FilledQty || 0) : 0);
       }, 0);
     }
     return stockProducts.reduce((sum: number, p: any) => sum + (Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0), 0);
-  }, [stockProducts, userGodownId, isAdmin, isManager]);
+  }, [stockProducts, userGodownId, isAdmin, isSecondaryGodownManager]);
 
   const totalProductEmpty = useMemo(() => {
-    if (userGodownId && !isAdmin && !isManager) {
+    if (userGodownId && !isAdmin && isSecondaryGodownManager) {
       return stockProducts.reduce((sum: number, p: any) => {
         const mg = (p.Godowns || []).find((pg: any) => Number(pg.GodownId) === Number(userGodownId));
         return sum + (mg ? Number(mg.EmptyQty || 0) : 0);
       }, 0);
     }
     return stockProducts.reduce((sum: number, p: any) => sum + (Number(p.EmptyQty) || 0), 0);
-  }, [stockProducts, userGodownId, isAdmin, isManager]);
+  }, [stockProducts, userGodownId, isAdmin, isSecondaryGodownManager]);
 
   const godownCount = useMemo(() => {
     return stockLocations.filter((l: any) => l.type === 'godown').length || (godownsList.length > 0 ? godownsList.length : 1);

@@ -141,7 +141,6 @@ export const AppLayout: React.FC = () => {
     if (isAccountant) return [];
     if (isManager) {
       return [
-        { label: 'Payment Groups', path: '/payment-groups', icon: IconCreditCard },
         { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
         { label: 'Van Management', path: '/van-management', icon: IconTruckDelivery },
       ];
