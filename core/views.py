@@ -606,7 +606,7 @@ class RouteViewSet(viewsets.ModelViewSet):
             latest_dn = DeliveryNote.objects.filter(
                 CompanyId=company_id,
                 RouteVehicleDriver_id=allocation_id,
-                Status__in=['LOADED', 'PENDING_APPROVAL']
+                Status__in=['LOADED', 'PENDING_APPROVAL', 'RECEIPT_PENDING']
             ).exclude(
                 Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
             ).order_by('-DeliveryNoteId').first()
@@ -4605,7 +4605,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             CompanyId=company_id,
             RouteVehicleDriverId=allocation_id
         )
-        if latest_dn and latest_dn.Status in ['LOADED', 'PENDING_APPROVAL']:
+        if latest_dn and latest_dn.Status in ['LOADED', 'PENDING_APPROVAL', 'RECEIPT_PENDING']:
             last_settled = DeliveryNote.objects.filter(
                 CompanyId=company_id,
                 RouteVehicleDriver_id=allocation_id,
@@ -4615,7 +4615,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             loaded_notes_qs = DeliveryNote.objects.filter(
                 CompanyId=company_id,
                 RouteVehicleDriver_id=allocation_id,
-                Status__in=['LOADED', 'PENDING_APPROVAL']
+                Status__in=['LOADED', 'PENDING_APPROVAL', 'RECEIPT_PENDING']
             )
             if last_settled:
                 loaded_notes_qs = loaded_notes_qs.filter(DeliveryNoteId__gt=last_settled.DeliveryNoteId)
@@ -4763,11 +4763,11 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'Products': []
             }
 
-            # Scope each van's onboard stock to its current active shift (LOADED or PENDING_APPROVAL)
+            # Scope each van's onboard stock to its current active shift (LOADED, PENDING_APPROVAL, or RECEIPT_PENDING)
             active_dn = DeliveryNote.objects.filter(
                 CompanyId=company_id,
                 RouteVehicleDriver_id=a.RouteVehicleDriverId,
-                Status__in=['LOADED', 'PENDING_APPROVAL']
+                Status__in=['LOADED', 'PENDING_APPROVAL', 'RECEIPT_PENDING']
             ).exclude(
                 Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
             ).order_by('-DeliveryNoteId').first()
@@ -6085,7 +6085,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         active_dn = DeliveryNote.objects.filter(
             CompanyId=company_id,
             RouteVehicleDriver_id=allocation_id,
-            Status__in=['LOADED', 'PENDING_APPROVAL']
+            Status__in=['LOADED', 'PENDING_APPROVAL', 'RECEIPT_PENDING']
         ).exclude(
             Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
         ).order_by('-DeliveryNoteId').first()
@@ -6854,8 +6854,8 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
         user_godown_id = getattr(user, 'GodownId', None)
         user_role = getattr(user.UserRole, 'RoleName', '') if hasattr(user, 'UserRole') and user.UserRole else ''
         if user_godown_id and user_role not in ('Administrator',):
-            # Scoped depot managers only see receipts inwarding into or outwarded from their godown
-            qs = qs.filter(Q(GodownId=user_godown_id) | Q(SourceGodownId=user_godown_id))
+            # Scoped depot managers only see receipts strictly inwarding into their godown
+            qs = qs.filter(GodownId=user_godown_id)
         return qs.select_related(
             'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Route', 'RouteVehicleDriver__Driver'
         ).prefetch_related('lines__Product').order_by('-ReceiptDate', '-ReceiptNoteId')
@@ -7488,7 +7488,7 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
         user = request.user
         user_godown_id = getattr(user, 'GodownId', None)
         user_role = getattr(user.UserRole, 'RoleName', '') if hasattr(user, 'UserRole') and user.UserRole else ''
-        if user_godown_id and user_role not in ('Administrator', 'Manager'):
+        if user_godown_id and user_role not in ('Administrator',):
             if rn.GodownId and rn.GodownId != user_godown_id:
                 return Response({
                     'success': False,
@@ -7815,7 +7815,7 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
         ).exclude(
             Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
         )
-        if user_godown_id and user_role not in ('Administrator', 'Manager'):
+        if user_godown_id and user_role not in ('Administrator',):
             dn_qs = dn_qs.filter(Q(GodownId=user_godown_id) | Q(CreatedById=getattr(user, 'UserId', None)))
         dn_qs = dn_qs.select_related(
             'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Driver', 'RouteVehicleDriver__Route'
@@ -10123,11 +10123,32 @@ class PaymentGroupViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         company_id = getattr(self.request.user, 'CompanyId', 1) or 1
-        return PaymentGroup.objects.filter(CompanyId=company_id).order_by('PaymentGroupId')
+        qs = (
+            PaymentGroup.objects
+            .filter(CompanyId=company_id)
+            .select_related('BankLedger')
+            .prefetch_related('routevehicledriver_set__Route')
+            .order_by('PaymentGroupId')
+        )
+        is_active = self.request.query_params.get('is_active')
+        if is_active is not None:
+            qs = qs.filter(IsActive=(is_active.lower() == 'true'))
+        return qs
 
     def perform_create(self, serializer):
         company_id = getattr(self.request.user, 'CompanyId', 1) or 1
         serializer.save(CompanyId=company_id)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        active_allocs = instance.routevehicledriver_set.filter(IsActive=True)
+        if active_allocs.exists():
+            route_names = ", ".join(active_allocs.values_list('Route__RouteName', flat=True).distinct())
+            return Response(
+                {"detail": f"Cannot delete payment group because it is assigned to active routes: {route_names}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return super().destroy(request, *args, **kwargs)
 
 
 

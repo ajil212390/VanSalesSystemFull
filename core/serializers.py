@@ -303,10 +303,29 @@ class RouteSerializer(serializers.ModelSerializer):
 
 
 class PaymentGroupSerializer(serializers.ModelSerializer):
+    BankLedgerName = serializers.CharField(source='BankLedger.LedgerName', read_only=True, allow_null=True)
+    bank_ledger_name = serializers.CharField(source='BankLedger.LedgerName', read_only=True, allow_null=True)
+    allocations_count = serializers.SerializerMethodField()
+    allocated_routes = serializers.SerializerMethodField()
+
     class Meta:
         model = PaymentGroup
-        fields = ['PaymentGroupId', 'PaymentGroupName', 'IsActive', 'CompanyId', 'CreatedAt', 'UpdatedAt']
+        fields = [
+            'PaymentGroupId', 'PaymentGroupName', 'BankLedger', 'BankLedgerName',
+            'bank_ledger_name', 'allocations_count', 'allocated_routes',
+            'IsActive', 'CompanyId', 'CreatedAt', 'UpdatedAt'
+        ]
         read_only_fields = ['PaymentGroupId', 'CreatedAt', 'UpdatedAt']
+
+    def get_allocations_count(self, obj):
+        return obj.routevehicledriver_set.filter(IsActive=True).count()
+
+    def get_allocated_routes(self, obj):
+        return list(
+            obj.routevehicledriver_set.filter(IsActive=True, Route__isnull=False)
+            .values_list('Route__RouteName', flat=True)
+            .distinct()
+        )
 
 
 class RouteVehicleDriverSerializer(serializers.ModelSerializer):
@@ -314,6 +333,8 @@ class RouteVehicleDriverSerializer(serializers.ModelSerializer):
     VehicleNumber = serializers.CharField(source='Vehicle.VehicleNumber', read_only=True)
     DriverName = serializers.CharField(source='Driver.DriverName', read_only=True)
     PaymentGroupName = serializers.CharField(source='PaymentGroup.PaymentGroupName', read_only=True)
+    BankLedgerName = serializers.CharField(source='PaymentGroup.BankLedger.LedgerName', read_only=True, allow_null=True)
+    bank_ledger_name = serializers.CharField(source='PaymentGroup.BankLedger.LedgerName', read_only=True, allow_null=True)
     route_name = serializers.CharField(source='Route.RouteName', read_only=True)
     vehicle_number = serializers.CharField(source='Vehicle.VehicleNumber', read_only=True)
     driver_name = serializers.CharField(source='Driver.DriverName', read_only=True)
@@ -324,6 +345,7 @@ class RouteVehicleDriverSerializer(serializers.ModelSerializer):
         fields = [
             'RouteVehicleDriverId', 'Route', 'Vehicle', 'Driver', 'PaymentGroup',
             'RouteName', 'VehicleNumber', 'DriverName', 'PaymentGroupName',
+            'BankLedgerName', 'bank_ledger_name',
             'route_name', 'vehicle_number', 'driver_name', 'payment_group_name',
             'AssignmentDate', 'Narration', 'IsActive',
             'CreatedAt', 'UpdatedAt', 'CompanyId'

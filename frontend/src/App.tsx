@@ -13,6 +13,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { DriversPage } from './pages/DriversPage';
 import { RoutesPage } from './pages/RoutesPage';
 import { VehiclesPage } from './pages/VehiclesPage';
+import { PaymentGroupsPage } from './pages/PaymentGroupsPage';
 import { AllocationsPage }   from './pages/AllocationsPage';
 import { EndAllocationsPage } from './pages/EndAllocationsPage';
 import { UsersPage } from './pages/UsersPage';
@@ -145,6 +146,7 @@ export const App: React.FC = () => {
               <Route path="/drivers" element={<RoleGuard allowedRoles={['Administrator']}><DriversPage /></RoleGuard>} />
               <Route path="/vehicles" element={<RoleGuard allowedRoles={['Administrator']}><VehiclesPage /></RoleGuard>} />
               <Route path="/routes" element={<RoleGuard allowedRoles={['Administrator']}><RoutesPage/></RoleGuard>} />
+              <Route path="/payment-groups" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><PaymentGroupsPage /></RoleGuard>} />
               <Route path="/allocations" element={<RoleGuard allowedRoles={['Administrator']}><AllocationsPage/></RoleGuard>} />
               <Route path="/end-allocations" element={<RoleGuard allowedRoles={['Administrator', 'Manager']}><EndAllocationsPage /></RoleGuard>} />
 

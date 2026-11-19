@@ -22,7 +22,7 @@ import {
   Tooltip,
   Modal,
   Divider } from '@mantine/core';
-import { IconPencil, IconTrash, IconAlertCircle, IconSearch, IconArrowLeft, IconPlus } from '@tabler/icons-react';
+import { IconPencil, IconTrash, IconAlertCircle, IconSearch, IconArrowLeft, IconPlus, IconBuildingBank, IconCreditCard } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useForm, Controller, useWatch  } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -140,10 +140,13 @@ export const AllocationsPage: React.FC = () => {
   const paymentGroupOptions = useMemo(() => {
     return paymentGroups
       .filter((pg: any) => pg.IsActive !== false)
-      .map((pg: any) => ({
-        value: String(pg.PaymentGroupId),
-        label: pg.PaymentGroupName,
-      }));
+      .map((pg: any) => {
+        const bank = pg.BankLedgerName || pg.bank_ledger_name;
+        return {
+          value: String(pg.PaymentGroupId),
+          label: bank ? `${pg.PaymentGroupName} (${bank})` : pg.PaymentGroupName,
+        };
+      });
   }, [paymentGroups]);
 
   // 3. Form Setup
@@ -382,7 +385,14 @@ export const AllocationsPage: React.FC = () => {
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(btnStyles) => (
               <Group gap="xs" style={btnStyles}>
-                <Button variant="outline" color="burgundy" radius={10} onClick={() => setManageGroupsOpen(true)}>
+                <Button
+                  variant="outline"
+                  color="burgundy"
+                  radius={10}
+                  leftSection={<IconCreditCard size={15} />}
+                  onClick={() => navigate('/payment-groups')}
+                  style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
+                >
                   Payment Groups
                 </Button>
                 <Button color="burgundy" radius={10} onClick={handleAddNew}>
@@ -618,9 +628,22 @@ export const AllocationsPage: React.FC = () => {
                       <Table.Td>{a.DriverName || `Driver #${a.Driver}`}</Table.Td>
                       <Table.Td>
                         {a.PaymentGroupName || (a as any).payment_group_name ? (
-                          <Badge size="sm" variant="light" color="burgundy" style={{ fontWeight: 600 }}>
-                            {a.PaymentGroupName || (a as any).payment_group_name}
-                          </Badge>
+                          <Group gap={6} wrap="nowrap">
+                            <Badge size="sm" variant="light" color="burgundy" style={{ fontWeight: 600 }}>
+                              {a.PaymentGroupName || (a as any).payment_group_name}
+                            </Badge>
+                            {(a as any).BankLedgerName || (a as any).bank_ledger_name ? (
+                              <Badge
+                                size="xs"
+                                variant="outline"
+                                color="gray"
+                                leftSection={<IconBuildingBank size={11} color="#800020" />}
+                                styles={{ root: { fontWeight: 600, color: '#334155', borderColor: '#cbd5e1' } }}
+                              >
+                                {(a as any).BankLedgerName || (a as any).bank_ledger_name}
+                              </Badge>
+                            ) : null}
+                          </Group>
                         ) : (
                           <Text size="xs" c="dimmed">—</Text>
                         )}

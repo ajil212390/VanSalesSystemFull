@@ -360,7 +360,7 @@ export const DashboardPage: React.FC = () => {
   });
 
   const { data: managerReceiptNotes = [] } = useQuery<any[]>({
-    queryKey: ['manager-receipt-notes'],
+    queryKey: ['manager-receipt-notes', user?.id, user?.GodownId],
     queryFn: async () => {
       const res = await apiClient.get('/receipt-notes/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);
@@ -370,7 +370,7 @@ export const DashboardPage: React.FC = () => {
   });
 
   const { data: managerDeliveryNotes = [] } = useQuery<any[]>({
-    queryKey: ['manager-delivery-notes'],
+    queryKey: ['manager-delivery-notes', user?.id, user?.GodownId],
     queryFn: async () => {
       const res = await apiClient.get('/delivery-notes/');
       return Array.isArray(res.data) ? res.data : (res.data?.results || []);

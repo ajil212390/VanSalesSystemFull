@@ -116,7 +116,7 @@ export const AppLayout: React.FC = () => {
   const pendingEndRoutes = endRouteDrivers.filter((n: any) => n.Status?.toUpperCase() === 'PENDING');
 
   const { data: receiptNotes = [] } = useQuery<any[]>({
-    queryKey: ['receipt-notes'],
+    queryKey: ['receipt-notes', user?.id, user?.GodownId],
     queryFn: async () => {
       const res = await apiClient.get('/receipt-notes/');
       return Array.isArray(res.data) ? res.data : [];
@@ -141,6 +141,7 @@ export const AppLayout: React.FC = () => {
     if (isAccountant) return [];
     if (isManager) {
       return [
+        { label: 'Payment Groups', path: '/payment-groups', icon: IconCreditCard },
         { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
         { label: 'Van Management', path: '/van-management', icon: IconTruckDelivery },
       ];
@@ -149,6 +150,7 @@ export const AppLayout: React.FC = () => {
       { label: 'Drivers', path: '/drivers', icon: IconUser },
       { label: 'Vehicles', path: '/vehicles', icon: IconTruck },
       { label: 'Routes', path: '/routes', icon: IconRoute },
+      { label: 'Payment Groups', path: '/payment-groups', icon: IconCreditCard },
       { label: 'Add User', path: '/users', icon: IconUsers },
       { label: 'Allocations', path: '/allocations', icon: IconArrowsJoin2 },
       { label: 'End Allocation', path: '/end-allocations', icon: IconClipboardCheck },
@@ -209,6 +211,8 @@ export const AppLayout: React.FC = () => {
         return { section: 'Van Operations', title: 'Vehicles' };
       case '/routes':
         return { section: 'Van Operations', title: 'Routes' };
+      case '/payment-groups':
+        return { section: 'Van Operations', title: 'Payment Groups' };
       case '/users':
         return { section: 'Van Operations', title: 'Add User' };
       case '/allocations':

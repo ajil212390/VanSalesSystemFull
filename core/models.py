@@ -221,6 +221,7 @@ class Route(models.Model):
 class PaymentGroup(models.Model):
     PaymentGroupId = models.BigAutoField(primary_key=True, db_column='PaymentGroupId')
     PaymentGroupName = models.CharField(max_length=150, db_column='PaymentGroupName')
+    BankLedger = models.ForeignKey('Ledger', on_delete=models.SET_NULL, null=True, blank=True, db_column='BankLedgerId', related_name='payment_groups')
     IsActive = models.BooleanField(default=True, db_column='IsActive')
     CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')

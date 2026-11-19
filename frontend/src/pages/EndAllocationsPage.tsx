@@ -39,7 +39,6 @@ import {
   IconHistory,
   IconArrowRight,
   IconArrowUpRight,
-  IconTruckDelivery,
   IconBuildingWarehouse } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -389,8 +388,6 @@ export const EndAllocationsPage: React.FC = () => {
   const modalTotalEmpty = modalLines.reduce((acc, l) => acc + (Number(l.EmptyQty) || 0), 0);
 
   const sourceGodownId = selectedItem?.source_godown_id || 1;
-  const sourceGodownObj = godowns.find((g: any) => Number(g.GodownId) === Number(sourceGodownId));
-  const sourceGodownName = selectedItem?.source_godown_name || sourceGodownObj?.GodownName || 'Main Godown';
   const targetGodownId = Number(selectedTargetGodown || sourceGodownId);
   const targetGodownObj = godowns.find((g: any) => Number(g.GodownId) === targetGodownId);
   const targetGodownName = targetGodownObj?.GodownName || 'Target Godown';
@@ -728,35 +725,33 @@ export const EndAllocationsPage: React.FC = () => {
                 </Paper>
               )}
 
-              {/* Target Godown / Cross-Depot Selection Card */}
+              {/* Target Godown Selection Card */}
               {selectedItem.Status?.toUpperCase() === 'PENDING' && (
                 <Paper
                   p="sm"
                   radius="sm"
                   style={{
-                    backgroundColor: isCrossDepot ? '#fdf2f4' : '#f8fafc',
-                    border: `1.5px solid ${isCrossDepot ? '#800020' : '#cbd5e1'}`,
+                    backgroundColor: '#f8fafc',
+                    border: '1px solid #e2e8f0',
                   }}
                 >
                   <Grid align="center">
                     <Grid.Col span={{ base: 12, sm: 7 }}>
                       <Group gap="xs">
                         <ThemeIcon
-                          size={36}
+                          size={32}
                           radius="md"
                           variant="light"
-                          color="burgundy"
+                          color="gray"
                         >
-                          {isCrossDepot ? <IconTruckDelivery size={20} /> : <IconBuildingWarehouse size={20} />}
+                          <IconBuildingWarehouse size={18} color="#475569" />
                         </ThemeIcon>
                         <div>
-                          <Text size="xs" fw={700} c={isCrossDepot ? '#800020' : '#0f172a'} tt="uppercase">
-                            {isCrossDepot ? 'Cross-Godown Transfer Destination' : 'Shift Settlement Godown'}
+                          <Text size="xs" fw={700} c="#0f172a" tt="uppercase">
+                            Receiving Godown / Depot
                           </Text>
                           <Text size="11px" c="#64748b">
-                            {isCrossDepot
-                              ? `Van stock will be forwarded to ${targetGodownName} as a Transfer Delivery Note & pending Receipt Note.`
-                              : `Van stock will be settled directly into ${sourceGodownName}.`}
+                            Stock will be settled into {targetGodownName}{isCrossDepot ? ' (Cross-Godown Transfer)' : ''}.
                           </Text>
                         </div>
                       </Group>
@@ -764,7 +759,7 @@ export const EndAllocationsPage: React.FC = () => {
                     <Grid.Col span={{ base: 12, sm: 5 }}>
                       <Select
                         size="xs"
-                        label="Receiving Godown / Depot"
+                        placeholder="Select Receiving Godown"
                         data={godowns.map((g: any) => ({
                           value: String(g.GodownId),
                           label: `${g.GodownName}${Number(g.GodownId) === Number(sourceGodownId) ? ' (Shift Origin)' : ''}`,
@@ -786,31 +781,15 @@ export const EndAllocationsPage: React.FC = () => {
                         }}
                         styles={{
                           input: {
-                            fontWeight: 700,
+                            fontWeight: 600,
                             fontSize: 12,
-                            borderColor: isCrossDepot ? '#800020' : '#cbd5e1',
-                            color: isCrossDepot ? '#800020' : '#0f172a',
+                            borderColor: '#cbd5e1',
+                            color: '#0f172a',
                           },
                         }}
                       />
                     </Grid.Col>
                   </Grid>
-
-                  {isCrossDepot && (
-                    <Box
-                      mt="xs"
-                      p="xs"
-                      style={{
-                        backgroundColor: '#fdf2f4',
-                        borderRadius: 6,
-                        border: '1px solid #f5c2cb',
-                      }}
-                    >
-                      <Text size="11px" c="#800020" fw={600}>
-                        <strong>Cross-Depot Forwarding:</strong> {modalTotalFilled} full and {modalTotalEmpty} empty cylinders will be unloaded from the van and forwarded to <strong>{targetGodownName}</strong>. An incoming pending Receipt Note will appear under {targetGodownName}'s Receipt Notes for verification and inward acceptance.
-                      </Text>
-                    </Box>
-                  )}
                 </Paper>
               )}
 
@@ -880,19 +859,11 @@ export const EndAllocationsPage: React.FC = () => {
                           <Table.Td style={{ textAlign: 'center', fontWeight: 800, fontSize: 13, color: '#0f172a' }}>
                             {modalLines.reduce((s, l) => s + (l.DeliveredQty ?? 0), 0)}
                           </Table.Td>
-                          <Table.Td>
-                            <Group gap="sm" wrap="nowrap" align="center">
-                              <Text style={{ width: 28, textAlign: 'center', fontWeight: 800, fontSize: 13.5, color: '#0f172a', flexShrink: 0 }}>
-                                {modalTotalFilled}
-                              </Text>
-                            </Group>
+                          <Table.Td style={{ textAlign: 'center', fontWeight: 800, fontSize: 13.5, color: '#0f172a' }}>
+                            {modalTotalFilled}
                           </Table.Td>
-                          <Table.Td>
-                            <Group gap="sm" wrap="nowrap" align="center">
-                              <Text style={{ width: 28, textAlign: 'center', fontWeight: 800, fontSize: 13.5, color: '#0f172a', flexShrink: 0 }}>
-                                {modalTotalEmpty}
-                              </Text>
-                            </Group>
+                          <Table.Td style={{ textAlign: 'center', fontWeight: 800, fontSize: 13.5, color: '#800020' }}>
+                            {modalTotalEmpty}
                           </Table.Td>
                         </Table.Tr>
                       </Table.Tfoot>
@@ -1151,7 +1122,7 @@ export const EndAllocationsPage: React.FC = () => {
                   <Button
                     color="burgundy"
                     radius="sm"
-                    leftSection={isCrossDepot ? <IconTruckDelivery size={17} /> : <IconCheck size={16} />}
+                    leftSection={<IconCheck size={16} />}
                     loading={settleMutation.isPending}
                     onClick={handleApproveSettlement}
                     style={{
@@ -1161,9 +1132,7 @@ export const EndAllocationsPage: React.FC = () => {
                       letterSpacing: '0.2px',
                     }}
                   >
-                    {isCrossDepot
-                      ? `Send to ${targetGodownName}`
-                      : `Approve & Settle into ${sourceGodownName}`}
+                    Approve &amp; Settle Shift
                   </Button>
                 ) : (
                   <Badge size="lg" radius="sm" variant="light" color="burgundy" style={{ fontWeight: 700, borderColor: '#fbcfe8' }}>

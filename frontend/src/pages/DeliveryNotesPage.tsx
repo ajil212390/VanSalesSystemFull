@@ -323,6 +323,10 @@ export const DeliveryNotesPage: React.FC = () => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['van-management'] });
+      queryClient.invalidateQueries({ queryKey: ['routes'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       notifications.show({
         title: editingNote ? 'Delivery Note Updated' : (data.is_godown_transfer ? 'Stock Transfer Completed' : 'Delivery Note Created'),
         message: editingNote
@@ -356,6 +360,11 @@ export const DeliveryNotesPage: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
+      queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['van-management'] });
+      queryClient.invalidateQueries({ queryKey: ['routes'] });
+      queryClient.invalidateQueries({ queryKey: ['vehicles'] });
       notifications.show({
         title: 'Deleted',
         message: 'Van stock load deleted and cylinders reversed back to godown.',

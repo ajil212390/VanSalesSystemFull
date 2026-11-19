@@ -99,7 +99,7 @@ export const ReceiptNotesPage: React.FC = () => {
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [selectedNote, setSelectedNote] = useState<ReceiptNoteItem | null>(null);
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [deleteNote, setDeleteNote] = useState<ReceiptNoteItem | null>(null);
   const user = useAuthStore((s) => s.user);
@@ -348,7 +348,7 @@ export const ReceiptNotesPage: React.FC = () => {
     isLoading,
     isRefetching,
     refetch } = useQuery<ReceiptNoteItem[]>({
-    queryKey: ['receipt-notes'],
+    queryKey: ['receipt-notes', user?.id, user?.GodownId],
     queryFn: async () => {
       const res = await apiClient.get<ReceiptNoteItem[]>('/receipt-notes/');
       return Array.isArray(res.data) ? res.data : [];
@@ -370,7 +370,9 @@ export const ReceiptNotesPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
       queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
-      setIsDetailModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['van-management'] });
+      setIsDetailOpen(false);
+      setSelectedNote(null);
       notifications.show({
         title: 'Receipt Note Verified',
         message: data.message || 'Returned cylinders verified and accepted into godown.',
@@ -428,6 +430,7 @@ export const ReceiptNotesPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
       queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['van-management'] });
       setIsCreateModalOpen(false);
       notifications.show({
         title: createMode === 'SUPPLIER_REFILL' ? 'Refill Challan Created' : 'Receipt Note Created',
@@ -451,6 +454,7 @@ export const ReceiptNotesPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });
       queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['van-management'] });
       setDeleteNote(null);
       notifications.show({
         title: 'Receipt Note Deleted',
@@ -507,11 +511,11 @@ export const ReceiptNotesPage: React.FC = () => {
       const q = searchQuery.toLowerCase().trim();
       const matchSearch =
         !q ||
-        n.noteNumber.toLowerCase().includes(q) ||
-        n.vehicleNumber.toLowerCase().includes(q) ||
-        n.driverName.toLowerCase().includes(q) ||
-        n.routeName.toLowerCase().includes(q) ||
-        n.deliveryNoteRef.toLowerCase().includes(q);
+        (n.noteNumber || '').toLowerCase().includes(q) ||
+        (n.vehicleNumber || '').toLowerCase().includes(q) ||
+        (n.driverName || '').toLowerCase().includes(q) ||
+        (n.routeName || '').toLowerCase().includes(q) ||
+        (n.deliveryNoteRef || '').toLowerCase().includes(q);
 
       const matchStatus = statusFilter === 'all' || n.status === statusFilter;
 
@@ -534,7 +538,7 @@ export const ReceiptNotesPage: React.FC = () => {
   const pendingCount = receiptNotes.filter((n) => n.status === 'pending').length;
 
   return (
-    <Stack gap="lg">
+    <Stack gap="md">
       {/* Page Header */}
       <Group justify="space-between" align="center" wrap="wrap" gap="md">
         <div>
@@ -588,10 +592,8 @@ export const ReceiptNotesPage: React.FC = () => {
         </Group>
       </Group>
 
-      {/* Seamless Form & Table Container */}
-      <Box>
-        {/* Smooth Slide-Down Form Panel */}
-        <Collapse expanded={isCreateModalOpen} transitionDuration={250} transitionTimingFunction="ease">
+      {/* Smooth Slide-Down Form Panel */}
+      <Collapse expanded={isCreateModalOpen} transitionDuration={250} transitionTimingFunction="ease">
           <Paper
             p="lg"
             radius="sm"
@@ -860,13 +862,344 @@ export const ReceiptNotesPage: React.FC = () => {
             </Group>
           </Stack>
         </Paper>
-        </Collapse>
+      </Collapse>
 
-        {/* Animated KPI Cards & Table (fade in/out matching Vehicles page) */}
-        <Transition mounted={!isCreateModalOpen} transition="fade" duration={250} timingFunction="ease">
-          {(styles) => (
-            <Box style={styles} mt={isCreateModalOpen ? 0 : 'md'}>
-              <Stack gap="lg">
+      {/* Smooth Slide-Down Receipt Verification Panel */}
+      <Collapse expanded={isDetailOpen && !!selectedNote} transitionDuration={250} transitionTimingFunction="ease">
+        {selectedNote && (
+                    <Paper
+                      p="lg"
+                      radius="md"
+                      withBorder
+                      mb="md"
+                      style={{
+                        backgroundColor: '#ffffff',
+                        borderColor: '#f5c2cb',
+                        borderLeft: '4px solid #800020',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.04)',
+                      }}
+                    >
+                      <Group justify="space-between" align="flex-start" mb="md">
+                        <div>
+                          <Group gap="xs" align="center">
+                            <Text fw={700} style={{ color: '#800020', fontSize: 17 }}>
+                              Receipt Note Verification &amp; Inward Inspection
+                            </Text>
+                            <Badge size="sm" variant="light" color="burgundy" radius="sm">
+                              {selectedNote.noteNumber}
+                            </Badge>
+                            <Badge
+                              size="sm"
+                              radius="sm"
+                              variant="filled"
+                              style={{
+                                backgroundColor: selectedNote.status === 'settled' ? '#fdf2f4' : '#fef3c7',
+                                color: selectedNote.status === 'settled' ? '#800020' : '#b45309',
+                                border: selectedNote.status === 'settled' ? '1px solid #fbcfe8' : '1px solid #fde68a',
+                                fontWeight: 700,
+                              }}
+                            >
+                              {selectedNote.status === 'settled' ? 'SETTLED' : 'RECEIPT PENDING'}
+                            </Badge>
+                          </Group>
+                          <Text size="xs" c="dimmed" mt={2}>
+                            Receipt Date: {selectedNote.date} • Vehicle: {selectedNote.vehicleNumber} • Driver: {selectedNote.driverName} • Route: {selectedNote.routeName || '—'} • Shift DN Ref: {selectedNote.deliveryNoteRef}
+                          </Text>
+                        </div>
+
+                        <CloseButton
+                          size="md"
+                          onClick={() => {
+                            setIsDetailOpen(false);
+                            setSelectedNote(null);
+                          }}
+                        />
+                      </Group>
+
+                      <Stack gap="md">
+                        <Paper p="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+                          <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
+                            <div>
+                              <Text size="xs" c="dimmed">Vehicle Number</Text>
+                              <Text fw={700} size="sm" c="#0f172a">{selectedNote.vehicleNumber}</Text>
+                            </div>
+                            <div>
+                              <Text size="xs" c="dimmed">Assigned Driver</Text>
+                              <Text fw={700} size="sm" c="#0f172a">{selectedNote.driverName}</Text>
+                            </div>
+                            <div>
+                              <Text size="xs" c="dimmed">Route</Text>
+                              <Text fw={600} size="xs" c="#0f172a">{selectedNote.routeName || '—'}</Text>
+                            </div>
+                            <div>
+                              <Text size="xs" c="dimmed">Delivery Note Ref</Text>
+                              <Text fw={700} size="sm" style={{ color: '#800020' }}>{selectedNote.deliveryNoteRef}</Text>
+                            </div>
+                          </SimpleGrid>
+                        </Paper>
+
+                        {/* Financial Reconciliation Cards */}
+                        <Box
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(3, 1fr)',
+                            backgroundColor: '#f8fafc',
+                            borderRadius: 8,
+                            border: '1px solid #e2e8f0',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <Box style={{ padding: '10px 14px', borderRight: '1px solid #e2e8f0' }}>
+                            <Text size="10px" fw={700} c="#64748b" tt="uppercase">
+                              GROSS COLLECTION
+                            </Text>
+                            <Text fw={700} size="sm" c="#0f172a" mt={2}>
+                              ₹{(selectedNote.grossCollected ?? (selectedNote.cashCollected + (selectedNote.bankCollected || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                            <Text size="10px" c="#64748b" mt={2}>
+                              Cash: ₹{(selectedNote.cashCollected || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })} • Bank: ₹{(selectedNote.bankCollected || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                            </Text>
+                          </Box>
+                          <Box style={{ padding: '10px 14px', borderRight: '1px solid #e2e8f0' }}>
+                            <Text size="10px" fw={700} c="#64748b" tt="uppercase">
+                              TRIP EXPENSES
+                            </Text>
+                            <Text fw={700} size="sm" c="#800020" mt={2}>
+                              ₹{(selectedNote.tripExpenses ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                            <Text size="10px" c="#64748b" mt={2}>
+                              Fuel, tolls &amp; allowances
+                            </Text>
+                          </Box>
+                          <Box style={{ padding: '10px 14px' }}>
+                            <Text size="10px" fw={700} c="#64748b" tt="uppercase">
+                              NET SETTLEMENT BALANCE
+                            </Text>
+                            <Text fw={700} size="sm" c="#800020" mt={2}>
+                              ₹{(selectedNote.netBalance ?? ((selectedNote.grossCollected || selectedNote.cashCollected) - (selectedNote.tripExpenses || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                            <Text size="10px" c="#800020" fw={600} mt={2}>
+                              Cash: ₹{(selectedNote.netCash ?? selectedNote.cashCollected).toLocaleString('en-IN', { minimumFractionDigits: 0 })} • Bank: ₹{(selectedNote.netBank ?? (selectedNote.bankCollected || 0)).toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                            </Text>
+                          </Box>
+                        </Box>
+
+                        {/* Cash & Bank Net Settlement Breakdown Strip */}
+                        <Box
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            gap: 10,
+                          }}
+                        >
+                          <Paper p="xs" radius="sm" style={{ backgroundColor: '#f8fafc', border: '1px solid #cbd5e1' }}>
+                            <Text size="10px" fw={700} c="#1e293b" tt="uppercase">
+                              Net Cash Desk Handover
+                            </Text>
+                            <Text size="sm" fw={800} c="#0f172a" mt={2}>
+                              ₹{(selectedNote.netCash ?? selectedNote.cashCollected).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                            <Text size="9.5px" c="#64748b" mt={1}>
+                              Driver cash handover
+                            </Text>
+                          </Paper>
+                          <Paper p="xs" radius="sm" style={{ backgroundColor: '#f8fafc', border: '1px solid #cbd5e1' }}>
+                            <Text size="10px" fw={700} c="#64748b" tt="uppercase">
+                              Net Digital UPI / Bank
+                            </Text>
+                            <Text size="sm" fw={800} c="#64748b" mt={2}>
+                              ₹{(selectedNote.netBank ?? (selectedNote.bankCollected || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </Text>
+                            <Text size="9.5px" c="#64748b" mt={1}>
+                              Direct digital collection
+                            </Text>
+                          </Paper>
+                        </Box>
+
+                        <Divider label="Returned Cylinders" labelPosition="left" />
+
+                        <Table withTableBorder withColumnBorders>
+                          <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
+                            <Table.Tr>
+                              <Table.Th style={{ fontSize: 11, color: '#475569' }}>PRODUCT</Table.Th>
+                              <Table.Th style={{ fontSize: 11, color: '#0f172a', textAlign: 'center', width: 85 }}>LOADED</Table.Th>
+                              <Table.Th style={{ fontSize: 11, color: '#0f172a', textAlign: 'center', width: 85 }}>DELIVERED</Table.Th>
+                              <Table.Th style={{ fontSize: 11, color: '#0f172a', textAlign: 'center', width: 95 }}>FILLED (UNSOLD)</Table.Th>
+                              <Table.Th style={{ fontSize: 11, color: '#800020', textAlign: 'center', width: 95 }}>EMPTY RETURNED</Table.Th>
+                            </Table.Tr>
+                          </Table.Thead>
+                          <Table.Tbody>
+                            {(() => {
+                              const lines = selectedNote.lines || [];
+                              if (lines.length > 0) {
+                                return lines.map((l: any, idx: number) => (
+                                  <Table.Tr key={idx}>
+                                    <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{l.product_name}</Table.Td>
+                                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>{l.LoadedQty ?? '-'}</Table.Td>
+                                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>{l.DeliveredQty ?? '-'}</Table.Td>
+                                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>{l.FilledQty ?? 0}</Table.Td>
+                                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#800020' }}>{l.EmptyQty ?? 0}</Table.Td>
+                                  </Table.Tr>
+                                ));
+                              }
+                              const prods = Array.from(new Set([
+                                ...(selectedNote.emptyBreakdown || []).map((e) => e.product),
+                                ...(selectedNote.filledBreakdown || []).map((f) => f.product),
+                              ]));
+                              if (prods.length === 0) {
+                                return (
+                                  <Table.Tr>
+                                    <Table.Td colSpan={5} style={{ textAlign: 'center' }}>
+                                      <Text size="xs" c="dimmed">No specific cylinder lines recorded.</Text>
+                                    </Table.Td>
+                                  </Table.Tr>
+                                );
+                              }
+                              return prods.map((pName, idx) => {
+                                const eItem = selectedNote.emptyBreakdown?.find((e) => e.product === pName);
+                                const fItem = selectedNote.filledBreakdown?.find((f) => f.product === pName);
+                                const fQty = fItem ? fItem.qty : 0;
+                                const eQty = eItem ? eItem.qty : 0;
+                                return (
+                                  <Table.Tr key={idx}>
+                                    <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{pName}</Table.Td>
+                                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>-</Table.Td>
+                                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>-</Table.Td>
+                                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>{fQty}</Table.Td>
+                                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#800020' }}>{eQty}</Table.Td>
+                                  </Table.Tr>
+                                );
+                              });
+                            })()}
+                          </Table.Tbody>
+                          <Table.Tfoot style={{ backgroundColor: '#f8fafc' }}>
+                            <Table.Tr>
+                              <Table.Td style={{ fontWeight: 800, fontSize: 11.5, color: '#0f172a' }}>TOTALS</Table.Td>
+                              <Table.Td style={{ textAlign: 'center', fontWeight: 800, color: '#0f172a' }}>
+                                {selectedNote.loadedTotal ?? (selectedNote.lines ? selectedNote.lines.reduce((s: number, l: any) => s + (l.LoadedQty || 0), 0) : '-')}
+                              </Table.Td>
+                              <Table.Td style={{ textAlign: 'center', fontWeight: 800, color: '#0f172a' }}>
+                                {selectedNote.deliveredTotal ?? (selectedNote.lines ? selectedNote.lines.reduce((s: number, l: any) => s + (l.DeliveredQty || 0), 0) : '-')}
+                              </Table.Td>
+                              <Table.Td style={{ textAlign: 'center', fontWeight: 800, color: '#0f172a' }}>
+                                {selectedNote.filledCylindersTotal ?? (selectedNote.lines ? selectedNote.lines.reduce((s: number, l: any) => s + (l.FilledQty || 0), 0) : 0)}
+                              </Table.Td>
+                              <Table.Td style={{ textAlign: 'center', fontWeight: 800, color: '#800020' }}>
+                                {selectedNote.emptyCylindersTotal ?? (selectedNote.lines ? selectedNote.lines.reduce((s: number, l: any) => s + (l.EmptyQty || 0), 0) : 0)}
+                              </Table.Td>
+                            </Table.Tr>
+                          </Table.Tfoot>
+                        </Table>
+
+                        {selectedNote.cashCollected > 0 && (
+                          <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#fdf2f4', borderColor: '#f5c2cb' }}>
+                            <Group justify="space-between" align="center">
+                              <Text size="xs" fw={700} c="#800020">Driver Cash Collection Handover:</Text>
+                              <Text size="sm" fw={800} c="#800020">₹{selectedNote.cashCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
+                            </Group>
+                          </Paper>
+                        )}
+
+                        {selectedNote.notes && (
+                          <Text size="xs" c="dimmed">
+                            <strong>Gate Remarks:</strong> {selectedNote.notes}
+                          </Text>
+                        )}
+
+                        {/* Receiving Destination Godown Card */}
+                        <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
+                          <Group justify="space-between" align="center" wrap="wrap" gap="xs">
+                            <div>
+                              <Text size="xs" fw={700} c="#1e293b">Receiving Destination Godown</Text>
+                              <Text size="11px" c="dimmed">
+                                {selectedNote.sourceGodownName
+                                  ? `Incoming shift transfer from ${selectedNote.sourceGodownName}`
+                                  : 'Stock will be accepted into this godown location upon verification'}
+                              </Text>
+                            </div>
+                            <Badge
+                              size="md"
+                              variant="filled"
+                              radius="sm"
+                              styles={{ root: { backgroundColor: '#800020', color: '#ffffff', fontWeight: 700 } }}
+                            >
+                              {selectedNote.godownName || (godowns.find((g: any) => String(g.GodownId) === selectedReceivingGodown)?.GodownName) || 'Main Godown (Central)'}
+                            </Badge>
+                          </Group>
+                          {isAdmin && !selectedNote.godownId && (
+                            <Select
+                              mt="xs"
+                              label="Select Destination Godown"
+                              size="xs"
+                              value={selectedReceivingGodown}
+                              onChange={(val) => setSelectedReceivingGodown(val || '1')}
+                              data={godowns.map((g: any) => ({
+                                value: String(g.GodownId),
+                                label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
+                              }))}
+                            />
+                          )}
+                        </Paper>
+
+                        {selectedNote.status === 'pending' && selectedNote.canVerify === false && (
+                          <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#fffbeb', borderColor: '#fef3c7' }}>
+                            <Group gap="xs">
+                              <IconClock size={16} color="#d97706" />
+                              <Text size="xs" fw={600} c="#92400e">
+                                Awaiting verification by {selectedNote.godownName || 'Destination Godown'} Manager. You do not have custody permission to verify receipts for this depot.
+                              </Text>
+                            </Group>
+                          </Paper>
+                        )}
+
+                        <Group justify="space-between" mt="sm" wrap="wrap" gap="sm">
+                          <Button
+                            variant="outline"
+                            color="burgundy"
+                            size="xs"
+                            leftSection={<IconPrinter size={16} />}
+                            onClick={() => {
+                              const noteId = selectedNote.receiptNoteId || selectedNote.deliveryNoteId || selectedNote.id;
+                              window.open(`${apiClient.defaults.baseURL}/receipt-notes/${noteId}/pdf/?_t=${Date.now()}`, '_blank');
+                            }}
+                            styles={{ root: { borderColor: '#800020', color: '#800020', fontWeight: 600 } }}
+                          >
+                            Print Challan / Note PDF
+                          </Button>
+
+                          <Group gap="xs">
+                            <Button
+                              variant="default"
+                              size="xs"
+                              onClick={() => {
+                                setIsDetailOpen(false);
+                                setSelectedNote(null);
+                              }}
+                            >
+                              Close
+                            </Button>
+                            {selectedNote.status === 'pending' && (
+                              <Button
+                                color="burgundy"
+                                size="xs"
+                                leftSection={<IconCheck size={16} />}
+                                onClick={() => verifyNoteMutation.mutate({
+                                  noteId: selectedNote.receiptNoteId || selectedNote.deliveryNoteId || Number(selectedNote.id),
+                                  godownId: Number(selectedReceivingGodown || selectedNote.godownId || 1),
+                                })}
+                                loading={verifyNoteMutation.isPending}
+                                disabled={selectedNote.canVerify === false}
+                              >
+                                Verify &amp; Accept into {selectedNote.godownName || 'Godown'}
+                              </Button>
+                            )}
+                          </Group>
+                        </Group>
+                      </Stack>
+                    </Paper>
+                  )}
+                </Collapse>
+
                 {/* Main Table Container matching System Tables */}
                 <Paper
         radius="md"
@@ -1272,56 +1605,32 @@ export const ReceiptNotesPage: React.FC = () => {
 
                       {/* Actions */}
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Group gap={4} justify="flex-end" wrap="nowrap">
-                          <Tooltip label="View Details" withArrow position="top">
+                        <Group gap={6} justify="flex-end" wrap="nowrap">
+                          <Tooltip label={isDetailOpen && selectedNote?.id === note.id ? "Hide Details" : "Inspect & Verify Note"} withArrow position="top">
                             <ActionIcon
-                              variant="subtle"
-                              color="gray"
+                              variant={isDetailOpen && selectedNote?.id === note.id ? "filled" : "light"}
+                              color="burgundy"
                               size="sm"
                               onClick={() => {
-                                setSelectedNote(note);
-                                if (note.godownId) {
-                                  setSelectedReceivingGodown(String(note.godownId));
+                                if (isDetailOpen && selectedNote?.id === note.id) {
+                                  setIsDetailOpen(false);
+                                  setSelectedNote(null);
+                                } else {
+                                  setSelectedNote(note);
+                                  if (note.godownId) {
+                                    setSelectedReceivingGodown(String(note.godownId));
+                                  }
+                                  setIsDetailOpen(true);
                                 }
-                                setIsDetailModalOpen(true);
                               }}
-                              style={{ color: '#475569' }}
+                              style={{
+                                color: isDetailOpen && selectedNote?.id === note.id ? '#ffffff' : '#800020',
+                                backgroundColor: isDetailOpen && selectedNote?.id === note.id ? '#800020' : '#fdf2f4',
+                              }}
                             >
                               <IconEye size={16} />
                             </ActionIcon>
                           </Tooltip>
-
-                          {isPending && (
-                            note.canVerify !== false ? (
-                              <Tooltip label={`Verify & Receive into ${note.godownName || 'Godown'}`} withArrow position="top">
-                                <ActionIcon
-                                  variant="subtle"
-                                  color="burgundy"
-                                  size="sm"
-                                  onClick={() => verifyNoteMutation.mutate({
-                                    noteId: note.receiptNoteId || note.deliveryNoteId || Number(note.id),
-                                    godownId: note.godownId
-                                  })}
-                                  loading={verifyNoteMutation.isPending}
-                                  style={{ color: '#800020' }}
-                                >
-                                  <IconCheck size={16} />
-                                </ActionIcon>
-                              </Tooltip>
-                            ) : (
-                              <Tooltip label={`Awaiting receipt verification by ${note.godownName || 'Destination Godown'} Manager`} withArrow position="top">
-                                <ActionIcon
-                                  variant="subtle"
-                                  color="gray"
-                                  size="sm"
-                                  disabled
-                                  style={{ opacity: 0.4 }}
-                                >
-                                  <IconClock size={15} />
-                                </ActionIcon>
-                              </Tooltip>
-                            )
-                          )}
 
                           <Tooltip label="Print Note / Challan PDF" withArrow position="top">
                             <ActionIcon
@@ -1359,304 +1668,6 @@ export const ReceiptNotesPage: React.FC = () => {
           </Table.ScrollContainer>
         )}
       </Paper>
-            </Stack>
-          </Box>
-        )}
-      </Transition>
-    </Box>
-
-      {/* 4. Detail & Verification Modal */}
-      <Modal
-        opened={isDetailModalOpen}
-        onClose={() => setIsDetailModalOpen(false)}
-        title={
-          <Group gap="xs">
-            <IconReceipt size={20} color="#800020" />
-            <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
-              Receipt Note - {selectedNote?.noteNumber}
-            </Text>
-          </Group>
-        }
-        size="xl"
-        radius="md"
-      >
-        {selectedNote && (
-          <Stack gap="md">
-            <Paper p="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-              <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="xs">
-                <div>
-                  <Text size="xs" c="dimmed">Vehicle Number</Text>
-                  <Text fw={700} size="sm" c="#0f172a">{selectedNote.vehicleNumber}</Text>
-                </div>
-                <div>
-                  <Text size="xs" c="dimmed">Assigned Driver</Text>
-                  <Text fw={700} size="sm" c="#0f172a">{selectedNote.driverName}</Text>
-                </div>
-                <div>
-                  <Text size="xs" c="dimmed">Route</Text>
-                  <Text fw={600} size="xs" c="#0f172a">{selectedNote.routeName || '—'}</Text>
-                </div>
-                <div>
-                  <Text size="xs" c="dimmed">Delivery Note Ref</Text>
-                  <Text fw={700} size="sm" style={{ color: '#800020' }}>{selectedNote.deliveryNoteRef}</Text>
-                </div>
-              </SimpleGrid>
-            </Paper>
-
-            {/* Financial Reconciliation Cards (Matching End Allocations & Van Management) */}
-            <Box
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                backgroundColor: '#f8fafc',
-                borderRadius: 8,
-                border: '1px solid #e2e8f0',
-                overflow: 'hidden',
-              }}
-            >
-              <Box style={{ padding: '10px 14px', borderRight: '1px solid #e2e8f0' }}>
-                <Text size="10px" fw={700} c="#64748b" tt="uppercase">
-                  GROSS COLLECTION
-                </Text>
-                <Text fw={700} size="sm" c="#0f172a" mt={2}>
-                  ₹{(selectedNote.grossCollected ?? (selectedNote.cashCollected + (selectedNote.bankCollected || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-                <Text size="10px" c="#64748b" mt={2}>
-                  Cash: ₹{(selectedNote.cashCollected || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })} • Bank: ₹{(selectedNote.bankCollected || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}
-                </Text>
-              </Box>
-              <Box style={{ padding: '10px 14px', borderRight: '1px solid #e2e8f0' }}>
-                <Text size="10px" fw={700} c="#64748b" tt="uppercase">
-                  TRIP EXPENSES
-                </Text>
-                <Text fw={700} size="sm" c="#800020" mt={2}>
-                  ₹{(selectedNote.tripExpenses ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-                <Text size="10px" c="#64748b" mt={2}>
-                  Fuel, tolls &amp; allowances
-                </Text>
-              </Box>
-              <Box style={{ padding: '10px 14px' }}>
-                <Text size="10px" fw={700} c="#64748b" tt="uppercase">
-                  NET SETTLEMENT BALANCE
-                </Text>
-                <Text fw={700} size="sm" c="#800020" mt={2}>
-                  ₹{(selectedNote.netBalance ?? ((selectedNote.grossCollected || selectedNote.cashCollected) - (selectedNote.tripExpenses || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-                <Text size="10px" c="#800020" fw={600} mt={2}>
-                  Cash: ₹{(selectedNote.netCash ?? selectedNote.cashCollected).toLocaleString('en-IN', { minimumFractionDigits: 0 })} • Bank: ₹{(selectedNote.netBank ?? (selectedNote.bankCollected || 0)).toLocaleString('en-IN', { minimumFractionDigits: 0 })}
-                </Text>
-              </Box>
-            </Box>
-
-            {/* Cash & Bank Net Settlement Breakdown Strip */}
-            <Box
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: 10,
-              }}
-            >
-              <Paper p="xs" radius="sm" style={{ backgroundColor: '#f8fafc', border: '1px solid #cbd5e1' }}>
-                <Text size="10px" fw={700} c="#1e293b" tt="uppercase">
-                  Net Cash Desk Handover
-                </Text>
-                <Text size="sm" fw={800} c="#0f172a" mt={2}>
-                  ₹{(selectedNote.netCash ?? selectedNote.cashCollected).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-                <Text size="9.5px" c="#64748b" mt={1}>
-                  Driver cash handover
-                </Text>
-              </Paper>
-              <Paper p="xs" radius="sm" style={{ backgroundColor: '#f8fafc', border: '1px solid #cbd5e1' }}>
-                <Text size="10px" fw={700} c="#64748b" tt="uppercase">
-                  Net Digital UPI / Bank
-                </Text>
-                <Text size="sm" fw={800} c="#64748b" mt={2}>
-                  ₹{(selectedNote.netBank ?? (selectedNote.bankCollected || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </Text>
-                <Text size="9.5px" c="#64748b" mt={1}>
-                  Direct digital collection
-                </Text>
-              </Paper>
-            </Box>
-
-            <Divider label="Returned Cylinders" labelPosition="left" />
-
-            <Table withTableBorder withColumnBorders>
-              <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
-                <Table.Tr>
-                  <Table.Th style={{ fontSize: 11, color: '#475569' }}>PRODUCT</Table.Th>
-                  <Table.Th style={{ fontSize: 11, color: '#0f172a', textAlign: 'center', width: 85 }}>LOADED</Table.Th>
-                  <Table.Th style={{ fontSize: 11, color: '#0f172a', textAlign: 'center', width: 85 }}>DELIVERED</Table.Th>
-                  <Table.Th style={{ fontSize: 11, color: '#0f172a', textAlign: 'center', width: 95 }}>FILLED (UNSOLD)</Table.Th>
-                  <Table.Th style={{ fontSize: 11, color: '#800020', textAlign: 'center', width: 95 }}>EMPTY RETURNED</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {(() => {
-                  const lines = selectedNote.lines || [];
-                  if (lines.length > 0) {
-                    return lines.map((l: any, idx: number) => (
-                      <Table.Tr key={idx}>
-                        <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{l.product_name}</Table.Td>
-                        <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>{l.LoadedQty ?? '-'}</Table.Td>
-                        <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>{l.DeliveredQty ?? '-'}</Table.Td>
-                        <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>{l.FilledQty ?? 0}</Table.Td>
-                        <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#800020' }}>{l.EmptyQty ?? 0}</Table.Td>
-                      </Table.Tr>
-                    ));
-                  }
-                  const prods = Array.from(new Set([
-                    ...(selectedNote.emptyBreakdown || []).map((e) => e.product),
-                    ...(selectedNote.filledBreakdown || []).map((f) => f.product),
-                  ]));
-                  if (prods.length === 0) {
-                    return (
-                      <Table.Tr>
-                        <Table.Td colSpan={5} style={{ textAlign: 'center' }}>
-                          <Text size="xs" c="dimmed">No specific cylinder lines recorded.</Text>
-                        </Table.Td>
-                      </Table.Tr>
-                    );
-                  }
-                  return prods.map((pName, idx) => {
-                    const eItem = selectedNote.emptyBreakdown?.find((e) => e.product === pName);
-                    const fItem = selectedNote.filledBreakdown?.find((f) => f.product === pName);
-                    const fQty = fItem ? fItem.qty : 0;
-                    const eQty = eItem ? eItem.qty : 0;
-                    return (
-                      <Table.Tr key={idx}>
-                        <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a' }}>{pName}</Table.Td>
-                        <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>-</Table.Td>
-                        <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>-</Table.Td>
-                        <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#0f172a' }}>{fQty}</Table.Td>
-                        <Table.Td style={{ textAlign: 'center', fontWeight: 700, color: '#800020' }}>{eQty}</Table.Td>
-                      </Table.Tr>
-                    );
-                  });
-                })()}
-              </Table.Tbody>
-              <Table.Tfoot style={{ backgroundColor: '#f8fafc' }}>
-                <Table.Tr>
-                  <Table.Td style={{ fontWeight: 800, fontSize: 11.5, color: '#0f172a' }}>TOTALS</Table.Td>
-                  <Table.Td style={{ textAlign: 'center', fontWeight: 800, color: '#0f172a' }}>
-                    {selectedNote.loadedTotal ?? (selectedNote.lines ? selectedNote.lines.reduce((s: number, l: any) => s + (l.LoadedQty || 0), 0) : '-')}
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'center', fontWeight: 800, color: '#0f172a' }}>
-                    {selectedNote.deliveredTotal ?? (selectedNote.lines ? selectedNote.lines.reduce((s: number, l: any) => s + (l.DeliveredQty || 0), 0) : '-')}
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'center', fontWeight: 800, color: '#0f172a' }}>
-                    {selectedNote.filledCylindersTotal ?? (selectedNote.lines ? selectedNote.lines.reduce((s: number, l: any) => s + (l.FilledQty || 0), 0) : 0)}
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'center', fontWeight: 800, color: '#800020' }}>
-                    {selectedNote.emptyCylindersTotal ?? (selectedNote.lines ? selectedNote.lines.reduce((s: number, l: any) => s + (l.EmptyQty || 0), 0) : 0)}
-                  </Table.Td>
-                </Table.Tr>
-              </Table.Tfoot>
-            </Table>
-
-            {selectedNote.cashCollected > 0 && (
-              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#fdf2f4', borderColor: '#f5c2cb' }}>
-                <Group justify="space-between" align="center">
-                  <Text size="xs" fw={700} c="#800020">Driver Cash Collection Handover:</Text>
-                  <Text size="sm" fw={800} c="#800020">₹{selectedNote.cashCollected.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</Text>
-                </Group>
-              </Paper>
-            )}
-
-            {selectedNote.notes && (
-              <Text size="xs" c="dimmed">
-                <strong>Gate Remarks:</strong> {selectedNote.notes}
-              </Text>
-            )}
-
-            {/* Receiving Destination Godown Card */}
-            <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-              <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-                <div>
-                  <Text size="xs" fw={700} c="#1e293b">Receiving Destination Godown</Text>
-                  <Text size="11px" c="dimmed">
-                    {selectedNote.sourceGodownName
-                      ? `Incoming shift transfer from ${selectedNote.sourceGodownName}`
-                      : 'Stock will be accepted into this godown location upon verification'}
-                  </Text>
-                </div>
-                <Badge
-                  size="md"
-                  variant="filled"
-                  radius="sm"
-                  styles={{ root: { backgroundColor: '#800020', color: '#ffffff', fontWeight: 700 } }}
-                >
-                  {selectedNote.godownName || (godowns.find((g: any) => String(g.GodownId) === selectedReceivingGodown)?.GodownName) || 'Main Godown (Central)'}
-                </Badge>
-              </Group>
-              {isAdmin && !selectedNote.godownId && (
-                <Select
-                  mt="xs"
-                  label="Select Destination Godown"
-                  size="xs"
-                  value={selectedReceivingGodown}
-                  onChange={(val) => setSelectedReceivingGodown(val || '1')}
-                  data={godowns.map((g: any) => ({
-                    value: String(g.GodownId),
-                    label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}` }))}
-                />
-              )}
-            </Paper>
-
-            {selectedNote.status === 'pending' && selectedNote.canVerify === false && (
-              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#fffbeb', borderColor: '#fef3c7' }}>
-                <Group gap="xs">
-                  <IconClock size={16} color="#d97706" />
-                  <Text size="xs" fw={600} c="#92400e">
-                    Awaiting verification by {selectedNote.godownName || 'Destination Godown'} Manager. You do not have custody permission to verify receipts for this depot.
-                  </Text>
-                </Group>
-              </Paper>
-            )}
-
-            <Group justify="space-between" mt="md" wrap="wrap" gap="sm">
-              <Group gap="xs">
-                <Button
-                  variant="outline"
-                  color="burgundy"
-                  size="xs"
-                  leftSection={<IconPrinter size={16} />}
-                  onClick={() => {
-                    const noteId = selectedNote.receiptNoteId || selectedNote.deliveryNoteId || selectedNote.id;
-                    window.open(`${apiClient.defaults.baseURL}/receipt-notes/${noteId}/pdf/?_t=${Date.now()}`, '_blank');
-                  }}
-                  styles={{ root: { borderColor: '#800020', color: '#800020', fontWeight: 600 } }}
-                >
-                  Print Challan / Note PDF
-                </Button>
-              </Group>
-
-              <Group gap="xs">
-                <Button variant="default" size="xs" onClick={() => setIsDetailModalOpen(false)}>
-                  Close
-                </Button>
-                {selectedNote.status === 'pending' && (
-                  <Button
-                    color="burgundy"
-                    size="xs"
-                    leftSection={<IconCheck size={16} />}
-                    onClick={() => verifyNoteMutation.mutate({
-                      noteId: selectedNote.receiptNoteId || selectedNote.deliveryNoteId || Number(selectedNote.id),
-                      godownId: Number(selectedReceivingGodown || selectedNote.godownId || 1)
-                    })}
-                    loading={verifyNoteMutation.isPending}
-                    disabled={selectedNote.canVerify === false}
-                  >
-                    Verify & Accept into {selectedNote.godownName || 'Godown'}
-                  </Button>
-                )}
-              </Group>
-            </Group>
-          </Stack>
-        )}
-      </Modal>
 
       {/* 5. Delete Confirmation Modal */}
       <Modal

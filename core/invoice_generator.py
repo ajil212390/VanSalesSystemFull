@@ -2377,6 +2377,8 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
     cell_norm = ParagraphStyle('RnCell', fontName=FONT_NAME, fontSize=8.5, leading=11.5, textColor=DARK_COLOR)
     cell_bold = ParagraphStyle('RnCellB', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, textColor=DARK_COLOR)
     cell_center = ParagraphStyle('RnCellC', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, alignment=1, textColor=DARK_COLOR)
+    cell_right = ParagraphStyle('RnCellR', fontName=FONT_NAME, fontSize=8.5, leading=11.5, alignment=2, textColor=DARK_COLOR)
+    cell_right_bold = ParagraphStyle('RnCellRB', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, alignment=2, textColor=DARK_COLOR)
 
     date_str = receipt_note.ReceiptDate.strftime('%d/%m/%Y') if receipt_note.ReceiptDate else datetime.now().strftime('%d/%m/%Y')
 
@@ -2491,14 +2493,14 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
         except Exception:
             pass
 
-    # Items Table
-    col_widths = [35, 230, 95, 95, 90]
+    # Items Table with Stock Quantity, Purchase Rate (excl. GST) and Total Amount
+    col_widths = [32, 228, 85, 100, 100]
     th_cells = [
         Paragraph("Sl no.", th_style),
         Paragraph("Item / Cylinder Description", ParagraphStyle('ThLeft', parent=th_style, alignment=0)),
-        Paragraph("Full Cylinders", th_style),
-        Paragraph("Empty Cylinders", th_style),
-        Paragraph("Total Units", th_style),
+        Paragraph("Stock Qty", th_style),
+        Paragraph("Purchase Rate (excl. GST)", ParagraphStyle('ThR1', parent=th_style, alignment=2)),
+        Paragraph("Total Amount", ParagraphStyle('ThR2', parent=th_style, alignment=2)),
     ]
     table_rows = [th_cells]
 
@@ -2506,14 +2508,15 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
     tot_full = 0
     tot_empty = 0
     tot_units = 0
+    tot_valuation = 0.0
 
     if not lines:
         table_rows.append([
             Paragraph("1", cell_center),
             Paragraph("Commercial / Domestic Gas Cylinders", cell_bold),
             Paragraph("0 NOS", cell_center),
-            Paragraph("0 NOS", cell_center),
-            Paragraph("0 NOS", cell_center),
+            Paragraph("₹0.00", cell_right),
+            Paragraph("₹0.00", cell_right_bold),
         ])
     else:
         for idx, ln in enumerate(lines, 1):
@@ -2532,33 +2535,46 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
             tot_empty += e_qty
             tot_units += line_tot
 
+            p_rate = float(ln.Product.PurchasePrice if (ln.Product and ln.Product.PurchasePrice) else (ln.Rate or 0))
+            line_total = line_tot * p_rate
+            tot_valuation += line_total
+
+            breakdown_sub = ""
+            if f_qty > 0 or e_qty > 0:
+                parts = []
+                if f_qty > 0:
+                    parts.append(f"Full: {f_qty}")
+                if e_qty > 0:
+                    parts.append(f"Empty: {e_qty}")
+                breakdown_sub = f"<br/><font size=7 color='#64748B'>({' • '.join(parts)})</font>"
+
             table_rows.append([
                 Paragraph(str(idx), cell_center),
-                Paragraph(p_name, cell_bold),
-                Paragraph(f"{f_qty} NOS" if f_qty > 0 else "-", cell_center),
-                Paragraph(f"{e_qty} NOS" if e_qty > 0 else "-", cell_center),
-                Paragraph(f"{line_tot} NOS", cell_center),
+                Paragraph(f"{p_name}{breakdown_sub}", cell_bold),
+                Paragraph(f"<b>{line_tot} NOS</b>", cell_center),
+                Paragraph(f"₹{p_rate:,.2f}", cell_right),
+                Paragraph(f"<b>₹{line_total:,.2f}</b>", cell_right_bold),
             ])
 
     # Totals Row
     table_rows.append([
-        Paragraph("TOTAL", cell_bold),
-        Paragraph("<b>Total Cylinders Transferred / Received</b>", cell_bold),
-        Paragraph(f"<b>{tot_full} NOS</b>", cell_center),
-        Paragraph(f"<b>{tot_empty} NOS</b>", cell_center),
+        Paragraph("", cell_center),
+        Paragraph("<b>GRAND TOTAL RECEIVED QUANTITY &amp; VALUATION</b>", cell_bold),
         Paragraph(f"<b>{tot_units} NOS</b>", cell_center),
+        Paragraph("<b>TOTAL (Excl. GST)</b>", cell_right_bold),
+        Paragraph(f"<b>₹{tot_valuation:,.2f}</b>", cell_right_bold),
     ])
 
     items_table = Table(table_rows, colWidths=col_widths)
     t_style = [
         ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
         ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('BACKGROUND', (0, -1), (-1, -1), CARD_BG),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND', (0, -1), (-1, -1), LIGHT_BG),
     ]
     for r in range(1, len(table_rows) - 1):
         bg = LIGHT_BG if r % 2 == 1 else colors.white
