@@ -12,7 +12,10 @@ import {
   TextInput,
   CloseButton,
   ActionIcon,
-  Badge } from '@mantine/core';
+  Badge,
+  SegmentedControl,
+  Select,
+  Box } from '@mantine/core';
 import {
   IconPlus,
   IconSearch,
@@ -25,7 +28,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
-import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
+import { formatDateDDMMYY, DateInputDDMMYY } from '../components/DateInputDDMMYY';
 
 interface PaymentLineItem {
   PaymentLineId?: number;
@@ -54,6 +57,13 @@ export const ReceiptListPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<ReceiptItem | null>(null);
   const [deleteModalOpened, setDeleteModalOpened] = useState(false);
+
+  // Filters State
+  type DateFilterType = 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('date_desc');
 
   // Fetch all payments/receipts
   const { data: allPayments = [], isLoading } = useQuery<ReceiptItem[]>({
@@ -100,18 +110,81 @@ export const ReceiptListPage: React.FC = () => {
     return map;
   }, [receipts]);
 
+  const isDateInFilter = (dateStr?: string) => {
+    if (!dateStr || dateFilter === 'all') return true;
+    const d = dateStr.slice(0, 10);
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    if (dateFilter === 'today') {
+      return d === todayStr;
+    }
+    if (dateFilter === 'yesterday') {
+      const yest = new Date(today);
+      yest.setDate(today.getDate() - 1);
+      const yesterdayStr = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+      return d === yesterdayStr;
+    }
+    if (dateFilter === 'this_week') {
+      const day = today.getDay();
+      const diff = (day === 0 ? -6 : 1) - day;
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+      const mondayStr = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+      return d >= mondayStr && d <= todayStr;
+    }
+    if (dateFilter === 'this_month') {
+      const monthStartStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+      return d >= monthStartStr && d <= todayStr;
+    }
+    if (dateFilter === 'custom') {
+      if (customStartDate && d < customStartDate) return false;
+      if (customEndDate && d > customEndDate) return false;
+      return true;
+    }
+    return true;
+  };
+
   const filteredReceipts = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return receipts;
-    return receipts.filter(
-      (p) =>
+    let result = receipts.filter((p) => {
+      // 1. Date filter
+      const itemDate = p.payment_date || (p.CreatedAt ? p.CreatedAt.slice(0, 10) : '');
+      if (!isDateInFilter(itemDate)) return false;
+
+      // 2. Search query
+      if (!q) return true;
+      return (
         (receiptNumMap.get(p.PaymentId) || String(p.PaymentId)).toLowerCase().includes(q) ||
         (p.party_name && p.party_name.toLowerCase().includes(q)) ||
         (p.Narration && p.Narration.toLowerCase().includes(q)) ||
         (p.payment_date && (p.payment_date.includes(q) || formatDateDDMMYY(p.payment_date).includes(q))) ||
         (p.CreatedAt && formatDateDDMMYY(p.CreatedAt).includes(q))
-    );
-  }, [receipts, searchQuery, receiptNumMap]);
+      );
+    });
+
+    // 3. Sorting
+    result = [...result].sort((a, b) => {
+      if (sortBy === 'date_asc') {
+        const da = a.payment_date || a.CreatedAt || '';
+        const db = b.payment_date || b.CreatedAt || '';
+        return da.localeCompare(db);
+      }
+      if (sortBy === 'amount_desc') {
+        return Number(b.Amount || 0) - Number(a.Amount || 0);
+      }
+      if (sortBy === 'amount_asc') {
+        return Number(a.Amount || 0) - Number(b.Amount || 0);
+      }
+      // default: date_desc (newest first)
+      const da = a.payment_date || a.CreatedAt || '';
+      const db = b.payment_date || b.CreatedAt || '';
+      if (db !== da) return db.localeCompare(da);
+      return b.PaymentId - a.PaymentId;
+    });
+
+    return result;
+  }, [receipts, searchQuery, receiptNumMap, dateFilter, customStartDate, customEndDate, sortBy]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {

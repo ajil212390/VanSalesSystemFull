@@ -11,7 +11,10 @@ import {
   Text,
   TextInput,
   CloseButton,
-  ActionIcon } from '@mantine/core';
+  ActionIcon,
+  SegmentedControl,
+  Select,
+  Box } from '@mantine/core';
 import {
   IconPlus,
   IconSearch,
@@ -24,7 +27,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
-import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
+import { formatDateDDMMYY, DateInputDDMMYY } from '../components/DateInputDDMMYY';
 
 interface PurchaseItem {
   PurchaseId: number;
@@ -51,6 +54,13 @@ export const PurchaseListPage: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<PurchaseItem | null>(null);
   const [deleteModalOpened, setDeleteModalOpened] = useState(false);
 
+  // Filters State
+  type DateFilterType = 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('date_desc');
+
   const { data: purchases = [], isLoading } = useQuery<PurchaseItem[]>({
     queryKey: ['purchases'],
     queryFn: async () => {
@@ -58,18 +68,80 @@ export const PurchaseListPage: React.FC = () => {
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     } });
 
+  const isDateInFilter = (dateStr?: string) => {
+    if (!dateStr || dateFilter === 'all') return true;
+    const d = dateStr.slice(0, 10);
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    if (dateFilter === 'today') {
+      return d === todayStr;
+    }
+    if (dateFilter === 'yesterday') {
+      const yest = new Date(today);
+      yest.setDate(today.getDate() - 1);
+      const yesterdayStr = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+      return d === yesterdayStr;
+    }
+    if (dateFilter === 'this_week') {
+      const day = today.getDay();
+      const diff = (day === 0 ? -6 : 1) - day;
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+      const mondayStr = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+      return d >= mondayStr && d <= todayStr;
+    }
+    if (dateFilter === 'this_month') {
+      const monthStartStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+      return d >= monthStartStr && d <= todayStr;
+    }
+    if (dateFilter === 'custom') {
+      if (customStartDate && d < customStartDate) return false;
+      if (customEndDate && d > customEndDate) return false;
+      return true;
+    }
+    return true;
+  };
+
   const filteredPurchases = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    if (!q) return purchases;
-    return purchases.filter(
-      (p) =>
+    let result = purchases.filter((p) => {
+      // 1. Date filter
+      if (!isDateInFilter(p.PurchaseDate || p.InvoiceDate)) return false;
+
+      // 2. Search query
+      if (!q) return true;
+      return (
         p.PurchaseNo.toLowerCase().includes(q) ||
         (p.InvoiceNo && p.InvoiceNo.toLowerCase().includes(q)) ||
         (p.supplier_name && p.supplier_name.toLowerCase().includes(q)) ||
         (p.PurchaseDate && (p.PurchaseDate.toLowerCase().includes(q) || formatDateDDMMYY(p.PurchaseDate).toLowerCase().includes(q))) ||
         (p.InvoiceDate && (p.InvoiceDate.toLowerCase().includes(q) || formatDateDDMMYY(p.InvoiceDate).toLowerCase().includes(q)))
-    );
-  }, [purchases, searchQuery]);
+      );
+    });
+
+    // 3. Sorting
+    result = [...result].sort((a, b) => {
+      if (sortBy === 'date_asc') {
+        const da = a.PurchaseDate || a.InvoiceDate || '';
+        const db = b.PurchaseDate || b.InvoiceDate || '';
+        return da.localeCompare(db);
+      }
+      if (sortBy === 'amount_desc') {
+        return Number(b.GrandTotal || 0) - Number(a.GrandTotal || 0);
+      }
+      if (sortBy === 'amount_asc') {
+        return Number(a.GrandTotal || 0) - Number(b.GrandTotal || 0);
+      }
+      // default: date_desc (newest first)
+      const da = a.PurchaseDate || a.InvoiceDate || '';
+      const db = b.PurchaseDate || b.InvoiceDate || '';
+      if (db !== da) return db.localeCompare(da);
+      return b.PurchaseId - a.PurchaseId;
+    });
+
+    return result;
+  }, [purchases, searchQuery, dateFilter, customStartDate, customEndDate, sortBy]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -135,6 +207,116 @@ export const PurchaseListPage: React.FC = () => {
           </Button>
         </Group>
       </Group>
+
+      {/* Date Filter & Sort Card */}
+      <Paper
+        p="xs"
+        radius="xl"
+        withBorder
+        style={{
+          backgroundColor: '#ffffff',
+          borderColor: '#e2e8f0',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+        }}
+      >
+        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+          <Group gap="xs" align="center" wrap="wrap">
+            <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+              Date Filter:
+            </Text>
+            <SegmentedControl
+              size="xs"
+              radius="xl"
+              color="burgundy"
+              transitionDuration={250}
+              transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+              value={dateFilter}
+              onChange={(val) => setDateFilter(val as any)}
+              data={[
+                { label: 'All', value: 'all' },
+                { label: 'Today', value: 'today' },
+                { label: 'Yesterday', value: 'yesterday' },
+                { label: 'This Week', value: 'this_week' },
+                { label: 'This Month', value: 'this_month' },
+                { label: 'Custom', value: 'custom' },
+              ]}
+              styles={{
+                root: {
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  padding: 3,
+                  borderRadius: 9999,
+                  boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+                },
+                control: {
+                  border: 'none',
+                },
+                indicator: {
+                  backgroundColor: '#800020',
+                  borderRadius: 9999,
+                  boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                  border: 'none',
+                  outline: 'none',
+                },
+                label: {
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '5px 14px',
+                  transition: 'color 150ms ease, font-weight 150ms ease',
+                },
+              }}
+            />
+
+            {dateFilter === 'custom' && (
+              <Group gap="xs" align="center">
+                <Box style={{ width: 130 }}>
+                  <DateInputDDMMYY
+                    placeholder="From Date"
+                    value={customStartDate}
+                    onChange={(val) => setCustomStartDate(val)}
+                  />
+                </Box>
+                <Text size="xs" c="dimmed">to</Text>
+                <Box style={{ width: 130 }}>
+                  <DateInputDDMMYY
+                    placeholder="To Date"
+                    value={customEndDate}
+                    onChange={(val) => setCustomEndDate(val)}
+                  />
+                </Box>
+              </Group>
+            )}
+          </Group>
+
+          {/* Sort Option */}
+          <Group gap="xs" align="center">
+            <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+              Sort:
+            </Text>
+            <Select
+              size="xs"
+              radius="xl"
+              value={sortBy}
+              onChange={(val) => setSortBy(val || 'date_desc')}
+              data={[
+                { label: 'Date: Newest First', value: 'date_desc' },
+                { label: 'Date: Oldest First', value: 'date_asc' },
+                { label: 'Amount: High to Low', value: 'amount_desc' },
+                { label: 'Amount: Low to High', value: 'amount_asc' },
+              ]}
+              style={{ width: 180 }}
+              styles={{
+                input: {
+                  backgroundColor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  fontWeight: 600,
+                  fontSize: 12,
+                },
+              }}
+            />
+          </Group>
+        </Group>
+      </Paper>
 
       {/* Table */}
       <Paper radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
