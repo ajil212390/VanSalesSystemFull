@@ -231,7 +231,7 @@ export const StockAnalysisPage: React.FC = () => {
 
   const user = useAuthStore((s) => s.user);
   const role = (user?.role || '').toLowerCase();
-  const isAdmin = !role || role.includes('admin');
+  const isAdmin = !role || role.includes('admin') || role.includes('manager');
   const userGodownId = user?.godown_id || user?.GodownId;
 
   // Section-specific search states (compact, non-spoiling inputs)
@@ -1405,7 +1405,7 @@ export const StockAnalysisPage: React.FC = () => {
         >
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              {userGodownId && !isAdmin ? `${user?.godown_name || 'Godown'} Total Stock` : 'Total System Stock'}
+              {userGodownId && !isAdmin ? `${user?.godown_name || 'Godown'} ` : 'Total System Stock'}
             </Text>
             <IconPackage size={20} color="#800020" stroke={1.75} />
           </Group>

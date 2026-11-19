@@ -336,9 +336,7 @@ export const SalesListPage: React.FC = () => {
             <Title order={2} style={{ color: '#800020', fontWeight: 800, fontSize: 24, letterSpacing: '-0.02em' }}>
               Sales &amp; Invoices
             </Title>
-            <Text size="xs" c="dimmed" mt={2}>
-              Customer GST tax invoices &bull; Direct office sales &bull; New connection packages &bull; Audit trail
-            </Text>
+            
           </div>
 
           <Group gap="xs" align="center" wrap="wrap">
@@ -609,13 +607,12 @@ export const SalesListPage: React.FC = () => {
                           {isEmtrtn && (
                             <Badge
                               size="xs"
-                              color="blue"
                               variant="light"
                               styles={{
                                 root: {
-                                  backgroundColor: '#eff6ff',
-                                  color: '#1d4ed8',
-                                  border: '1px solid #bfdbfe',
+                                  backgroundColor: '#fdf2f4',
+                                  color: '#800020',
+                                  border: '1px solid #f5c2cb',
                                   fontWeight: 700,
                                   flexShrink: 0,
                                   overflow: 'visible',
@@ -889,51 +886,52 @@ export const SalesListPage: React.FC = () => {
         onClose={handleCloseViewingModal}
         title={
           <Group gap="xs">
-            <IconReceipt2 size={20} color="#800020" />
+            <IconReceipt2 size={22} color="#800020" />
             <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
               Invoice Details — {viewingSale?.InvoiceNo || viewingSale?.SalesNo}
             </Text>
           </Group>
         }
-        size="lg"
+        size={880}
         radius="md"
         centered
+        padding="lg"
       >
         {viewingSale && (
           <Stack gap="md">
-            <SimpleGrid cols={2} spacing="xs">
-              <div>
-                <Text size="xs" c="dimmed">
-                  Customer:
+            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
+                <Text size="11px" c="dimmed" tt="uppercase" fw={600}>
+                  Customer
                 </Text>
-                <Text size="sm" fw={700}>
+                <Text size="sm" fw={700} c="#0f172a" truncate>
                   {viewingSale.customer_name || 'Walk-in Customer'}
                 </Text>
-              </div>
-              <div>
-                <Text size="xs" c="dimmed">
-                  Sales Date:
+              </Paper>
+              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
+                <Text size="11px" c="dimmed" tt="uppercase" fw={600}>
+                  Sales Date
                 </Text>
-                <Text size="sm" fw={600}>
+                <Text size="sm" fw={600} c="#0f172a">
                   {formatDateDDMMYY(viewingSale.SalesDate)}
                 </Text>
-              </div>
-              <div>
-                <Text size="xs" c="dimmed">
-                  Route &amp; Vehicle:
+              </Paper>
+              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
+                <Text size="11px" c="dimmed" tt="uppercase" fw={600}>
+                  Route &amp; Vehicle
                 </Text>
-                <Text size="sm" fw={600}>
-                  {viewingSale.route_name || viewingSale.RouteName} &bull; {viewingSale.vehicle_number || viewingSale.VehicleName}
+                <Text size="sm" fw={600} c="#0f172a" truncate>
+                  {viewingSale.route_name || viewingSale.RouteName || 'Main Godown'} &bull; {viewingSale.vehicle_number || viewingSale.VehicleName || 'Godown Stock'}
                 </Text>
-              </div>
-              <div>
-                <Text size="xs" c="dimmed">
-                  Payment Mode:
+              </Paper>
+              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
+                <Text size="11px" c="dimmed" tt="uppercase" fw={600}>
+                  Payment Mode
                 </Text>
-                <Text size="sm" fw={600}>
-                  {viewingSale.PaymentMethod}
+                <Text size="sm" fw={700} style={{ color: (viewingSale.PaymentMethod || '').toUpperCase() === 'CASH' ? '#16a34a' : '#800020' }}>
+                  {viewingSale.PaymentMethod || 'Cash'}
                 </Text>
-              </div>
+              </Paper>
             </SimpleGrid>
 
             <Divider />

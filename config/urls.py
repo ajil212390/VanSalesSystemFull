@@ -17,10 +17,10 @@ urlpatterns = [
     path('api/v1/', include('core.urls')),
     path('api/', include('core.urls')),
 
-    # drf-spectacular documentation
-    path('api/v1/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('api/v1/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
-    path('api/v1/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    # drf-spectacular documentation (disabled for production)
+    # path('api/v1/schema/', SpectacularAPIView.as_view(), name='schema'),
+    # path('api/v1/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    # path('api/v1/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 
     # Static assets for the frontend SPA (assets, images, icons)
     re_path(r'^(?P<path>(assets|favicon\.svg|icons\.svg|login-hero\.jpg).*)$', serve, {

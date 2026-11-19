@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Title,
   Paper,
@@ -81,7 +81,7 @@ export const DeliveryNotesPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((s) => s.user);
-  const isAdmin = user?.role === 'Administrator';
+  const isAdmin = !user?.role || user?.role.toLowerCase().includes('admin') || user?.role.toLowerCase().includes('manager');
   const defaultGodown = user?.GodownId && !isAdmin ? String(user.GodownId) : '1';
 
   const [formOpened, setFormOpened] = useState(false);
@@ -120,6 +120,18 @@ export const DeliveryNotesPage: React.FC = () => {
       return Array.isArray(res.data) ? res.data : [];
     }
   });
+
+  // Synchronize default godown dynamically when godowns load
+  useEffect(() => {
+    if (godowns.length > 0) {
+      if (user?.GodownId && !isAdmin) {
+        setSelectedGodownId(String(user.GodownId));
+      } else if (!selectedGodownId || !godowns.some((g: any) => String(g.GodownId) === selectedGodownId)) {
+        const central = godowns.find((g: any) => g.IsCentral);
+        setSelectedGodownId(String(central ? central.GodownId : godowns[0].GodownId));
+      }
+    }
+  }, [godowns, user, isAdmin, selectedGodownId]);
 
   // 2. Fetch Active Van Allocations (Route + Vehicle + Driver)
   const { data: allocations = [] } = useQuery<any[]>({
@@ -499,14 +511,9 @@ export const DeliveryNotesPage: React.FC = () => {
             <SimpleGrid cols={{ base: 1, sm: 4 }} spacing="sm">
               <Select
                 label="Dispatch From Godown"
-                description={!isAdmin && user?.godown_name ? `Locked to ${user.godown_name}` : undefined}
-                disabled={!isAdmin && Boolean(user?.GodownId)}
-                data={(godowns.length > 0 ? godowns : [
-                  { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
-                  { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
-                ]).map((g: any) => ({
+                data={godowns.map((g: any) => ({
                   value: String(g.GodownId),
-                  label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`
+                  label: g.GodownName.includes('(Central)') || !g.IsCentral ? g.GodownName : `${g.GodownName} (Central)`
                 }))}
                 value={selectedGodownId}
                 onChange={(val) => {
@@ -514,6 +521,7 @@ export const DeliveryNotesPage: React.FC = () => {
                     setSelectedGodownId(val);
                   }
                 }}
+                searchable
                 required
               />
               <Select

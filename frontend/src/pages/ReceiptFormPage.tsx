@@ -18,7 +18,6 @@ import {
   Modal,
   Badge,
   Alert,
-  Tooltip,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -1083,13 +1082,6 @@ export const ReceiptFormPage: React.FC = () => {
                                 value={row.ledgerId}
                                 onChange={(val) => {
                                   updateRowLedger(index, val ? String(val) : null);
-                                  if (val) {
-                                    const lObj = ledgers.find((l) => String(l.LedgerId) === String(val));
-                                    const b = getLedgerBalanceInfo(lObj);
-                                    if (b && b.absBal > 0 && !row.amount) {
-                                      updateRowAmount(index, b.absBal);
-                                    }
-                                  }
                                 }}
                                 searchable
                                 clearable
@@ -1128,7 +1120,7 @@ export const ReceiptFormPage: React.FC = () => {
                                             <span style={{ fontVariantNumeric: 'tabular-nums', textAlign: 'right', flex: 1 }}>
                                               {item.formattedAmount || (item.balanceText ? item.balanceText.replace(/\s*(Dr|Cr|DR|CR)$/, '') : '')}
                                             </span>
-                                            <span style={{ fontWeight: 700, fontSize: 10.5, marginLeft: 6, width: 20, textAlign: 'right', color: isDebtor ? '#800020' : (item.balType === 'Cr' ? '#0284c7' : '#64748b') }}>
+                                            <span style={{ fontWeight: 700, fontSize: 10.5, marginLeft: 6, width: 20, textAlign: 'right', color: isDebtor ? '#800020' : (item.balType === 'Cr' ? '#800020' : '#64748b') }}>
                                               {item.balType}
                                             </span>
                                           </div>
@@ -1156,28 +1148,22 @@ export const ReceiptFormPage: React.FC = () => {
                                     <Text size="11px" c="#64748b" fw={500}>
                                       {balInfo.isDebtor ? 'Balance Receivable:' : 'Current Balance:'}
                                     </Text>
-                                    <Tooltip label="Click to autofill this receivable amount" withArrow position="top">
-                                      <Badge
-                                        size="sm"
-                                        variant="light"
-                                        color="burgundy"
-                                        style={{
-                                          cursor: 'pointer',
-                                          backgroundColor: '#fdf2f4',
-                                          color: '#800020',
-                                          borderColor: '#fbcfe8',
-                                          fontWeight: 700,
-                                          fontSize: 11,
-                                          fontVariantNumeric: 'tabular-nums',
-                                          padding: '2px 8px',
-                                        }}
-                                        onClick={() => {
-                                          if (balInfo.absBal > 0) updateRowAmount(index, balInfo.absBal);
-                                        }}
-                                      >
-                                        ₹{balInfo.absBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balInfo.balType}
-                                      </Badge>
-                                    </Tooltip>
+                                    <Badge
+                                      size="sm"
+                                      variant="light"
+                                      color="burgundy"
+                                      style={{
+                                        backgroundColor: '#fdf2f4',
+                                        color: '#800020',
+                                        borderColor: '#fbcfe8',
+                                        fontWeight: 700,
+                                        fontSize: 11,
+                                        fontVariantNumeric: 'tabular-nums',
+                                        padding: '2px 8px',
+                                      }}
+                                    >
+                                      ₹{balInfo.absBal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {balInfo.balType}
+                                    </Badge>
                                   </Group>
                                 </Group>
                               )}

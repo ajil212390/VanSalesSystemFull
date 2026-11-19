@@ -469,11 +469,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
 
               <Select
                 label="Dispensing Godown"
-                
-                data={(godowns.length > 0 ? godowns : [
-                  { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
-                  { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
-                ]).map((g: any) => ({
+                data={godowns.map((g: any) => ({
                   value: String(g.GodownId),
                   label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
                 }))}

@@ -237,9 +237,9 @@ export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
 
   const role = (user?.role || '').toLowerCase();
-  const isAdmin = !role || role.includes('admin');
   const isManager = role.includes('manager');
   const isAccountant = role.includes('accountant');
+  const isAdmin = (!role || role.includes('admin')) && !isManager;
 
   const [timeFilter, setTimeFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
   const [customDates, setCustomDates] = useState<{ from: string; to: string }>({
@@ -643,7 +643,7 @@ export const DashboardPage: React.FC = () => {
       ? stockAnalysis.godowns
       : (godownsList && godownsList.length > 0 ? godownsList : []);
 
-    if (userGodownId && !isAdmin) {
+    if (userGodownId && !isAdmin && !isManager) {
       godownList = godownList.filter((g: any) => Number(g.GodownId) === Number(userGodownId));
     }
 
@@ -760,24 +760,24 @@ export const DashboardPage: React.FC = () => {
   }, [stockProducts, stockAnalysis?.godowns, stockAnalysis?.all_vans, stockAnalysis?.active_vans, stockAnalysis?.idle_vans, godownsList, vehicles]);
 
   const totalProductFilled = useMemo(() => {
-    if (userGodownId && !isAdmin) {
+    if (userGodownId && !isAdmin && !isManager) {
       return stockProducts.reduce((sum: number, p: any) => {
         const mg = (p.Godowns || []).find((pg: any) => Number(pg.GodownId) === Number(userGodownId));
         return sum + (mg ? Number(mg.FilledQty || 0) : 0);
       }, 0);
     }
     return stockProducts.reduce((sum: number, p: any) => sum + (Number(p.FilledQty ?? (p.GodownQty + (p.AllocatedQty || 0))) || 0), 0);
-  }, [stockProducts, userGodownId, isAdmin]);
+  }, [stockProducts, userGodownId, isAdmin, isManager]);
 
   const totalProductEmpty = useMemo(() => {
-    if (userGodownId && !isAdmin) {
+    if (userGodownId && !isAdmin && !isManager) {
       return stockProducts.reduce((sum: number, p: any) => {
         const mg = (p.Godowns || []).find((pg: any) => Number(pg.GodownId) === Number(userGodownId));
         return sum + (mg ? Number(mg.EmptyQty || 0) : 0);
       }, 0);
     }
     return stockProducts.reduce((sum: number, p: any) => sum + (Number(p.EmptyQty) || 0), 0);
-  }, [stockProducts, userGodownId, isAdmin]);
+  }, [stockProducts, userGodownId, isAdmin, isManager]);
 
   const godownCount = useMemo(() => {
     return stockLocations.filter((l: any) => l.type === 'godown').length || (godownsList.length > 0 ? godownsList.length : 1);
@@ -1162,7 +1162,7 @@ export const DashboardPage: React.FC = () => {
               </Text>
               <Box style={{ flex: 1, height: 1, backgroundColor: '#f1f5f9' }} />
             </Group>
-            <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+            <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
               <DashboardMetricCard
                 title="Active Fleet Vans"
                 icon={<IconTruckDelivery size={22} color='#800020' />}
@@ -1211,23 +1211,6 @@ export const DashboardPage: React.FC = () => {
                 }
                 subtitle={pendingReceiptNotesCount > 0 ? 'Awaiting Inward Acceptance' : 'Inward Stock Up to Date'}
                 onClick={() => navigate('/receipt-notes')}
-              />
-
-              <DashboardMetricCard
-                title="Today's Stock Outflow"
-                icon={<IconPackage size={22} color='#800020' />}
-                value={
-                  <Group align="baseline" gap={4}>
-                    <Text fw={800} style={{ color: '#0f172a', fontSize: '28px', fontVariantNumeric: 'tabular-nums' }}>
-                      <CountUp value={todayDispatchedCylinders} decimals={0} />
-                    </Text>
-                    <Text size="xs" fw={700} c="#800020">
-                      CYLS
-                    </Text>
-                  </Group>
-                }
-                subtitle="Dispatched on Delivery Notes"
-                onClick={() => navigate('/delivery-notes')}
               />
             </SimpleGrid>
           </Stack>

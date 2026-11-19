@@ -317,6 +317,7 @@ class AppState extends ChangeNotifier {
   String driverId = '';
   int? currentDriverDbId;
   int? currentAllocationId;
+  int? currentDeliveryNoteId;
   String vehicleNumber = '';
   String routeInfo = '';
   String endShiftStatus = 'ACTIVE';
@@ -541,7 +542,17 @@ class AppState extends ChangeNotifier {
           try {
             final statusData = await ApiService.getShiftStatus(currentAllocationId!);
             if (statusData != null) {
-              endShiftStatus = (statusData['status'] ?? 'ACTIVE').toString();
+              final newStatus = (statusData['status'] ?? 'ACTIVE').toString();
+              final newDnId = safeIntNullable(statusData['delivery_note_id'] ?? statusData['settlement_id']);
+
+              // If a new delivery note / shift was allocated, wipe previous shift's orders, expenses, and collections!
+              if (currentDeliveryNoteId != null && newDnId != null && newDnId != currentDeliveryNoteId) {
+                orders.clear();
+                expenses.clear();
+                collectedAmount = 0.0;
+              }
+              currentDeliveryNoteId = newDnId;
+              endShiftStatus = newStatus;
             }
           } catch (_) {}
 

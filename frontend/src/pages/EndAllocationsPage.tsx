@@ -37,7 +37,6 @@ import {
   IconReceipt,
   IconPrinter,
   IconHistory,
-  IconEdit,
   IconArrowRight,
   IconArrowUpRight,
   IconTruckDelivery,
@@ -766,10 +765,7 @@ export const EndAllocationsPage: React.FC = () => {
                       <Select
                         size="xs"
                         label="Receiving Godown / Depot"
-                        data={(godowns.length > 0 ? godowns : [
-                          { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
-                          { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
-                        ]).map((g: any) => ({
+                        data={godowns.map((g: any) => ({
                           value: String(g.GodownId),
                           label: `${g.GodownName}${Number(g.GodownId) === Number(sourceGodownId) ? ' (Shift Origin)' : ''}`,
                         }))}
@@ -792,8 +788,8 @@ export const EndAllocationsPage: React.FC = () => {
                           input: {
                             fontWeight: 700,
                             fontSize: 12,
-                            borderColor: isCrossDepot ? '#3b82f6' : '#cbd5e1',
-                            color: isCrossDepot ? '#1d4ed8' : '#0f172a',
+                            borderColor: isCrossDepot ? '#800020' : '#cbd5e1',
+                            color: isCrossDepot ? '#800020' : '#0f172a',
                           },
                         }}
                       />
@@ -805,12 +801,12 @@ export const EndAllocationsPage: React.FC = () => {
                       mt="xs"
                       p="xs"
                       style={{
-                        backgroundColor: '#dbeafe',
+                        backgroundColor: '#fdf2f4',
                         borderRadius: 6,
-                        border: '1px solid #bfdbfe',
+                        border: '1px solid #f5c2cb',
                       }}
                     >
-                      <Text size="11px" c="#1e40af" fw={600}>
+                      <Text size="11px" c="#800020" fw={600}>
                         <strong>Cross-Depot Forwarding:</strong> {modalTotalFilled} full and {modalTotalEmpty} empty cylinders will be unloaded from the van and forwarded to <strong>{targetGodownName}</strong>. An incoming pending Receipt Note will appear under {targetGodownName}'s Receipt Notes for verification and inward acceptance.
                       </Text>
                     </Box>
@@ -854,72 +850,22 @@ export const EndAllocationsPage: React.FC = () => {
                           <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, paddingLeft: 16 }}>PRODUCT</Table.Th>
                           <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'center', width: 90 }}>LOADED</Table.Th>
                           <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'center', width: 90 }}>DELIVERED</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, minWidth: 230 }}>UNSOLD</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, minWidth: 230 }}>EMPTIES</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#0f172a', fontWeight: 700, textAlign: 'center', width: 120 }}>UNSOLD FULL</Table.Th>
+                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textAlign: 'center', width: 120 }}>EMPTY RETURNED</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
                         {modalLines.map((line) => {
-                          const pid = line.Product || line.EndRouteDriverLineId;
-                          const godownOptions = (godowns.length > 0 ? godowns : [
-                            { GodownId: 1, GodownName: 'Main Godown (Central)', IsCentral: true },
-                            { GodownId: 2, GodownName: 'Thalassery Godown', IsCentral: false },
-                          ]).map((g: any) => ({
-                            value: String(g.GodownId),
-                            label: `${g.GodownName}${g.IsCentral ? ' (Central)' : ''}`,
-                          }));
-                          const defaultGid = String(selectedItem.source_godown_id || 1);
-
                           return (
                             <Table.Tr key={line.EndRouteDriverLineId}>
                               <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a', paddingLeft: 16 }}>{line.product_name}</Table.Td>
                               <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{line.LoadedQty ?? '-'}</Table.Td>
                               <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{line.DeliveredQty ?? '-'}</Table.Td>
-                              <Table.Td>
-                                <Group gap="sm" wrap="nowrap" align="center">
-                                  <Text style={{ width: 28, textAlign: 'center', fontWeight: 700, fontSize: 13.5, color: '#0f172a', flexShrink: 0 }}>
-                                    {line.FilledQty}
-                                  </Text>
-                                  {selectedItem.Status?.toUpperCase() === 'PENDING' ? (
-                                    <Select
-                                      size="xs"
-                                      data={godownOptions}
-                                      value={unsoldGodowns[pid] || defaultGid}
-                                      onChange={(val) => {
-                                        if (val) setUnsoldGodowns((prev) => ({ ...prev, [pid]: val }));
-                                      }}
-                                      style={{ flexGrow: 1, minWidth: 150 }}
-                                      styles={{ input: { fontWeight: 600, fontSize: 11.5, borderColor: '#cbd5e1' } }}
-                                    />
-                                  ) : (
-                                    <Text size="xs" c="#334155" fw={600}>
-                                      {godowns.find((g: any) => String(g.GodownId) === (unsoldGodowns[pid] || defaultGid))?.GodownName || 'Main Godown'}
-                                    </Text>
-                                  )}
-                                </Group>
+                              <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13.5, color: '#0f172a' }}>
+                                {line.FilledQty}
                               </Table.Td>
-                              <Table.Td>
-                                <Group gap="sm" wrap="nowrap" align="center">
-                                  <Text style={{ width: 28, textAlign: 'center', fontWeight: 700, fontSize: 13.5, color: '#0f172a', flexShrink: 0 }}>
-                                    {line.EmptyQty}
-                                  </Text>
-                                  {selectedItem.Status?.toUpperCase() === 'PENDING' ? (
-                                    <Select
-                                      size="xs"
-                                      data={godownOptions}
-                                      value={emptyGodowns[pid] || defaultGid}
-                                      onChange={(val) => {
-                                        if (val) setEmptyGodowns((prev) => ({ ...prev, [pid]: val }));
-                                      }}
-                                      style={{ flexGrow: 1, minWidth: 150 }}
-                                      styles={{ input: { fontWeight: 600, fontSize: 11.5, borderColor: '#800020' } }}
-                                    />
-                                  ) : (
-                                    <Text size="xs" c="#334155" fw={600}>
-                                      {godowns.find((g: any) => String(g.GodownId) === (emptyGodowns[pid] || defaultGid))?.GodownName || 'Main Godown'}
-                                    </Text>
-                                  )}
-                                </Group>
+                              <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13.5, color: '#800020' }}>
+                                {line.EmptyQty}
                               </Table.Td>
                             </Table.Tr>
                           );
@@ -980,7 +926,6 @@ export const EndAllocationsPage: React.FC = () => {
                           <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase' }}>Payment Mode</Table.Th>
                           <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase', textAlign: 'right' }}>Amount (₹)</Table.Th>
                           <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase', textAlign: 'center' }}>Edit Audit</Table.Th>
-                          <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 700, textTransform: 'uppercase', textAlign: 'right' }}>Action</Table.Th>
                         </Table.Tr>
                       </Table.Thead>
                       <Table.Tbody>
@@ -1000,13 +945,12 @@ export const EndAllocationsPage: React.FC = () => {
                                   {isEmtrtn && (
                                     <Badge
                                       size="xs"
-                                      color="blue"
                                       variant="light"
                                       styles={{
                                         root: {
-                                          backgroundColor: '#eff6ff',
-                                          color: '#1d4ed8',
-                                          border: '1px solid #bfdbfe',
+                                          backgroundColor: '#fdf2f4',
+                                          color: '#800020',
+                                          border: '1px solid #f5c2cb',
                                           fontWeight: 700,
                                           flexShrink: 0,
                                           overflow: 'visible',
@@ -1158,21 +1102,6 @@ export const EndAllocationsPage: React.FC = () => {
                                     Original
                                   </Badge>
                                 )}
-                              </Table.Td>
-                              <Table.Td style={{ textAlign: 'right' }}>
-                                <Tooltip label="Edit invoice in Sales Register" withArrow position="top">
-                                  <ActionIcon
-                                    size="xs"
-                                    variant="subtle"
-                                    color="burgundy"
-                                    onClick={() => {
-                                      setIsDetailOpen(false);
-                                      navigate(`/sales/${sale.SalesId}/edit`);
-                                    }}
-                                  >
-                                    <IconEdit size={14} color="#800020" />
-                                  </ActionIcon>
-                                </Tooltip>
                               </Table.Td>
                             </Table.Tr>
                           );

@@ -643,7 +643,7 @@ export const LedgerAnalysisPage: React.FC = () => {
           </Text>
           <Text size="md" fw={700} c="#1e293b" style={{ fontVariantNumeric: 'tabular-nums' }}>
             ₹{Math.abs(financialTotals.netOpening).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
-            <Text component="span" size="xs" c={financialTotals.netOpening >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
+            <Text component="span" size="xs" c={financialTotals.netOpening >= 0 ? '#0f172a' : '#dc2626'} fw={600}>
               {financialTotals.netOpening >= 0 ? 'DR' : 'CR'}
             </Text>
           </Text>
@@ -673,7 +673,7 @@ export const LedgerAnalysisPage: React.FC = () => {
           </Text>
           <Text size="md" fw={700} c={financialTotals.totalCurrent >= 0 ? '#000000' : '#dc2626'} style={{ fontVariantNumeric: 'tabular-nums' }}>
             ₹{Math.abs(financialTotals.totalCurrent).toLocaleString('en-IN', { minimumFractionDigits: 2 })}{' '}
-            <Text component="span" size="xs" c={financialTotals.totalCurrent >= 0 ? '#0284c7' : '#dc2626'} fw={600}>
+            <Text component="span" size="xs" c={financialTotals.totalCurrent >= 0 ? '#0f172a' : '#dc2626'} fw={600}>
               {financialTotals.totalCurrent >= 0 ? 'Dr' : 'Cr'}
             </Text>
           </Text>
@@ -768,7 +768,7 @@ export const LedgerAnalysisPage: React.FC = () => {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}{' '}
-                          <Text component="span" size="xs" c={ledger.OpeningBalanceType === 'CR' ? '#dc2626' : '#0284c7'} fw={600}>
+                          <Text component="span" size="xs" c={ledger.OpeningBalanceType === 'CR' ? '#dc2626' : '#0f172a'} fw={600}>
                             {ledger.OpeningBalanceType || 'DR'}
                           </Text>
                         </Text>
@@ -811,7 +811,7 @@ export const LedgerAnalysisPage: React.FC = () => {
                             maximumFractionDigits: 2,
                           })}{' '}
                           {!isZero && (
-                            <Text component="span" size="xs" c={isDr ? '#0284c7' : '#dc2626'} fw={700}>
+                            <Text component="span" size="xs" c={isDr ? '#0f172a' : '#dc2626'} fw={700}>
                               {isDr ? 'Dr' : 'Cr'}
                             </Text>
                           )}

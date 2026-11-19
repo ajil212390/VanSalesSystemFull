@@ -224,7 +224,7 @@ export const RouteDetailsPage: React.FC = () => {
       notifications.show({
         title: 'Expense Removed',
         message: 'Trip expense deleted.',
-        color: 'blue',
+        color: 'burgundy',
       });
       queryClient.invalidateQueries({ queryKey: ['route-live-details', routeId] });
       refetch();

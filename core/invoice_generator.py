@@ -2472,18 +2472,22 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
     e_by_prod = {}
     if 'Filled:' in remarks and 'Empty:' in remarks:
         try:
-            f_sec = remarks.split('Filled:')[1].split('•')[0].strip()
-            if f_sec and f_sec != '0':
-                for part in f_sec.split(','):
-                    if 'x' in part:
-                        p_nm, q_s = part.split('x')
-                        f_by_prod[p_nm.strip().lower()] = int(float(q_s.strip()))
-            e_sec = remarks.split('Empty:')[1].split('•')[0].split('|')[0].strip()
-            if e_sec and e_sec != '0':
-                for part in e_sec.split(','):
-                    if 'x' in part:
-                        p_nm, q_s = part.split('x')
-                        e_by_prod[p_nm.strip().lower()] = int(float(q_s.strip()))
+            f_m = re.search(r'Filled:\s*([^•|]+)', remarks)
+            if f_m:
+                f_sec = f_m.group(1).strip()
+                if f_sec and f_sec != '0':
+                    for part in f_sec.split(','):
+                        if 'x' in part:
+                            p_nm, q_s = part.split('x')
+                            f_by_prod[p_nm.strip().lower()] = int(float(q_s.strip()))
+            e_m = re.search(r'Empty:\s*([^•|]+)', remarks)
+            if e_m:
+                e_sec = e_m.group(1).strip()
+                if e_sec and e_sec != '0':
+                    for part in e_sec.split(','):
+                        if 'x' in part:
+                            p_nm, q_s = part.split('x')
+                            e_by_prod[p_nm.strip().lower()] = int(float(q_s.strip()))
         except Exception:
             pass
 
@@ -2654,9 +2658,8 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
     godown_name = godown.GodownName if godown else "Central Godown"
 
     remarks = delivery_note.Remarks or ''
-    is_transfer = (delivery_note.DeliveryNoteNo and delivery_note.DeliveryNoteNo.startswith('TDN')) or any(k in remarks.lower() for k in ['transfer', 'inter-godown', 'depot'])
-    title_text = "TRANSFER DELIVERY NOTE / INTER-DEPOT CHALLAN" if is_transfer else "DELIVERY NOTE / VAN LOADING CHALLAN"
-    badge_bg = colors.HexColor('#9A3412') if is_transfer else PRIMARY_COLOR
+    title_text = "DELIVERY NOTE / VAN LOADING CHALLAN"
+    badge_bg = PRIMARY_COLOR
 
     c_title = ParagraphStyle('DnTitle', fontName=FONT_BOLD, fontSize=17, leading=21, textColor=PRIMARY_COLOR)
     c_sub = ParagraphStyle('DnSub', fontName=FONT_NAME, fontSize=8, leading=11, textColor=MUTED_COLOR)
@@ -2666,6 +2669,8 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
     cell_norm = ParagraphStyle('DnCell', fontName=FONT_NAME, fontSize=8.5, leading=11.5, textColor=DARK_COLOR)
     cell_bold = ParagraphStyle('DnCellB', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, textColor=DARK_COLOR)
     cell_center = ParagraphStyle('DnCellC', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, alignment=1, textColor=DARK_COLOR)
+    cell_right = ParagraphStyle('DnCellR', fontName=FONT_NAME, fontSize=8.5, leading=11.5, alignment=2, textColor=DARK_COLOR)
+    cell_right_bold = ParagraphStyle('DnCellRB', fontName=FONT_BOLD, fontSize=8.5, leading=11.5, alignment=2, textColor=DARK_COLOR)
 
     date_str = delivery_note.DeliveryDate.strftime('%d/%m/%Y') if delivery_note.DeliveryDate else datetime.now().strftime('%d/%m/%Y')
 
@@ -2721,11 +2726,11 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
     loc_box = [
         [
             Paragraph("<b>DISPATCH / MOVEMENT SUMMARY</b>", ParagraphStyle('DnTitleCard', fontName=FONT_BOLD, fontSize=9, textColor=PRIMARY_COLOR)),
-            Paragraph(f"<b>Category:</b> {'Depot Transfer Outward' if is_transfer else 'Morning Route Van Allocation'}", ParagraphStyle('DnCat', fontName=FONT_BOLD, fontSize=8.5, alignment=2, textColor=DARK_COLOR))
+            Paragraph("<b>Category:</b> Delivery Note", ParagraphStyle('DnCat', fontName=FONT_BOLD, fontSize=8.5, alignment=2, textColor=DARK_COLOR))
         ],
         [
             Paragraph(f"{src_text}<br/>{dest_text}", cell_norm),
-            Paragraph(f"<b>Associated Route:</b> {route_name}<br/><b>Purpose:</b> {'Stock Transfer to Depot' if is_transfer else 'Daily Distribution &amp; Customer Deliveries'}", cell_norm)
+            Paragraph(f"<b>Associated Route:</b> {route_name}<br/><b>Purpose:</b> Daily Distribution &amp; Customer Deliveries", cell_norm)
         ]
     ]
     loc_table = Table(loc_box, colWidths=[340, 205])
@@ -2741,58 +2746,55 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
     story.append(loc_table)
     story.append(Spacer(1, 10))
 
-    # Items Table
-    col_widths = [35, 230, 95, 95, 90]
+    # Items Table with Stock Quantity, Purchase Rate (excl. GST) and Total Amount
+    col_widths = [35, 230, 80, 100, 100]
     th_cells = [
         Paragraph("Sl no.", th_style),
         Paragraph("Item / Cylinder Description", ParagraphStyle('ThLeftDn', parent=th_style, alignment=0)),
-        Paragraph("Full Cylinders", th_style),
-        Paragraph("Empty Cylinders", th_style),
-        Paragraph("Total Units", th_style),
+        Paragraph("Stock Qty", th_style),
+        Paragraph("Purchase Rate (excl. GST)", ParagraphStyle('ThR1', parent=th_style, alignment=2)),
+        Paragraph("Total Amount", ParagraphStyle('ThR2', parent=th_style, alignment=2)),
     ]
     table_rows = [th_cells]
 
     lines = list(delivery_note.lines.select_related('Product', 'Unit').all())
-    tot_full = 0
-    tot_empty = 0
-    tot_units = 0
+    tot_qty = 0
+    tot_valuation = 0.0
 
     if not lines:
         table_rows.append([
             Paragraph("1", cell_center),
             Paragraph("Commercial / Domestic Gas Cylinders", cell_bold),
             Paragraph("0 NOS", cell_center),
-            Paragraph("0 NOS", cell_center),
-            Paragraph("0 NOS", cell_center),
+            Paragraph("₹0.00", cell_right),
+            Paragraph("₹0.00", cell_right_bold),
         ])
     else:
         for idx, ln in enumerate(lines, 1):
             p_name = ln.Product.ProductName if ln.Product else f"Product #{ln.Product_id}"
             qty = int(ln.Quantity or 0)
-            f_qty = qty
-            e_qty = 0
-            if "empty" in p_name.lower():
-                f_qty = 0
-                e_qty = qty
-            tot_full += f_qty
-            tot_empty += e_qty
-            tot_units += qty
+            tot_qty += qty
+
+            # Purchase rate (exclusive of GST)
+            p_rate = float(ln.Product.PurchasePrice if (ln.Product and ln.Product.PurchasePrice) else (ln.Rate or 0))
+            line_total = qty * p_rate
+            tot_valuation += line_total
 
             table_rows.append([
                 Paragraph(str(idx), cell_center),
                 Paragraph(p_name, cell_bold),
-                Paragraph(f"{f_qty} NOS" if f_qty > 0 else "-", cell_center),
-                Paragraph(f"{e_qty} NOS" if e_qty > 0 else "-", cell_center),
                 Paragraph(f"<b>{qty} NOS</b>", cell_center),
+                Paragraph(f"₹{p_rate:,.2f}", cell_right),
+                Paragraph(f"<b>₹{line_total:,.2f}</b>", cell_right_bold),
             ])
 
     # Totals Row
     table_rows.append([
         Paragraph("", cell_center),
-        Paragraph("<b>GRAND TOTAL DISPATCH QUANTITY</b>", cell_bold),
-        Paragraph(f"<b>{tot_full} NOS</b>", cell_center),
-        Paragraph(f"<b>{tot_empty} NOS</b>", cell_center),
-        Paragraph(f"<b>{tot_units} NOS</b>", cell_center),
+        Paragraph("<b>GRAND TOTAL DISPATCH QUANTITY &amp; VALUATION</b>", cell_bold),
+        Paragraph(f"<b>{tot_qty} NOS</b>", cell_center),
+        Paragraph("<b>TOTAL (Excl. GST)</b>", cell_right_bold),
+        Paragraph(f"<b>₹{tot_valuation:,.2f}</b>", cell_right_bold),
     ])
 
     items_table = Table(table_rows, colWidths=col_widths)
