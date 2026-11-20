@@ -2,7 +2,7 @@ import re
 import time
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.decorators import action
