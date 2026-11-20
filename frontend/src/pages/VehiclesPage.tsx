@@ -24,8 +24,7 @@ import {
     IconTrash,
     IconSearch,
     IconArrowLeft,
-    IconArrowsSort,
-    IconFilter } from '@tabler/icons-react';
+    IconArrowsSort } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -69,102 +68,44 @@ const formatDDMMYYYY = (dateStr?: string | null): string => {
     return `${day}-${month}-${year}`;
 };
 
-// Helper: check expiry status & remaining days
-const getExpiryInfo = (dateStr?: string | null) => {
-    if (!dateStr) return null;
+// Helper: check if date is strictly expired (before today)
+const isDateExpired = (dateStr?: string | null): boolean => {
+    if (!dateStr) return false;
     const match = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
-    let target: Date;
-    if (match) {
-        target = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-    } else {
-        target = new Date(dateStr);
-    }
-    if (isNaN(target.getTime())) return null;
-
+    const target = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(dateStr);
+    if (isNaN(target.getTime())) return false;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const diffMs = target.getTime() - today.getTime();
-    const daysLeft = Math.round(diffMs / (1000 * 60 * 60 * 24));
-
-    return {
-        daysLeft,
-        isExpired: daysLeft < 0,
-        isExpiringSoon: daysLeft >= 0 && daysLeft <= 30,
-        targetTime: target.getTime(),
-    };
+    return target.getTime() < today.getTime();
 };
 
-// Helper: summarize compliance for all 4 sections (RC, Insurance, Fitness, Pollution)
-const getVehicleComplianceSummary = (v: VehicleItem) => {
-    const dates = [
-        { key: 'rc', label: 'RC', date: v.RcExpiryDate },
-        { key: 'insurance', label: 'Insurance', date: v.InsuranceExpiryDate },
-        { key: 'fitness', label: 'Fitness', date: v.FitnessExpiryDate },
-        { key: 'pollution', label: 'Pollution', date: v.PollutionExpiryDate },
-    ];
-
-    let minDaysLeft: number | null = null;
-    let minTargetTime: number = Infinity;
-    let hasExpired = false;
-    let hasExpiringSoon = false;
-
-    for (const item of dates) {
-        const info = getExpiryInfo(item.date);
-        if (info) {
-            if (info.isExpired) hasExpired = true;
-            if (info.isExpiringSoon) hasExpiringSoon = true;
-            if (info.targetTime < minTargetTime) {
-                minTargetTime = info.targetTime;
-                minDaysLeft = info.daysLeft;
-            }
-        }
-    }
-
-    return {
-        minDaysLeft,
-        minTargetTime,
-        hasExpired,
-        hasExpiringSoon,
-        isAttentionNeeded: hasExpired || hasExpiringSoon,
-    };
+// Helper: parse date to timestamp for sorting
+const getDateTimestamp = (dateStr?: string | null): number => {
+    if (!dateStr) return Infinity;
+    const match = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const d = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(dateStr);
+    return isNaN(d.getTime()) ? Infinity : d.getTime();
 };
 
-// Helper: render date cell with DD-MM-YYYY format and compliance status badge
+// Helper: render clean date cell with DD-MM-YYYY format; burgundy if expired, normal dark text otherwise
 const renderDateCell = (dateStr?: string | null) => {
     if (!dateStr) {
         return <Text size="sm" c="dimmed">-</Text>;
     }
     const formatted = formatDDMMYYYY(dateStr);
-    const info = getExpiryInfo(dateStr);
-    if (!info) {
-        return <Text size="sm">{formatted}</Text>;
-    }
-
-    if (info.isExpired) {
-        return (
-            <Group gap={6} wrap="nowrap" align="center">
-                <Text size="sm" fw={600} c="red.7">
-                    {formatted}
-                </Text>
-                <Badge size="xs" color="red" variant="filled" radius="sm">
-                    Expired
-                </Badge>
-            </Group>
-        );
-    }
-    if (info.isExpiringSoon) {
-        return (
-            <Group gap={6} wrap="nowrap" align="center">
-                <Text size="sm" fw={600} c="orange.8">
-                    {formatted}
-                </Text>
-                <Badge size="xs" color="orange" variant="light" radius="sm">
-                    {info.daysLeft === 0 ? 'Today' : `${info.daysLeft}d left`}
-                </Badge>
-            </Group>
-        );
-    }
-    return <Text size="sm">{formatted}</Text>;
+    const expired = isDateExpired(dateStr);
+    return (
+        <Text
+            size="sm"
+            style={{
+                color: expired ? '#800020' : '#1e293b',
+                fontWeight: expired ? 600 : 400,
+                whiteSpace: 'nowrap',
+            }}
+        >
+            {formatted}
+        </Text>
+    );
 };
 
 export const VehiclesPage: React.FC = () => {
@@ -174,8 +115,7 @@ export const VehiclesPage: React.FC = () => {
     const [editingVehicle, setEditingVehicle] = useState<VehicleItem | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<{ id: number; number: string } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
-    const [sortBy, setSortBy] = useState<string>('nearest_expiry');
-    const [complianceFilter, setComplianceFilter] = useState<string>('all');
+    const [sortBy, setSortBy] = useState<string>('default');
 
     // 1. Fetch vehicles list (excluding internal godown storage)
     const { data: vehicles = [], isLoading } = useQuery<VehicleItem[]>({
@@ -186,84 +126,45 @@ export const VehiclesPage: React.FC = () => {
             return list.filter((v: any) => !v.VehicleNumber?.toLowerCase().includes('godown') && !v.VehicleName?.toLowerCase().includes('godown'));
         } });
 
-    // Summary stats across vehicles
-    const stats = useMemo(() => {
-        let expired = 0;
-        let dueSoon = 0;
-        let compliant = 0;
-
-        for (const v of vehicles) {
-            const summary = getVehicleComplianceSummary(v);
-            if (summary.hasExpired) {
-                expired++;
-            } else if (summary.hasExpiringSoon) {
-                dueSoon++;
-            } else {
-                compliant++;
-            }
-        }
-
-        return {
-            total: vehicles.length,
-            expired,
-            dueSoon,
-            compliant,
-        };
-    }, [vehicles]);
-
-    // Client-side search, compliance filter, and sorting
+    // Client-side search and clean sorting
     const filteredVehicles = useMemo(() => {
         const q = searchQuery.toLowerCase().trim();
         let list = vehicles.filter((v) => {
-            const matchesQuery = !q || (
+            return !q || (
                 (v.VehicleNumber && v.VehicleNumber.toLowerCase().includes(q)) ||
                 (v.VehicleName && v.VehicleName.toLowerCase().includes(q))
             );
-            if (!matchesQuery) return false;
-
-            if (complianceFilter === 'all') return true;
-            const summary = getVehicleComplianceSummary(v);
-            if (complianceFilter === 'attention') return summary.isAttentionNeeded;
-            if (complianceFilter === 'expired') return summary.hasExpired;
-            if (complianceFilter === 'expiring_soon') return summary.hasExpiringSoon;
-            if (complianceFilter === 'compliant') return !summary.hasExpired && !summary.hasExpiringSoon;
-            return true;
         });
 
-        return list.slice().sort((a, b) => {
-            if (sortBy === 'nearest_expiry') {
-                const sumA = getVehicleComplianceSummary(a);
-                const sumB = getVehicleComplianceSummary(b);
-                if (sumA.minTargetTime !== sumB.minTargetTime) {
-                    return sumA.minTargetTime - sumB.minTargetTime;
-                }
-                return (a.VehicleNumber || '').localeCompare(b.VehicleNumber || '');
-            }
+        if (sortBy === 'default') {
+            return list;
+        }
 
+        return list.slice().sort((a, b) => {
             if (sortBy === 'rc_expiry') {
-                const tA = getExpiryInfo(a.RcExpiryDate)?.targetTime ?? Infinity;
-                const tB = getExpiryInfo(b.RcExpiryDate)?.targetTime ?? Infinity;
+                const tA = getDateTimestamp(a.RcExpiryDate);
+                const tB = getDateTimestamp(b.RcExpiryDate);
                 if (tA !== tB) return tA - tB;
                 return (a.VehicleNumber || '').localeCompare(b.VehicleNumber || '');
             }
 
             if (sortBy === 'insurance_expiry') {
-                const tA = getExpiryInfo(a.InsuranceExpiryDate)?.targetTime ?? Infinity;
-                const tB = getExpiryInfo(b.InsuranceExpiryDate)?.targetTime ?? Infinity;
+                const tA = getDateTimestamp(a.InsuranceExpiryDate);
+                const tB = getDateTimestamp(b.InsuranceExpiryDate);
                 if (tA !== tB) return tA - tB;
                 return (a.VehicleNumber || '').localeCompare(b.VehicleNumber || '');
             }
 
             if (sortBy === 'fitness_expiry') {
-                const tA = getExpiryInfo(a.FitnessExpiryDate)?.targetTime ?? Infinity;
-                const tB = getExpiryInfo(b.FitnessExpiryDate)?.targetTime ?? Infinity;
+                const tA = getDateTimestamp(a.FitnessExpiryDate);
+                const tB = getDateTimestamp(b.FitnessExpiryDate);
                 if (tA !== tB) return tA - tB;
                 return (a.VehicleNumber || '').localeCompare(b.VehicleNumber || '');
             }
 
             if (sortBy === 'pollution_expiry') {
-                const tA = getExpiryInfo(a.PollutionExpiryDate)?.targetTime ?? Infinity;
-                const tB = getExpiryInfo(b.PollutionExpiryDate)?.targetTime ?? Infinity;
+                const tA = getDateTimestamp(a.PollutionExpiryDate);
+                const tB = getDateTimestamp(b.PollutionExpiryDate);
                 if (tA !== tB) return tA - tB;
                 return (a.VehicleNumber || '').localeCompare(b.VehicleNumber || '');
             }
@@ -272,13 +173,9 @@ export const VehiclesPage: React.FC = () => {
                 return (a.VehicleNumber || '').localeCompare(b.VehicleNumber || '');
             }
 
-            if (sortBy === 'vehicle_desc') {
-                return (b.VehicleNumber || '').localeCompare(a.VehicleNumber || '');
-            }
-
             return 0;
         });
-    }, [vehicles, searchQuery, complianceFilter, sortBy]);
+    }, [vehicles, searchQuery, sortBy]);
 
     // 2. Form state
     const {
@@ -414,134 +311,55 @@ export const VehiclesPage: React.FC = () => {
                     </Text>
                 </div>
 
-                {/* Right Action: Add Button */}
-                <Transition mounted={!formOpened} transition="fade" duration={200}>
-                    {(btnStyles) => (
-                        <Button color="burgundy" radius={10} onClick={handleAddNew} style={btnStyles}>
-                            + Add Vehicle
-                        </Button>
-                    )}
-                </Transition>
+                {/* Right Actions: Search, Sort and Add Vehicle */}
+                <Group gap="sm" wrap="wrap" align="center">
+                    <TextInput
+                        placeholder="Search vehicles..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.currentTarget.value)}
+                        leftSection={<IconSearch size={16} stroke={1.5} color="#800020" />}
+                        rightSection={
+                            searchQuery ? (
+                                <CloseButton
+                                    size="sm"
+                                    aria-label="Clear search"
+                                    onClick={() => setSearchQuery('')}
+                                />
+                            ) : null
+                        }
+                        radius="md"
+                        size="sm"
+                        style={{ width: 220 }}
+                    />
+
+                    <Select
+                        size="sm"
+                        radius="md"
+                        leftSection={<IconArrowsSort size={15} color="#800020" />}
+                        placeholder="Sort by"
+                        value={sortBy}
+                        onChange={(val) => setSortBy(val || 'default')}
+                        data={[
+                            { value: 'default', label: 'Default' },
+                            { value: 'rc_expiry', label: 'RC Expiry' },
+                            { value: 'insurance_expiry', label: 'Insurance Expiry' },
+                            { value: 'fitness_expiry', label: 'Fitness Expiry' },
+                            { value: 'pollution_expiry', label: 'Pollution Expiry' },
+                            { value: 'vehicle_asc', label: 'Vehicle Number' },
+                        ]}
+                        style={{ width: 175 }}
+                        comboboxProps={{ shadow: 'md', transitionProps: { transition: 'pop', duration: 150 } }}
+                    />
+
+                    <Transition mounted={!formOpened} transition="fade" duration={200}>
+                        {(btnStyles) => (
+                            <Button color="burgundy" radius={10} onClick={handleAddNew} style={btnStyles}>
+                                + Add Vehicle
+                            </Button>
+                        )}
+                    </Transition>
+                </Group>
             </Group>
-
-            {/* Filter, Sort & Compliance Quick Actions */}
-            <Transition mounted={!formOpened} transition="fade" duration={200}>
-                {(barStyles) => (
-                    <Paper
-                        p="sm"
-                        radius="sm"
-                        withBorder
-                        style={{
-                            ...barStyles,
-                            backgroundColor: '#ffffff',
-                            borderColor: '#e2e8f0',
-                        }}
-                    >
-                        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-                            <Group gap="xs" wrap="wrap" style={{ flexGrow: 1 }}>
-                                <TextInput
-                                    placeholder="Search vehicles..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.currentTarget.value)}
-                                    leftSection={<IconSearch size={16} stroke={1.5} color="#800020" />}
-                                    rightSection={
-                                        searchQuery ? (
-                                            <CloseButton
-                                                size="sm"
-                                                aria-label="Clear search"
-                                                onClick={() => setSearchQuery('')}
-                                            />
-                                        ) : null
-                                    }
-                                    radius="md"
-                                    size="sm"
-                                    style={{ width: 200, minWidth: 150 }}
-                                />
-
-                                <Select
-                                    size="sm"
-                                    radius="md"
-                                    leftSection={<IconArrowsSort size={15} color="#800020" />}
-                                    value={sortBy}
-                                    onChange={(val) => setSortBy(val || 'nearest_expiry')}
-                                    data={[
-                                        { value: 'nearest_expiry', label: 'Nearest Expiry (Any of 4)' },
-                                        { value: 'rc_expiry', label: 'RC Expiry (Earliest)' },
-                                        { value: 'insurance_expiry', label: 'Insurance Expiry (Earliest)' },
-                                        { value: 'fitness_expiry', label: 'Fitness Expiry (Earliest)' },
-                                        { value: 'pollution_expiry', label: 'Pollution Expiry (Earliest)' },
-                                        { value: 'vehicle_asc', label: 'Vehicle No (A to Z)' },
-                                        { value: 'vehicle_desc', label: 'Vehicle No (Z to A)' },
-                                    ]}
-                                    style={{ width: 235 }}
-                                    comboboxProps={{ shadow: 'md', transitionProps: { transition: 'pop', duration: 150 } }}
-                                />
-
-                                <Select
-                                    size="sm"
-                                    radius="md"
-                                    leftSection={<IconFilter size={15} color="#800020" />}
-                                    value={complianceFilter}
-                                    onChange={(val) => setComplianceFilter(val || 'all')}
-                                    data={[
-                                        { value: 'all', label: 'All Compliance Status' },
-                                        { value: 'attention', label: '⚠️ Needs Attention' },
-                                        { value: 'expired', label: '🔴 Expired Only' },
-                                        { value: 'expiring_soon', label: '🟠 Expiring in 30 Days' },
-                                        { value: 'compliant', label: '🟢 All Up-to-date' },
-                                    ]}
-                                    style={{ width: 215 }}
-                                    comboboxProps={{ shadow: 'md', transitionProps: { transition: 'pop', duration: 150 } }}
-                                />
-                            </Group>
-
-                            {/* Quick Stats Badges */}
-                            <Group gap={6} wrap="wrap">
-                                <Badge
-                                    variant={complianceFilter === 'all' ? 'filled' : 'light'}
-                                    color="gray"
-                                    size="md"
-                                    style={{ cursor: 'pointer', userSelect: 'none' }}
-                                    onClick={() => setComplianceFilter('all')}
-                                >
-                                    Total: {stats.total}
-                                </Badge>
-                                {stats.expired > 0 && (
-                                    <Badge
-                                        variant={complianceFilter === 'expired' ? 'filled' : 'light'}
-                                        color="red"
-                                        size="md"
-                                        style={{ cursor: 'pointer', userSelect: 'none' }}
-                                        onClick={() => setComplianceFilter(complianceFilter === 'expired' ? 'all' : 'expired')}
-                                    >
-                                        {stats.expired} Expired
-                                    </Badge>
-                                )}
-                                {stats.dueSoon > 0 && (
-                                    <Badge
-                                        variant={complianceFilter === 'expiring_soon' ? 'filled' : 'light'}
-                                        color="orange"
-                                        size="md"
-                                        style={{ cursor: 'pointer', userSelect: 'none' }}
-                                        onClick={() => setComplianceFilter(complianceFilter === 'expiring_soon' ? 'all' : 'expiring_soon')}
-                                    >
-                                        {stats.dueSoon} Due Soon
-                                    </Badge>
-                                )}
-                                <Badge
-                                    variant={complianceFilter === 'compliant' ? 'filled' : 'light'}
-                                    color="green"
-                                    size="md"
-                                    style={{ cursor: 'pointer', userSelect: 'none' }}
-                                    onClick={() => setComplianceFilter(complianceFilter === 'compliant' ? 'all' : 'compliant')}
-                                >
-                                    {stats.compliant} Valid
-                                </Badge>
-                            </Group>
-                        </Group>
-                    </Paper>
-                )}
-            </Transition>
 
             {/* Seamless Form & Table Container - wraps both to eliminate flex gap jumping */}
             <Box>
@@ -663,7 +481,7 @@ export const VehiclesPage: React.FC = () => {
                         <Center p="xl">
                             <Stack align="center" gap="xs">
                                 <Text c="dimmed" size="sm">
-                                    No vehicles match current search or filters.
+                                    No vehicles match current search.
                                 </Text>
                                 <Button
                                     variant="subtle"
@@ -671,7 +489,7 @@ export const VehiclesPage: React.FC = () => {
                                     color="burgundy"
                                     onClick={() => {
                                         setSearchQuery('');
-                                        setComplianceFilter('all');
+                                        setSortBy('default');
                                     }}
                                 >
                                     Reset Filters
