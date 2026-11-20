@@ -20,7 +20,9 @@ import {
   Tooltip,
   Select,
   Switch,
-  ThemeIcon,
+  FileInput,
+  Modal,
+  Image,
 } from '@mantine/core';
 import {
   IconPencil,
@@ -33,6 +35,9 @@ import {
   IconCheck,
   IconPlus,
   IconRefresh,
+  IconQrcode,
+  IconEye,
+  IconX,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -46,6 +51,8 @@ export interface PaymentGroupItem {
   BankLedger?: number | null;
   BankLedgerName?: string | null;
   bank_ledger_name?: string | null;
+  QRCodeLocation?: string | null;
+  qr_code_url?: string | null;
   allocations_count?: number;
   allocated_routes?: string[];
   IsActive: boolean;
@@ -69,6 +76,10 @@ export const PaymentGroupsPage: React.FC = () => {
   const [selectedBankLedger, setSelectedBankLedger] = useState<string | null>(null);
   const [isActive, setIsActive] = useState(true);
   const [nameError, setNameError] = useState('');
+  const [qrFile, setQrFile] = useState<File | null>(null);
+  const [qrPreview, setQrPreview] = useState<string | null>(null);
+  const [removeQr, setRemoveQr] = useState<boolean>(false);
+  const [previewModalUrl, setPreviewModalUrl] = useState<{ url: string; name: string } | null>(null);
 
   // 1. Fetch Payment Groups
   const {
@@ -115,6 +126,20 @@ export const PaymentGroupsPage: React.FC = () => {
       }));
   }, [ledgers]);
 
+  const handleFileChange = (file: File | null) => {
+    setQrFile(file);
+    setRemoveQr(false);
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setQrPreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setQrPreview(null);
+    }
+  };
+
   // Form open/edit handlers
   const handleAddNew = () => {
     setEditingGroup(null);
@@ -122,6 +147,9 @@ export const PaymentGroupsPage: React.FC = () => {
     setSelectedBankLedger(null);
     setIsActive(true);
     setNameError('');
+    setQrFile(null);
+    setQrPreview(null);
+    setRemoveQr(false);
     setFormOpened(true);
   };
 
@@ -131,6 +159,10 @@ export const PaymentGroupsPage: React.FC = () => {
     setSelectedBankLedger(group.BankLedger ? String(group.BankLedger) : null);
     setIsActive(group.IsActive !== false);
     setNameError('');
+    setQrFile(null);
+    const existingUrl = group.qr_code_url || (group.QRCodeLocation ? `/media/${String(group.QRCodeLocation).replace(/^\/+/, '')}` : null);
+    setQrPreview(existingUrl);
+    setRemoveQr(false);
     setFormOpened(true);
   };
 
@@ -140,6 +172,9 @@ export const PaymentGroupsPage: React.FC = () => {
     setGroupName('');
     setSelectedBankLedger(null);
     setNameError('');
+    setQrFile(null);
+    setQrPreview(null);
+    setRemoveQr(false);
   };
 
   // 3. Create / Update Mutation
@@ -150,17 +185,30 @@ export const PaymentGroupsPage: React.FC = () => {
         throw new Error('Payment group name is required');
       }
 
-      const payload = {
-        PaymentGroupName: groupName.trim(),
-        BankLedger: selectedBankLedger ? parseInt(selectedBankLedger, 10) : null,
-        IsActive: isActive,
-      };
+      const formData = new FormData();
+      formData.append('PaymentGroupName', groupName.trim());
+      if (selectedBankLedger) {
+        formData.append('BankLedger', selectedBankLedger);
+      } else {
+        formData.append('BankLedger', '');
+      }
+      formData.append('IsActive', String(isActive));
+      if (qrFile) {
+        formData.append('qr_code', qrFile);
+      }
+      if (removeQr) {
+        formData.append('remove_qr', 'true');
+      }
 
       if (editingGroup) {
-        const res = await apiClient.patch(`/payment-groups/${editingGroup.PaymentGroupId}/`, payload);
+        const res = await apiClient.patch(`/payment-groups/${editingGroup.PaymentGroupId}/`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
         return res.data;
       }
-      const res = await apiClient.post('/payment-groups/', payload);
+      const res = await apiClient.post('/payment-groups/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
       return res.data;
     },
     onSuccess: (data) => {
@@ -389,9 +437,68 @@ export const PaymentGroupsPage: React.FC = () => {
                   clearable
                   nothingFoundMessage="No bank ledgers found"
                   leftSection={<IconBuildingBank size={16} color="#800020" />}
-                  description="Bank ledger where driver route collections will settle into"
                 />
               </SimpleGrid>
+
+              {/* QR Code Upload Section */}
+              <Paper p="sm" withBorder radius="sm" style={{ backgroundColor: '#fdf2f4', borderColor: '#fbcfe8' }}>
+                <Group justify="space-between" align="center" mb={6}>
+                  <Group gap={6}>
+                    <IconQrcode size={16} color="#800020" />
+                    <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                      Payment Group QR Code (UPI / BharatPe / GPay)
+                    </Text>
+                  </Group>
+                  {qrPreview && !removeQr && (
+                    <Badge size="xs" color="burgundy" variant="light">
+                      QR Configured
+                    </Badge>
+                  )}
+                </Group>
+                <Text size="xs" c="dimmed" mb="xs">
+                  Upload the official payment QR code for this scheme. It will be automatically printed on sales invoices and receipts issued by the salesmen.
+                </Text>
+
+                <Group align="center" gap="md">
+                  {qrPreview && !removeQr ? (
+                    <Box style={{ position: 'relative', border: '1px solid #f5c2cb', borderRadius: 8, padding: 4, backgroundColor: '#ffffff' }}>
+                      <Image
+                        src={qrPreview}
+                        alt="QR Code"
+                        w={70}
+                        h={70}
+                        fit="contain"
+                        radius="xs"
+                      />
+                      <ActionIcon
+                        size="xs"
+                        color="red"
+                        variant="filled"
+                        style={{ position: 'absolute', top: -6, right: -6 }}
+                        onClick={() => {
+                          setQrFile(null);
+                          setQrPreview(null);
+                          setRemoveQr(true);
+                        }}
+                        title="Remove QR code"
+                      >
+                        <IconX size={12} />
+                      </ActionIcon>
+                    </Box>
+                  ) : null}
+
+                  <FileInput
+                    placeholder={qrPreview && !removeQr ? 'Click to replace QR code...' : 'Upload QR code image (PNG, JPG)...'}
+                    accept="image/png,image/jpeg,image/jpg,image/webp"
+                    value={qrFile}
+                    onChange={handleFileChange}
+                    leftSection={<IconQrcode size={16} color="#800020" />}
+                    clearable
+                    style={{ flex: 1 }}
+                    size="sm"
+                  />
+                </Group>
+              </Paper>
 
               <Group justify="space-between" align="center" mt="xs">
                 <Switch
@@ -603,11 +710,11 @@ export const PaymentGroupsPage: React.FC = () => {
             </Stack>
           </Center>
         ) : (
-          <Table.ScrollContainer minWidth={700}>
+          <Table.ScrollContainer minWidth={750}>
             <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
               <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', width: 80 }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', width: 70 }}>
                     ID
                   </Table.Th>
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
@@ -615,6 +722,9 @@ export const PaymentGroupsPage: React.FC = () => {
                   </Table.Th>
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     LINKED BANK ACCOUNT
+                  </Table.Th>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', width: 150 }}>
+                    QR CODE LOCATION
                   </Table.Th>
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     ALLOCATED ROUTES
@@ -632,6 +742,7 @@ export const PaymentGroupsPage: React.FC = () => {
                 {filteredGroups.map((group) => {
                   const bankName = group.BankLedgerName || group.bank_ledger_name;
                   const routes = group.allocated_routes || [];
+                  const qrUrl = group.qr_code_url || (group.QRCodeLocation ? `/media/${String(group.QRCodeLocation).replace(/^\/+/, '')}` : null);
 
                   return (
                     <Table.Tr key={group.PaymentGroupId}>
@@ -640,21 +751,16 @@ export const PaymentGroupsPage: React.FC = () => {
                         #{group.PaymentGroupId}
                       </Table.Td>
 
-                      {/* Payment Group Name */}
+                      {/* Payment Group Name - Icon Removed as requested */}
                       <Table.Td>
-                        <Group gap="xs" wrap="nowrap">
-                          <ThemeIcon size={28} radius="md" variant="light" color="burgundy">
-                            <IconCreditCard size={16} stroke={1.75} />
-                          </ThemeIcon>
-                          <div>
-                            <Text size="sm" fw={700} style={{ color: '#0f172a' }}>
-                              {group.PaymentGroupName}
-                            </Text>
-                            <Text size="11px" c="dimmed">
-                              Scheme ID: PG-{group.PaymentGroupId}
-                            </Text>
-                          </div>
-                        </Group>
+                        <div>
+                          <Text size="sm" fw={700} style={{ color: '#0f172a' }}>
+                            {group.PaymentGroupName}
+                          </Text>
+                          <Text size="11px" c="dimmed">
+                            Scheme ID: PG-{group.PaymentGroupId}
+                          </Text>
+                        </div>
                       </Table.Td>
 
                       {/* Linked Bank Account */}
@@ -680,6 +786,48 @@ export const PaymentGroupsPage: React.FC = () => {
                         ) : (
                           <Badge variant="subtle" color="gray" size="sm">
                             No Bank Linked
+                          </Badge>
+                        )}
+                      </Table.Td>
+
+                      {/* QR Code Location Column */}
+                      <Table.Td style={{ textAlign: 'center' }}>
+                        {qrUrl ? (
+                          <Group gap={6} justify="center" wrap="nowrap">
+                            <Box
+                              style={{
+                                cursor: 'pointer',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 6,
+                                padding: 2,
+                                display: 'inline-flex',
+                                backgroundColor: '#ffffff',
+                              }}
+                              onClick={() => setPreviewModalUrl({ url: qrUrl, name: group.PaymentGroupName })}
+                            >
+                              <Image
+                                src={qrUrl}
+                                alt="QR Code"
+                                w={26}
+                                h={26}
+                                fit="contain"
+                                radius={4}
+                              />
+                            </Box>
+                            <Tooltip label="Click to view full QR code" withArrow>
+                              <ActionIcon
+                                size="xs"
+                                variant="light"
+                                color="burgundy"
+                                onClick={() => setPreviewModalUrl({ url: qrUrl, name: group.PaymentGroupName })}
+                              >
+                                <IconEye size={13} />
+                              </ActionIcon>
+                            </Tooltip>
+                          </Group>
+                        ) : (
+                          <Badge variant="subtle" color="gray" size="xs">
+                            No QR Code
                           </Badge>
                         )}
                       </Table.Td>
@@ -777,6 +925,47 @@ export const PaymentGroupsPage: React.FC = () => {
           </Table.ScrollContainer>
         )}
       </Paper>
+
+      {/* QR Code Preview Modal */}
+      <Modal
+        opened={Boolean(previewModalUrl)}
+        onClose={() => setPreviewModalUrl(null)}
+        title={
+          <Group gap="xs">
+            <IconQrcode size={18} color="#800020" />
+            <Text fw={700} style={{ color: '#800020' }}>
+              QR Code: {previewModalUrl?.name}
+            </Text>
+          </Group>
+        }
+        centered
+        size="sm"
+      >
+        <Stack align="center" gap="md" py="sm">
+          {previewModalUrl && (
+            <Box
+              p="md"
+              style={{
+                backgroundColor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                borderRadius: 12,
+                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+              }}
+            >
+              <Image
+                src={previewModalUrl.url}
+                alt="QR Code"
+                w={220}
+                h={220}
+                fit="contain"
+              />
+            </Box>
+          )}
+          <Text size="xs" c="dimmed" ta="center">
+            This QR code is printed on sales invoices and receipts for driver route collections.
+          </Text>
+        </Stack>
+      </Modal>
 
       {/* Delete Confirmation Modal */}
       <DeleteConfirmModal

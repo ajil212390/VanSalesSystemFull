@@ -6677,17 +6677,19 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 rn.Status = 'SETTLED'
                 rn.save(update_fields=['Status'])
 
-                # Approve sales for this shift
-                Sales.objects.filter(
+                # Approve sales for this shift and post vouchers to accounts
+                sales_to_approve = list(Sales.objects.filter(
                     CompanyId=company_id,
                     RouteVehicleDriver_id=alloc_id,
                     IsApproved=False
-                ).exclude(Status='CANCELLED').update(
-                    IsApproved=True,
-                    Status='COMPLETED',
-                    ApprovedBy=request.user if request.user.is_authenticated else None,
-                    ApprovedAt=timezone.now()
-                )
+                ).exclude(Status='CANCELLED'))
+                for s in sales_to_approve:
+                    s.IsApproved = True
+                    s.Status = 'COMPLETED'
+                    s.ApprovedBy = request.user if request.user.is_authenticated else None
+                    s.ApprovedAt = timezone.now()
+                    s.save(update_fields=['IsApproved', 'Status', 'ApprovedBy', 'ApprovedAt'])
+                    post_sale_voucher(s, company_id)
 
             return Response({
                 'success': True,
@@ -6738,17 +6740,19 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             rn_dn.Status = 'SETTLED'
             rn_dn.save(update_fields=['Status'])
 
-            # Approve sales for this shift
-            Sales.objects.filter(
+            # Approve sales for this shift and post vouchers to accounts
+            sales_to_approve = list(Sales.objects.filter(
                 CompanyId=company_id,
                 RouteVehicleDriver_id=alloc_id,
                 IsApproved=False
-            ).exclude(Status='CANCELLED').update(
-                IsApproved=True,
-                Status='COMPLETED',
-                ApprovedBy=request.user if request.user.is_authenticated else None,
-                ApprovedAt=timezone.now()
-            )
+            ).exclude(Status='CANCELLED'))
+            for s in sales_to_approve:
+                s.IsApproved = True
+                s.Status = 'COMPLETED'
+                s.ApprovedBy = request.user if request.user.is_authenticated else None
+                s.ApprovedAt = timezone.now()
+                s.save(update_fields=['IsApproved', 'Status', 'ApprovedBy', 'ApprovedAt'])
+                post_sale_voucher(s, company_id)
 
         return Response({
             'success': True,
@@ -8923,7 +8927,17 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
 
     pm = (sale.PaymentMethod or 'CASH').upper()
     cash_led = Ledger.objects.filter(LedgerId=24).first() or Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first()
-    bank_led = Ledger.objects.filter(LedgerId=56).first() or Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first()
+
+    # Route bank allocations to the allocated Payment Group's BankLedger (strictly upon approval)
+    pg_bank_led = None
+    if sale.RouteVehicleDriver and sale.RouteVehicleDriver.PaymentGroup and sale.RouteVehicleDriver.PaymentGroup.BankLedger:
+        pg_bank_led = sale.RouteVehicleDriver.PaymentGroup.BankLedger
+    elif sale.DriverName:
+        rvd_match = RouteVehicleDriver.objects.filter(Driver__DriverName=sale.DriverName, IsActive=True).first()
+        if rvd_match and rvd_match.PaymentGroup and rvd_match.PaymentGroup.BankLedger:
+            pg_bank_led = rvd_match.PaymentGroup.BankLedger
+
+    bank_led = pg_bank_led or Ledger.objects.filter(LedgerId=56).first() or Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first()
     sales_led = Ledger.objects.filter(LedgerId=20).first() or Ledger.objects.filter(Group__GroupName='Sales Accounts').first() or Ledger.objects.filter(LedgerName__icontains='Sales').first()
     cgst_led = Ledger.objects.filter(LedgerId=22).first() or Ledger.objects.filter(LedgerName__icontains='CGST Output').first()
     sgst_led = Ledger.objects.filter(LedgerId=23).first() or Ledger.objects.filter(LedgerName__icontains='SGST Output').first()
@@ -10143,12 +10157,44 @@ class FinancialYearViewSet(viewsets.ModelViewSet):
         return Response({'message': f'Financial year {target.YearName} is now active.', 'active_year': FinancialYearSerializer(target).data})
 
 
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from core.models import PaymentGroup
 from core.serializers import PaymentGroupSerializer
+
+def _save_qr_image(data_or_file, group_id):
+    qr_dir = os.path.join(settings.MEDIA_ROOT, 'payment_groups')
+    os.makedirs(qr_dir, exist_ok=True)
+    ts = int(time.time())
+    
+    if hasattr(data_or_file, 'read'):
+        raw_name = getattr(data_or_file, 'name', '') or 'qr.png'
+        ext = os.path.splitext(raw_name)[1].lower()
+        if ext not in ['.png', '.jpg', '.jpeg', '.webp']:
+            ext = '.png'
+        filename = f"qr_{group_id}_{ts}{ext}"
+        filepath = os.path.join(qr_dir, filename)
+        with open(filepath, 'wb') as f:
+            for chunk in data_or_file.chunks():
+                f.write(chunk)
+        return f"payment_groups/{filename}"
+    elif isinstance(data_or_file, str) and data_or_file.startswith('data:image/'):
+        header, encoded = data_or_file.split(';base64,', 1)
+        ext = '.png'
+        if 'jpeg' in header or 'jpg' in header:
+            ext = '.jpg'
+        elif 'webp' in header:
+            ext = '.webp'
+        filename = f"qr_{group_id}_{ts}{ext}"
+        filepath = os.path.join(qr_dir, filename)
+        with open(filepath, 'wb') as f:
+            f.write(base64.b64decode(encoded))
+        return f"payment_groups/{filename}"
+    return None
 
 class PaymentGroupViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentGroupSerializer
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     pagination_class = None
 
     def get_queryset(self):
@@ -10165,9 +10211,69 @@ class PaymentGroupViewSet(viewsets.ModelViewSet):
             qs = qs.filter(IsActive=(is_active.lower() == 'true'))
         return qs
 
-    def perform_create(self, serializer):
-        company_id = getattr(self.request.user, 'CompanyId', 1) or 1
-        serializer.save(CompanyId=company_id)
+    def create(self, request, *args, **kwargs):
+        try:
+            company_id = getattr(request.user, 'CompanyId', 1) or 1
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            instance = serializer.save(CompanyId=company_id)
+
+            qr_file = request.FILES.get('qr_code') or request.FILES.get('QRCode') or request.FILES.get('file')
+            qr_b64 = request.data.get('qr_code_base64') or (request.data.get('QRCodeLocation') if isinstance(request.data.get('QRCodeLocation'), str) and request.data.get('QRCodeLocation').startswith('data:image/') else None)
+            qr_source = qr_file or qr_b64
+            if qr_source:
+                rel_path = _save_qr_image(qr_source, instance.PaymentGroupId)
+                if rel_path:
+                    instance.QRCodeLocation = rel_path
+                    instance.save(update_fields=['QRCodeLocation'])
+
+            return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+        except IntegrityError as e:
+            return Response({"detail": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    def update(self, request, *args, **kwargs):
+        try:
+            partial = kwargs.pop('partial', False)
+            instance = self.get_object()
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            instance = serializer.save()
+
+            if request.data.get('remove_qr') in [True, 'true', '1']:
+                instance.QRCodeLocation = None
+                instance.save(update_fields=['QRCodeLocation'])
+            else:
+                qr_file = request.FILES.get('qr_code') or request.FILES.get('QRCode') or request.FILES.get('file')
+                qr_b64 = request.data.get('qr_code_base64') or (request.data.get('QRCodeLocation') if isinstance(request.data.get('QRCodeLocation'), str) and request.data.get('QRCodeLocation').startswith('data:image/') else None)
+                qr_source = qr_file or qr_b64
+                if qr_source:
+                    rel_path = _save_qr_image(qr_source, instance.PaymentGroupId)
+                    if rel_path:
+                        instance.QRCodeLocation = rel_path
+                        instance.save(update_fields=['QRCodeLocation'])
+
+            return Response(self.get_serializer(instance).data)
+        except IntegrityError as e:
+            return Response({"detail": f"Database integrity error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='upload-qr', parser_classes=[MultiPartParser, FormParser, JSONParser])
+    def upload_qr(self, request, pk=None):
+        instance = self.get_object()
+        qr_file = request.FILES.get('qr_code') or request.FILES.get('QRCode') or request.FILES.get('file')
+        qr_b64 = request.data.get('qr_code_base64') or (request.data.get('QRCodeLocation') if isinstance(request.data.get('QRCodeLocation'), str) and request.data.get('QRCodeLocation').startswith('data:image/') else None)
+        qr_source = qr_file or qr_b64
+        if not qr_source:
+            return Response({"detail": "No QR code image provided."}, status=status.HTTP_400_BAD_REQUEST)
+        rel_path = _save_qr_image(qr_source, instance.PaymentGroupId)
+        if rel_path:
+            instance.QRCodeLocation = rel_path
+            instance.save(update_fields=['QRCodeLocation'])
+            return Response(self.get_serializer(instance).data)
+        return Response({"detail": "Failed to process QR image."}, status=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
@@ -10178,7 +10284,10 @@ class PaymentGroupViewSet(viewsets.ModelViewSet):
                 {"detail": f"Cannot delete payment group because it is assigned to active routes: {route_names}."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        return super().destroy(request, *args, **kwargs)
+        try:
+            return super().destroy(request, *args, **kwargs)
+        except IntegrityError as e:
+            return Response({"detail": f"Cannot delete payment group: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 

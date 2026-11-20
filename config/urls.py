@@ -27,6 +27,11 @@ urlpatterns = [
         'document_root': os.path.join(settings.BASE_DIR, 'frontend', 'dist')
     }),
 
+    # Media files (e.g. Payment Group QR codes, signatures, uploads)
+    re_path(r'^media/(?P<path>.*)$', serve, {
+        'document_root': settings.MEDIA_ROOT
+    }),
+
     # SPA catch-all for React frontend routing
-    re_path(r'^(?!api/).*$', lambda request: serve_spa(request)),
+    re_path(r'^(?!(api|media)/).*$', lambda request: serve_spa(request)),
 ]

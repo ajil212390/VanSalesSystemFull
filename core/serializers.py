@@ -307,15 +307,26 @@ class PaymentGroupSerializer(serializers.ModelSerializer):
     bank_ledger_name = serializers.CharField(source='BankLedger.LedgerName', read_only=True, allow_null=True)
     allocations_count = serializers.SerializerMethodField()
     allocated_routes = serializers.SerializerMethodField()
+    qr_code_url = serializers.SerializerMethodField()
 
     class Meta:
         model = PaymentGroup
         fields = [
             'PaymentGroupId', 'PaymentGroupName', 'BankLedger', 'BankLedgerName',
-            'bank_ledger_name', 'allocations_count', 'allocated_routes',
+            'bank_ledger_name', 'QRCodeLocation', 'qr_code_url', 'allocations_count', 'allocated_routes',
             'IsActive', 'CompanyId', 'CreatedAt', 'UpdatedAt'
         ]
-        read_only_fields = ['PaymentGroupId', 'CreatedAt', 'UpdatedAt']
+        read_only_fields = ['PaymentGroupId', 'CreatedAt', 'UpdatedAt', 'qr_code_url']
+
+    def get_qr_code_url(self, obj):
+        if not obj.QRCodeLocation:
+            return None
+        loc = str(obj.QRCodeLocation).replace('\\', '/').lstrip('/')
+        url = f"/media/{loc}"
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(url)
+        return url
 
     def get_allocations_count(self, obj):
         return obj.routevehicledriver_set.filter(IsActive=True).count()

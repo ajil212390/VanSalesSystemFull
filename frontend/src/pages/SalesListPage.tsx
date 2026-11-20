@@ -49,6 +49,7 @@ export const SalesListPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>('ALL');
   const [typeFilter, setTypeFilter] = useState<string | null>('ALL');
+  const [paymentModeFilter, setPaymentModeFilter] = useState<'ALL' | 'CASH' | 'BANK'>('ALL');
   const [paymentGroupFilter, setPaymentGroupFilter] = useState<string | null>('ALL');
   const [viewingSale, setViewingSale] = useState<any | null>(null);
   const [historySale, setHistorySale] = useState<any | null>(null);
@@ -154,9 +155,33 @@ export const SalesListPage: React.FC = () => {
     return true;
   };
 
+  const getSplitInfo = (s: any) => {
+    let cashAmt = Number(s.cash_amount || 0);
+    let bankAmt = Number(s.bank_amount || s.upi_amount || 0);
+
+    if ((cashAmt === 0 || bankAmt === 0) && s.Notes) {
+      const cMatch = s.Notes.match(/Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+      const uMatch = s.Notes.match(/(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+      if (cMatch && cashAmt === 0) cashAmt = parseFloat(cMatch[1].replace(/,/g, '')) || 0;
+      if (uMatch && bankAmt === 0) bankAmt = parseFloat(uMatch[1].replace(/,/g, '')) || 0;
+    }
+
+    const grandTotal = Number(s.GrandTotal || s.PaidAmount || 0);
+    const pm = (s.PaymentMethod || '').toUpperCase();
+
+    if (pm === 'CASH' && cashAmt === 0) {
+      cashAmt = grandTotal;
+    } else if ((pm === 'BANK' || pm === 'UPI' || pm === 'ONLINE') && bankAmt === 0) {
+      bankAmt = grandTotal;
+    }
+
+    const isSplit = pm === 'SPLIT' || (cashAmt > 0 && bankAmt > 0);
+    return { cashAmt, bankAmt, isSplit, grandTotal, pm };
+  };
+
   // Filtered Sales
   const filteredSales = useMemo(() => {
-    let result = sales.filter((s: any) => {
+    const baseList = sales.filter((s: any) => {
       // 1. Date filter
       if (!isDateInFilter(s.SalesDate)) return false;
 
@@ -167,17 +192,6 @@ export const SalesListPage: React.FC = () => {
       const isPkg = isPackageSale(s);
       if (typeFilter === 'PACKAGE' && !isPkg) return false;
       if (typeFilter === 'REGULAR' && isPkg) return false;
-
-      // 2b. Payment Group filter
-      if (paymentGroupFilter && paymentGroupFilter !== 'ALL') {
-        if (paymentGroupFilter === 'UNASSIGNED') {
-          if (s.payment_group_id || s.payment_group_name) return false;
-        } else {
-          const matchId = String(s.payment_group_id) === String(paymentGroupFilter);
-          const matchName = s.payment_group_name === paymentGroupFilter;
-          if (!matchId && !matchName) return false;
-        }
-      }
 
       // 3. Search query
       if (!search.trim()) return true;
@@ -200,6 +214,57 @@ export const SalesListPage: React.FC = () => {
       );
     });
 
+    let result: any[] = [];
+
+    // Payment Mode & Payment Group Filtering + Split Row Generation
+    if (paymentModeFilter === 'ALL') {
+      result = baseList;
+    } else if (paymentModeFilter === 'CASH') {
+      baseList.forEach((s: any) => {
+        const { cashAmt, isSplit, pm } = getSplitInfo(s);
+        if (pm === 'CASH') {
+          result.push(s);
+        } else if (isSplit && cashAmt > 0) {
+          result.push({
+            ...s,
+            display_payment_method: 'CASH (Split)',
+            display_amount: cashAmt,
+            is_split_row: true,
+          });
+        }
+      });
+    } else if (paymentModeFilter === 'BANK') {
+      baseList.forEach((s: any) => {
+        // Match Payment Group filter if selected
+        if (paymentGroupFilter && paymentGroupFilter !== 'ALL') {
+          if (paymentGroupFilter === 'UNASSIGNED') {
+            if (s.payment_group_id || s.payment_group_name) return;
+          } else {
+            const matchId = String(s.payment_group_id) === String(paymentGroupFilter);
+            const matchName = s.payment_group_name === paymentGroupFilter;
+            if (!matchId && !matchName) return;
+          }
+        }
+
+        const { bankAmt, isSplit, pm } = getSplitInfo(s);
+        if (pm === 'BANK' || pm === 'UPI' || pm === 'ONLINE') {
+          result.push({
+            ...s,
+            display_payment_method: pm,
+            display_amount: bankAmt || s.GrandTotal,
+            is_split_row: false,
+          });
+        } else if (isSplit && bankAmt > 0) {
+          result.push({
+            ...s,
+            display_payment_method: 'BANK (Split)',
+            display_amount: bankAmt,
+            is_split_row: true,
+          });
+        }
+      });
+    }
+
     // 4. Sorting
     result = [...result].sort((a: any, b: any) => {
       if (sortBy === 'date_asc') {
@@ -208,20 +273,26 @@ export const SalesListPage: React.FC = () => {
         return da.localeCompare(db);
       }
       if (sortBy === 'amount_desc') {
-        return Number(b.GrandTotal || 0) - Number(a.GrandTotal || 0);
+        const amtA = Number(a.display_amount ?? a.GrandTotal ?? 0);
+        const amtB = Number(b.display_amount ?? b.GrandTotal ?? 0);
+        return amtB - amtA;
       }
       if (sortBy === 'amount_asc') {
-        return Number(a.GrandTotal || 0) - Number(b.GrandTotal || 0);
+        const amtA = Number(a.display_amount ?? a.GrandTotal ?? 0);
+        const amtB = Number(b.display_amount ?? b.GrandTotal ?? 0);
+        return amtA - amtB;
       }
-      if (sortBy === 'pg_asc') {
-        const pga = a.payment_group_name || 'zzz';
-        const pgb = b.payment_group_name || 'zzz';
-        return pga.localeCompare(pgb);
+      if (sortBy === 'mode_cash') {
+        const aIsCash = ((a.display_payment_method || a.PaymentMethod || '') as string).toUpperCase().includes('CASH') ? 0 : 1;
+        const bIsCash = ((b.display_payment_method || b.PaymentMethod || '') as string).toUpperCase().includes('CASH') ? 0 : 1;
+        if (aIsCash !== bIsCash) return aIsCash - bIsCash;
       }
-      if (sortBy === 'pg_desc') {
-        const pga = a.payment_group_name || '';
-        const pgb = b.payment_group_name || '';
-        return pgb.localeCompare(pga);
+      if (sortBy === 'mode_bank') {
+        const aIsBank = ((a.display_payment_method || a.PaymentMethod || '') as string).toUpperCase().includes('BANK') ||
+                        ((a.display_payment_method || a.PaymentMethod || '') as string).toUpperCase().includes('UPI') ? 0 : 1;
+        const bIsBank = ((b.display_payment_method || b.PaymentMethod || '') as string).toUpperCase().includes('BANK') ||
+                        ((b.display_payment_method || b.PaymentMethod || '') as string).toUpperCase().includes('UPI') ? 0 : 1;
+        if (aIsBank !== bIsBank) return aIsBank - bIsBank;
       }
       // default: date_desc (newest first)
       const da = a.SalesDate || '';
@@ -231,11 +302,11 @@ export const SalesListPage: React.FC = () => {
     });
 
     return result;
-  }, [sales, search, statusFilter, typeFilter, paymentGroupFilter, dateFilter, customStartDate, customEndDate, sortBy]);
+  }, [sales, search, statusFilter, typeFilter, paymentModeFilter, paymentGroupFilter, dateFilter, customStartDate, customEndDate, sortBy]);
 
   // KPI Metrics
   const totalSalesAmount = useMemo(() => {
-    return filteredSales.reduce((sum: number, s: any) => sum + Number(s.GrandTotal || 0), 0);
+    return filteredSales.reduce((sum: number, s: any) => sum + Number(s.display_amount ?? s.GrandTotal ?? 0), 0);
   }, [filteredSales]);
 
   const collectionsSummary = useMemo(() => {
@@ -244,6 +315,13 @@ export const SalesListPage: React.FC = () => {
 
     filteredSales.forEach((s: any) => {
       if (s.Status === 'CANCELLED') return;
+      if (s.display_amount !== undefined) {
+        const isB = (s.display_payment_method || '').toUpperCase().includes('BANK') || (s.display_payment_method || '').toUpperCase().includes('UPI');
+        if (isB) totalBank += Number(s.display_amount);
+        else totalCash += Number(s.display_amount);
+        return;
+      }
+
       const pm = (s.PaymentMethod || 'CASH').toUpperCase();
       const rawPaid = Number(s.PaidAmount ?? s.GrandTotal ?? 0);
       const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
@@ -461,8 +539,8 @@ export const SalesListPage: React.FC = () => {
                 { label: 'Date: Oldest First', value: 'date_asc' },
                 { label: 'Amount: High to Low', value: 'amount_desc' },
                 { label: 'Amount: Low to High', value: 'amount_asc' },
-                { label: 'Payment Group: A to Z', value: 'pg_asc' },
-                { label: 'Payment Group: Z to A', value: 'pg_desc' },
+                { label: 'Mode: Cash First', value: 'mode_cash' },
+                { label: 'Mode: Bank First', value: 'mode_bank' },
               ]}
               style={{ width: 185 }}
               styles={{
@@ -561,13 +639,32 @@ export const SalesListPage: React.FC = () => {
           />
 
           <Group gap="xs" wrap="wrap">
+            {/* Payment Mode Selector: All, Cash Only, Bank / UPI */}
             <Select
-              data={paymentGroupOptions}
-              value={paymentGroupFilter}
-              onChange={(val) => setPaymentGroupFilter(val || 'ALL')}
-              placeholder="All Payment Groups"
-              style={{ width: 180 }}
+              data={[
+                { value: 'ALL', label: 'All Payment Modes' },
+                { value: 'CASH', label: 'Cash Only' },
+                { value: 'BANK', label: 'Bank / UPI' },
+              ]}
+              value={paymentModeFilter}
+              onChange={(val) => {
+                const nextVal = (val as any) || 'ALL';
+                setPaymentModeFilter(nextVal);
+                if (nextVal !== 'BANK') setPaymentGroupFilter('ALL');
+              }}
+              style={{ width: 165 }}
             />
+
+            {/* Payment Group selector appears only when Bank is selected */}
+            {paymentModeFilter === 'BANK' && (
+              <Select
+                data={paymentGroupOptions}
+                value={paymentGroupFilter}
+                onChange={(val) => setPaymentGroupFilter(val || 'ALL')}
+                placeholder="All Payment Groups"
+                style={{ width: 180 }}
+              />
+            )}
             <Select
               data={[
                 { value: 'ALL', label: 'All Sales Types' },
@@ -653,7 +750,7 @@ export const SalesListPage: React.FC = () => {
                   const isRcpt = invStr.startsWith('RCPT-');
 
                   return (
-                    <Table.Tr key={sale.SalesId}>
+                    <Table.Tr key={`${sale.SalesId}-${sale.display_payment_method || 'full'}`}>
                       <Table.Td>
                         <Group gap={6} align="center" wrap="nowrap">
                           <Text fw={700} size="sm" ff="monospace" style={{ color: '#800020', whiteSpace: 'nowrap' }}>
@@ -814,27 +911,47 @@ export const SalesListPage: React.FC = () => {
                       </Table.Td>
 
                       <Table.Td style={{ textAlign: 'center' }}>
-                        <Badge
-                          size="xs"
-                          variant="outline"
-                          style={{
-                            fontWeight: 700,
-                            backgroundColor: isEmtrtn ? '#f1f5f9' : (isCredit ? '#fdf2f4' : '#f8fafc'),
-                            color: isEmtrtn ? '#64748b' : (isCredit ? '#800020' : '#475569'),
-                            borderColor: isEmtrtn ? '#cbd5e1' : (isCredit ? '#f5c2cb' : '#cbd5e1') }}
-                        >
-                          {isEmtrtn ? 'N/A' : (sale.PaymentMethod || 'CASH')}
-                        </Badge>
+                        <Stack gap={2} align="center">
+                          <Badge
+                            size="xs"
+                            variant="outline"
+                            style={{
+                              fontWeight: 700,
+                              backgroundColor: isEmtrtn ? '#f1f5f9' : (isCredit ? '#fdf2f4' : '#f8fafc'),
+                              color: isEmtrtn ? '#64748b' : (isCredit ? '#800020' : '#475569'),
+                              borderColor: isEmtrtn ? '#cbd5e1' : (isCredit ? '#f5c2cb' : '#cbd5e1') }}
+                          >
+                            {isEmtrtn ? 'N/A' : (sale.display_payment_method || sale.PaymentMethod || 'CASH')}
+                          </Badge>
+
+                          {/* Near the Bank payment, add the Group Name (only for Bank / UPI / Split) */}
+                          {Boolean(
+                            (
+                              (sale.display_payment_method || '').toUpperCase().includes('BANK') ||
+                              (sale.display_payment_method || '').toUpperCase().includes('UPI') ||
+                              (['BANK', 'UPI', 'SPLIT'].includes((sale.PaymentMethod || '').toUpperCase()))
+                            ) && sale.payment_group_name
+                          ) && (
+                            <Badge
+                              size="xs"
+                              variant="light"
+                              color="blue"
+                              styles={{ root: { fontSize: 9, height: 16, paddingLeft: 5, paddingRight: 5 } }}
+                            >
+                              {sale.payment_group_name}
+                            </Badge>
+                          )}
+                        </Stack>
                       </Table.Td>
 
                       <Table.Td style={{ textAlign: 'right' }}>
                         {isRcpt ? (
                           <>
                             <Text size="sm" fw={800} style={{ color: '#047857', fontVariantNumeric: 'tabular-nums' }}>
-                              ₹{Number(sale.PaidAmount || sale.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₹{Number(sale.display_amount ?? (sale.PaidAmount || sale.GrandTotal || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </Text>
                             <Text size="10px" c="#047857" fw={700}>
-                              COLLECTED
+                              {sale.is_split_row ? 'PORTION' : 'COLLECTED'}
                             </Text>
                           </>
                         ) : isEmtrtn ? (
@@ -847,9 +964,16 @@ export const SalesListPage: React.FC = () => {
                             </Text>
                           </>
                         ) : (
-                          <Text size="sm" fw={800} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                            ₹{Number(sale.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </Text>
+                          <>
+                            <Text size="sm" fw={800} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{Number(sale.display_amount ?? (sale.GrandTotal || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Text>
+                            {sale.is_split_row && (
+                              <Text size="10px" c="dimmed" fw={600}>
+                                SPLIT PORTION
+                              </Text>
+                            )}
+                          </>
                         )}
                       </Table.Td>
 

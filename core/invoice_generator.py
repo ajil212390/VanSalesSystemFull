@@ -806,29 +806,101 @@ def generate_tax_invoice_pdf(sale):
     story.append(Spacer(1, 14))
 
     # -------------------------------------------------------------
-    # 6. SIGNATURE FOOTER
+    # 6. SIGNATURE FOOTER & PAYMENT GROUP QR CODE
     # -------------------------------------------------------------
-    footer_data = [
-        [
-            Paragraph(
-                f"<b>Customer / Receiver's Signature:</b> ___________________<br/>"
-                f"<font size=7 color='#64748B'>I accept goods and cylinder return count as noted above</font>",
-                cell_norm
-            ),
-            Paragraph(
-                f"For <b>{company_name}</b><br/><br/><br/>"
-                f"<b>Authorized Signatory</b><br/>"
-                f"<font size=7 color='#64748B'>Computer generated official tax invoice</font>",
-                ParagraphStyle('SigR', parent=cell_norm, alignment=2)
-            )
+    pg_obj = None
+    if sale.RouteVehicleDriver and sale.RouteVehicleDriver.PaymentGroup:
+        pg_obj = sale.RouteVehicleDriver.PaymentGroup
+    elif sale.DriverName:
+        from core.models import RouteVehicleDriver
+        rvd_cand = RouteVehicleDriver.objects.filter(Driver__DriverName=sale.DriverName, IsActive=True).first()
+        if rvd_cand and rvd_cand.PaymentGroup:
+            pg_obj = rvd_cand.PaymentGroup
+
+    qr_img_flowable = None
+    if pg_obj and pg_obj.QRCodeLocation:
+        from reportlab.platypus import Image as RLImage
+        from django.conf import settings
+        loc = str(pg_obj.QRCodeLocation).replace('\\', '/').lstrip('/')
+        candidates = [
+            os.path.join(settings.MEDIA_ROOT, loc),
+            os.path.join(settings.BASE_DIR, 'media', loc),
+            os.path.join(settings.BASE_DIR, loc),
         ]
-    ]
-    footer_table = Table(footer_data, colWidths=[275, 270])
-    footer_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-    ]))
+        if os.path.isabs(str(pg_obj.QRCodeLocation)):
+            candidates.insert(0, str(pg_obj.QRCodeLocation))
+        for cand in candidates:
+            if os.path.exists(cand) and os.path.isfile(cand):
+                try:
+                    qr_img_flowable = RLImage(cand, width=60, height=60)
+                    break
+                except Exception:
+                    qr_img_flowable = None
+
+    if qr_img_flowable:
+        bank_name_str = pg_obj.BankLedger.LedgerName if (pg_obj.BankLedger and pg_obj.BankLedger.LedgerName) else ""
+        qr_box = [
+            [Paragraph("<b>SCAN &amp; PAY</b>", ParagraphStyle('QrH', fontName=FONT_BOLD, fontSize=7, leading=8.5, alignment=1, textColor=PRIMARY_COLOR))],
+            [qr_img_flowable],
+            [Paragraph(f"<font size=5.5 color='#475569'><b>{pg_obj.PaymentGroupName}</b>{(' • ' + bank_name_str) if bank_name_str else ''}</font>", ParagraphStyle('QrF', fontName=FONT_NAME, fontSize=5.5, leading=7, alignment=1))],
+        ]
+        qr_table = Table(qr_box, colWidths=[90])
+        qr_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+            ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+        ]))
+
+        footer_data = [
+            [
+                Paragraph(
+                    f"<b>Customer / Receiver's Signature:</b> ___________________<br/>"
+                    f"<font size=7 color='#64748B'>I accept goods and cylinder return count as noted above</font>",
+                    cell_norm
+                ),
+                qr_table,
+                Paragraph(
+                    f"For <b>{company_name}</b><br/><br/><br/>"
+                    f"<b>Authorized Signatory</b><br/>"
+                    f"<font size=7 color='#64748B'>Computer generated official tax invoice</font>",
+                    ParagraphStyle('SigR', parent=cell_norm, alignment=2)
+                )
+            ]
+        ]
+        footer_table = Table(footer_data, colWidths=[225, 95, 225])
+        footer_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+            ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+    else:
+        footer_data = [
+            [
+                Paragraph(
+                    f"<b>Customer / Receiver's Signature:</b> ___________________<br/>"
+                    f"<font size=7 color='#64748B'>I accept goods and cylinder return count as noted above</font>",
+                    cell_norm
+                ),
+                Paragraph(
+                    f"For <b>{company_name}</b><br/><br/><br/>"
+                    f"<b>Authorized Signatory</b><br/>"
+                    f"<font size=7 color='#64748B'>Computer generated official tax invoice</font>",
+                    ParagraphStyle('SigR', parent=cell_norm, alignment=2)
+                )
+            ]
+        ]
+        footer_table = Table(footer_data, colWidths=[275, 270])
+        footer_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
     story.append(footer_table)
 
     # Build PDF
@@ -2515,8 +2587,8 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
             Paragraph("1", cell_center),
             Paragraph("Commercial / Domestic Gas Cylinders", cell_bold),
             Paragraph("0 NOS", cell_center),
-            Paragraph("₹0.00", cell_right),
-            Paragraph("₹0.00", cell_right_bold),
+            Paragraph("Rs. 0.00", cell_right),
+            Paragraph("Rs. 0.00", cell_right_bold),
         ])
     else:
         for idx, ln in enumerate(lines, 1):
@@ -2552,8 +2624,8 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
                 Paragraph(str(idx), cell_center),
                 Paragraph(f"{p_name}{breakdown_sub}", cell_bold),
                 Paragraph(f"<b>{line_tot} NOS</b>", cell_center),
-                Paragraph(f"₹{p_rate:,.2f}", cell_right),
-                Paragraph(f"<b>₹{line_total:,.2f}</b>", cell_right_bold),
+                Paragraph(f"Rs. {p_rate:,.2f}", cell_right),
+                Paragraph(f"<b>Rs. {line_total:,.2f}</b>", cell_right_bold),
             ])
 
     # Totals Row
@@ -2562,7 +2634,7 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
         Paragraph("<b>GRAND TOTAL RECEIVED QUANTITY &amp; VALUATION</b>", cell_bold),
         Paragraph(f"<b>{tot_units} NOS</b>", cell_center),
         Paragraph("<b>TOTAL (Excl. GST)</b>", cell_right_bold),
-        Paragraph(f"<b>₹{tot_valuation:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {tot_valuation:,.2f}</b>", cell_right_bold),
     ])
 
     items_table = Table(table_rows, colWidths=col_widths)
@@ -2599,23 +2671,87 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
     story.append(nt_table)
     story.append(Spacer(1, 15))
 
-    # Dual Signatures: Handed Over By & Received By
-    sig_data = [
-        [
-            Paragraph("<b>DISPATCHED / HANDED OVER BY:</b>", cell_bold),
-            Paragraph("<b>RECEIVED &amp; ACKNOWLEDGED BY:</b>", cell_bold)
-        ],
-        [
-            Paragraph(f"<br/><br/>____________________________________<br/>Driver / Store In-Charge<br/><font size=7 color='#64748B'>{driver_name} &bull; {veh_num}</font>", cell_norm),
-            Paragraph(f"<br/><br/>____________________________________<br/>Authorized Recipient / Supplier Rep<br/><font size=7 color='#64748B'>Date: {date_str}</font>", cell_norm)
+    # Dual Signatures & Payment Group QR (if configured)
+    pg_obj = None
+    if alloc and alloc.PaymentGroup:
+        pg_obj = alloc.PaymentGroup
+
+    qr_img_flowable = None
+    if pg_obj and pg_obj.QRCodeLocation:
+        from reportlab.platypus import Image as RLImage
+        from django.conf import settings
+        loc = str(pg_obj.QRCodeLocation).replace('\\', '/').lstrip('/')
+        candidates = [
+            os.path.join(settings.MEDIA_ROOT, loc),
+            os.path.join(settings.BASE_DIR, 'media', loc),
+            os.path.join(settings.BASE_DIR, loc),
         ]
-    ]
-    sig_table = Table(sig_data, colWidths=[272, 273])
-    sig_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-    ]))
+        if os.path.isabs(str(pg_obj.QRCodeLocation)):
+            candidates.insert(0, str(pg_obj.QRCodeLocation))
+        for cand in candidates:
+            if os.path.exists(cand) and os.path.isfile(cand):
+                try:
+                    qr_img_flowable = RLImage(cand, width=60, height=60)
+                    break
+                except Exception:
+                    qr_img_flowable = None
+
+    if qr_img_flowable:
+        bank_name_str = pg_obj.BankLedger.LedgerName if (pg_obj.BankLedger and pg_obj.BankLedger.LedgerName) else ""
+        qr_box = [
+            [Paragraph("<b>SCAN &amp; PAY</b>", ParagraphStyle('RnQrH', fontName=FONT_BOLD, fontSize=7, leading=8.5, alignment=1, textColor=PRIMARY_COLOR))],
+            [qr_img_flowable],
+            [Paragraph(f"<font size=5.5 color='#475569'><b>{pg_obj.PaymentGroupName}</b>{(' • ' + bank_name_str) if bank_name_str else ''}</font>", ParagraphStyle('RnQrF', fontName=FONT_NAME, fontSize=5.5, leading=7, alignment=1))],
+        ]
+        qr_table = Table(qr_box, colWidths=[90])
+        qr_table.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOX', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+            ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+        ]))
+
+        sig_data = [
+            [
+                Paragraph("<b>DISPATCHED / HANDED OVER BY:</b>", cell_bold),
+                qr_table,
+                Paragraph("<b>RECEIVED &amp; ACKNOWLEDGED BY:</b>", cell_bold)
+            ],
+            [
+                Paragraph(f"<br/><br/>____________________________________<br/>Driver / Store In-Charge<br/><font size=7 color='#64748B'>{driver_name} &bull; {veh_num}</font>", cell_norm),
+                Paragraph("", cell_norm),
+                Paragraph(f"<br/><br/>____________________________________<br/>Authorized Recipient / Supplier Rep<br/><font size=7 color='#64748B'>Date: {date_str}</font>", cell_norm)
+            ]
+        ]
+        sig_table = Table(sig_data, colWidths=[225, 95, 225])
+        sig_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+            ('SPAN', (1, 0), (1, 1)),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ]))
+    else:
+        sig_data = [
+            [
+                Paragraph("<b>DISPATCHED / HANDED OVER BY:</b>", cell_bold),
+                Paragraph("<b>RECEIVED &amp; ACKNOWLEDGED BY:</b>", cell_bold)
+            ],
+            [
+                Paragraph(f"<br/><br/>____________________________________<br/>Driver / Store In-Charge<br/><font size=7 color='#64748B'>{driver_name} &bull; {veh_num}</font>", cell_norm),
+                Paragraph(f"<br/><br/>____________________________________<br/>Authorized Recipient / Supplier Rep<br/><font size=7 color='#64748B'>Date: {date_str}</font>", cell_norm)
+            ]
+        ]
+        sig_table = Table(sig_data, colWidths=[272, 273])
+        sig_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ]))
     story.append(KeepTogether(sig_table))
     story.append(Spacer(1, 15))
 
