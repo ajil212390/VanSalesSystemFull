@@ -80,6 +80,9 @@ class FinancialYear(models.Model):
 
 
 class CustomUserManager(BaseUserManager):
+    def get_by_natural_key(self, username):
+        return self.get(**{f"{self.model.USERNAME_FIELD}__iexact": username})
+
     def create_user(self, Username, password=None, **extra_fields):
         if not Username:
             raise ValueError('The Username field must be set')
