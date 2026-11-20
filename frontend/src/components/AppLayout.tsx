@@ -50,6 +50,8 @@ import {
   IconFileInvoice,
   IconCalendar,
   IconScale,
+  IconCheck,
+  IconArrowRight,
 } from '@tabler/icons-react';
 
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
@@ -532,12 +534,12 @@ export const AppLayout: React.FC = () => {
 
             {/* Notification Bell Icon for Receipt Notes & End Allocations (Administrator & Manager) */}
             {(isAdmin || isManager) && (
-              <Menu shadow="lg" width={340} position="bottom-end" radius="md">
+              <Menu shadow="xl" width={450} position="bottom-end" radius="lg">
                 <Menu.Target>
-                  <Tooltip label="Pending Notifications" withArrow position="bottom">
+                  <Tooltip label="Pending Notifications & Approvals" withArrow position="bottom">
                     <Indicator
                       inline
-                      size={16}
+                      size={18}
                       offset={4}
                       position="top-end"
                       color="burgundy"
@@ -550,83 +552,171 @@ export const AppLayout: React.FC = () => {
                           fontWeight: 700,
                           fontSize: 10,
                           border: '2px solid #ffffff',
+                          boxShadow: '0 2px 4px rgba(128, 0, 32, 0.3)',
                         },
                       }}
                     >
                       <ActionIcon
                         variant="light"
                         color="gray"
-                        size={36}
+                        size={38}
                         radius="md"
                         style={{
-                          backgroundColor: '#f8fafc',
-                          border: '1px solid #e2e8f0',
-                          color: '#475569',
+                          backgroundColor: totalAlertsCount > 0 ? '#fdf2f4' : '#f8fafc',
+                          border: totalAlertsCount > 0 ? '1px solid #fecdd3' : '1px solid #e2e8f0',
+                          color: totalAlertsCount > 0 ? '#800020' : '#475569',
                           transition: 'all 150ms ease',
                         }}
                       >
-                        <IconBell size={19} stroke={1.75} />
+                        <IconBell size={20} stroke={1.8} />
                       </ActionIcon>
                     </Indicator>
                   </Tooltip>
                 </Menu.Target>
 
-                <Menu.Dropdown p="xs" style={{ borderColor: '#e2e8f0', backgroundColor: '#ffffff', minWidth: 330 }}>
-                  <Group justify="space-between" align="center" px="xs" py={6} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <Group gap={6}>
-                      <IconBell size={16} color="#800020" />
-                      <Text size="xs" fw={700} style={{ color: '#0f172a' }}>
-                        Pending Notifications
-                      </Text>
+                <Menu.Dropdown
+                  p={0}
+                  style={{
+                    borderColor: '#e2e8f0',
+                    backgroundColor: '#ffffff',
+                    minWidth: 420,
+                    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
+                    borderRadius: 14,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {/* Notification Header */}
+                  <Box p="md" style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #f1f5f9' }}>
+                    <Group justify="space-between" align="center">
+                      <Group gap={10}>
+                        <Box
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 8,
+                            backgroundColor: '#fdf2f4',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1px solid #fecdd3',
+                          }}
+                        >
+                          <IconBell size={17} color="#800020" />
+                        </Box>
+                        <div>
+                          <Text size="sm" fw={800} style={{ color: '#0f172a', letterSpacing: '-0.01em' }}>
+                            Notifications &amp; Approvals
+                          </Text>
+                          <Text size="11px" c="dimmed">
+                            Real-time shift settlements &amp; inward notes
+                          </Text>
+                        </div>
+                      </Group>
+                      {totalAlertsCount > 0 ? (
+                        <Badge
+                          size="sm"
+                          variant="filled"
+                          styles={{
+                            root: {
+                              backgroundColor: '#800020',
+                              color: '#ffffff',
+                              fontWeight: 700,
+                              fontSize: 11,
+                              paddingLeft: 8,
+                              paddingRight: 8,
+                              borderRadius: 12,
+                            },
+                          }}
+                        >
+                          {totalAlertsCount} Action Required
+                        </Badge>
+                      ) : (
+                        <Badge size="xs" variant="light" color="teal" styles={{ root: { fontWeight: 700 } }}>
+                          All Caught Up
+                        </Badge>
+                      )}
                     </Group>
-                    <Badge size="xs" color="burgundy" variant="light" styles={{ root: { backgroundColor: '#fdf2f4', color: '#800020', fontWeight: 700 } }}>
-                      {totalAlertsCount} Pending
-                    </Badge>
-                  </Group>
+                  </Box>
 
-                  <Box py={4}>
+                  {/* Scrollable Notification List */}
+                  <Box p="xs" style={{ maxHeight: 420, overflowY: 'auto' }}>
                     {/* 1. Pending Inward Receipt Notes (e.g. Cross-depot transfers or driver returns to this godown) */}
                     {pendingReceiptNotesCount > 0 && (
-                      <Box mb={6}>
-                        <Group justify="space-between" px="xs" py={3}>
-                          <Text size="11px" fw={700} c="#800020" tt="uppercase">
-                            Incoming Stock Receipts ({pendingReceiptNotesCount})
-                          </Text>
+                      <Box mb="md">
+                        <Group justify="space-between" align="center" px="xs" py={4} mb={6}>
+                          <Group gap={6}>
+                            <IconPackageImport size={15} color="#800020" />
+                            <Text size="11px" fw={800} c="#800020" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                              Incoming Stock Receipts
+                            </Text>
+                          </Group>
+                          <Badge size="xs" variant="light" color="burgundy" styles={{ root: { fontSize: 10, fontWeight: 700 } }}>
+                            {pendingReceiptNotesCount} New
+                          </Badge>
                         </Group>
-                        {pendingReceiptNotes.slice(0, 3).map((rn: any) => (
+
+                        {pendingReceiptNotes.slice(0, 4).map((rn: any) => (
                           <Menu.Item
                             key={rn.id || rn.receiptNoteId}
                             component={Link}
                             to="/receipt-notes"
                             style={{
-                              borderRadius: 6,
-                              padding: '8px 10px',
-                              marginBottom: 3,
-                              backgroundColor: '#fdf2f4',
-                              border: '1px solid #f5c2cb',
+                              borderRadius: 10,
+                              padding: '10px 12px',
+                              marginBottom: 6,
+                              backgroundColor: '#fffdfd',
+                              border: '1px solid #fee2e2',
+                              transition: 'all 150ms ease',
                             }}
                           >
-                            <Group justify="space-between" align="flex-start" wrap="nowrap">
-                              <Stack gap={2}>
-                                <Group gap={6} align="center">
-                                  <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                            <Stack gap={4}>
+                              <Group justify="space-between" align="center">
+                                <Group gap={8} align="center">
+                                  <Text size="xs" fw={800} style={{ color: '#800020' }}>
                                     {rn.noteNumber || `RN-${rn.receiptNoteId}`}
                                   </Text>
-                                  <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontSize: 10, height: 18, borderColor: '#e2e8f0', color: '#334155' } }}>
-                                    {rn.vehicleNumber}
+                                  <Badge
+                                    size="xs"
+                                    variant="outline"
+                                    styles={{ root: { fontSize: 10, height: 18, borderColor: '#cbd5e1', color: '#1e293b', fontWeight: 600 } }}
+                                  >
+                                    {rn.vehicleNumber || 'Van'}
                                   </Badge>
                                 </Group>
-                                <Text size="11px" c="dimmed">
-                                  Driver: <strong style={{ color: '#334155' }}>{rn.driverName}</strong> • {rn.filledCylindersTotal || 0} Full, {rn.emptyCylindersTotal || 0} Empty
+                                <Group gap={4} align="center">
+                                  <IconCalendar size={12} color="#94a3b8" />
+                                  <Text size="10px" c="#64748b" fw={600}>
+                                    {rn.date}
+                                  </Text>
+                                </Group>
+                              </Group>
+
+                              <Group justify="space-between" align="center" wrap="nowrap">
+                                <Text size="xs" c="#334155">
+                                  Driver: <strong style={{ color: '#0f172a' }}>{rn.driverName || 'Driver'}</strong>
                                 </Text>
-                                <Text size="10.5px" c="#800020" fw={600}>
-                                  To: {rn.godownName || 'Depot'} {rn.sourceGodownName ? `(From ${rn.sourceGodownName})` : ''}
+                                <Group gap={4}>
+                                  <Badge size="xs" color="teal" variant="light" styles={{ root: { fontSize: 10, height: 18, fontWeight: 700 } }}>
+                                    {rn.filledCylindersTotal || 0} Full
+                                  </Badge>
+                                  <Badge size="xs" color="gray" variant="light" styles={{ root: { fontSize: 10, height: 18, fontWeight: 700 } }}>
+                                    {rn.emptyCylindersTotal || 0} Empty
+                                  </Badge>
+                                </Group>
+                              </Group>
+
+                              <Group justify="space-between" align="center" mt={2} pt={4} style={{ borderTop: '1px dashed #fecdd3' }}>
+                                <Text size="11px" c="#991b1b" fw={600} truncate style={{ maxWidth: 260 }}>
+                                  To: <strong>{rn.godownName || 'Depot'}</strong> {rn.sourceGodownName ? `← ${rn.sourceGodownName}` : ''}
                                 </Text>
-                              </Stack>
-                              <Text size="10px" c="#94a3b8" fw={500}>
-                                {rn.date}
-                              </Text>
-                            </Group>
+                                <Group gap={2} align="center">
+                                  <Text size="10.5px" c="#800020" fw={700}>
+                                    Receive Note
+                                  </Text>
+                                  <IconArrowRight size={12} color="#800020" />
+                                </Group>
+                              </Group>
+                            </Stack>
                           </Menu.Item>
                         ))}
                       </Box>
@@ -635,85 +725,138 @@ export const AppLayout: React.FC = () => {
                     {/* 2. Pending Driver Shift End Allocations */}
                     {pendingEndRoutes.length > 0 && (
                       <Box mb={4}>
-                        <Group justify="space-between" px="xs" py={3}>
-                          <Text size="11px" fw={700} c="#0f172a" tt="uppercase">
-                            Driver Shift Returns ({pendingEndRoutes.length})
-                          </Text>
+                        <Group justify="space-between" align="center" px="xs" py={4} mb={6}>
+                          <Group gap={6}>
+                            <IconClipboardCheck size={15} color="#0f172a" />
+                            <Text size="11px" fw={800} c="#0f172a" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
+                              Driver Shift Returns ({pendingEndRoutes.length})
+                            </Text>
+                          </Group>
+                          <Badge size="xs" variant="light" color="gray" styles={{ root: { fontSize: 10, fontWeight: 700 } }}>
+                            {pendingEndRoutes.length} Awaiting Review
+                          </Badge>
                         </Group>
-                        {pendingEndRoutes.slice(0, 3).map((item: any) => (
+
+                        {pendingEndRoutes.slice(0, 4).map((item: any) => (
                           <Menu.Item
                             key={item.EndRouteDriverId}
                             component={Link}
                             to="/end-allocations"
                             style={{
-                              borderRadius: 6,
-                              padding: '8px 10px',
-                              marginBottom: 3,
+                              borderRadius: 10,
+                              padding: '10px 12px',
+                              marginBottom: 6,
                               backgroundColor: '#f8fafc',
                               border: '1px solid #e2e8f0',
+                              transition: 'all 150ms ease',
                             }}
                           >
-                            <Group justify="space-between" align="flex-start" wrap="nowrap">
-                              <Stack gap={2}>
-                                <Group gap={6} align="center">
-                                  <Text size="xs" fw={700} style={{ color: '#0f172a' }}>
+                            <Stack gap={4}>
+                              <Group justify="space-between" align="center">
+                                <Group gap={8} align="center">
+                                  <Text size="xs" fw={800} style={{ color: '#0f172a' }}>
                                     ERD-{item.EndRouteDriverId}
                                   </Text>
-                                  <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontSize: 10, height: 18, borderColor: '#e2e8f0', color: '#334155' } }}>
-                                    {item.vehicle_number}
+                                  <Badge
+                                    size="xs"
+                                    variant="outline"
+                                    styles={{ root: { fontSize: 10, height: 18, borderColor: '#cbd5e1', color: '#1e293b', fontWeight: 600 } }}
+                                  >
+                                    {item.vehicle_number || 'Van'}
                                   </Badge>
                                 </Group>
+                                <Group gap={4} align="center">
+                                  <IconCalendar size={12} color="#94a3b8" />
+                                  <Text size="10px" c="#64748b" fw={600}>
+                                    {item.ShiftDate}
+                                  </Text>
+                                </Group>
+                              </Group>
+
+                              <Group justify="space-between" align="center" wrap="nowrap">
+                                <Text size="xs" c="#334155">
+                                  Driver: <strong style={{ color: '#0f172a' }}>{item.driver_name}</strong> {item.route_name ? `• ${item.route_name}` : ''}
+                                </Text>
+                                <Badge size="xs" color="teal" variant="light" styles={{ root: { fontSize: 10, height: 18, fontWeight: 800 } }}>
+                                  ₹{(Number(item.cash_amount || 0) + Number(item.bank_amount || 0)).toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                                </Badge>
+                              </Group>
+
+                              <Group justify="space-between" align="center" mt={2} pt={4} style={{ borderTop: '1px dashed #e2e8f0' }}>
                                 <Text size="11px" c="dimmed">
-                                  Driver: <strong style={{ color: '#334155' }}>{item.driver_name}</strong> • {item.total_filled || 0} Full, {item.total_empty || 0} Empties
+                                  Stock: <strong style={{ color: '#334155' }}>{item.total_filled || 0}</strong> Full, <strong style={{ color: '#334155' }}>{item.total_empty || 0}</strong> Empty
                                 </Text>
-                                <Text size="10.5px" c="#800020" fw={600}>
-                                  Total: ₹{(item.cash_amount + item.bank_amount).toLocaleString('en-IN', { minimumFractionDigits: 0 })} ({item.route_name})
-                                </Text>
-                              </Stack>
-                              <Text size="10px" c="#94a3b8" fw={500}>
-                                {item.ShiftDate}
-                              </Text>
-                            </Group>
+                                <Group gap={2} align="center">
+                                  <Text size="10.5px" c="#800020" fw={700}>
+                                    Audit &amp; Settle
+                                  </Text>
+                                  <IconArrowRight size={12} color="#800020" />
+                                </Group>
+                              </Group>
+                            </Stack>
                           </Menu.Item>
                         ))}
                       </Box>
                     )}
 
+                    {/* Empty State */}
                     {totalAlertsCount === 0 && (
-                      <Box px="xs" py="md" style={{ textAlign: 'center' }}>
-                        <Text size="xs" c="dimmed">
-                          No pending actions, driver returns, or inward notes.
+                      <Box px="lg" py="xl" style={{ textAlign: 'center' }}>
+                        <Box
+                          mx="auto"
+                          mb="sm"
+                          style={{
+                            width: 52,
+                            height: 52,
+                            borderRadius: '50%',
+                            backgroundColor: '#f0fdf4',
+                            border: '1px solid #bbf7d0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <IconCheck size={26} color="#16a34a" stroke={2.5} />
+                        </Box>
+                        <Text size="sm" fw={700} style={{ color: '#0f172a' }}>
+                          All Caught Up!
+                        </Text>
+                        <Text size="xs" c="dimmed" mt={3} style={{ maxWidth: 280, margin: '4px auto 0' }}>
+                          No pending shift returns or stock receipts requiring review right now.
                         </Text>
                       </Box>
                     )}
                   </Box>
 
-                  <Divider style={{ borderColor: '#f1f5f9' }} />
-
-                  <Group grow gap="xs" mt={4}>
-                    {pendingReceiptNotesCount > 0 && (
+                  {/* Notification Footer Action Bar */}
+                  <Box p="xs" style={{ backgroundColor: '#f8fafc', borderTop: '1px solid #f1f5f9' }}>
+                    <Group grow gap="xs">
+                      {pendingReceiptNotesCount > 0 && (
+                        <Button
+                          component={Link}
+                          to="/receipt-notes"
+                          variant="light"
+                          color="burgundy"
+                          size="xs"
+                          leftSection={<IconPackageImport size={14} />}
+                          styles={{ root: { fontWeight: 700, fontSize: 11, height: 32 } }}
+                        >
+                          Receipt Notes ({pendingReceiptNotesCount})
+                        </Button>
+                      )}
                       <Button
                         component={Link}
-                        to="/receipt-notes"
-                        variant="light"
+                        to="/end-allocations"
+                        variant={pendingReceiptNotesCount > 0 ? "outline" : "light"}
                         color="burgundy"
                         size="xs"
-                        styles={{ root: { fontWeight: 700, fontSize: 11 } }}
+                        leftSection={<IconClipboardCheck size={14} />}
+                        styles={{ root: { fontWeight: 700, fontSize: 11, height: 32 } }}
                       >
-                        Receipt Notes ({pendingReceiptNotesCount}) &rarr;
+                        Shift Allocations ({pendingEndRoutes.length})
                       </Button>
-                    )}
-                    <Button
-                      component={Link}
-                      to="/end-allocations"
-                      variant="subtle"
-                      color="gray"
-                      size="xs"
-                      styles={{ root: { fontWeight: 600, fontSize: 11 } }}
-                    >
-                      End Allocations &rarr;
-                    </Button>
-                  </Group>
+                    </Group>
+                  </Box>
                 </Menu.Dropdown>
               </Menu>
             )}
