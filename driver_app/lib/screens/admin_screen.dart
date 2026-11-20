@@ -207,8 +207,8 @@ class _AdminScreenState extends State<AdminScreen> {
   }
 
   PreferredSizeWidget _buildSeamlessAppBar() {
-    String title = 'Admin Dashboard';
-    String subtitle = 'Executive Fleet & Inventory Overview';
+    String title = 'Admin';
+    String subtitle = 'Executive van & Inventory Overview';
 
     if (_currentIndex == 1) {
       title = 'Van Fleet';
@@ -338,8 +338,6 @@ class _AdminScreenState extends State<AdminScreen> {
               'Status': d.active ? 'ACTIVE' : 'IDLE',
             }).toList();
 
-    final filledRatio = totalSystemCylinders > 0 ? (totalFilledSystem / totalSystemCylinders) : 0.7;
-
     return RefreshIndicator(
       onRefresh: _refreshAdminData,
       color: const Color(0xFF800020),
@@ -392,121 +390,6 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                 ),
               ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // Cylinder Balance Visual Bar
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x060F172A),
-                    blurRadius: 10,
-                    offset: Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'SYSTEM CYLINDER BALANCE',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF64748B),
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      Text(
-                        '$totalSystemCylinders Total',
-                        style: GoogleFonts.inter(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // Progress Stack Bar
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: SizedBox(
-                      height: 12,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: (filledRatio * 1000).toInt().clamp(1, 1000),
-                            child: Container(color: const Color(0xFF800020)),
-                          ),
-                          Expanded(
-                            flex: ((1.0 - filledRatio) * 1000).toInt().clamp(1, 1000),
-                            child: Container(color: const Color(0xFFCBD5E1)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF800020),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$totalFilledSystem Filled (${(filledRatio * 100).toStringAsFixed(0)}%)',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF0F172A),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFCBD5E1),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '$totalWarehouseEmpty Empty (${((1.0 - filledRatio) * 100).toStringAsFixed(0)}%)',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: const Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             ),
 
             const SizedBox(height: 16),
