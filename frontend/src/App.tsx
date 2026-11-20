@@ -184,11 +184,11 @@ export const App: React.FC = () => {
               <Route path="/ledger-analysis" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><LedgerAnalysisPage /></RoleGuard>} />
               <Route path="/payables" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><PayablesReportPage /></RoleGuard>} />
               <Route path="/receivables" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><ReceivablesReportPage /></RoleGuard>} />
-              <Route path="/sales" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><SalesListPage /></RoleGuard>} />
-              <Route path="/sales/new" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><SalesFormPage /></RoleGuard>} />
-              <Route path="/sales/:id/edit" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><SalesFormPage /></RoleGuard>} />
-              <Route path="/sales/new-connection" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><ConnectionSaleFormPage /></RoleGuard>} />
-              <Route path="/collections" element={<RoleGuard allowedRoles={['Administrator', 'Accountant']}><CollectionsPage /></RoleGuard>} />
+              <Route path="/sales" element={<RoleGuard allowedRoles={['Administrator', 'Accountant', 'Manager']}><SalesListPage /></RoleGuard>} />
+              <Route path="/sales/new" element={<RoleGuard allowedRoles={['Administrator', 'Accountant', 'Manager']}><SalesFormPage /></RoleGuard>} />
+              <Route path="/sales/:id/edit" element={<RoleGuard allowedRoles={['Administrator', 'Accountant', 'Manager']}><SalesFormPage /></RoleGuard>} />
+              <Route path="/sales/new-connection" element={<RoleGuard allowedRoles={['Administrator', 'Accountant', 'Manager']}><ConnectionSaleFormPage /></RoleGuard>} />
+              <Route path="/collections" element={<RoleGuard allowedRoles={['Administrator', 'Accountant', 'Manager']}><CollectionsPage /></RoleGuard>} />
 
 
             </Route>

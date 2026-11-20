@@ -1338,11 +1338,11 @@ export const AppLayout: React.FC = () => {
         ))}
 
         {/* Direct Links */}
-        {(isAdmin || isAccountant) && renderDirectNavItem('Sales', '/sales', IconFileInvoice, location.pathname.startsWith('/sales'))}
+        {(isAdmin || isAccountant || isManager) && renderDirectNavItem('Sales', '/sales', IconFileInvoice, location.pathname.startsWith('/sales'))}
         {(isAdmin || isAccountant) && renderDirectNavItem('Purchase', '/purchases', IconShoppingCart, location.pathname.startsWith('/purchases'))}
         {(isAdmin || isAccountant) && renderDirectNavItem('Payment', '/payments', IconCreditCard, location.pathname.startsWith('/payments'))}
         {(isAdmin || isAccountant) && renderDirectNavItem('Receipt', '/receipts', IconReceipt, location.pathname.startsWith('/receipts'))}
-        {(isAdmin || isAccountant) && renderDirectNavItem('Collections', '/collections', IconCash, location.pathname.startsWith('/collections'))}
+        {(isAdmin || isAccountant || isManager) && renderDirectNavItem('Collections', '/collections', IconCash, location.pathname.startsWith('/collections'))}
         {(isAdmin || isManager) && renderDirectNavItem('Delivery Notes', '/delivery-notes', IconClipboardList, location.pathname === '/delivery-notes')}
         {(isAdmin || isManager) && renderDirectNavItem('Receipt Notes', '/receipt-notes', IconPackageImport, location.pathname === '/receipt-notes', pendingReceiptNotesCount)}
         {(isAdmin || isManager) && renderDirectNavItem('Stock Analysis', '/stock-analysis', IconChartBar, location.pathname === '/stock-analysis')}

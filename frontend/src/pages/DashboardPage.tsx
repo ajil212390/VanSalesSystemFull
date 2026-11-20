@@ -299,14 +299,14 @@ export const DashboardPage: React.FC = () => {
     },
   });
 
-  // 4. Fetch Sales (Only for Admin & Accountant)
+  // 4. Fetch Sales (Admin, Accountant & Manager)
   const { data: sales = [] } = useQuery<any[]>({
     queryKey: ['sales'],
     queryFn: async () => {
       const res = await apiClient.get('/sales/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
-    enabled: !isManager,
+    enabled: true,
   });
 
   // 5. Fetch Routes for Van Management (Only for Admin & Manager)
@@ -887,7 +887,7 @@ export const DashboardPage: React.FC = () => {
             {/* Action Buttons Row: Clean White Pills */}
             <Group justify="flex-end" gap="sm" wrap="wrap">
               {/* 1. New Sale */}
-              {(isAdmin || isAccountant) && (
+              {(isAdmin || isAccountant || isManager) && (
                 <Button
                   variant="default"
                   size="sm"
@@ -1027,7 +1027,7 @@ export const DashboardPage: React.FC = () => {
         )}
 
         {/* ROW 2: Sales & Receivables */}
-        {(isAdmin || isAccountant) && (
+        {(isAdmin || isAccountant || isManager) && (
           <Stack gap="sm">
             <Group gap={10} align="center">
               <Box style={{ width: 4, height: 16, borderRadius: 2, backgroundColor: '#800020' }} />
