@@ -126,6 +126,28 @@ export const PaymentGroupsPage: React.FC = () => {
       }));
   }, [ledgers]);
 
+  const resolveQrUrl = (group: PaymentGroupItem | null | undefined) => {
+    if (!group) return null;
+    let url = group.qr_code_url || (group.PaymentGroupId && group.QRCodeLocation ? `/api/v1/payment-groups/${group.PaymentGroupId}/qr-code/` : null);
+    if (!url && group.QRCodeLocation) {
+      url = `/media/${String(group.QRCodeLocation).replace(/^\/+/, '')}`;
+    }
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return url;
+    }
+    const apiBase = apiClient.defaults.baseURL || '';
+    if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) {
+      try {
+        const origin = new URL(apiBase).origin;
+        return `${origin}${url}`;
+      } catch {
+        return url;
+      }
+    }
+    return url;
+  };
+
   const handleFileChange = (file: File | null) => {
     setQrFile(file);
     setRemoveQr(false);
@@ -160,7 +182,7 @@ export const PaymentGroupsPage: React.FC = () => {
     setIsActive(group.IsActive !== false);
     setNameError('');
     setQrFile(null);
-    const existingUrl = group.qr_code_url || (group.QRCodeLocation ? `/media/${String(group.QRCodeLocation).replace(/^\/+/, '')}` : null);
+    const existingUrl = resolveQrUrl(group);
     setQrPreview(existingUrl);
     setRemoveQr(false);
     setFormOpened(true);
@@ -742,7 +764,7 @@ export const PaymentGroupsPage: React.FC = () => {
                 {filteredGroups.map((group) => {
                   const bankName = group.BankLedgerName || group.bank_ledger_name;
                   const routes = group.allocated_routes || [];
-                  const qrUrl = group.qr_code_url || (group.QRCodeLocation ? `/media/${String(group.QRCodeLocation).replace(/^\/+/, '')}` : null);
+                  const qrUrl = resolveQrUrl(group);
 
                   return (
                     <Table.Tr key={group.PaymentGroupId}>

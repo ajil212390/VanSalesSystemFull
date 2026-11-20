@@ -18,6 +18,11 @@ pip install -r requirements.txt --quiet
 python manage.py collectstatic --noinput
 python manage.py migrate
 
+# Ensure media upload directory exists with proper write permissions
+mkdir -p /var/www/royalagencies/media/payment_groups
+chmod -R 775 /var/www/royalagencies/media 2>/dev/null || true
+chown -R www-data:www-data /var/www/royalagencies/media 2>/dev/null || true
+
 echo "⚙️ [3/5] Restarting Gunicorn API service..."
 systemctl restart royalagencies
 

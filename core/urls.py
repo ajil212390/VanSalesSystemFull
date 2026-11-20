@@ -1,4 +1,6 @@
-from django.urls import path, include
+from django.urls import path, re_path, include
+from django.views.static import serve
+from django.conf import settings
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from core.views import (
@@ -53,5 +55,10 @@ urlpatterns = [
     # Public and Supporting endpoints
     path('states/', StateListView.as_view(), name='states-list'),
     path('roles/', RoleListView.as_view(), name='roles-list'),
+    # Supporting static/media access through API
+    re_path(r'^media/(?P<path>.*)$', serve, {
+        'document_root': settings.MEDIA_ROOT
+    }),
+
     path ('', include(router.urls)),
 ]

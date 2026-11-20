@@ -10246,6 +10246,40 @@ class PaymentGroupViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=['get'], permission_classes=[AllowAny], url_path='qr-code')
+    def qr_code(self, request, pk=None):
+        instance = self.get_object()
+        if not instance.QRCodeLocation:
+            return HttpResponse("No QR code found", status=404, content_type="text/plain")
+        
+        loc = str(instance.QRCodeLocation).replace('\\', '/').lstrip('/')
+        candidates = [
+            os.path.join(settings.MEDIA_ROOT, loc),
+            os.path.join(settings.BASE_DIR, 'media', loc),
+            os.path.join(settings.BASE_DIR, loc),
+        ]
+        if os.path.isabs(str(instance.QRCodeLocation)):
+            candidates.insert(0, str(instance.QRCodeLocation))
+
+        found_path = None
+        for cand in candidates:
+            if os.path.exists(cand) and os.path.isfile(cand):
+                found_path = cand
+                break
+
+        if not found_path:
+            return HttpResponse("QR code file not found on server", status=404, content_type="text/plain")
+
+        import mimetypes
+        content_type, _ = mimetypes.guess_type(found_path)
+        if not content_type:
+            content_type = 'image/png'
+
+        with open(found_path, 'rb') as f:
+            resp = HttpResponse(f.read(), content_type=content_type)
+            resp['Cache-Control'] = 'public, max-age=86400'
+            return resp
+
     @action(detail=True, methods=['post'], url_path='upload-qr', parser_classes=[MultiPartParser, FormParser, JSONParser])
     def upload_qr(self, request, pk=None):
         instance = self.get_object()

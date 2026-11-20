@@ -321,8 +321,7 @@ class PaymentGroupSerializer(serializers.ModelSerializer):
     def get_qr_code_url(self, obj):
         if not obj.QRCodeLocation:
             return None
-        loc = str(obj.QRCodeLocation).replace('\\', '/').lstrip('/')
-        url = f"/media/{loc}"
+        url = f"/api/v1/payment-groups/{obj.PaymentGroupId}/qr-code/"
         request = self.context.get('request')
         if request:
             return request.build_absolute_uri(url)
