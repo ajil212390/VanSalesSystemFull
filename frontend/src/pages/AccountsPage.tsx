@@ -58,6 +58,10 @@ export interface LedgerItem {
   Group: number;
   group_name?: string;
   group_nature?: string;
+  Route?: number | null;
+  RouteId?: number | null;
+  RouteName?: string;
+  route_name?: string;
   OpeningBalance: number;
   OpeningBalanceType: 'DR' | 'CR';
   DebitBalance: number;
@@ -93,6 +97,7 @@ export interface LedgerItem {
 interface LedgerFormValues {
   LedgerName: string;
   Group: string;
+  Route: string | null;
   OpeningBalance: number | string;
   OpeningBalanceType: 'DR' | 'CR' | '';
   DebitBalance: number | string;
@@ -126,6 +131,7 @@ interface LedgerFormValues {
 const defaultLedgerValues: LedgerFormValues = {
   LedgerName: '',
   Group: '',
+  Route: null,
   OpeningBalance: '',
   OpeningBalanceType: '',
   DebitBalance: '',
@@ -160,6 +166,7 @@ export const AccountsPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
+  const [selectedRouteFilter, setSelectedRouteFilter] = useState<string | null>(null);
   const [formOpened, setFormOpened] = useState(false);
   const [editingLedger, setEditingLedger] = useState<LedgerItem | null>(null);
   const [ledgerToDelete, setLedgerToDelete] = useState<LedgerItem | null>(null);
@@ -188,6 +195,14 @@ export const AccountsPage: React.FC = () => {
     queryKey: ['states'],
     queryFn: async () => {
       const res = await apiClient.get('/states/');
+      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+    } });
+
+  // 4. Fetch Routes for customer route assignment
+  const { data: routes = [] } = useQuery<{ RouteId: number; RouteName: string }[]>({
+    queryKey: ['routes'],
+    queryFn: async () => {
+      const res = await apiClient.get<any>('/routes/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
     } });
 
@@ -226,6 +241,8 @@ export const AccountsPage: React.FC = () => {
       const payload: any = {
         LedgerName: (data.LedgerName || '').trim(),
         Group: parseInt(String(data.Group), 10),
+        Route: data.Route ? parseInt(String(data.Route), 10) : null,
+        RouteId: data.Route ? parseInt(String(data.Route), 10) : null,
         OpeningBalance: opBal,
         OpeningBalanceType: data.OpeningBalanceType || 'DR',
         DebitBalance: safeNum(data.DebitBalance, 0),
@@ -385,6 +402,7 @@ export const AccountsPage: React.FC = () => {
     reset({
       LedgerName: ledger.LedgerName,
       Group: String(ledger.Group),
+      Route: ledger.Route ? String(ledger.Route) : (ledger.RouteId ? String(ledger.RouteId) : null),
       OpeningBalance: Number(ledger.OpeningBalance) !== 0 ? Number(ledger.OpeningBalance) : '',
       OpeningBalanceType: ledger.OpeningBalanceType || 'DR',
       DebitBalance: Number(ledger.DebitBalance) !== 0 ? Number(ledger.DebitBalance) : '',
@@ -431,9 +449,13 @@ export const AccountsPage: React.FC = () => {
         ? String(l.Group) === selectedGroupFilter
         : true;
 
-      return matchesSearch && matchesGroup;
+      const matchesRoute = selectedRouteFilter
+        ? (String(l.Route) === selectedRouteFilter || String(l.RouteId) === selectedRouteFilter)
+        : true;
+
+      return matchesSearch && matchesGroup && matchesRoute;
     });
-  }, [ledgers, searchQuery, selectedGroupFilter]);
+  }, [ledgers, searchQuery, selectedGroupFilter, selectedRouteFilter]);
 
   const groupOptions = useMemo(() => {
     return groups.map((g) => ({
@@ -502,16 +524,33 @@ export const AccountsPage: React.FC = () => {
           </Text>
         </div>
 
-        {/* Right Actions: Group Filter + Search Bar + Bulk Import Pill + Add Button */}
+        {/* Right Actions: Group Filter + Route Filter + Search Bar + Bulk Import Pill + Add Button */}
         <Group gap="xs" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(groupFilterStyles) => (
-              <Box style={{ ...groupFilterStyles, width: 190, flexGrow: 1, minWidth: 140, maxWidth: 220 }}>
+              <Box style={{ ...groupFilterStyles, width: 180, flexGrow: 1, minWidth: 130, maxWidth: 210 }}>
                 <Select
                   placeholder="All Account Groups"
                   data={groupOptions}
                   value={selectedGroupFilter}
                   onChange={(val) => setSelectedGroupFilter(val)}
+                  clearable
+                  searchable
+                  size="sm"
+                  radius="md"
+                />
+              </Box>
+            )}
+          </Transition>
+
+          <Transition mounted={!formOpened} transition="fade" duration={200}>
+            {(routeFilterStyles) => (
+              <Box style={{ ...routeFilterStyles, width: 160, flexGrow: 1, minWidth: 120, maxWidth: 190 }}>
+                <Select
+                  placeholder="All Routes"
+                  data={routes.map((r: any) => ({ value: String(r.RouteId), label: r.RouteName }))}
+                  value={selectedRouteFilter}
+                  onChange={(val) => setSelectedRouteFilter(val)}
                   clearable
                   searchable
                   size="sm"
@@ -606,10 +645,10 @@ export const AccountsPage: React.FC = () => {
                 />
 
                 {/* Row 1: Primary Account Info */}
-                <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+                <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
                   <TextInput
                     label="Ledger Name"
-                    placeholder="e.g.State Bank of India, Office Rent"
+                    placeholder="e.g. State Bank of India, Office Rent"
                     required
                     {...register('LedgerName', { required: 'Ledger name is required' })}
                     error={errors.LedgerName?.message}
@@ -634,7 +673,25 @@ export const AccountsPage: React.FC = () => {
                     )}
                   />
 
-                  
+                  <Controller
+                    name="Route"
+                    control={control}
+                    render={({ field }) => (
+                      <Select
+                        label="Delivery Route (For Debtors)"
+                        placeholder="Assign Route (Optional)"
+                        data={routes.map((r: any) => ({
+                          value: String(r.RouteId),
+                          label: r.RouteName,
+                        }))}
+                        value={field.value ? String(field.value) : null}
+                        onChange={(val) => field.onChange(val || null)}
+                        searchable
+                        clearable
+                        nothingFoundMessage="No routes found"
+                      />
+                    )}
+                  />
 
                   <Controller
                     name="OpeningBalanceType"
@@ -1191,9 +1248,16 @@ export const AccountsPage: React.FC = () => {
                                     <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
                                       {ledger.LedgerName}
                                     </Text>
-                                    <Text size="xs" c="dimmed" mt={2} style={{ whiteSpace: 'nowrap' }}>
-                                      {ledger.group_name || 'General'}
-                                    </Text>
+                                    <Group gap={6} align="center" mt={2} wrap="nowrap">
+                                      <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                                        {ledger.group_name || 'General'}
+                                      </Text>
+                                      {(ledger.RouteName || ledger.route_name) && (
+                                        <Badge size="xs" color="burgundy" variant="light" radius="sm">
+                                          📍 {ledger.RouteName || ledger.route_name}
+                                        </Badge>
+                                      )}
+                                    </Group>
                                   </div>
                                 </Group>
                               </Table.Td>

@@ -246,10 +246,11 @@ class ApiService {
   }
 
   /// 5. Fetch Customers List: GET /ledgers/customers/ (Sundry Debtors)
-  static Future<List<Map<String, dynamic>>> getCustomers() async {
+  static Future<List<Map<String, dynamic>>> getCustomers([int? routeId]) async {
+    final query = routeId != null && routeId > 0 ? '?route_id=$routeId' : '';
     // 1. Primary: dedicated /ledgers/customers/ endpoint
     try {
-      final uri = Uri.parse('$baseUrl/ledgers/customers/');
+      final uri = Uri.parse('$baseUrl/ledgers/customers/$query');
       final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
 
       if (res.statusCode == 200) {
@@ -263,7 +264,10 @@ class ApiService {
 
     // 2. Fallback: standard /ledgers/?AccountType=CUSTOMER&page_size=200
     try {
-      final uri = Uri.parse('$baseUrl/ledgers/?AccountType=CUSTOMER&page_size=200');
+      final fallbackQuery = routeId != null && routeId > 0
+          ? '$baseUrl/ledgers/?AccountType=CUSTOMER&page_size=200&route_id=$routeId'
+          : '$baseUrl/ledgers/?AccountType=CUSTOMER&page_size=200';
+      final uri = Uri.parse(fallbackQuery);
       final res = await http.get(uri, headers: await _headers()).timeout(requestTimeout);
 
       if (res.statusCode == 200) {

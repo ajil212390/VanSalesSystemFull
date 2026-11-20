@@ -1574,7 +1574,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
         qs = (
             Ledger.objects
             .filter(CompanyId=company_id)
-            .select_related('Group')
+            .select_related('Group', 'Route')
             .order_by('LedgerName')
         )
 
@@ -1582,6 +1582,11 @@ class LedgerViewSet(viewsets.ModelViewSet):
         group_id = self.request.query_params.get('group')
         if group_id:
             qs = qs.filter(Group_id=group_id)
+
+        # Optional route filter (Delivery Route for Sundry Debtors)
+        route_id = self.request.query_params.get('route') or self.request.query_params.get('RouteId') or self.request.query_params.get('route_id')
+        if route_id:
+            qs = qs.filter(Route_id=route_id)
 
         # Optional nature filter (Asset, Liability, Income, Expense)
         nature = self.request.query_params.get('nature')
@@ -1664,22 +1669,29 @@ class LedgerViewSet(viewsets.ModelViewSet):
     def customers(self, request):
         """
         Specialized endpoint returning Sundry Debtors (Customers) for driver mobile app.
-        Includes contact details and current outstanding balance.
+        Includes contact details, current outstanding balance, and assigned delivery RouteId.
         """
         user = getattr(request, 'user', None)
         company_id = getattr(user, 'CompanyId', 1) or 1
         debtor_ledgers = (
             Ledger.objects.filter(CompanyId=company_id)
             .filter(Q(Group__GroupName__icontains='debtor') | Q(Group__GroupName__icontains='customer'))
-            .select_related('Group')
+            .select_related('Group', 'Route')
             .order_by('LedgerName')
         )
+        route_id = request.query_params.get('route_id') or request.query_params.get('RouteId') or request.query_params.get('route')
+        if route_id:
+            debtor_ledgers = debtor_ledgers.filter(Route_id=route_id)
+
         data = []
         for l in debtor_ledgers:
             data.append({
                 'LedgerId': l.LedgerId,
                 'LedgerName': l.LedgerName,
                 'GroupName': l.Group.GroupName if l.Group else 'Sundry Debtors',
+                'RouteId': l.Route_id,
+                'Route': l.Route_id,
+                'RouteName': l.Route.RouteName if l.Route else None,
                 'Phone': (getattr(l, 'MobileNumber', '') or getattr(l, 'PhoneNumber', '') or ''),
                 'MobileNumber': getattr(l, 'MobileNumber', '') or '',
                 'PhoneNumber': getattr(l, 'PhoneNumber', '') or '',

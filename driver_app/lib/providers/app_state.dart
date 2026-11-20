@@ -91,6 +91,8 @@ class Customer {
   final int creditPeriodDays;
   final double emptyStockLimit;
   double outstanding;
+  final int? routeId;
+  final String? routeName;
 
   Customer({
     this.ledgerId,
@@ -103,6 +105,8 @@ class Customer {
     this.creditPeriodDays = 15,
     this.emptyStockLimit = 0,
     this.outstanding = 0,
+    this.routeId,
+    this.routeName,
   });
 }
 
@@ -318,6 +322,7 @@ class AppState extends ChangeNotifier {
   int? currentDriverDbId;
   int? currentAllocationId;
   int? currentDeliveryNoteId;
+  int? currentRouteId;
   String vehicleNumber = '';
   String routeInfo = '';
   String endShiftStatus = 'ACTIVE';
@@ -432,15 +437,18 @@ class AppState extends ChangeNotifier {
   }
 
   /// Fetch Sundry Debtors from backend DB and populate customers list
-  Future<void> fetchCustomers() async {
+  Future<void> fetchCustomers([int? filterRouteId]) async {
     try {
-      final backendCustomers = await ApiService.getCustomers();
+      final targetRouteId = filterRouteId ?? currentRouteId;
+      final backendCustomers = await ApiService.getCustomers(targetRouteId);
       if (backendCustomers.isNotEmpty) {
         customers.clear();
         for (final c in backendCustomers) {
           final balance = safeDouble(c['CurrentBalance']);
           final phone = (c['Phone'] ?? c['MobileNumber'] ?? c['PhoneNumber'] ?? '').toString().trim();
           final addr = (c['AddressLine1'] ?? c['Address'] ?? '').toString().trim();
+          final rId = safeIntNullable(c['RouteId'] ?? c['Route'] ?? c['route_id']);
+          final rNm = (c['RouteName'] ?? c['route_name'] ?? '').toString().trim();
           customers.add(Customer(
             ledgerId: safeIntNullable(c['LedgerId']),
             name: (c['LedgerName'] ?? '').toString().trim(),
@@ -450,6 +458,8 @@ class AppState extends ChangeNotifier {
             creditLimit: safeDouble(c['CreditLimit']),
             creditPeriodDays: safeInt(c['CreditPeriodDays']),
             emptyStockLimit: safeDouble(c['EmptyStockLimit']),
+            routeId: rId,
+            routeName: rNm.isNotEmpty ? rNm : null,
           ));
         }
         notifyListeners();
@@ -478,6 +488,7 @@ class AppState extends ChangeNotifier {
     driverId = '';
     currentDriverDbId = null;
     currentAllocationId = null;
+    currentRouteId = null;
     cylinders = [];
     otherProducts = [];
     orders.clear();
@@ -521,6 +532,7 @@ class AppState extends ChangeNotifier {
       final alloc = await ApiService.getDriverAllocation(dId);
       if (alloc != null) {
         currentAllocationId = safeIntNullable(alloc['RouteVehicleDriverId'] ?? alloc['id']);
+        currentRouteId = safeIntNullable(alloc['RouteId'] ?? alloc['Route'] ?? alloc['route_id']);
 
         final vNum = alloc['VehicleNumber'] ?? alloc['vehicle_number'] ?? alloc['Vehicle_number'];
         if (vNum != null && vNum.toString().trim().isNotEmpty) {
@@ -726,6 +738,7 @@ class AppState extends ChangeNotifier {
       } else if (currentAllocationId == null) {
         // Driver has no active vehicle allocation on initial login
         currentAllocationId = null;
+        currentRouteId = null;
         vehicleNumber = '';
         routeInfo = '';
         orders.clear();

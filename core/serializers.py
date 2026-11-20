@@ -339,6 +339,7 @@ class PaymentGroupSerializer(serializers.ModelSerializer):
 
 
 class RouteVehicleDriverSerializer(serializers.ModelSerializer):
+    RouteId = serializers.IntegerField(source='Route_id', read_only=True)
     RouteName = serializers.CharField(source='Route.RouteName', read_only=True)
     VehicleNumber = serializers.CharField(source='Vehicle.VehicleNumber', read_only=True)
     DriverName = serializers.CharField(source='Driver.DriverName', read_only=True)
@@ -353,7 +354,7 @@ class RouteVehicleDriverSerializer(serializers.ModelSerializer):
     class Meta:
         model = RouteVehicleDriver
         fields = [
-            'RouteVehicleDriverId', 'Route', 'Vehicle', 'Driver', 'PaymentGroup',
+            'RouteVehicleDriverId', 'Route', 'RouteId', 'Vehicle', 'Driver', 'PaymentGroup',
             'RouteName', 'VehicleNumber', 'DriverName', 'PaymentGroupName',
             'BankLedgerName', 'bank_ledger_name',
             'route_name', 'vehicle_number', 'driver_name', 'payment_group_name',
@@ -673,6 +674,14 @@ class LedgerSerializer(serializers.ModelSerializer):
     """
     group_name = serializers.CharField(source='Group.GroupName', read_only=True)
     group_nature = serializers.CharField(source='Group.Nature', read_only=True)
+    RouteName = serializers.CharField(source='Route.RouteName', read_only=True, allow_null=True)
+    route_name = serializers.CharField(source='Route.RouteName', read_only=True, allow_null=True)
+    RouteId = serializers.PrimaryKeyRelatedField(
+        source='Route',
+        queryset=Route.objects.all(),
+        required=False,
+        allow_null=True
+    )
     delete_block_reason = serializers.SerializerMethodField()
     bills_count = serializers.SerializerMethodField()
     advance_balance = serializers.SerializerMethodField()
@@ -685,6 +694,10 @@ class LedgerSerializer(serializers.ModelSerializer):
             'Group',
             'group_name',
             'group_nature',
+            'Route',
+            'RouteId',
+            'RouteName',
+            'route_name',
             'OpeningBalance',
             'OpeningBalanceType',
             'DebitBalance',

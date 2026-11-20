@@ -395,6 +395,10 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final filtered = !isSearching
         ? <Customer>[]
         : state.customers.where((item) {
+            // When driver is allocated to a route, strictly restrict customer search to this route
+            if (state.currentRouteId != null && state.currentRouteId! > 0) {
+              if (item.routeId != state.currentRouteId) return false;
+            }
             final q = trimmedQuery.toLowerCase();
             final nameMatch = item.name.toLowerCase().contains(q);
             final phoneDigits = item.phone.replaceAll(RegExp(r'[^0-9]'), '');
@@ -704,11 +708,13 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                        if (cust.phone.isNotEmpty || cust.address.isNotEmpty)
+                                        if (cust.phone.isNotEmpty || cust.address.isNotEmpty || cust.routeName != null)
                                           Text(
-                                            cust.address.isNotEmpty
-                                                ? '${cust.phone.isNotEmpty ? "${cust.phone} \u2022 " : ""}${cust.address}'
-                                                : cust.phone,
+                                            [
+                                              if (cust.routeName != null && cust.routeName!.isNotEmpty) cust.routeName!,
+                                              if (cust.phone.isNotEmpty) cust.phone,
+                                              if (cust.address.isNotEmpty) cust.address,
+                                            ].join(' • '),
                                             style: GoogleFonts.inter(
                                               fontSize: 11,
                                               fontWeight: FontWeight.w500,
