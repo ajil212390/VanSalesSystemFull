@@ -8779,30 +8779,12 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
         if not company_id:
             company_id = 1
 
-        erd = EndRouteDriver.objects.filter(EndRouteDriverId=pk).select_related(
+        dn = DeliveryNote.objects.filter(DeliveryNoteId=pk, CompanyId=company_id).select_related(
+            'RouteVehicleDriver__Route', 'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Driver'
+        ).first() or DeliveryNote.objects.filter(DeliveryNoteId=pk).select_related(
             'RouteVehicleDriver__Route', 'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Driver'
         ).first()
-
-        dn = None
-        alloc = None
-        if erd:
-            alloc = erd.RouteVehicleDriver
-            s_date = erd.SettlementDate or (erd.CreatedAt.date() if erd.CreatedAt else date.today())
-            dn = DeliveryNote.objects.filter(
-                RouteVehicleDriver=alloc,
-                DeliveryDate=s_date,
-                Status='LOADED'
-            ).first() or DeliveryNote.objects.filter(
-                RouteVehicleDriver=alloc
-            ).order_by('-DeliveryDate', '-DeliveryNoteId').first()
-        else:
-            dn = DeliveryNote.objects.filter(DeliveryNoteId=pk, CompanyId=company_id).select_related(
-                'RouteVehicleDriver__Route', 'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Driver'
-            ).first() or DeliveryNote.objects.filter(DeliveryNoteId=pk).select_related(
-                'RouteVehicleDriver__Route', 'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Driver'
-            ).first()
-            if dn:
-                alloc = dn.RouteVehicleDriver
+        alloc = dn.RouteVehicleDriver if dn else None
 
         if not alloc or not alloc.Route:
             return Response({'detail': 'Shift trip record not found.'}, status=status.HTTP_404_NOT_FOUND)
@@ -10157,6 +10139,10 @@ class FinancialYearViewSet(viewsets.ModelViewSet):
         return Response({'message': f'Financial year {target.YearName} is now active.', 'active_year': FinancialYearSerializer(target).data})
 
 
+import os
+import time
+import base64
+from django.conf import settings
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from core.models import PaymentGroup
 from core.serializers import PaymentGroupSerializer
