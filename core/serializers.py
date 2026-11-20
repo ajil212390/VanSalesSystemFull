@@ -1278,6 +1278,8 @@ class SalesSerializer(serializers.ModelSerializer):
     route_name = serializers.CharField(source='RouteVehicleDriver.Route.RouteName', read_only=True)
     vehicle_number = serializers.CharField(source='RouteVehicleDriver.Vehicle.VehicleNumber', read_only=True)
     driver_name = serializers.CharField(source='RouteVehicleDriver.Driver.DriverName', read_only=True)
+    payment_group_id = serializers.IntegerField(source='RouteVehicleDriver.PaymentGroup_id', read_only=True)
+    payment_group_name = serializers.CharField(source='RouteVehicleDriver.PaymentGroup.PaymentGroupName', read_only=True)
     customer_name = serializers.CharField(source='CustomerLedger.LedgerName', read_only=True)
     customer_phone = serializers.CharField(source='CustomerLedger.Mobile', read_only=True)
     customer_gstin = serializers.CharField(source='CustomerLedger.GSTIN', read_only=True)
@@ -1344,6 +1346,8 @@ class SalesSerializer(serializers.ModelSerializer):
             'route_name',
             'vehicle_number',
             'driver_name',
+            'payment_group_id',
+            'payment_group_name',
             'CustomerLedger',
             'customer_name',
             'customer_phone',

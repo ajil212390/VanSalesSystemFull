@@ -356,7 +356,7 @@ export const DeliveryNotesPage: React.FC = () => {
   // Delete Mutation
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiClient.delete(`/delivery-notes/${id}/`);
+      await apiClient.delete(`/delivery-notes/${id}/?permanent=true`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['delivery-notes'] });

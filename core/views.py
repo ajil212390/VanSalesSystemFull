@@ -3025,15 +3025,22 @@ class PurchaseViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         company_id = instance.CompanyId or getattr(request.user, 'CompanyId', 1) or 1
+        godown_rvd_ids, _, _, _ = get_godown_internal_ids(company_id)
 
         # Validate that stock from this purchase has not already been allocated or dispatched to vans
         for pl in instance.lines.all().select_related('Product'):
             if not pl.Product:
                 continue
+            line_qty = Decimal(str(pl.Quantity or 0))
+
+            # 1. Total available physical stock across all godowns
             g_movs = StockMovement.objects.filter(
                 CompanyId=company_id,
-                Product=pl.Product,
-                RouteVehicleDriverId=1
+                Product=pl.Product
+            ).filter(
+                Q(RouteVehicleDriverId__in=godown_rvd_ids) |
+                Q(TransactionType__iexact='PURCHASE', ReferenceId=instance.PurchaseId) |
+                Q(TransactionType__iexact='PURCHASE', TransactionNo=instance.PurchaseNo)
             )
             f_in = g_movs.filter(
                 Q(TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN', 'GODOWN_TRANSFER_IN', 'VAN_UNLOAD_FULL']) |
@@ -3045,15 +3052,29 @@ class PurchaseViewSet(viewsets.ModelViewSet):
             ).aggregate(tot_out=Sum('OutQty'))['tot_out'] or Decimal('0.00')
             current_godown_stock = max(Decimal('0.00'), f_in - f_out)
 
-            line_qty = Decimal(str(pl.Quantity or 0))
-            if line_qty > current_godown_stock:
+            # 2. Check active van allocations currently holding this stock in transit
+            van_movs = StockMovement.objects.filter(
+                CompanyId=company_id,
+                Product=pl.Product
+            ).exclude(
+                RouteVehicleDriverId__in=godown_rvd_ids
+            ).aggregate(
+                tot_in=Sum('InQty'),
+                tot_out=Sum('OutQty')
+            )
+            van_held = max(Decimal('0.00'), (van_movs['tot_in'] or Decimal('0.00')) - (van_movs['tot_out'] or Decimal('0.00')))
+
+            # Only block if delivery vans actually hold active dispatched stock for this product
+            if van_held > 0 and line_qty > current_godown_stock:
                 return Response({
-                    'detail': f'Cannot delete purchase #{instance.PurchaseNo}: {pl.Product.ProductName} stock ({line_qty}) has already been allocated or dispatched to delivery vans. Current available godown stock is only {current_godown_stock}.'
+                    'detail': f'Cannot delete purchase #{instance.PurchaseNo}: {pl.Product.ProductName} stock ({line_qty}) is currently loaded on delivery vans ({van_held} in transit). Please delete or settle the van delivery notes first.'
                 }, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             supplier_id = instance.SupplierLedger_id
             StockMovement.objects.filter(
+                CompanyId=company_id
+            ).filter(
                 Q(TransactionType__iexact='PURCHASE') &
                 (Q(ReferenceId=instance.PurchaseId) | Q(TransactionNo=instance.PurchaseNo))
             ).delete()
@@ -8126,9 +8147,8 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 dn_created_at = dn.CreatedAt
                 dn_delivery_date = dn.DeliveryDate
                 permanent_delete = (
-                    request.query_params.get('permanent') == 'true' or
-                    request.query_params.get('delete_note') == 'true' or
-                    request.query_params.get('delete_dn') == 'true'
+                    request.query_params.get('permanent') != 'false' and
+                    request.query_params.get('revert_only') != 'true'
                 )
 
                 # 1. Reverse and remove end-shift / settlement stock unload movements
@@ -9155,8 +9175,16 @@ class SalesViewSet(viewsets.ModelViewSet):
         company_id = getattr(self.request.user, 'CompanyId', 1) or 1
         qs = Sales.objects.filter(CompanyId=company_id).select_related(
             'RouteVehicleDriver__Route', 'RouteVehicleDriver__Vehicle', 'RouteVehicleDriver__Driver',
+            'RouteVehicleDriver__PaymentGroup',
             'CustomerLedger', 'ApprovedBy'
         ).prefetch_related('lines__Product', 'lines__Unit', 'edit_history').order_by('-SalesDate', '-SalesId')
+
+        pg_id = self.request.query_params.get('payment_group_id')
+        if pg_id:
+            if pg_id.upper() == 'UNASSIGNED':
+                qs = qs.filter(RouteVehicleDriver__PaymentGroup__isnull=True)
+            else:
+                qs = qs.filter(RouteVehicleDriver__PaymentGroup_id=pg_id)
 
         alloc_id = self.request.query_params.get('allocation_id')
         if alloc_id:

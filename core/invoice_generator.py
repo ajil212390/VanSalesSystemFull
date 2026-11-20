@@ -2762,13 +2762,13 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
     story.append(loc_table)
     story.append(Spacer(1, 10))
 
-    # Items Table with Stock Quantity, Purchase Rate (excl. GST) and Total Amount
+    # Items Table with Stock Quantity, Purchase Rate and Total Amount
     col_widths = [35, 230, 80, 100, 100]
     th_cells = [
         Paragraph("Sl no.", th_style),
         Paragraph("Item / Cylinder Description", ParagraphStyle('ThLeftDn', parent=th_style, alignment=0)),
         Paragraph("Stock Qty", th_style),
-        Paragraph("Purchase Rate (excl. GST)", ParagraphStyle('ThR1', parent=th_style, alignment=2)),
+        Paragraph("Purchase Rate", ParagraphStyle('ThR1', parent=th_style, alignment=2)),
         Paragraph("Total Amount", ParagraphStyle('ThR2', parent=th_style, alignment=2)),
     ]
     table_rows = [th_cells]
@@ -2782,8 +2782,8 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
             Paragraph("1", cell_center),
             Paragraph("Commercial / Domestic Gas Cylinders", cell_bold),
             Paragraph("0 NOS", cell_center),
-            Paragraph("₹0.00", cell_right),
-            Paragraph("₹0.00", cell_right_bold),
+            Paragraph("Rs. 0.00", cell_right),
+            Paragraph("Rs. 0.00", cell_right_bold),
         ])
     else:
         for idx, ln in enumerate(lines, 1):
@@ -2791,7 +2791,7 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
             qty = int(ln.Quantity or 0)
             tot_qty += qty
 
-            # Purchase rate (exclusive of GST)
+            # Purchase rate
             p_rate = float(ln.Product.PurchasePrice if (ln.Product and ln.Product.PurchasePrice) else (ln.Rate or 0))
             line_total = qty * p_rate
             tot_valuation += line_total
@@ -2800,8 +2800,8 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
                 Paragraph(str(idx), cell_center),
                 Paragraph(p_name, cell_bold),
                 Paragraph(f"<b>{qty} NOS</b>", cell_center),
-                Paragraph(f"₹{p_rate:,.2f}", cell_right),
-                Paragraph(f"<b>₹{line_total:,.2f}</b>", cell_right_bold),
+                Paragraph(f"Rs. {p_rate:,.2f}", cell_right),
+                Paragraph(f"<b>Rs. {line_total:,.2f}</b>", cell_right_bold),
             ])
 
     # Totals Row
@@ -2809,8 +2809,8 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
         Paragraph("", cell_center),
         Paragraph("<b>GRAND TOTAL DISPATCH QUANTITY &amp; VALUATION</b>", cell_bold),
         Paragraph(f"<b>{tot_qty} NOS</b>", cell_center),
-        Paragraph("<b>TOTAL (Excl. GST)</b>", cell_right_bold),
-        Paragraph(f"<b>₹{tot_valuation:,.2f}</b>", cell_right_bold),
+        Paragraph("<b>TOTAL</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {tot_valuation:,.2f}</b>", cell_right_bold),
     ])
 
     items_table = Table(table_rows, colWidths=col_widths)
@@ -2857,15 +2857,23 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
             Paragraph("<b>LOADED &amp; RECEIVED BY:</b>", cell_bold)
         ],
         [
-            Paragraph(f"<br/><br/>____________________________________<br/>Warehouse Supervisor / Storekeeper<br/><font size=7 color='#64748B'>{godown_name} &bull; Gate Outward</font>", cell_norm),
-            Paragraph(f"<br/><br/>____________________________________<br/>Route Driver / Fleet In-Charge<br/><font size=7 color='#64748B'>{driver_name} &bull; {veh_num}</font>", cell_norm)
+            Paragraph("<br/><br/>", cell_norm),
+            Paragraph("<br/><br/>", cell_norm)
+        ],
+        [
+            Paragraph(f"<b>Warehouse Supervisor / Storekeeper</b><br/><font size=7.5 color='#64748B'>{godown_name} &bull; Gate Outward</font>", cell_norm),
+            Paragraph(f"<b>Route Driver / Fleet In-Charge</b><br/><font size=7.5 color='#64748B'>{driver_name} &bull; {veh_num}</font>", cell_norm)
         ]
     ]
-    sig_table = Table(sig_data, colWidths=[272, 273])
+    sig_table = Table(sig_data, colWidths=[245, 245])
     sig_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 25),
+        ('LINEABOVE', (0, 2), (0, 2), 0.8, DARK_COLOR),
+        ('LINEABOVE', (1, 2), (1, 2), 0.8, DARK_COLOR),
+        ('TOPPADDING', (0, 2), (-1, 2), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
     ]))
     story.append(KeepTogether(sig_table))
     story.append(Spacer(1, 15))

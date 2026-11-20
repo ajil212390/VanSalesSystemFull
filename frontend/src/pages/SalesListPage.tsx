@@ -49,6 +49,7 @@ export const SalesListPage: React.FC = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>('ALL');
   const [typeFilter, setTypeFilter] = useState<string | null>('ALL');
+  const [paymentGroupFilter, setPaymentGroupFilter] = useState<string | null>('ALL');
   const [viewingSale, setViewingSale] = useState<any | null>(null);
   const [historySale, setHistorySale] = useState<any | null>(null);
 
@@ -67,7 +68,29 @@ export const SalesListPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/sales/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
-    } });
+    }
+  });
+
+  // 1b. Fetch Payment Groups for filter & sorting
+  const { data: paymentGroups = [] } = useQuery<any[]>({
+    queryKey: ['payment-groups'],
+    queryFn: async () => {
+      const res = await apiClient.get('/payment-groups/');
+      return Array.isArray(res.data) ? res.data : res.data.results || [];
+    }
+  });
+
+  const paymentGroupOptions = useMemo(() => {
+    const list = paymentGroups.map((pg: any) => ({
+      value: String(pg.PaymentGroupId),
+      label: pg.PaymentGroupName || `Group #${pg.PaymentGroupId}`
+    }));
+    return [
+      { value: 'ALL', label: 'All Payment Groups' },
+      ...list,
+      { value: 'UNASSIGNED', label: 'Direct / Unassigned' }
+    ];
+  }, [paymentGroups]);
 
   // Automatically reopen sale details modal if open_sale_id is provided in URL
   React.useEffect(() => {
@@ -145,6 +168,17 @@ export const SalesListPage: React.FC = () => {
       if (typeFilter === 'PACKAGE' && !isPkg) return false;
       if (typeFilter === 'REGULAR' && isPkg) return false;
 
+      // 2b. Payment Group filter
+      if (paymentGroupFilter && paymentGroupFilter !== 'ALL') {
+        if (paymentGroupFilter === 'UNASSIGNED') {
+          if (s.payment_group_id || s.payment_group_name) return false;
+        } else {
+          const matchId = String(s.payment_group_id) === String(paymentGroupFilter);
+          const matchName = s.payment_group_name === paymentGroupFilter;
+          if (!matchId && !matchName) return false;
+        }
+      }
+
       // 3. Search query
       if (!search.trim()) return true;
       const q = search.toLowerCase();
@@ -154,13 +188,15 @@ export const SalesListPage: React.FC = () => {
       const route = (s.route_name || s.RouteName || '').toLowerCase();
       const driver = (s.driver_name || s.DriverName || '').toLowerCase();
       const vehicle = (s.vehicle_number || s.VehicleName || '').toLowerCase();
+      const pgName = (s.payment_group_name || '').toLowerCase();
       return (
         sNo.includes(q) ||
         invNo.includes(q) ||
         cust.includes(q) ||
         route.includes(q) ||
         driver.includes(q) ||
-        vehicle.includes(q)
+        vehicle.includes(q) ||
+        pgName.includes(q)
       );
     });
 
@@ -177,6 +213,16 @@ export const SalesListPage: React.FC = () => {
       if (sortBy === 'amount_asc') {
         return Number(a.GrandTotal || 0) - Number(b.GrandTotal || 0);
       }
+      if (sortBy === 'pg_asc') {
+        const pga = a.payment_group_name || 'zzz';
+        const pgb = b.payment_group_name || 'zzz';
+        return pga.localeCompare(pgb);
+      }
+      if (sortBy === 'pg_desc') {
+        const pga = a.payment_group_name || '';
+        const pgb = b.payment_group_name || '';
+        return pgb.localeCompare(pga);
+      }
       // default: date_desc (newest first)
       const da = a.SalesDate || '';
       const db = b.SalesDate || '';
@@ -185,7 +231,7 @@ export const SalesListPage: React.FC = () => {
     });
 
     return result;
-  }, [sales, search, statusFilter, typeFilter, dateFilter, customStartDate, customEndDate, sortBy]);
+  }, [sales, search, statusFilter, typeFilter, paymentGroupFilter, dateFilter, customStartDate, customEndDate, sortBy]);
 
   // KPI Metrics
   const totalSalesAmount = useMemo(() => {
@@ -415,8 +461,10 @@ export const SalesListPage: React.FC = () => {
                 { label: 'Date: Oldest First', value: 'date_asc' },
                 { label: 'Amount: High to Low', value: 'amount_desc' },
                 { label: 'Amount: Low to High', value: 'amount_asc' },
+                { label: 'Payment Group: A to Z', value: 'pg_asc' },
+                { label: 'Payment Group: Z to A', value: 'pg_desc' },
               ]}
-              style={{ width: 165 }}
+              style={{ width: 185 }}
               styles={{
                 input: {
                   backgroundColor: '#f8fafc',
@@ -512,7 +560,14 @@ export const SalesListPage: React.FC = () => {
             style={{ flex: 1, minWidth: 260 }}
           />
 
-          <Group gap="xs">
+          <Group gap="xs" wrap="wrap">
+            <Select
+              data={paymentGroupOptions}
+              value={paymentGroupFilter}
+              onChange={(val) => setPaymentGroupFilter(val || 'ALL')}
+              placeholder="All Payment Groups"
+              style={{ width: 180 }}
+            />
             <Select
               data={[
                 { value: 'ALL', label: 'All Sales Types' },
@@ -724,6 +779,11 @@ export const SalesListPage: React.FC = () => {
                         <Text size="10px" c="dimmed">
                           {sale.vehicle_number || sale.VehicleName || 'Direct'} &bull; {sale.driver_name || sale.DriverName || 'Admin'}
                         </Text>
+                        {sale.payment_group_name && (
+                          <Badge size="xs" variant="light" color="blue" mt={3} styles={{ root: { fontSize: 9, height: 16, paddingLeft: 5, paddingRight: 5 } }}>
+                            {sale.payment_group_name}
+                          </Badge>
+                        )}
                       </Table.Td>
 
                       <Table.Td style={{ textAlign: 'center' }}>
