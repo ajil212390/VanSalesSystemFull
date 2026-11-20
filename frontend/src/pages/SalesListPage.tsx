@@ -40,6 +40,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { formatDateDDMMYY, DateInputDDMMYY } from '../components/DateInputDDMMYY';
+import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 
 export const SalesListPage: React.FC = () => {
   const navigate = useNavigate();
@@ -53,6 +54,7 @@ export const SalesListPage: React.FC = () => {
   const [paymentGroupFilter, setPaymentGroupFilter] = useState<string | null>('ALL');
   const [viewingSale, setViewingSale] = useState<any | null>(null);
   const [historySale, setHistorySale] = useState<any | null>(null);
+  const [deleteTargetSale, setDeleteTargetSale] = useState<any | null>(null);
 
   // Date Filter & Sort State
   type DateFilterType = 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
@@ -186,8 +188,16 @@ export const SalesListPage: React.FC = () => {
       if (!isDateInFilter(s.SalesDate)) return false;
 
       // 2. Status & Type filters
-      if (statusFilter === 'APPROVED' && !s.IsApproved) return false;
-      if (statusFilter === 'PENDING' && s.IsApproved) return false;
+      if (statusFilter === 'APPROVED') {
+        if (!s.IsApproved || s.Status === 'CANCELLED') return false;
+      } else if (statusFilter === 'PENDING') {
+        if (s.IsApproved || s.Status === 'CANCELLED') return false;
+      } else if (statusFilter === 'CANCELLED') {
+        if (s.Status !== 'CANCELLED') return false;
+      } else {
+        // 'ALL' - hide CANCELLED by default
+        if (s.Status === 'CANCELLED') return false;
+      }
 
       const isPkg = isPackageSale(s);
       if (typeFilter === 'PACKAGE' && !isPkg) return false;
@@ -306,7 +316,13 @@ export const SalesListPage: React.FC = () => {
 
   // KPI Metrics
   const totalSalesAmount = useMemo(() => {
-    return filteredSales.reduce((sum: number, s: any) => sum + Number(s.display_amount ?? s.GrandTotal ?? 0), 0);
+    return filteredSales
+      .filter((s: any) => s.Status !== 'CANCELLED')
+      .reduce((sum: number, s: any) => sum + Number(s.display_amount ?? s.GrandTotal ?? 0), 0);
+  }, [filteredSales]);
+
+  const activeInvoicesCount = useMemo(() => {
+    return filteredSales.filter((s: any) => s.Status !== 'CANCELLED').length;
   }, [filteredSales]);
 
   const collectionsSummary = useMemo(() => {
@@ -389,9 +405,10 @@ export const SalesListPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales'] });
       setViewingSale(null);
+      setDeleteTargetSale(null);
       notifications.show({
         title: 'Invoice Deleted',
-        message: 'The sale invoice has been removed and accounts synced.',
+        message: 'The sale invoice has been removed, stock restored, and accounts synced.',
         color: 'gray' });
     },
     onError: (err: any) => {
@@ -429,8 +446,12 @@ export const SalesListPage: React.FC = () => {
   });
 
   const handleDeleteSale = (sale: any) => {
-    if (window.confirm(`Are you sure you want to delete invoice "${sale.InvoiceNo || sale.SalesNo}"? This will reverse accounting vouchers and stock movements.`)) {
-      deleteSaleMutation.mutate(sale.SalesId);
+    setDeleteTargetSale(sale);
+  };
+
+  const handleConfirmDeleteSale = () => {
+    if (deleteTargetSale) {
+      deleteSaleMutation.mutate(deleteTargetSale.SalesId);
     }
   };
 
@@ -586,7 +607,7 @@ export const SalesListPage: React.FC = () => {
             ₹{totalSalesAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </Text>
           <Text size="xs" c="dimmed" mt={4}>
-            {sales.length} total invoice{sales.length !== 1 ? 's' : ''} generated
+            {activeInvoicesCount} total invoice{activeInvoicesCount !== 1 ? 's' : ''} generated
           </Text>
         </Paper>
 
@@ -680,6 +701,7 @@ export const SalesListPage: React.FC = () => {
                 { value: 'ALL', label: 'All Statuses' },
                 { value: 'APPROVED', label: 'Approved Only' },
                 { value: 'PENDING', label: 'Pending Approval' },
+                { value: 'CANCELLED', label: 'Cancelled / Deleted' },
               ]}
               value={statusFilter}
               onChange={(val) => setStatusFilter(val || 'ALL')}
@@ -978,7 +1000,24 @@ export const SalesListPage: React.FC = () => {
                       </Table.Td>
 
                       <Table.Td style={{ textAlign: 'center' }}>
-                        {sale.IsApproved ? (
+                        {sale.Status === 'CANCELLED' ? (
+                          <Badge
+                            size="xs"
+                            variant="filled"
+                            styles={{
+                              root: {
+                                fontWeight: 700,
+                                backgroundColor: '#fef2f2',
+                                color: '#b91c1c',
+                                border: '1px solid #fca5a5',
+                                flexShrink: 0,
+                                overflow: 'visible',
+                                whiteSpace: 'nowrap',
+                                display: 'inline-block' } }}
+                          >
+                            CANCELLED
+                          </Badge>
+                        ) : sale.IsApproved ? (
                           <Badge
                             size="xs"
                             variant="filled"
@@ -1063,6 +1102,27 @@ export const SalesListPage: React.FC = () => {
           </Table>
         </Table.ScrollContainer>
       </Paper>
+
+      {/* ── Delete Confirmation Modal ── */}
+      <DeleteConfirmModal
+        opened={!!deleteTargetSale}
+        onClose={() => setDeleteTargetSale(null)}
+        onConfirm={handleConfirmDeleteSale}
+        title="Delete Sale Invoice"
+        itemName={deleteTargetSale?.InvoiceNo || deleteTargetSale?.SalesNo || ''}
+        itemType="invoice"
+        description={
+          <Stack gap="xs">
+            <Text size="sm" c="#334155">
+              Are you sure you want to delete invoice <strong style={{ color: '#800020' }}>"{deleteTargetSale?.InvoiceNo || deleteTargetSale?.SalesNo}"</strong>?
+            </Text>
+            <Text size="xs" c="dimmed">
+              This will automatically reverse van stock movements and reverse associated accounting vouchers for this invoice.
+            </Text>
+          </Stack>
+        }
+        loading={deleteSaleMutation.isPending}
+      />
 
       {/* ── View Sale Details Modal ── */}
       <Modal

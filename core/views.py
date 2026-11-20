@@ -6254,16 +6254,31 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             if sales_id:
                 sale = Sales.objects.filter(CompanyId=company_id, SalesId=sales_id).first()
             if not sale and ticket_id:
-                sale = Sales.objects.filter(CompanyId=company_id, SalesNo=ticket_id, Status__in=['LIVE', 'PENDING']).order_by('-SalesId').first()
+                clean_tid = str(ticket_id).strip()
+                sale = Sales.objects.filter(
+                    Q(SalesNo__iexact=clean_tid) | Q(InvoiceNo__iexact=clean_tid),
+                    CompanyId=company_id,
+                    Status__in=['LIVE', 'PENDING']
+                ).order_by('-SalesId').first()
                 if not sale:
-                    sale = Sales.objects.filter(CompanyId=company_id, SalesNo=ticket_id).order_by('-SalesId').first()
+                    sale = Sales.objects.filter(
+                        Q(SalesNo__iexact=clean_tid) | Q(InvoiceNo__iexact=clean_tid),
+                        CompanyId=company_id
+                    ).order_by('-SalesId').first()
 
-            t_no = sale.SalesNo if sale else ticket_id
+            t_nos = []
+            if sale:
+                if sale.SalesNo:
+                    t_nos.append(sale.SalesNo)
+                if sale.InvoiceNo:
+                    t_nos.append(sale.InvoiceNo)
+            if ticket_id and ticket_id not in t_nos:
+                t_nos.append(str(ticket_id).strip())
 
             # 1. Reverse StockMovement
             deleted_count, _ = StockMovement.objects.filter(
                 CompanyId=company_id,
-                TransactionNo=t_no
+                TransactionNo__in=t_nos
             ).delete()
 
             # 2. Cancel Sale record
@@ -6279,9 +6294,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     v_ledgers = v.lines.values_list('Ledger_id', flat=True)
                     sync_ledger_balances(*v_ledgers)
 
+        target_display = (sale.InvoiceNo or sale.SalesNo) if sale else ticket_id
         return Response({
             'success': True,
-            'message': f'Sale {t_no} cancelled and stock successfully restored ({deleted_count} movements reversed).'
+            'message': f'Sale {target_display} cancelled and stock successfully restored ({deleted_count} movements reversed).'
         })
 
     @action(detail=False, methods=['post', 'put', 'patch'], url_path='update_sale')
@@ -9195,6 +9211,10 @@ class SalesViewSet(viewsets.ModelViewSet):
         st = self.request.query_params.get('status')
         if st:
             qs = qs.filter(Status__iexact=st)
+        else:
+            include_cancelled = self.request.query_params.get('include_cancelled') == 'true'
+            if not include_cancelled:
+                qs = qs.exclude(Status='CANCELLED')
 
         is_app = self.request.query_params.get('is_approved')
         if is_app is not None:
@@ -10067,6 +10087,34 @@ class SalesViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'detail': f'Error generating collections statement PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+    def destroy(self, request, *args, **kwargs):
+        sale = self.get_object()
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        with transaction.atomic():
+            t_nos = []
+            if sale.SalesNo:
+                t_nos.append(sale.SalesNo)
+            if sale.InvoiceNo:
+                t_nos.append(sale.InvoiceNo)
+
+            # 1. Reverse StockMovements
+            StockMovement.objects.filter(
+                CompanyId=company_id,
+                TransactionNo__in=t_nos
+            ).delete()
+
+            # 2. Cancel and reverse Vouchers
+            vouchers = Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales', ReferenceId=sale.SalesId)
+            for v in vouchers:
+                v.IsCancelled = True
+                v.save(update_fields=['IsCancelled'])
+                v_ledgers = v.lines.values_list('Ledger_id', flat=True)
+                sync_ledger_balances(*v_ledgers)
+
+            # 3. Soft-delete by setting status CANCELLED
+            sale.Status = 'CANCELLED'
+            sale.save(update_fields=['Status'])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ConnectionPackageViewSet(viewsets.ModelViewSet):
