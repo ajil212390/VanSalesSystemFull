@@ -713,7 +713,7 @@ export const SalesListPage: React.FC = () => {
 
       {/* ── Sales List Table ── */}
       <Paper radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
-        <Table.ScrollContainer minWidth={1050}>
+        <Table.ScrollContainer minWidth={1150}>
           <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
             <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <Table.Tr>
@@ -732,7 +732,10 @@ export const SalesListPage: React.FC = () => {
                 <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center', minWidth: 90 }}>
                   PAYMENT
                 </Table.Th>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right', minWidth: 110 }}>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right', minWidth: 105 }}>
+                  TOTAL
+                </Table.Th>
+                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right', minWidth: 115 }}>
                   GRAND TOTAL
                 </Table.Th>
                 <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', textAlign: 'center', minWidth: 110 }}>
@@ -746,7 +749,7 @@ export const SalesListPage: React.FC = () => {
             <Table.Tbody>
               {isLoading ? (
                 <Table.Tr>
-                  <Table.Td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
+                  <Table.Td colSpan={9} style={{ textAlign: 'center', padding: '40px' }}>
                     <Text size="sm" c="dimmed">
                       Loading sales invoices...
                     </Text>
@@ -754,7 +757,7 @@ export const SalesListPage: React.FC = () => {
                 </Table.Tr>
               ) : filteredSales.length === 0 ? (
                 <Table.Tr>
-                  <Table.Td colSpan={8} style={{ textAlign: 'center', padding: '48px' }}>
+                  <Table.Td colSpan={9} style={{ textAlign: 'center', padding: '48px' }}>
                     <Text size="sm" fw={600} c="dimmed">
                       No sales records matching your criteria.
                     </Text>
@@ -966,6 +969,7 @@ export const SalesListPage: React.FC = () => {
                         </Stack>
                       </Table.Td>
 
+                      {/* TOTAL Column (Mode-specific or split portion) */}
                       <Table.Td style={{ textAlign: 'right' }}>
                         {isRcpt ? (
                           <>
@@ -987,12 +991,37 @@ export const SalesListPage: React.FC = () => {
                           </>
                         ) : (
                           <>
+                            <Text size="sm" fw={800} style={{ color: '#047857', fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{Number(sale.display_amount ?? (sale.PaidAmount || sale.GrandTotal || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </Text>
+                            {sale.is_split_row ? (
+                              <Text size="10px" c="#047857" fw={700}>
+                                {paymentModeFilter === 'CASH' ? 'CASH ONLY' : paymentModeFilter === 'BANK' ? 'BANK ONLY' : 'PORTION'}
+                              </Text>
+                            ) : null}
+                          </>
+                        )}
+                      </Table.Td>
+
+                      {/* GRAND TOTAL Column (Full invoice total including Bank and Cash) */}
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        {isEmtrtn ? (
+                          <>
+                            <Text size="sm" fw={700} style={{ color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                              ₹0.00
+                            </Text>
+                            <Text size="10px" c="dimmed">
+                              EMPTY RETURN
+                            </Text>
+                          </>
+                        ) : (
+                          <>
                             <Text size="sm" fw={800} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                              ₹{Number(sale.display_amount ?? (sale.GrandTotal || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              ₹{Number(sale.GrandTotal || sale.PaidAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </Text>
                             {sale.is_split_row && (
                               <Text size="10px" c="dimmed" fw={600}>
-                                SPLIT PORTION
+                                FULL BILL
                               </Text>
                             )}
                           </>

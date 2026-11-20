@@ -2903,8 +2903,8 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
     th_cells = [
         Paragraph("Sl no.", th_style),
         Paragraph("Item / Cylinder Description", ParagraphStyle('ThLeftDn', parent=th_style, alignment=0)),
-        Paragraph("Stock Qty", th_style),
-        Paragraph("Purchase Rate", ParagraphStyle('ThR1', parent=th_style, alignment=2)),
+        Paragraph("Quantity", th_style),
+        Paragraph("Rate", ParagraphStyle('ThR1', parent=th_style, alignment=2)),
         Paragraph("Total Amount", ParagraphStyle('ThR2', parent=th_style, alignment=2)),
     ]
     table_rows = [th_cells]
