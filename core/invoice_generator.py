@@ -832,7 +832,7 @@ def generate_tax_invoice_pdf(sale):
         for cand in candidates:
             if os.path.exists(cand) and os.path.isfile(cand):
                 try:
-                    qr_img_flowable = RLImage(cand, width=60, height=60)
+                    qr_img_flowable = RLImage(cand, width=90, height=90)
                     break
                 except Exception:
                     qr_img_flowable = None
@@ -840,20 +840,20 @@ def generate_tax_invoice_pdf(sale):
     if qr_img_flowable:
         bank_name_str = pg_obj.BankLedger.LedgerName if (pg_obj.BankLedger and pg_obj.BankLedger.LedgerName) else ""
         qr_box = [
-            [Paragraph("<b>SCAN &amp; PAY</b>", ParagraphStyle('QrH', fontName=FONT_BOLD, fontSize=7, leading=8.5, alignment=1, textColor=PRIMARY_COLOR))],
+            [Paragraph("<b>SCAN &amp; PAY</b>", ParagraphStyle('QrH', fontName=FONT_BOLD, fontSize=8, leading=10, alignment=1, textColor=PRIMARY_COLOR))],
             [qr_img_flowable],
-            [Paragraph(f"<font size=5.5 color='#475569'><b>{pg_obj.PaymentGroupName}</b>{(' • ' + bank_name_str) if bank_name_str else ''}</font>", ParagraphStyle('QrF', fontName=FONT_NAME, fontSize=5.5, leading=7, alignment=1))],
+            [Paragraph(f"<font size=7 color='#334155'><b>{pg_obj.PaymentGroupName}</b>{(' • ' + bank_name_str) if bank_name_str else ''}</font>", ParagraphStyle('QrF', fontName=FONT_NAME, fontSize=7, leading=8.5, alignment=1))],
         ]
-        qr_table = Table(qr_box, colWidths=[90])
+        qr_table = Table(qr_box, colWidths=[120])
         qr_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOX', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+            ('BOX', (0, 0), (-1, -1), 0.75, BORDER_COLOR),
             ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
-            ('TOPPADDING', (0, 0), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-            ('LEFTPADDING', (0, 0), (-1, -1), 2),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
         ]))
 
         footer_data = [
@@ -872,7 +872,7 @@ def generate_tax_invoice_pdf(sale):
                 )
             ]
         ]
-        footer_table = Table(footer_data, colWidths=[225, 95, 225])
+        footer_table = Table(footer_data, colWidths=[212, 121, 212])
         footer_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
             ('ALIGN', (1, 0), (1, 0), 'CENTER'),
@@ -2691,7 +2691,7 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
         for cand in candidates:
             if os.path.exists(cand) and os.path.isfile(cand):
                 try:
-                    qr_img_flowable = RLImage(cand, width=60, height=60)
+                    qr_img_flowable = RLImage(cand, width=90, height=90)
                     break
                 except Exception:
                     qr_img_flowable = None
@@ -2699,20 +2699,20 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
     if qr_img_flowable:
         bank_name_str = pg_obj.BankLedger.LedgerName if (pg_obj.BankLedger and pg_obj.BankLedger.LedgerName) else ""
         qr_box = [
-            [Paragraph("<b>SCAN &amp; PAY</b>", ParagraphStyle('RnQrH', fontName=FONT_BOLD, fontSize=7, leading=8.5, alignment=1, textColor=PRIMARY_COLOR))],
+            [Paragraph("<b>SCAN &amp; PAY</b>", ParagraphStyle('RnQrH', fontName=FONT_BOLD, fontSize=8, leading=10, alignment=1, textColor=PRIMARY_COLOR))],
             [qr_img_flowable],
-            [Paragraph(f"<font size=5.5 color='#475569'><b>{pg_obj.PaymentGroupName}</b>{(' • ' + bank_name_str) if bank_name_str else ''}</font>", ParagraphStyle('RnQrF', fontName=FONT_NAME, fontSize=5.5, leading=7, alignment=1))],
+            [Paragraph(f"<font size=7 color='#334155'><b>{pg_obj.PaymentGroupName}</b>{(' • ' + bank_name_str) if bank_name_str else ''}</font>", ParagraphStyle('RnQrF', fontName=FONT_NAME, fontSize=7, leading=8.5, alignment=1))],
         ]
-        qr_table = Table(qr_box, colWidths=[90])
+        qr_table = Table(qr_box, colWidths=[120])
         qr_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOX', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+            ('BOX', (0, 0), (-1, -1), 0.75, BORDER_COLOR),
             ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
-            ('TOPPADDING', (0, 0), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-            ('LEFTPADDING', (0, 0), (-1, -1), 2),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
         ]))
 
         sig_data = [
@@ -2727,7 +2727,7 @@ def generate_receipt_note_pdf(receipt_note, company_id=1):
                 Paragraph(f"<br/><br/>____________________________________<br/>Authorized Recipient / Supplier Rep<br/><font size=7 color='#64748B'>Date: {date_str}</font>", cell_norm)
             ]
         ]
-        sig_table = Table(sig_data, colWidths=[225, 95, 225])
+        sig_table = Table(sig_data, colWidths=[212, 121, 212])
         sig_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('ALIGN', (1, 0), (1, 0), 'CENTER'),
