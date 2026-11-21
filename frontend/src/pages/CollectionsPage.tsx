@@ -140,17 +140,18 @@ export const CollectionsPage: React.FC = () => {
       const cashPaidOnSale = Math.max(0, rawPaid - advAdj);
       if (cashPaidOnSale <= 0) return;
 
-      const sRef = String(s.InvoiceNo || s.SalesNo || `INV-${s.SalesId}`).trim();
+      const sRef = String(s.InvoiceNo || s.SalesNo || `INV-${s.SalesId || ''}`).trim();
       const custId = s.CustomerLedger ? Number(s.CustomerLedger.LedgerId || s.CustomerLedger) : null;
-      const custObj = custId ? ledgerMap.get(custId) : null;
-      const partyName = custObj?.LedgerName || s.CustomerLedger?.LedgerName || s.CustomerName || s.PartyName || 'Cash Sale Buyer';
-      const partyMobile = custObj?.Mobile || s.CustomerLedger?.Mobile || '';
+      const custObj = custId && !isNaN(custId) ? ledgerMap.get(custId) : null;
+      const partyName = String(custObj?.LedgerName || s.CustomerLedger?.LedgerName || s.CustomerName || s.PartyName || 'Cash Sale Buyer');
+      const partyMobile = String(custObj?.Mobile || s.CustomerLedger?.Mobile || '');
 
-      const notesStr = s.Notes || '';
+      const notesStr = String(s.Notes || '');
       const notesLower = notesStr.toLowerCase();
       const refLower = sRef.toLowerCase();
 
       // Check if this sale is a New Connection / Package sale
+      const linesArray = Array.isArray(s.lines) ? s.lines : [];
       const isConnection = Boolean(
         s.is_package ||
         s.isPackage ||
@@ -160,11 +161,11 @@ export const CollectionsPage: React.FC = () => {
         notesLower.includes('new connection') ||
         notesLower.includes('connection') ||
         notesLower.includes('package') ||
-        (s.lines && s.lines.some((l: any) =>
+        linesArray.some((l: any) =>
           l.is_package ||
-          (l.product_name || l.ProductName || '').toLowerCase().includes('connection') ||
-          (l.product_name || l.ProductName || '').toLowerCase().includes('package')
-        ))
+          String(l.product_name || l.ProductName || '').toLowerCase().includes('connection') ||
+          String(l.product_name || l.ProductName || '').toLowerCase().includes('package')
+        )
       );
 
       // Extract human-readable package name if available
@@ -174,47 +175,50 @@ export const CollectionsPage: React.FC = () => {
         if (pkgMatch) {
           pkgName = pkgMatch[1].trim();
         } else {
-          const pkgLine = (s.lines || []).find((l: any) =>
+          const pkgLine = linesArray.find((l: any) =>
             l.is_package ||
-            (l.product_name || l.ProductName || '').toLowerCase().includes('connection') ||
-            (l.product_name || l.ProductName || '').toLowerCase().includes('package')
+            String(l.product_name || l.ProductName || '').toLowerCase().includes('connection') ||
+            String(l.product_name || l.ProductName || '').toLowerCase().includes('package')
           );
-          pkgName = pkgLine?.product_name || pkgLine?.ProductName || 'New Connection Package';
+          pkgName = String(pkgLine?.product_name || pkgLine?.ProductName || 'New Connection Package');
         }
       }
 
       // Determine Driver, Vehicle & Route
-      const dName =
+      const routeStr = String(s.route_name || s.RouteName || '');
+      const dName = String(
         s.driver_name ||
         s.DriverName ||
         s.RouteVehicleDriver?.Driver?.DriverName ||
-        (s.route_name?.toLowerCase().includes('office') || s.RouteName?.toLowerCase().includes('office') ? 'Office Staff' : 'Direct Office');
+        (routeStr.toLowerCase().includes('office') ? 'Office Staff' : 'Direct Office')
+      );
       const dId = s.RouteVehicleDriver?.Driver?.DriverId || s.DriverId || s.driver_id || null;
-      const vNum = s.vehicle_number || s.VehicleName || s.RouteVehicleDriver?.Vehicle?.VehicleNumber || '';
-      const rName =
+      const vNum = String(s.vehicle_number || s.VehicleName || s.RouteVehicleDriver?.Vehicle?.VehicleNumber || '');
+      const rName = String(
         s.route_name ||
         s.RouteName ||
         s.RouteVehicleDriver?.Route?.RouteName ||
-        (vNum ? 'Van Route Delivery' : 'Office Sale Point');
+        (vNum ? 'Van Route Delivery' : 'Office Sale Point')
+      );
 
       list.push({
-        id: `sale-${s.SalesId}`,
+        id: `sale-${s.SalesId || Math.random()}`,
         source: 'SALE',
         isConnection,
-        date: s.SalesDate || (s.CreatedAt ? s.CreatedAt.split('T')[0] : ''),
+        date: s.SalesDate ? String(s.SalesDate).slice(0, 10) : (s.CreatedAt ? String(s.CreatedAt).split('T')[0] : ''),
         ref: sRef.startsWith('INV-') ? `PAY-${sRef}` : `PAY-${sRef}`,
         rawRef: sRef,
         partyName,
         partyMobile,
-        partyId: custId,
+        partyId: custId && !isNaN(custId) ? custId : null,
         driverName: dName,
         driverId: dId,
         vehicleNumber: vNum,
         routeName: rName,
-        paymentMode: (s.PaymentMethod || 'CASH').toUpperCase(),
-        amount: cashPaidOnSale,
+        paymentMode: String(s.PaymentMethod || 'CASH').toUpperCase(),
+        amount: isNaN(cashPaidOnSale) ? 0 : cashPaidOnSale,
         totalBillAmount: Number(s.GrandTotal || 0),
-        notes: s.Notes ? s.Notes : (isConnection ? `New Connection on bill ${sRef}` : `Direct counter collection on bill ${sRef}`),
+        notes: s.Notes ? String(s.Notes) : (isConnection ? `New Connection on bill ${sRef}` : `Direct counter collection on bill ${sRef}`),
         packageName: pkgName,
         raw: s,
       });
@@ -363,8 +367,8 @@ export const CollectionsPage: React.FC = () => {
 
       // Driver filter (when in CONNECTIONS mode or general driver filtering)
       if (categoryFilter === 'CONNECTIONS' && selectedDriver !== 'ALL') {
-        const itemDriver = (item.driverName || '').toLowerCase().trim();
-        const targetDriver = selectedDriver.toLowerCase().trim();
+        const itemDriver = String(item.driverName || '').toLowerCase().trim();
+        const targetDriver = String(selectedDriver || '').toLowerCase().trim();
         if (itemDriver !== targetDriver && !itemDriver.includes(targetDriver)) {
           return false;
         }
@@ -372,8 +376,8 @@ export const CollectionsPage: React.FC = () => {
 
       // Payment Mode filter dropdown
       if (modeFilter !== 'ALL') {
-        const itemMode = item.paymentMode.toLowerCase();
-        const target = modeFilter.toLowerCase();
+        const itemMode = String(item.paymentMode || '').toLowerCase();
+        const target = String(modeFilter || '').toLowerCase();
         if (itemMode === 'split') {
           // Split payment includes both Cash and Bank/UPI components
           if (target !== 'cash' && target !== 'bank' && target !== 'upi') {
@@ -397,13 +401,13 @@ export const CollectionsPage: React.FC = () => {
       // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchRef = item.ref.toLowerCase().includes(q) || item.rawRef.toLowerCase().includes(q);
-        const matchParty = item.partyName.toLowerCase().includes(q);
-        const matchMobile = (item.partyMobile || '').includes(q);
-        const matchRoute = item.routeName.toLowerCase().includes(q);
-        const matchDriver = item.driverName.toLowerCase().includes(q);
-        const matchPackage = (item.packageName || '').toLowerCase().includes(q);
-        const matchNotes = item.notes.toLowerCase().includes(q);
+        const matchRef = String(item.ref || '').toLowerCase().includes(q) || String(item.rawRef || '').toLowerCase().includes(q);
+        const matchParty = String(item.partyName || '').toLowerCase().includes(q);
+        const matchMobile = String(item.partyMobile || '').includes(q);
+        const matchRoute = String(item.routeName || '').toLowerCase().includes(q);
+        const matchDriver = String(item.driverName || '').toLowerCase().includes(q);
+        const matchPackage = String(item.packageName || '').toLowerCase().includes(q);
+        const matchNotes = String(item.notes || '').toLowerCase().includes(q);
         if (!matchRef && !matchParty && !matchMobile && !matchRoute && !matchDriver && !matchPackage && !matchNotes) {
           return false;
         }
@@ -422,11 +426,13 @@ export const CollectionsPage: React.FC = () => {
     let digitalAmt = 0;
 
     filteredCollections.forEach((c) => {
-      totAmt += c.amount;
-      saleAmt += c.amount;
+      const amt = Number(c.amount || 0);
+      totAmt += amt;
+      saleAmt += amt;
       saleCount++;
 
-      if (c.paymentMode === 'SPLIT') {
+      const pMode = String(c.paymentMode || '').toUpperCase();
+      if (pMode === 'SPLIT') {
         const raw = c.raw || {};
         const cVal = Number(raw.cash_amount ?? 0);
         const uVal = Number(raw.upi_amount ?? raw.bank_amount ?? 0);
@@ -434,18 +440,18 @@ export const CollectionsPage: React.FC = () => {
           cashAmt += cVal;
           digitalAmt += uVal;
         } else {
-          const notes = c.notes || '';
+          const notes = String(c.notes || '');
           const cM = /Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
           const uM = /UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
-          const cashSplit = cM ? Number(cM[1].replace(/,/g, '')) : c.amount / 2;
-          const upiSplit = uM ? Number(uM[1].replace(/,/g, '')) : c.amount - cashSplit;
+          const cashSplit = cM ? Number(cM[1].replace(/,/g, '')) : amt / 2;
+          const upiSplit = uM ? Number(uM[1].replace(/,/g, '')) : amt - cashSplit;
           cashAmt += cashSplit;
           digitalAmt += upiSplit;
         }
-      } else if (c.paymentMode.includes('CASH')) {
-        cashAmt += c.amount;
+      } else if (pMode.includes('CASH')) {
+        cashAmt += amt;
       } else {
-        digitalAmt += c.amount;
+        digitalAmt += amt;
       }
     });
 
@@ -1194,11 +1200,11 @@ export const CollectionsPage: React.FC = () => {
                     {/* Amount */}
                     <Table.Td style={{ textAlign: 'right' }}>
                       <Text size="sm" fw={800} style={{ color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
-                        ₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ₹{Number(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </Text>
-                      {item.totalBillAmount && item.totalBillAmount > item.amount && (
+                      {item.totalBillAmount && Number(item.totalBillAmount) > Number(item.amount || 0) && (
                         <Text size="10.5px" c="dimmed">
-                          of ₹{item.totalBillAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          of ₹{Number(item.totalBillAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </Text>
                       )}
                     </Table.Td>
@@ -1277,7 +1283,7 @@ export const CollectionsPage: React.FC = () => {
                     Amount Collected
                   </Text>
                   <Text size="24px" fw={800} style={{ color: '#800020' }}>
-                    ₹{selectedItem.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    ₹{Number(selectedItem.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </Text>
                 </div>
                 <Badge

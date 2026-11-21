@@ -59,6 +59,7 @@ import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface NavSubItem {
   label: string;
@@ -1505,7 +1506,9 @@ export const AppLayout: React.FC = () => {
 
 
       <AppShell.Main>
-        <Outlet />
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
       </AppShell.Main>
     </AppShell>
   );

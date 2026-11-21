@@ -49,6 +49,7 @@ import { LedgerAnalysisPage } from './pages/LedgerAnalysisPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { RoleGuard } from './components/RoleGuard';
 import { AppLayout } from './components/AppLayout';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -129,7 +130,8 @@ export const App: React.FC = () => {
       <MantineProvider theme={theme} defaultColorScheme="light">
         <Notifications position="top-right" zIndex={2000} />
         <BrowserRouter>
-          <Routes>
+          <ErrorBoundary>
+            <Routes>
             {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
             {/* Protected routes */}
@@ -196,7 +198,8 @@ export const App: React.FC = () => {
             {/* Fallback */}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </BrowserRouter>
+        </ErrorBoundary>
+      </BrowserRouter>
       </MantineProvider>
     </QueryClientProvider>
   );

@@ -115,16 +115,22 @@ export const SalesListPage: React.FC = () => {
   };
 
   const isPackageSale = (s: any) => {
+    const notes = String(s.Notes || '').toLowerCase();
+    const lines = Array.isArray(s.lines) ? s.lines : [];
     return Boolean(
-      s.Notes?.toLowerCase().includes('package') ||
-      s.Notes?.toLowerCase().includes('connection') ||
-      (s.lines && s.lines.some((l: any) => l.is_package || l.product_name?.toLowerCase().includes('connection') || l.product_name?.toLowerCase().includes('package')))
+      notes.includes('package') ||
+      notes.includes('connection') ||
+      lines.some((l: any) =>
+        l.is_package ||
+        String(l.product_name || l.ProductName || '').toLowerCase().includes('connection') ||
+        String(l.product_name || l.ProductName || '').toLowerCase().includes('package')
+      )
     );
   };
 
   const isDateInFilter = (dateStr?: string) => {
     if (!dateStr || dateFilter === 'all') return true;
-    const d = dateStr.slice(0, 10);
+    const d = String(dateStr).slice(0, 10);
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
@@ -205,14 +211,14 @@ export const SalesListPage: React.FC = () => {
 
       // 3. Search query
       if (!search.trim()) return true;
-      const q = search.toLowerCase();
-      const sNo = (s.SalesNo || '').toLowerCase();
-      const invNo = (s.InvoiceNo || '').toLowerCase();
-      const cust = (s.customer_name || '').toLowerCase();
-      const route = (s.route_name || s.RouteName || '').toLowerCase();
-      const driver = (s.driver_name || s.DriverName || '').toLowerCase();
-      const vehicle = (s.vehicle_number || s.VehicleName || '').toLowerCase();
-      const pgName = (s.payment_group_name || '').toLowerCase();
+      const q = search.toLowerCase().trim();
+      const sNo = String(s.SalesNo || '').toLowerCase();
+      const invNo = String(s.InvoiceNo || '').toLowerCase();
+      const cust = String(s.customer_name || '').toLowerCase();
+      const route = String(s.route_name || s.RouteName || '').toLowerCase();
+      const driver = String(s.driver_name || s.DriverName || '').toLowerCase();
+      const vehicle = String(s.vehicle_number || s.VehicleName || '').toLowerCase();
+      const pgName = String(s.payment_group_name || '').toLowerCase();
       return (
         sNo.includes(q) ||
         invNo.includes(q) ||

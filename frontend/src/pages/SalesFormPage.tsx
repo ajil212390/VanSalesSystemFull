@@ -647,6 +647,7 @@ export const SalesFormPage: React.FC = () => {
           <div>
             <Group gap="xs" align="center" mb={4}>
               <Button
+                type="button"
                 variant="subtle"
                 color="gray"
                 size="compact-sm"
@@ -1109,7 +1110,7 @@ export const SalesFormPage: React.FC = () => {
                 )}
 
                 <Group justify="flex-end" mt="md" gap="sm">
-                  <Button variant="default" onClick={() => navigate('/sales')}>
+                  <Button type="button" variant="default" onClick={() => navigate('/sales')}>
                     Cancel
                   </Button>
                   <Button

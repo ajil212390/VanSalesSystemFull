@@ -268,7 +268,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
           </div>
 
           <Group gap="sm">
-            <Button variant="default" onClick={() => navigate('/sales')}>
+            <Button type="button" variant="default" onClick={() => navigate('/sales')}>
               Cancel
             </Button>
             <Button
@@ -570,7 +570,7 @@ export const ConnectionSaleFormPage: React.FC = () => {
                 </Group>
 
                 <Group justify="flex-end" mt="md" gap="sm">
-                  <Button variant="default" onClick={() => navigate('/sales')}>
+                  <Button type="button" variant="default" onClick={() => navigate('/sales')}>
                     Cancel
                   </Button>
                   <Button
