@@ -1922,10 +1922,11 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     vtype = 'SALES'
                     prod_items = []
                     for line in s.lines.all():
-                        pname = line.Product.ProductName if line.Product else 'LPG Cylinder'
+                        pname = line.Product.ProductName if line.Product else (line.ProductName or 'LPG Cylinder')
                         q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
                         u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
-                        prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+                        l_amt = float(getattr(line, 'Total', getattr(line, 'TotalAmount', 0)) or 0)
+                        prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {l_amt:,.2f})")
                     if len(prod_items) == 1:
                         particulars = f"Sales: {prod_items[0]}"
                     elif len(prod_items) > 1:
@@ -2000,10 +2001,11 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     vtype = 'PURCHASE'
                     prod_items = []
                     for line in p.lines.all():
-                        pname = line.Product.ProductName if line.Product else 'Item'
+                        pname = line.Product.ProductName if line.Product else (line.ProductName or 'Item')
                         q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
                         u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else ""
-                        prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+                        l_amt = float(getattr(line, 'Total', getattr(line, 'TotalAmount', 0)) or 0)
+                        prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {l_amt:,.2f})")
                     if len(prod_items) == 1:
                         particulars = f"Purchase: {prod_items[0]}"
                     elif len(prod_items) > 1:
@@ -2050,10 +2052,11 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 clean_ref = p.InvoiceNo or p.PurchaseNo or f"PUR-{p.PurchaseId}"
                 prod_items = []
                 for line in p.lines.all():
-                    pname = line.Product.ProductName if line.Product else 'Item'
+                    pname = line.Product.ProductName if line.Product else (line.ProductName or 'Item')
                     q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
                     u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else ""
-                    prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+                    l_amt = float(getattr(line, 'Total', getattr(line, 'TotalAmount', 0)) or 0)
+                    prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {l_amt:,.2f})")
                 part = ("Purchase:\n" + "\n".join(f"• {it}" for it in prod_items)) if prod_items else f"Purchase Bill #{clean_ref}"
                 entries.append({
                     'date': p.PurchaseDate.strftime('%Y-%m-%d') if p.PurchaseDate else '',
@@ -2068,10 +2071,11 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 clean_ref = s.InvoiceNo or s.SalesNo or f"INV-{s.SalesId}"
                 prod_items = []
                 for line in s.lines.all():
-                    pname = line.Product.ProductName if line.Product else 'LPG Cylinder'
+                    pname = line.Product.ProductName if line.Product else (line.ProductName or 'LPG Cylinder')
                     q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
                     u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
-                    prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+                    l_amt = float(getattr(line, 'Total', getattr(line, 'TotalAmount', 0)) or 0)
+                    prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {l_amt:,.2f})")
 
                 if len(prod_items) == 1:
                     part = f"Sales: {prod_items[0]}"
@@ -9381,10 +9385,11 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
         # Build detailed item narrative
         prod_items = []
         for line in sale.lines.select_related('Product', 'Unit').all():
-            pname = line.Product.ProductName if line.Product else 'LPG Cylinder'
+            pname = line.Product.ProductName if line.Product else (line.ProductName or 'LPG Cylinder')
             q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
             u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
-            prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+            l_amt = float(getattr(line, 'Total', getattr(line, 'TotalAmount', 0)) or 0)
+            prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {l_amt:,.2f})")
 
         if len(prod_items) == 1:
             line_narr = f"Sales: {prod_items[0]}"
