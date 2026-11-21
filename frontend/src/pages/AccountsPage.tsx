@@ -29,7 +29,6 @@ import {
   IconTrash,
   IconChevronDown,
   IconArrowLeft,
-  IconRefresh,
   IconFileSpreadsheet } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -351,34 +350,6 @@ export const AccountsPage: React.FC = () => {
       setLedgerToDelete(null);
     } });
 
-  // Sync existing sales to accounts mutation
-  const syncMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiClient.post('/ledgers/sync-balances/?force=true');
-      return res.data;
-    },
-    onSuccess: (data: any) => {
-      notifications.show({
-        title: 'Accounts Synchronized',
-        message: data.message || `Successfully synced ${data.synced_sales || 0} existing sales into Accounts.`,
-        color: 'teal',
-        autoClose: 5000,
-      });
-      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      queryClient.invalidateQueries({ queryKey: ['sales'] });
-    },
-    onError: (err: any) => {
-      notifications.show({
-        title: 'Sync Failed',
-        message: err.response?.data?.detail || 'Failed to synchronize accounts.',
-        color: 'red',
-        autoClose: 5000,
-      });
-    },
-  });
-
   const onSubmit = (data: LedgerFormValues) => {
     saveMutation.mutate(data);
   };
@@ -629,17 +600,6 @@ export const AccountsPage: React.FC = () => {
           <Transition mounted={!formOpened} transition="fade" duration={200}>
             {(btnStyles) => (
               <Group gap="xs" style={btnStyles} wrap="wrap">
-                <Button
-                  variant="light"
-                  color="burgundy"
-                  radius={10}
-                  size="sm"
-                  loading={syncMutation.isPending}
-                  leftSection={<IconRefresh size={16} stroke={1.5} />}
-                  onClick={() => syncMutation.mutate()}
-                >
-                  Sync Sales to Accounts
-                </Button>
                 <Button
                   variant="outline"
                   color="burgundy"
