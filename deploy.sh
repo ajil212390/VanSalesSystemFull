@@ -30,7 +30,8 @@ echo "⚛️ [4/5] Building React Frontend..."
 cd /var/www/royalagencies/frontend
 echo "VITE_API_BASE_URL=/api/v1" > .env.production
 npm install --quiet
-npm run build
+export NODE_OPTIONS="--max-old-space-size=1024"
+npx vite build
 
 echo "🌐 [5/5] Reloading Nginx..."
 systemctl reload nginx
