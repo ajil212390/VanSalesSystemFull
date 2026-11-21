@@ -469,9 +469,7 @@ export const EndAllocationsPage: React.FC = () => {
           <Title order={2} style={{ color: '#800020', fontWeight: 700, letterSpacing: '-0.02em' }}>
             End Allocation
           </Title>
-          <Text size="xs" c="#64748b" mt={2}>
-            Driver route returns, empty cylinder receipts & settlement verification into Central Godown
-          </Text>
+      
         </div>
 
         <Group gap="xs" align="center" wrap="wrap">

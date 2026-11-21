@@ -823,7 +823,7 @@ export const DashboardPage: React.FC = () => {
               )}
             </Title>
             <Text size="xs" c="dimmed" mt={2} fw={500}>
-              {todayFormatted} &bull; {user?.godown_name && !isAdmin ? `${user.godown_name} • ` : ''}{isManager ? 'Godown Stock & Fleet Operations Overview' : (isAccountant ? 'Commercial, Accounting & Cashflow Overview' : 'Executive Operations & Commercial Overview')} &bull; Showing {dateRange.label}
+              {todayFormatted} &bull; {user?.godown_name && !isAdmin ? `${user.godown_name} • ` : ''}{isManager ? 'Godown Stock & Fleet Operations Overview' : (isAccountant ? 'Commercial, Accounting & Cashflow Overview' : 'Executive Operations Overview')} &bull; Showing {dateRange.label}
             </Text>
           </Box>
 
