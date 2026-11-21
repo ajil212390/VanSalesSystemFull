@@ -478,7 +478,7 @@ export const LedgerAnalysisPage: React.FC = () => {
               <Group gap={10} align="center">
                 <IconScale size={24} color="#800020" />
                 <Title order={2} style={{ color: '#800020', fontWeight: 700, fontSize: 22, letterSpacing: '-0.02em' }}>
-                  {l.LedgerName} &mdash; Statement of Account
+                  {l.LedgerName} - Statement of Account
                 </Title>
               </Group>
               <Text size="xs" c="dimmed" mt={3}>
