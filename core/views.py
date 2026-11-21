@@ -1615,17 +1615,24 @@ class LedgerViewSet(viewsets.ModelViewSet):
         user = getattr(request, 'user', None)
         company_id = getattr(user, 'CompanyId', 1) or 1
 
-        # 1. Self-healing: Check for any approved, non-cancelled sales whose vouchers are missing or have no lines
+        # 1. Self-healing: Check for any valid, non-cancelled sales whose vouchers are missing or have no lines
         try:
-            approved_sales = Sales.objects.filter(IsApproved=True).exclude(Status='CANCELLED')
+            valid_sales = Sales.objects.filter(
+                Q(IsApproved=True) | Q(Status='COMPLETED')
+            ).exclude(Status='CANCELLED')
+
             vch_with_lines = set(Voucher.objects.filter(
                 ReferenceTable='Sales', lines__isnull=False
             ).values_list('ReferenceId', flat=True).distinct())
 
-            missing_sales = [s for s in approved_sales if s.SalesId not in vch_with_lines]
+            missing_sales = [s for s in valid_sales if s.SalesId not in vch_with_lines]
             recalculated = False
             if missing_sales:
-                for s in missing_sales[:50]:
+                for s in missing_sales[:100]:
+                    if not s.IsApproved:
+                        s.IsApproved = True
+                        s.Status = 'COMPLETED'
+                        s.save(update_fields=['IsApproved', 'Status'])
                     cid = s.CompanyId or company_id
                     post_sale_voucher(s, cid, sync_balances=False)
                 recalculated = True
@@ -1647,15 +1654,26 @@ class LedgerViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post', 'get'], url_path='sync-balances', permission_classes=[AllowAny])
     def sync_balances(self, request):
         company_id = getattr(request.user, 'CompanyId', 1) or 1
-        approved_sales = Sales.objects.filter(IsApproved=True).exclude(Status='CANCELLED')
-        vch_with_lines = set(Voucher.objects.filter(ReferenceTable='Sales', lines__isnull=False).values_list('ReferenceId', flat=True).distinct())
+        # Synchronize ALL existing valid sales into Accounts with Double-Entry Vouchers & Receipts
+        sales_qs = Sales.objects.filter(
+            Q(IsApproved=True) | Q(Status='COMPLETED')
+        ).exclude(Status='CANCELLED').order_by('SalesDate', 'SalesId')
+
         count = 0
-        for s in approved_sales:
-            if s.SalesId not in vch_with_lines:
-                post_sale_voucher(s, s.CompanyId or company_id, sync_balances=False)
-                count += 1
+        for s in sales_qs:
+            if not s.IsApproved:
+                s.IsApproved = True
+                s.Status = 'COMPLETED'
+                s.save(update_fields=['IsApproved', 'Status'])
+            post_sale_voucher(s, s.CompanyId or company_id, sync_balances=False)
+            count += 1
+
         sync_ledger_balances()
-        return Response({'success': True, 'synced_sales': count, 'message': 'All ledger balances synchronized successfully.'})
+        return Response({
+            'success': True,
+            'synced_sales': count,
+            'message': f'Successfully synchronized {count} existing sales into Accounts with Double-Entry Vouchers and Customer Receipts.'
+        })
 
 
     @action(detail=False, methods=['get'], url_path='suppliers', permission_classes=[AllowAny])
