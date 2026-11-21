@@ -13,8 +13,10 @@ git fetch origin main
 git reset --hard origin/main
 
 echo "🐍 [2/5] Updating Backend (Python packages, migrations & static)..."
+pg_ctlcluster 18 main start 2>/dev/null || true
 systemctl start postgresql 2>/dev/null || true
 systemctl enable postgresql 2>/dev/null || true
+systemctl enable postgresql@18-main 2>/dev/null || true
 source venv/bin/activate
 pip install -r requirements.txt --quiet
 python manage.py collectstatic --noinput
