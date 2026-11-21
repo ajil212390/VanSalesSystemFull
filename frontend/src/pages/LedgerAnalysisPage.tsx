@@ -900,16 +900,9 @@ export const LedgerAnalysisPage: React.FC = () => {
                             <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
                               {ledger.LedgerName}
                             </Text>
-                            <Group gap={6} align="center" mt={2} wrap="nowrap">
-                              <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                                {ledger.group_name || 'General'}
-                              </Text>
-                              {(ledger.route_name || ledger.RouteName) && (
-                                <Badge size="xs" variant="light" color="pink" radius="sm">
-                                  {ledger.route_name || ledger.RouteName}
-                                </Badge>
-                              )}
-                            </Group>
+                            <Text size="xs" c="dimmed" mt={2} style={{ whiteSpace: 'nowrap' }}>
+                              {ledger.group_name || 'General'}
+                            </Text>
                           </div>
                         </Group>
                       </Table.Td>
