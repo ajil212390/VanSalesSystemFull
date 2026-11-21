@@ -247,8 +247,8 @@ def generate_tax_invoice_pdf(sale):
         doc_title = "OFFICIAL RECEIPT"
         doc_no_label = "Receipt No:"
         if pm_upper == 'SPLIT':
-            c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-            u_m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+            c_m = re.search(r'Cash:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+            u_m = re.search(r'UPI:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
             c_str = f"Rs. {float(c_m.group(1).replace(',', '')):.2f}" if c_m else ''
             u_str = f"Rs. {float(u_m.group(1).replace(',', '')):.2f}" if u_m else ''
             payment_mode_display = f"<b>Payment Mode:</b> SPLIT (Cash: {c_str} | UPI: {u_str})<br/>"
@@ -260,8 +260,8 @@ def generate_tax_invoice_pdf(sale):
         if is_credit:
             payment_mode_display = f"<b>Payment Mode:</b> <font color='#92400E'><b>CREDIT (Rs. 0.00 Paid)</b></font><br/>"
         elif pm_upper == 'SPLIT':
-            c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-            u_m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+            c_m = re.search(r'Cash:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+            u_m = re.search(r'UPI:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
             c_str = f"Rs. {float(c_m.group(1).replace(',', '')):.2f}" if c_m else ''
             u_str = f"Rs. {float(u_m.group(1).replace(',', '')):.2f}" if u_m else ''
             if c_str or u_str:
@@ -691,8 +691,8 @@ def generate_tax_invoice_pdf(sale):
         closing_balance = max(Decimal('0.00'), current_bill_amount - adv_adj - paid_amt)
 
     # Parse split amounts if payment mode is SPLIT
-    c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-    u_m = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+    c_m = re.search(r'Cash:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
+    u_m = re.search(r'UPI:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
     c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
     u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
     is_split = (sale.PaymentMethod or '').upper() == 'SPLIT' or (c_split > Decimal('0.00') and u_split > Decimal('0.00'))
@@ -1219,12 +1219,12 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
 
     kpi_box_content = [
         Paragraph(f"<b>OUTSTANDING SUMMARY</b>", meta_bold),
-        Paragraph(f"Opening Balance: <b>₹{abs(effective_op):,.2f} {'Dr' if effective_op >= 0 else 'Cr'}</b>", meta_style),
-        Paragraph(f"Total Billed (Debit): <b>₹{period_billed:,.2f}</b>", meta_style),
-        Paragraph(f"Total Paid (Credit): <b>₹{period_paid:,.2f}</b>", meta_style),
+        Paragraph(f"Opening Balance: <b>Rs. {abs(effective_op):,.2f} {'Dr' if effective_op >= 0 else 'Cr'}</b>", meta_style),
+        Paragraph(f"Total Billed (Debit): <b>Rs. {period_billed:,.2f}</b>", meta_style),
+        Paragraph(f"Total Paid (Credit): <b>Rs. {period_paid:,.2f}</b>", meta_style),
         Spacer(1, 3),
         Paragraph(
-            f"Net Balance Due: <font size=11 color='#800020'><b>₹{abs(running_bal):,.2f} {'Dr' if running_bal >= 0 else 'Cr'}</b></font>",
+            f"Net Balance Due: <font size=11 color='#800020'><b>Rs. {abs(running_bal):,.2f} {'Dr' if running_bal >= 0 else 'Cr'}</b></font>",
             meta_bold
         ),
     ]
@@ -1234,7 +1234,7 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
             adv_bal = sum(a.RemainingBalance for a in customer.advances.filter(Status__in=['OPEN', 'PARTIAL']))
         if adv_bal and Decimal(str(adv_bal)) > Decimal('0.00'):
             kpi_box_content.append(
-                Paragraph(f"Customer Advance Balance: <font color='#0D9488'><b>₹{Decimal(str(adv_bal)):,.2f}</b></font>", meta_style)
+                Paragraph(f"Customer Advance Balance: <font color='#0D9488'><b>Rs. {Decimal(str(adv_bal)):,.2f}</b></font>", meta_style)
             )
     except Exception:
         pass
@@ -1263,16 +1263,16 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
             Paragraph("<b>DATE</b>", cell_bold),
             Paragraph("<b>REF / INVOICE #</b>", cell_bold),
             Paragraph("<b>PARTICULARS</b>", cell_bold),
-            Paragraph("<b>DEBIT (₹)</b>", cell_right_b),
-            Paragraph("<b>CREDIT (₹)</b>", cell_right_b),
-            Paragraph("<b>BALANCE (₹)</b>", cell_right_b),
+            Paragraph("<b>DEBIT (Rs.)</b>", cell_right_b),
+            Paragraph("<b>CREDIT (Rs.)</b>", cell_right_b),
+            Paragraph("<b>BALANCE (Rs.)</b>", cell_right_b),
         ]
     ]
 
     for e in final_entries:
-        d_str = f"₹{e['debit']:,.2f}" if e['debit'] > 0 else "—"
-        c_str = f"₹{e['credit']:,.2f}" if e['credit'] > 0 else "—"
-        bal_str = f"₹{abs(e['balance']):,.2f} {'Dr' if e['balance'] >= 0 else 'Cr'}"
+        d_str = f"Rs. {e['debit']:,.2f}" if e['debit'] > 0 else "—"
+        c_str = f"Rs. {e['credit']:,.2f}" if e['credit'] > 0 else "—"
+        bal_str = f"Rs. {abs(e['balance']):,.2f} {'Dr' if e['balance'] >= 0 else 'Cr'}"
         tbl_data.append([
             Paragraph(e['date'] or '—', cell_norm),
             Paragraph(f"<b>{e['ref']}</b>", cell_norm),
@@ -1283,13 +1283,13 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
         ])
 
     # Total Row
-    final_bal_str = f"₹{abs(running_bal):,.2f} {'Dr' if running_bal >= 0 else 'Cr'}"
+    final_bal_str = f"Rs. {abs(running_bal):,.2f} {'Dr' if running_bal >= 0 else 'Cr'}"
     tbl_data.append([
         Paragraph("<b>TOTALS</b>", cell_bold),
         Paragraph(f"<b>{len(final_entries)} Transactions</b>", cell_bold),
         Paragraph("", cell_norm),
-        Paragraph(f"<b>₹{period_billed:,.2f}</b>", cell_right_b),
-        Paragraph(f"<b>₹{period_paid:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>Rs. {period_billed:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>Rs. {period_paid:,.2f}</b>", cell_right_b),
         Paragraph(f"<b>{final_bal_str}</b>", cell_right_burg),
     ])
 
@@ -1522,12 +1522,12 @@ def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company
 
     kpi_box_content = [
         Paragraph(f"<b>OUTSTANDING LIABILITY SUMMARY</b>", meta_bold),
-        Paragraph(f"Opening Balance: <b>₹{abs(effective_op):,.2f} {'Cr' if effective_op >= 0 else 'Dr'}</b>", meta_style),
-        Paragraph(f"Total Purchases (Credit): <b>₹{tot_credit:,.2f}</b>", meta_style),
-        Paragraph(f"Total Payments (Debit): <b>₹{tot_debit:,.2f}</b>", meta_style),
+        Paragraph(f"Opening Balance: <b>Rs. {abs(effective_op):,.2f} {'Cr' if effective_op >= 0 else 'Dr'}</b>", meta_style),
+        Paragraph(f"Total Purchases (Credit): <b>Rs. {tot_credit:,.2f}</b>", meta_style),
+        Paragraph(f"Total Payments (Debit): <b>Rs. {tot_debit:,.2f}</b>", meta_style),
         Spacer(1, 3),
         Paragraph(
-            f"Net Balance Due: <font size=11 color='#800020'><b>₹{abs(running_bal):,.2f} {'Cr' if running_bal >= 0 else 'Dr'}</b></font>",
+            f"Net Balance Due: <font size=11 color='#800020'><b>Rs. {abs(running_bal):,.2f} {'Cr' if running_bal >= 0 else 'Dr'}</b></font>",
             meta_bold
         ),
     ]
@@ -1556,16 +1556,16 @@ def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company
             Paragraph("<b>DATE</b>", cell_bold),
             Paragraph("<b>REF / BILL #</b>", cell_bold),
             Paragraph("<b>PARTICULARS</b>", cell_bold),
-            Paragraph("<b>DEBIT (₹)</b>", cell_right_b),
-            Paragraph("<b>CREDIT (₹)</b>", cell_right_b),
-            Paragraph("<b>BALANCE (₹)</b>", cell_right_b),
+            Paragraph("<b>DEBIT (Rs.)</b>", cell_right_b),
+            Paragraph("<b>CREDIT (Rs.)</b>", cell_right_b),
+            Paragraph("<b>BALANCE (Rs.)</b>", cell_right_b),
         ]
     ]
 
     for e in final_entries:
-        d_str = f"₹{e['debit']:,.2f}" if e['debit'] > 0 else "—"
-        c_str = f"₹{e['credit']:,.2f}" if e['credit'] > 0 else "—"
-        bal_str = f"₹{abs(e['balance']):,.2f} {'Cr' if e['balance'] >= 0 else 'Dr'}"
+        d_str = f"Rs. {e['debit']:,.2f}" if e['debit'] > 0 else "—"
+        c_str = f"Rs. {e['credit']:,.2f}" if e['credit'] > 0 else "—"
+        bal_str = f"Rs. {abs(e['balance']):,.2f} {'Cr' if e['balance'] >= 0 else 'Dr'}"
         tbl_data.append([
             Paragraph(e['date'] or '—', cell_norm),
             Paragraph(f"<b>{e['ref']}</b>", cell_norm),
@@ -1576,13 +1576,13 @@ def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company
         ])
 
     # Total Row
-    final_bal_str = f"₹{abs(running_bal):,.2f} {'Cr' if running_bal >= 0 else 'Dr'}"
+    final_bal_str = f"Rs. {abs(running_bal):,.2f} {'Cr' if running_bal >= 0 else 'Dr'}"
     tbl_data.append([
         Paragraph("<b>TOTALS</b>", cell_bold),
         Paragraph(f"<b>{len(final_entries)} Transactions</b>", cell_bold),
         Paragraph("", cell_norm),
-        Paragraph(f"<b>₹{period_billed:,.2f}</b>", cell_right_b),
-        Paragraph(f"<b>₹{period_paid:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>Rs. {period_billed:,.2f}</b>", cell_right_b),
+        Paragraph(f"<b>Rs. {period_paid:,.2f}</b>", cell_right_b),
         Paragraph(f"<b>{final_bal_str}</b>", cell_right_burg),
     ])
 
@@ -1747,13 +1747,13 @@ def generate_receivables_summary_pdf(debtors_data, company_id=1, summary_stats=N
     op_suffix = 'Dr' if total_opening >= 0 else 'Cr'
     rec_suffix = 'Dr' if total_receivable >= 0 else 'Cr'
 
-    c1 = [Paragraph("TOTAL DEBTORS", kpi_label), Spacer(1, 2), Paragraph(str(total_debtors), kpi_val), Spacer(1, 1), Paragraph(f"Op: ₹{abs(total_opening):,.2f} {op_suffix}", kpi_sub)]
-    c2 = [Paragraph("TOTAL SALES BILLED", kpi_label), Spacer(1, 2), Paragraph(f"₹{total_billed:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Delivery & Sales Bills", kpi_sub)]
-    c3 = [Paragraph("COLLECTIONS RECEIVED", kpi_label), Spacer(1, 2), Paragraph(f"₹{total_received:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Cash & Bank Receipts", kpi_sub)]
+    c1 = [Paragraph("TOTAL DEBTORS", kpi_label), Spacer(1, 2), Paragraph(str(total_debtors), kpi_val), Spacer(1, 1), Paragraph(f"Op: Rs. {abs(total_opening):,.2f} {op_suffix}", kpi_sub)]
+    c2 = [Paragraph("TOTAL SALES BILLED", kpi_label), Spacer(1, 2), Paragraph(f"Rs. {total_billed:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Delivery & Sales Bills", kpi_sub)]
+    c3 = [Paragraph("COLLECTIONS RECEIVED", kpi_label), Spacer(1, 2), Paragraph(f"Rs. {total_received:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Cash & Bank Receipts", kpi_sub)]
     c4 = [
         Paragraph("NET RECEIVABLE", ParagraphStyle('RecKpiLblB', parent=kpi_label, textColor=PRIMARY_COLOR)),
         Spacer(1, 2),
-        Paragraph(f"₹{abs(total_receivable):,.2f} {rec_suffix}", kpi_val_burg),
+        Paragraph(f"Rs. {abs(total_receivable):,.2f} {rec_suffix}", kpi_val_burg),
         Spacer(1, 1),
         Paragraph("Current Outstanding", ParagraphStyle('RecKpiSubB', parent=kpi_sub, textColor=PRIMARY_COLOR))
     ]
@@ -1803,10 +1803,10 @@ def generate_receivables_summary_pdf(debtors_data, company_id=1, summary_stats=N
     # 4. Data Table (Col Widths: [165, 90, 95, 95, 100] = 545 pt)
     th_row = [
         Paragraph("CUSTOMER NAME &amp; CONTACT", th_left),
-        Paragraph("OPENING BAL (₹)", th_right),
-        Paragraph("SALES BILLED (₹)", th_right),
-        Paragraph("COLLECTIONS (₹)", th_right),
-        Paragraph("NET RECEIVABLE (₹)", th_right),
+        Paragraph("OPENING BAL (Rs.)", th_right),
+        Paragraph("SALES BILLED (Rs.)", th_right),
+        Paragraph("COLLECTIONS (Rs.)", th_right),
+        Paragraph("NET RECEIVABLE (Rs.)", th_right),
     ]
 
     table_rows = [th_row]
@@ -1826,7 +1826,7 @@ def generate_receivables_summary_pdf(debtors_data, company_id=1, summary_stats=N
 
         name_content = [Paragraph(c_name, cell_name)]
         if adv > 0:
-            name_content.append(Paragraph(f"<font size=7 color='#800020'><b>[Advance Balance: ₹{adv:,.2f}]</b></font>", cell_contact))
+            name_content.append(Paragraph(f"<font size=7 color='#800020'><b>[Advance Balance: Rs. {adv:,.2f}]</b></font>", cell_contact))
         if contact_str:
             name_content.append(Paragraph(contact_str, cell_contact))
 
@@ -1838,20 +1838,20 @@ def generate_receivables_summary_pdf(debtors_data, company_id=1, summary_stats=N
 
         table_rows.append([
             name_content,
-            Paragraph(f"₹{op_val:,.2f} <font size=6.5 color='#64748B'>{op_t}</font>", cell_right),
-            Paragraph(f"₹{sales_val:,.2f}", cell_right),
-            Paragraph(f"₹{coll_val:,.2f}", cell_right),
-            Paragraph(f"₹{abs(rec_val):,.2f} {'Dr' if rec_val >= 0 else 'Cr'}", cell_right_burg if abs(rec_val) > 0 else cell_right),
+            Paragraph(f"{op_val:,.2f} <font size=6.5 color='#64748B'>{op_t}</font>", cell_right),
+            Paragraph(f"{sales_val:,.2f}", cell_right),
+            Paragraph(f"{coll_val:,.2f}", cell_right),
+            Paragraph(f"{abs(rec_val):,.2f} {'Dr' if rec_val >= 0 else 'Cr'}", cell_right_burg if abs(rec_val) > 0 else cell_right),
         ])
 
     # Summary Totals Row
     total_name = Paragraph(f"<b>TOTAL ({len(debtors_data)} DEBTORS)</b>", ParagraphStyle('RecTotLbl', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR))
     table_rows.append([
         total_name,
-        Paragraph(f"<b>₹{abs(total_opening):,.2f} {op_suffix}</b>", cell_right_bold),
-        Paragraph(f"<b>₹{total_billed:,.2f}</b>", cell_right_bold),
-        Paragraph(f"<b>₹{total_received:,.2f}</b>", cell_right_bold),
-        Paragraph(f"<b>₹{abs(total_receivable):,.2f} {rec_suffix}</b>", cell_right_burg),
+        Paragraph(f"<b>Rs. {abs(total_opening):,.2f} {op_suffix}</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {total_billed:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {total_received:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {abs(total_receivable):,.2f} {rec_suffix}</b>", cell_right_burg),
     ])
 
     report_table = Table(table_rows, colWidths=[165, 90, 95, 95, 100], repeatRows=1)
@@ -2044,13 +2044,13 @@ def generate_payables_summary_pdf(creditors_data, company_id=1, summary_stats=No
     op_suffix = 'Cr' if total_opening >= 0 else 'Dr'
     pay_suffix = 'Cr' if total_payable >= 0 else 'Dr'
 
-    c1 = [Paragraph("TOTAL CREDITORS", kpi_label), Spacer(1, 2), Paragraph(str(total_creditors), kpi_val), Spacer(1, 1), Paragraph(f"Op: ₹{abs(total_opening):,.2f} {op_suffix}", kpi_sub)]
-    c2 = [Paragraph("TOTAL PURCHASES", kpi_label), Spacer(1, 2), Paragraph(f"₹{total_purchases:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Recorded Invoices", kpi_sub)]
-    c3 = [Paragraph("PAYMENTS SETTLED", kpi_label), Spacer(1, 2), Paragraph(f"₹{total_paid:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Disbursed Vouchers", kpi_sub)]
+    c1 = [Paragraph("TOTAL CREDITORS", kpi_label), Spacer(1, 2), Paragraph(str(total_creditors), kpi_val), Spacer(1, 1), Paragraph(f"Op: Rs. {abs(total_opening):,.2f} {op_suffix}", kpi_sub)]
+    c2 = [Paragraph("TOTAL PURCHASES", kpi_label), Spacer(1, 2), Paragraph(f"Rs. {total_purchases:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Recorded Invoices", kpi_sub)]
+    c3 = [Paragraph("PAYMENTS SETTLED", kpi_label), Spacer(1, 2), Paragraph(f"Rs. {total_paid:,.2f}", kpi_val), Spacer(1, 1), Paragraph("Disbursed Vouchers", kpi_sub)]
     c4 = [
         Paragraph("NET PAYABLE", ParagraphStyle('PayKpiLblB', parent=kpi_label, textColor=PRIMARY_COLOR)),
         Spacer(1, 2),
-        Paragraph(f"₹{abs(total_payable):,.2f} {pay_suffix}", kpi_val_burg),
+        Paragraph(f"Rs. {abs(total_payable):,.2f} {pay_suffix}", kpi_val_burg),
         Spacer(1, 1),
         Paragraph("Current Liability", ParagraphStyle('PayKpiSubB', parent=kpi_sub, textColor=PRIMARY_COLOR))
     ]
@@ -2100,10 +2100,10 @@ def generate_payables_summary_pdf(creditors_data, company_id=1, summary_stats=No
     # 4. Data Table (Col Widths: [165, 90, 95, 95, 100] = 545 pt)
     th_row = [
         Paragraph("SUPPLIER NAME &amp; CONTACT", th_left),
-        Paragraph("OPENING BAL (₹)", th_right),
-        Paragraph("PURCHASES (₹)", th_right),
-        Paragraph("PAYMENTS (₹)", th_right),
-        Paragraph("NET PAYABLE (₹)", th_right),
+        Paragraph("OPENING BAL (Rs.)", th_right),
+        Paragraph("PURCHASES (Rs.)", th_right),
+        Paragraph("PAYMENTS (Rs.)", th_right),
+        Paragraph("NET PAYABLE (Rs.)", th_right),
     ]
 
     table_rows = [th_row]
@@ -2132,20 +2132,20 @@ def generate_payables_summary_pdf(creditors_data, company_id=1, summary_stats=No
 
         table_rows.append([
             name_content,
-            Paragraph(f"₹{op_val:,.2f} <font size=6.5 color='#64748B'>{op_t}</font>", cell_right),
-            Paragraph(f"₹{pur_val:,.2f}", cell_right),
-            Paragraph(f"₹{paid_val:,.2f}", cell_right),
-            Paragraph(f"₹{abs(due_val):,.2f} {'Cr' if due_val >= 0 else 'Dr'}", cell_right_burg if abs(due_val) > 0 else cell_right),
+            Paragraph(f"Rs. {op_val:,.2f} <font size=6.5 color='#64748B'>{op_t}</font>", cell_right),
+            Paragraph(f"Rs. {pur_val:,.2f}", cell_right),
+            Paragraph(f"Rs. {paid_val:,.2f}", cell_right),
+            Paragraph(f"Rs. {abs(due_val):,.2f} {'Cr' if due_val >= 0 else 'Dr'}", cell_right_burg if abs(due_val) > 0 else cell_right),
         ])
 
     # Summary Totals Row
     total_name = Paragraph(f"<b>TOTAL ({len(creditors_data)} CREDITORS)</b>", ParagraphStyle('PayTotLbl', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR))
     table_rows.append([
         total_name,
-        Paragraph(f"<b>₹{abs(total_opening):,.2f} {op_suffix}</b>", cell_right_bold),
-        Paragraph(f"<b>₹{total_purchases:,.2f}</b>", cell_right_bold),
-        Paragraph(f"<b>₹{total_paid:,.2f}</b>", cell_right_bold),
-        Paragraph(f"<b>₹{abs(total_payable):,.2f} {pay_suffix}</b>", cell_right_burg),
+        Paragraph(f"<b>Rs. {abs(total_opening):,.2f} {op_suffix}</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {total_purchases:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {total_paid:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {abs(total_payable):,.2f} {pay_suffix}</b>", cell_right_burg),
     ])
 
     report_table = Table(table_rows, colWidths=[165, 90, 95, 95, 100], repeatRows=1)
@@ -2308,14 +2308,14 @@ def generate_collections_statement_pdf(records, source_type='ALL', period_text='
 
     kpi_2 = Table([
         [Paragraph("CASH COLLECTIONS", ParagraphStyle('KpiLbl2', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=MUTED_COLOR))],
-        [Paragraph(f"<b>₹{cash_amt:,.2f}</b>", ParagraphStyle('KpiVal2', fontName=FONT_BOLD, fontSize=14, leading=17, textColor=DARK_COLOR))],
+        [Paragraph(f"<b>Rs. {cash_amt:,.2f}</b>", ParagraphStyle('KpiVal2', fontName=FONT_BOLD, fontSize=14, leading=17, textColor=DARK_COLOR))],
         [Paragraph(f"<font size=6.5 color='#64748B'>Direct cash inflow</font>", ParagraphStyle('KpiSub2', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR))],
     ], colWidths=[130])
     kpi_2.setStyle(kpi_card_style)
 
     kpi_3 = Table([
         [Paragraph("UPI & BANK INFLOW", ParagraphStyle('KpiLbl3', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=MUTED_COLOR))],
-        [Paragraph(f"<b>₹{bank_amt:,.2f}</b>", ParagraphStyle('KpiVal3', fontName=FONT_BOLD, fontSize=14, leading=17, textColor=DARK_COLOR))],
+        [Paragraph(f"<b>Rs. {bank_amt:,.2f}</b>", ParagraphStyle('KpiVal3', fontName=FONT_BOLD, fontSize=14, leading=17, textColor=DARK_COLOR))],
         [Paragraph(f"<font size=6.5 color='#64748B'>Digital / Bank transfers</font>", ParagraphStyle('KpiSub3', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR))],
     ], colWidths=[130])
     kpi_3.setStyle(kpi_card_style)
@@ -2331,8 +2331,8 @@ def generate_collections_statement_pdf(records, source_type='ALL', period_text='
     ])
 
     kpi_4 = Table([
-        [Paragraph("TOTAL COLLECTED (₹)", ParagraphStyle('KpiLbl4', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=PRIMARY_COLOR))],
-        [Paragraph(f"<b>₹{tot_amt:,.2f}</b>", ParagraphStyle('KpiVal4', fontName=FONT_BOLD, fontSize=15, leading=18, textColor=PRIMARY_COLOR))],
+        [Paragraph("TOTAL COLLECTED (Rs.)", ParagraphStyle('KpiLbl4', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=PRIMARY_COLOR))],
+        [Paragraph(f"<b>Rs. {tot_amt:,.2f}</b>", ParagraphStyle('KpiVal4', fontName=FONT_BOLD, fontSize=15, leading=18, textColor=PRIMARY_COLOR))],
         [Paragraph(f"<font size=6.5 color='#64748B'>Net collected revenue</font>", ParagraphStyle('KpiSub4', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR))],
     ], colWidths=[135])
     kpi_4.setStyle(kpi_card_burgundy_style)
@@ -2362,7 +2362,7 @@ def generate_collections_statement_pdf(records, source_type='ALL', period_text='
         Paragraph("CUSTOMER / PARTY", hdr_cell),
         Paragraph("ROUTE / VEHICLE", hdr_cell),
         Paragraph("MODE", hdr_cell),
-        Paragraph("AMOUNT (₹)", hdr_cell_r),
+        Paragraph("AMOUNT (Rs.)", hdr_cell_r),
     ]]
 
     for rec in records:
@@ -2390,7 +2390,7 @@ def generate_collections_statement_pdf(records, source_type='ALL', period_text='
             party_p,
             Paragraph(r_route, cell_norm),
             Paragraph(f"<b>{r_mode}</b>", cell_norm),
-            Paragraph(f"₹{r_amt:,.2f}", cell_right_bold),
+            Paragraph(f"Rs. {r_amt:,.2f}", cell_right_bold),
         ])
 
     table_rows.append([
@@ -2398,7 +2398,7 @@ def generate_collections_statement_pdf(records, source_type='ALL', period_text='
         Paragraph("", cell_norm),
         Paragraph("", cell_norm),
         Paragraph("", cell_norm),
-        Paragraph(f"<b>₹{tot_amt:,.2f}</b>", cell_right_burg),
+        Paragraph(f"<b>Rs. {tot_amt:,.2f}</b>", cell_right_burg),
     ])
 
     col_widths = [95, 175, 125, 60, 90]
@@ -3262,21 +3262,21 @@ def generate_ledger_report_pdf(
     c2 = [
         Paragraph("NET OPENING BAL", kpi_label),
         Spacer(1, 2),
-        Paragraph(f"₹{abs(net_opening):,.2f} {op_suffix}", kpi_val),
+        Paragraph(f"Rs. {abs(net_opening):,.2f} {op_suffix}", kpi_val),
         Spacer(1, 1),
         Paragraph("Initial Balance b/f", kpi_sub)
     ]
     c3 = [
         Paragraph("PERIOD TURNOVER", kpi_label),
         Spacer(1, 2),
-        Paragraph(f"Dr: ₹{tot_debit:,.0f} | Cr: ₹{tot_credit:,.0f}", ParagraphStyle('LdgTurnover', parent=kpi_val, fontSize=9, leading=11)),
+        Paragraph(f"Dr: Rs. {tot_debit:,.0f} | Cr: Rs. {tot_credit:,.0f}", ParagraphStyle('LdgTurnover', parent=kpi_val, fontSize=9, leading=11)),
         Spacer(1, 1),
         Paragraph("Voucher Postings", kpi_sub)
     ]
     c4 = [
         Paragraph("NET CURRENT BALANCE", ParagraphStyle('LdgKpiLblB', parent=kpi_label, textColor=PRIMARY_COLOR)),
         Spacer(1, 2),
-        Paragraph(f"₹{abs(tot_current):,.2f} {cur_suffix}", kpi_val_burg),
+        Paragraph(f"Rs. {abs(tot_current):,.2f} {cur_suffix}", kpi_val_burg),
         Spacer(1, 1),
         Paragraph("Live Ledger Balance", ParagraphStyle('LdgKpiSubB', parent=kpi_sub, textColor=PRIMARY_COLOR))
     ]
@@ -3307,10 +3307,10 @@ def generate_ledger_report_pdf(
         Paragraph("#", th_center),
         Paragraph("LEDGER ACCOUNT", th_left),
         Paragraph("GROUP", th_left),
-        Paragraph("OPENING (₹)", th_right),
-        Paragraph("DEBIT (₹)", th_right),
-        Paragraph("CREDIT (₹)", th_right),
-        Paragraph("CURRENT (₹)", th_right),
+        Paragraph("OPENING (Rs.)", th_right),
+        Paragraph("DEBIT (Rs.)", th_right),
+        Paragraph("CREDIT (Rs.)", th_right),
+        Paragraph("CURRENT (Rs.)", th_right),
     ]
 
     table_rows = [th_row]
@@ -3345,18 +3345,18 @@ def generate_ledger_report_pdf(
         # Opening balance
         op_val = Decimal(str(l.get('OpeningBalance', 0) or 0))
         op_type = (l.get('OpeningBalanceType', 'DR') or 'DR').upper()
-        op_str = f"₹{abs(op_val):,.2f} {op_type}" if op_val != 0 else "₹0.00"
+        op_str = f"{abs(op_val):,.2f} {op_type}" if op_val != 0 else "0.00"
 
         # Debit & Credit
         d_val = Decimal(str(l.get('DebitBalance', 0) or 0))
         c_val = Decimal(str(l.get('CreditBalance', 0) or 0))
-        d_str = f"₹{d_val:,.2f}" if d_val > 0 else "—"
-        c_str = f"₹{c_val:,.2f}" if c_val > 0 else "—"
+        d_str = f"{d_val:,.2f}" if d_val > 0 else "—"
+        c_str = f"{c_val:,.2f}" if c_val > 0 else "—"
 
         # Current balance
         cur_val = Decimal(str(l.get('CurrentBalance', 0) or 0))
         cur_sfx = 'Dr' if cur_val >= 0 else 'Cr'
-        cur_str = f"₹{abs(cur_val):,.2f} {cur_sfx}"
+        cur_str = f"{abs(cur_val):,.2f} {cur_sfx}"
 
         row = [
             Paragraph(str(idx), cell_num),
@@ -3374,10 +3374,10 @@ def generate_ledger_report_pdf(
         Paragraph("", cell_num),
         Paragraph("<b>GRAND TOTALS</b>", ParagraphStyle('LdgTotLbl', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR)),
         Paragraph(f"<b>{total_count} Accounts</b>", ParagraphStyle('LdgTotCnt', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR)),
-        Paragraph(f"₹{abs(net_opening):,.2f} {op_suffix}", cell_right_bold),
-        Paragraph(f"₹{tot_debit:,.2f}", cell_right_bold),
-        Paragraph(f"₹{tot_credit:,.2f}", cell_right_bold),
-        Paragraph(f"₹{abs(tot_current):,.2f} {cur_suffix}", ParagraphStyle('LdgTotCur', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)),
+        Paragraph(f"Rs. {abs(net_opening):,.2f} {op_suffix}", cell_right_bold),
+        Paragraph(f"Rs. {tot_debit:,.2f}", cell_right_bold),
+        Paragraph(f"Rs. {tot_credit:,.2f}", cell_right_bold),
+        Paragraph(f"Rs. {abs(tot_current):,.2f} {cur_suffix}", ParagraphStyle('LdgTotCur', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)),
     ]
     table_rows.append(tot_row)
 
