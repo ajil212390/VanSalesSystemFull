@@ -6,6 +6,7 @@ from datetime import datetime
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+from reportlab.pdfgen import canvas
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether, HRFlowable
 )
@@ -35,6 +36,41 @@ LIGHT_BG = colors.HexColor('#F8FAFC')          # Clean off-white
 CARD_BG = colors.HexColor('#FDF2F4')           # Soft burgundy tint
 BORDER_COLOR = colors.HexColor('#CBD5E1')      # Subtle border
 SUCCESS_COLOR = colors.HexColor('#166534')     # Dark Green
+
+
+class NumberedCanvas(canvas.Canvas):
+    """
+    Two-pass ReportLab canvas to calculate total page count ('Page X of Y')
+    and draw consistent running footer across all pages.
+    """
+    def __init__(self, *args, **kwargs):
+        super(NumberedCanvas, self).__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_decorations(num_pages)
+            super(NumberedCanvas, self).showPage()
+        super(NumberedCanvas, self).save()
+
+    def draw_page_decorations(self, page_count):
+        self.saveState()
+        self.setFont('Helvetica', 7)
+        self.setFillColor(colors.HexColor('#64748B'))
+        # Bottom page footer
+        text = f"Page {self._pageNumber} of {page_count}"
+        self.drawRightString(595.28 - 25, 14, text)
+        self.drawString(25, 14, "Future Gas Cloud ERP • Official Ledger Register • Confidential Internal Record")
+        self.setStrokeColor(colors.HexColor('#CBD5E1'))
+        self.setLineWidth(0.5)
+        self.line(25, 23, 595.28 - 25, 23)
+        self.restoreState()
 
 
 def amount_to_words(amount):
@@ -3068,4 +3104,338 @@ def generate_delivery_note_pdf(delivery_note, company_id=1):
     story.append(ftr_table)
 
     doc.build(story)
+    return buf.getvalue()
+
+
+def generate_ledger_report_pdf(
+    ledgers_data,
+    company_id=1,
+    group_filter='ALL',
+    route_filter='ALL',
+    group_name='',
+    route_name='',
+    summary_stats=None,
+    search_query=''
+):
+    """
+    Generates a publication-grade, multi-page A4 PDF report for Chart of Accounts / Ledger Analysis.
+    Supports dynamic titles (e.g. Sundry Debtors, Route filtering), KPI statistics strip,
+    paginated table repeating header on every page, and running 'Page X of Y' footer.
+    """
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=25,
+        bottomMargin=32
+    )
+
+    company_name = "FUTURE GAS"
+    company_subtitle = "LPG Commercial & Domestic Distribution Network"
+    company_address = "Civil Station, Kozhikode, Kerala - 673020"
+    company_contact = "Ph: +91 98470 12345 | Email: accounts@futuregas.in"
+    company_gstin = "32AABCF1234F1Z8"
+
+    try:
+        from core.models import Company
+        co = Company.objects.filter(CompanyId=company_id).first()
+        if co:
+            company_name = co.CompanyName or company_name
+            company_address = co.Address or company_address
+            company_gstin = co.GSTIN or company_gstin
+            company_contact = f"Ph: {co.PhoneNumber or co.MobileNumber or '+91 98470 12345'}"
+    except Exception:
+        pass
+
+    # Dynamic Title Construction based on Group & Route
+    active_group = (group_name or '').strip()
+    active_route = (route_name or '').strip()
+
+    if active_group and active_route:
+        report_main_title = f"{active_group.upper()} REPORT"
+        report_sub_title = f"ROUTE: {active_route.upper()}"
+    elif active_group:
+        report_main_title = f"{active_group.upper()} LEDGER REPORT"
+        report_sub_title = "ALL ROUTES &bull; ACTIVE ACCOUNTS"
+    elif active_route:
+        report_main_title = f"LEDGER REPORT — {active_route.upper()}"
+        report_sub_title = "ALL ACCOUNT GROUPS"
+    else:
+        report_main_title = "CHART OF ACCOUNTS &amp; LEDGER REPORT"
+        report_sub_title = "GENERAL TRIAL BALANCE &bull; ALL ACCOUNTS"
+
+    title_company = ParagraphStyle('LdgCompT', fontName=FONT_BOLD, fontSize=17, leading=21, textColor=PRIMARY_COLOR)
+    sub_company = ParagraphStyle('LdgCompS', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=colors.HexColor('#334155'))
+    meta_company = ParagraphStyle('LdgCompM', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=MUTED_COLOR)
+
+    title_box_h = ParagraphStyle('LdgBoxH', fontName=FONT_BOLD, fontSize=13, leading=16, textColor=PRIMARY_COLOR, alignment=2)
+    title_box_sub = ParagraphStyle('LdgBoxSub', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=colors.HexColor('#475569'), alignment=2)
+    title_box_m = ParagraphStyle('LdgBoxM', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=2)
+
+    kpi_label = ParagraphStyle('LdgKpiLbl', fontName=FONT_BOLD, fontSize=6.5, leading=8.5, textColor=MUTED_COLOR, alignment=1)
+    kpi_val = ParagraphStyle('LdgKpiVal', fontName=FONT_BOLD, fontSize=11.5, leading=13.5, textColor=DARK_COLOR, alignment=1)
+    kpi_sub = ParagraphStyle('LdgKpiSub', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=MUTED_COLOR, alignment=1)
+    kpi_val_burg = ParagraphStyle('LdgKpiValBurg', fontName=FONT_BOLD, fontSize=11.5, leading=13.5, textColor=PRIMARY_COLOR, alignment=1)
+
+    th_left = ParagraphStyle('LdgThL', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=colors.white)
+    th_right = ParagraphStyle('LdgThR', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=colors.white, alignment=2)
+    th_center = ParagraphStyle('LdgThC', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=colors.white, alignment=1)
+
+    cell_num = ParagraphStyle('LdgCellNum', fontName=FONT_NAME, fontSize=7, leading=9, textColor=MUTED_COLOR, alignment=1)
+    cell_name = ParagraphStyle('LdgCellName', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR)
+    cell_route = ParagraphStyle('LdgCellRoute', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR)
+    cell_group = ParagraphStyle('LdgCellGrp', fontName=FONT_BOLD, fontSize=7, leading=8.5, textColor=colors.HexColor('#334155'))
+    cell_nature = ParagraphStyle('LdgCellNat', fontName=FONT_NAME, fontSize=6, leading=7.5, textColor=MUTED_COLOR)
+    cell_right = ParagraphStyle('LdgCellR', fontName=FONT_NAME, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=2)
+    cell_right_bold = ParagraphStyle('LdgCellRB', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=2)
+    cell_right_burg = ParagraphStyle('LdgCellRBurg', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=2)
+
+    story = []
+
+    # 1. Header Block
+    now_str = datetime.now().strftime('%d-%b-%Y %I:%M %p')
+    date_only = datetime.now().strftime('%d-%b-%Y')
+
+    header_left = [
+        Paragraph(company_name, title_company),
+        Paragraph(company_subtitle, sub_company),
+        Paragraph(company_address, meta_company),
+        Paragraph(f"{company_contact} &bull; GSTIN: <b>{company_gstin}</b>", meta_company),
+    ]
+
+    header_right = [
+        Paragraph(report_main_title, title_box_h),
+        Paragraph(report_sub_title, title_box_sub),
+        Spacer(1, 2),
+        Paragraph(f"Generated: <b>{now_str}</b>", title_box_m),
+        Paragraph(f"Active Accounts Listed: <b>{len(ledgers_data)}</b>", title_box_m),
+    ]
+
+    hdr_table = Table([[header_left, header_right]], colWidths=[335, 210])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(hdr_table)
+    story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceBefore=4, spaceAfter=8))
+
+    # Calculate Totals
+    total_count = len(ledgers_data)
+    net_opening = Decimal('0.00')
+    tot_debit = Decimal('0.00')
+    tot_credit = Decimal('0.00')
+    tot_current = Decimal('0.00')
+
+    for l in ledgers_data:
+        op = Decimal(str(l.get('OpeningBalance', 0) or 0))
+        op_type = (l.get('OpeningBalanceType', 'DR') or 'DR').upper()
+        net_opening += (op if op_type == 'DR' else -op)
+        tot_debit += Decimal(str(l.get('DebitBalance', 0) or 0))
+        tot_credit += Decimal(str(l.get('CreditBalance', 0) or 0))
+        tot_current += Decimal(str(l.get('CurrentBalance', 0) or 0))
+
+    if summary_stats and isinstance(summary_stats, dict):
+        if 'totDebit' in summary_stats:
+            tot_debit = Decimal(str(summary_stats.get('totDebit', 0) or 0))
+        if 'totCredit' in summary_stats:
+            tot_credit = Decimal(str(summary_stats.get('totCredit', 0) or 0))
+        if 'totCurrent' in summary_stats:
+            tot_current = Decimal(str(summary_stats.get('totCurrent', 0) or 0))
+        if 'netOpening' in summary_stats:
+            net_opening = Decimal(str(summary_stats.get('netOpening', 0) or 0))
+
+    op_suffix = 'Dr' if net_opening >= 0 else 'Cr'
+    cur_suffix = 'Dr' if tot_current >= 0 else 'Cr'
+
+    # 2. KPI Summary Strip (4 Cards)
+    c1 = [
+        Paragraph("TOTAL ACCOUNTS", kpi_label),
+        Spacer(1, 2),
+        Paragraph(f"{total_count} Ledgers", kpi_val),
+        Spacer(1, 1),
+        Paragraph(f"{active_group or 'All Groups'}", kpi_sub)
+    ]
+    c2 = [
+        Paragraph("NET OPENING BAL", kpi_label),
+        Spacer(1, 2),
+        Paragraph(f"₹{abs(net_opening):,.2f} {op_suffix}", kpi_val),
+        Spacer(1, 1),
+        Paragraph("Initial Balance b/f", kpi_sub)
+    ]
+    c3 = [
+        Paragraph("PERIOD TURNOVER", kpi_label),
+        Spacer(1, 2),
+        Paragraph(f"Dr: ₹{tot_debit:,.0f} | Cr: ₹{tot_credit:,.0f}", ParagraphStyle('LdgTurnover', parent=kpi_val, fontSize=9, leading=11)),
+        Spacer(1, 1),
+        Paragraph("Voucher Postings", kpi_sub)
+    ]
+    c4 = [
+        Paragraph("NET CURRENT BALANCE", ParagraphStyle('LdgKpiLblB', parent=kpi_label, textColor=PRIMARY_COLOR)),
+        Spacer(1, 2),
+        Paragraph(f"₹{abs(tot_current):,.2f} {cur_suffix}", kpi_val_burg),
+        Spacer(1, 1),
+        Paragraph("Live Ledger Balance", ParagraphStyle('LdgKpiSubB', parent=kpi_sub, textColor=PRIMARY_COLOR))
+    ]
+
+    kpi_data = [[c1, '', c2, '', c3, '', c4]]
+    kpi_table = Table(kpi_data, colWidths=[130, 8, 130, 8, 130, 8, 131])
+    kpi_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
+        ('BOX', (2, 0), (2, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (2, 0), (2, 0), LIGHT_BG),
+        ('BOX', (4, 0), (4, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (4, 0), (4, 0), LIGHT_BG),
+        ('BOX', (6, 0), (6, 0), 1.25, PRIMARY_COLOR),
+        ('BACKGROUND', (6, 0), (6, 0), CARD_BG),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    story.append(kpi_table)
+    story.append(Spacer(1, 8))
+
+    # 3. Main Data Table
+    # Widths: [22, 173, 85, 65, 65, 65, 70] = 545 pt
+    th_row = [
+        Paragraph("#", th_center),
+        Paragraph("LEDGER ACCOUNT", th_left),
+        Paragraph("GROUP", th_left),
+        Paragraph("OPENING (₹)", th_right),
+        Paragraph("DEBIT (₹)", th_right),
+        Paragraph("CREDIT (₹)", th_right),
+        Paragraph("CURRENT (₹)", th_right),
+    ]
+
+    table_rows = [th_row]
+
+    for idx, l in enumerate(ledgers_data, start=1):
+        name = l.get('LedgerName') or 'Unnamed Account'
+        grp_name = l.get('group_name') or ''
+        if not grp_name and isinstance(l.get('Group'), dict):
+            grp_name = l.get('Group', {}).get('GroupName', '')
+        grp_nature = l.get('group_nature') or ''
+        if not grp_nature and isinstance(l.get('Group'), dict):
+            grp_nature = l.get('Group', {}).get('Nature', '')
+
+        route_label = l.get('route_name') or l.get('RouteName') or ''
+        customer_code = l.get('CustomerCode') or ''
+
+        # Account Details cell
+        cell_acc_content = [Paragraph(f"<b>{name}</b>", cell_name)]
+        sub_details = []
+        if route_label:
+            sub_details.append(f"Route: {route_label}")
+        if customer_code:
+            sub_details.append(f"Code: {customer_code}")
+        if sub_details:
+            cell_acc_content.append(Paragraph(" &bull; ".join(sub_details), cell_route))
+
+        # Group cell
+        cell_grp_content = [Paragraph(grp_name or 'General', cell_group)]
+        if grp_nature:
+            cell_grp_content.append(Paragraph(grp_nature, cell_nature))
+
+        # Opening balance
+        op_val = Decimal(str(l.get('OpeningBalance', 0) or 0))
+        op_type = (l.get('OpeningBalanceType', 'DR') or 'DR').upper()
+        op_str = f"₹{abs(op_val):,.2f} {op_type}" if op_val != 0 else "₹0.00"
+
+        # Debit & Credit
+        d_val = Decimal(str(l.get('DebitBalance', 0) or 0))
+        c_val = Decimal(str(l.get('CreditBalance', 0) or 0))
+        d_str = f"₹{d_val:,.2f}" if d_val > 0 else "—"
+        c_str = f"₹{c_val:,.2f}" if c_val > 0 else "—"
+
+        # Current balance
+        cur_val = Decimal(str(l.get('CurrentBalance', 0) or 0))
+        cur_sfx = 'Dr' if cur_val >= 0 else 'Cr'
+        cur_str = f"₹{abs(cur_val):,.2f} {cur_sfx}"
+
+        row = [
+            Paragraph(str(idx), cell_num),
+            cell_acc_content,
+            cell_grp_content,
+            Paragraph(op_str, cell_right),
+            Paragraph(d_str, cell_right),
+            Paragraph(c_str, cell_right),
+            Paragraph(cur_str, cell_right_burg if cur_val != 0 else cell_right),
+        ]
+        table_rows.append(row)
+
+    # Summary Totals Row at the end
+    tot_row = [
+        Paragraph("", cell_num),
+        Paragraph("<b>GRAND TOTALS</b>", ParagraphStyle('LdgTotLbl', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR)),
+        Paragraph(f"<b>{total_count} Accounts</b>", ParagraphStyle('LdgTotCnt', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph(f"₹{abs(net_opening):,.2f} {op_suffix}", cell_right_bold),
+        Paragraph(f"₹{tot_debit:,.2f}", cell_right_bold),
+        Paragraph(f"₹{tot_credit:,.2f}", cell_right_bold),
+        Paragraph(f"₹{abs(tot_current):,.2f} {cur_suffix}", ParagraphStyle('LdgTotCur', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)),
+    ]
+    table_rows.append(tot_row)
+
+    data_table = Table(table_rows, colWidths=[22, 173, 85, 65, 65, 65, 70], repeatRows=1)
+
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        # Totals row highlight
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FDF2F4')),
+        ('LINEABOVE', (0, -1), (-1, -1), 1.2, PRIMARY_COLOR),
+        ('LINEBELOW', (0, -1), (-1, -1), 1.5, PRIMARY_COLOR),
+        ('TOPPADDING', (0, -1), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, -1), (-1, -1), 5),
+    ]
+
+    # Alternate row backgrounds
+    for i in range(1, len(ledgers_data) + 1):
+        if i % 2 == 0:
+            t_style.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor('#F8FAFC')))
+
+    data_table.setStyle(TableStyle(t_style))
+    story.append(data_table)
+    story.append(Spacer(1, 12))
+
+    # 4. Signatory block (KeepTogether so it doesn't get orphaned)
+    notes_content = [
+        Paragraph("<b>Audit &amp; Reporting Compliance Notes:</b>", ParagraphStyle('LdgNtH', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=DARK_COLOR)),
+        Paragraph("&bull; Balances compiled from ledger transactions in compliance with Indian Accounting Standards.", ParagraphStyle('LdgNtB', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=MUTED_COLOR)),
+        Paragraph("&bull; Dr indicates net receivable or asset balance; Cr indicates net advance or liability balance.", ParagraphStyle('LdgNtB2', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=MUTED_COLOR)),
+    ]
+
+    sig_content = [
+        Spacer(1, 14),
+        Paragraph("_______________________________________", ParagraphStyle('LdgSgL', fontName=FONT_NAME, fontSize=8, leading=10, textColor=colors.HexColor('#94A3B8'), alignment=2)),
+        Paragraph("<b>Authorized Signatory / Accountant</b>", ParagraphStyle('LdgSgA', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)),
+        Paragraph(f"<font size=6.5 color='#64748B'>Date: {date_only}</font>", ParagraphStyle('LdgSgD', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR, alignment=2)),
+    ]
+
+    bottom_table = Table([[notes_content, '', sig_content]], colWidths=[315, 20, 210])
+    bottom_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#F8FAFC')),
+        ('BOX', (2, 0), (2, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (2, 0), (2, 0), colors.white),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(KeepTogether(bottom_table))
+
+    # Build document with NumberedCanvas for automatic multi-page page numbering
+    doc.build(story, canvasmaker=NumberedCanvas)
     return buf.getvalue()

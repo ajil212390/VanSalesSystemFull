@@ -1887,24 +1887,41 @@ class LedgerViewSet(viewsets.ModelViewSet):
         """
         company_id = getattr(request.user, 'CompanyId', 1) or 1
         group_filter = request.query_params.get('group', 'ALL') or (request.data.get('group_filter') if request.method == 'POST' else 'ALL') or 'ALL'
+        route_filter = request.query_params.get('route', 'ALL') or (request.data.get('route_filter') if request.method == 'POST' else 'ALL') or 'ALL'
+        group_name = (request.data.get('group_name') if request.method == 'POST' else None) or request.query_params.get('group_name', '')
+        route_name = (request.data.get('route_name') if request.method == 'POST' else None) or request.query_params.get('route_name', '')
         summary_stats = request.data.get('summary_stats') if request.method == 'POST' else None
         ledgers_data = request.data.get('ledgers') if request.method == 'POST' else None
 
         if not ledgers_data:
             qs = self.get_queryset()
+            if group_filter and group_filter != 'ALL':
+                qs = qs.filter(Group_id=group_filter)
+            if route_filter and route_filter != 'ALL':
+                qs = qs.filter(Route_id=route_filter)
             serializer = self.get_serializer(qs, many=True)
             ledgers_data = serializer.data
 
         try:
             from core.invoice_generator import generate_ledger_report_pdf
             pdf_bytes = generate_ledger_report_pdf(
-                ledgers_data, company_id=company_id, group_filter=group_filter, summary_stats=summary_stats
+                ledgers_data,
+                company_id=company_id,
+                group_filter=group_filter,
+                route_filter=route_filter,
+                group_name=group_name or '',
+                route_name=route_name or '',
+                summary_stats=summary_stats
             )
             response = HttpResponse(pdf_bytes, content_type='application/pdf')
-            filename = f"Ledger_Analysis_Report_{date.today().strftime('%Y%m%d')}.pdf"
+            clean_name = f"{group_name}_{route_name}".strip('_') if (group_name or route_name) else "Ledger_Analysis"
+            clean_name = re.sub(r'[^a-zA-Z0-9_-]', '_', clean_name)
+            filename = f"{clean_name}_Report_{date.today().strftime('%Y%m%d')}.pdf"
             response['Content-Disposition'] = f'inline; filename="{filename}"'
             return response
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return Response({'detail': f'Error generating ledger report PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @transaction.atomic

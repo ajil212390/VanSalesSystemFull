@@ -39,6 +39,11 @@ interface LedgerItem {
   Group?: number | { GroupId?: number; GroupName?: string; Nature?: string };
   group_name?: string;
   group_nature?: string;
+  Route?: number | null;
+  RouteId?: number | null;
+  RouteName?: string;
+  route_name?: string;
+  CustomerCode?: string;
   OpeningBalance: number;
   OpeningBalanceType: 'DR' | 'CR';
   DebitBalance: number;
@@ -66,6 +71,11 @@ export const LedgerAnalysisPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLedgerId, setSelectedLedgerId] = useState<number | null>(null);
 
+  // Main Page Filters & Sorting (matching Accounts Page)
+  const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
+  const [selectedRouteFilter, setSelectedRouteFilter] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<string>('name_asc');
+
   // Statement Filters
   const [datePreset, setDatePreset] = useState<string>('ALL');
   const [customFromDate, setCustomFromDate] = useState<string>('');
@@ -85,7 +95,25 @@ export const LedgerAnalysisPage: React.FC = () => {
     },
   });
 
-  // 2. Fetch Statement for Selected Ledger
+  // 2. Fetch Account Groups
+  const { data: groups = [] } = useQuery<{ GroupId: number; GroupName: string; Nature: string }[]>({
+    queryKey: ['groups'],
+    queryFn: async () => {
+      const res = await apiClient.get('/groups/');
+      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+    },
+  });
+
+  // 3. Fetch Routes
+  const { data: routes = [] } = useQuery<{ RouteId: number; RouteName: string }[]>({
+    queryKey: ['routes'],
+    queryFn: async () => {
+      const res = await apiClient.get('/routes/');
+      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+    },
+  });
+
+  // 4. Fetch Statement for Selected Ledger
   const { data: statementData, isLoading: isLoadingStatement, refetch: refetchStatement } = useQuery<{
     ledger: any;
     entries: StatementEntry[];
@@ -99,19 +127,85 @@ export const LedgerAnalysisPage: React.FC = () => {
     enabled: Boolean(selectedLedgerId),
   });
 
-  // Filtered Ledgers List - Plain search matching Accounts Page without restrictive grouping
+  // Options for Dropdowns
+  const groupOptions = useMemo(() => {
+    return groups.map((g) => ({
+      value: String(g.GroupId),
+      label: `${g.GroupName} (${g.Nature})`,
+    }));
+  }, [groups]);
+
+  const routeOptions = useMemo(() => {
+    return routes.map((r: any) => ({
+      value: String(r.RouteId),
+      label: r.RouteName,
+    }));
+  }, [routes]);
+
+  const selectedGroupName = useMemo(() => {
+    if (!selectedGroupFilter) return '';
+    const g = groups.find((grp) => String(grp.GroupId) === selectedGroupFilter);
+    return g ? g.GroupName : '';
+  }, [selectedGroupFilter, groups]);
+
+  const selectedRouteName = useMemo(() => {
+    if (!selectedRouteFilter) return '';
+    const r = routes.find((rt: any) => String(rt.RouteId) === selectedRouteFilter);
+    return r ? r.RouteName : '';
+  }, [selectedRouteFilter, routes]);
+
+  // Filtered and Sorted Ledgers List (matching Accounts Page capabilities)
   const filteredLedgers = useMemo(() => {
-    if (!searchQuery.trim()) return ledgers;
     const q = searchQuery.toLowerCase().trim();
-    return ledgers.filter((l) => {
+    let list = ledgers.filter((l: any) => {
       const gName = (l.group_name || (typeof l.Group === 'object' ? (l.Group as any)?.GroupName : '') || '').toLowerCase();
-      const matchName = l.LedgerName.toLowerCase().includes(q);
-      const matchGroup = gName.includes(q);
-      const matchGst = (l.GSTIN || '').toLowerCase().includes(q);
-      const matchPhone = (l.PhoneNumber || l.MobileNumber || '').includes(q);
-      return matchName || matchGroup || matchGst || matchPhone;
+      const rName = (l.route_name || l.RouteName || '').toLowerCase();
+      const cCode = (l.CustomerCode || '').toLowerCase();
+
+      const matchesSearch =
+        !q ||
+        l.LedgerName.toLowerCase().includes(q) ||
+        gName.includes(q) ||
+        rName.includes(q) ||
+        cCode.includes(q) ||
+        (l.GSTIN || '').toLowerCase().includes(q) ||
+        (l.PhoneNumber || l.MobileNumber || '').includes(q);
+
+      const matchesGroup = selectedGroupFilter
+        ? String(typeof l.Group === 'object' ? l.Group?.GroupId : l.Group) === selectedGroupFilter
+        : true;
+
+      const matchesRoute = selectedRouteFilter
+        ? (String(l.Route) === selectedRouteFilter || String(l.RouteId) === selectedRouteFilter)
+        : true;
+
+      return matchesSearch && matchesGroup && matchesRoute;
     });
-  }, [ledgers, searchQuery]);
+
+    // Apply Sorting
+    list = [...list].sort((a: any, b: any) => {
+      if (sortBy === 'name_asc') {
+        return a.LedgerName.localeCompare(b.LedgerName);
+      }
+      if (sortBy === 'name_desc') {
+        return b.LedgerName.localeCompare(a.LedgerName);
+      }
+      if (sortBy === 'balance_desc') {
+        return Number(b.CurrentBalance || 0) - Number(a.CurrentBalance || 0);
+      }
+      if (sortBy === 'balance_asc') {
+        return Number(a.CurrentBalance || 0) - Number(b.CurrentBalance || 0);
+      }
+      if (sortBy === 'route_asc') {
+        const rA = a.route_name || a.RouteName || '';
+        const rB = b.route_name || b.RouteName || '';
+        return rA.localeCompare(rB) || a.LedgerName.localeCompare(b.LedgerName);
+      }
+      return 0;
+    });
+
+    return list;
+  }, [ledgers, searchQuery, selectedGroupFilter, selectedRouteFilter, sortBy]);
 
   // Overall Financial Totals matching Accounts Page Strip
   const financialTotals = useMemo(() => {
@@ -261,10 +355,16 @@ export const LedgerAnalysisPage: React.FC = () => {
     try {
       setIsGeneratingReportPdf(true);
       const payload = {
-        group_filter: 'ALL',
+        group_filter: selectedGroupFilter || 'ALL',
+        route_filter: selectedRouteFilter || 'ALL',
+        group_name: selectedGroupName,
+        route_name: selectedRouteName,
+        sort_by: sortBy,
         summary_stats: {
           count: ledgers.length,
           filteredCount: filteredLedgers.length,
+          totOpening: financialTotals.totalOpening,
+          netOpening: financialTotals.netOpening,
           totDebit: financialTotals.totalDebit,
           totCredit: financialTotals.totalCredit,
           totCurrent: financialTotals.totalCurrent,
@@ -279,7 +379,7 @@ export const LedgerAnalysisPage: React.FC = () => {
       window.open(url, '_blank');
       notifications.show({
         title: 'PDF Generated',
-        message: 'Official Ledger Analysis Report opened in new tab.',
+        message: `${selectedGroupName || selectedRouteName || 'Ledger'} Report opened in new tab.`,
         color: 'burgundy',
       });
     } catch (err: any) {
@@ -682,22 +782,68 @@ export const LedgerAnalysisPage: React.FC = () => {
 
       {/* Main Table Container matching Accounts Page */}
       <Paper radius="sm" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', overflow: 'hidden' }}>
-        {/* Search Toolbar */}
+        {/* Filter & Search Toolbar */}
         <Group justify="space-between" align="center" p="sm" style={{ borderBottom: '1px solid #f1f5f9' }} wrap="wrap" gap="sm">
-          <TextInput
-            placeholder="Search accounts..."
-            leftSection={<IconSearch size={16} stroke={1.5} color="#800020" />}
-            rightSection={
-              searchQuery ? (
-                <CloseButton size="sm" aria-label="Clear search" onClick={() => setSearchQuery('')} />
-              ) : null
-            }
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            size="sm"
-            radius="md"
-            style={{ width: 280, maxWidth: '100%' }}
-          />
+          <Group gap="xs" wrap="wrap" style={{ flexGrow: 1 }}>
+            {/* Account Group Filter */}
+            <Select
+              placeholder="All Account Groups"
+              data={groupOptions}
+              value={selectedGroupFilter}
+              onChange={(val) => setSelectedGroupFilter(val)}
+              clearable
+              searchable
+              size="sm"
+              radius="md"
+              style={{ width: 190, minWidth: 150 }}
+            />
+
+            {/* Route Filter */}
+            <Select
+              placeholder="All Routes"
+              data={routeOptions}
+              value={selectedRouteFilter}
+              onChange={(val) => setSelectedRouteFilter(val)}
+              clearable
+              searchable
+              size="sm"
+              radius="md"
+              style={{ width: 160, minWidth: 130 }}
+            />
+
+            {/* Sort Filter */}
+            <Select
+              placeholder="Sort by"
+              data={[
+                { value: 'name_asc', label: 'Name (A to Z)' },
+                { value: 'name_desc', label: 'Name (Z to A)' },
+                { value: 'balance_desc', label: 'Balance (High to Low)' },
+                { value: 'balance_asc', label: 'Balance (Low to High)' },
+                { value: 'route_asc', label: 'Route (A to Z)' },
+              ]}
+              value={sortBy}
+              onChange={(val) => setSortBy(val || 'name_asc')}
+              size="sm"
+              radius="md"
+              style={{ width: 170, minWidth: 140 }}
+            />
+
+            {/* Search Box */}
+            <TextInput
+              placeholder="Search accounts..."
+              leftSection={<IconSearch size={16} stroke={1.5} color="#800020" />}
+              rightSection={
+                searchQuery ? (
+                  <CloseButton size="sm" aria-label="Clear search" onClick={() => setSearchQuery('')} />
+                ) : null
+              }
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.currentTarget.value)}
+              size="sm"
+              radius="md"
+              style={{ width: 220, minWidth: 160 }}
+            />
+          </Group>
 
           <Text size="xs" c="dimmed">
             {filteredLedgers.length} account{filteredLedgers.length !== 1 ? 's' : ''} • Click any row to view ledger statement
@@ -754,9 +900,16 @@ export const LedgerAnalysisPage: React.FC = () => {
                             <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
                               {ledger.LedgerName}
                             </Text>
-                            <Text size="xs" c="dimmed" mt={2} style={{ whiteSpace: 'nowrap' }}>
-                              {ledger.group_name || 'General'}
-                            </Text>
+                            <Group gap={6} align="center" mt={2} wrap="nowrap">
+                              <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                                {ledger.group_name || 'General'}
+                              </Text>
+                              {(ledger.route_name || ledger.RouteName) && (
+                                <Badge size="xs" variant="light" color="pink" radius="sm">
+                                  {ledger.route_name || ledger.RouteName}
+                                </Badge>
+                              )}
+                            </Group>
                           </div>
                         </Group>
                       </Table.Td>
