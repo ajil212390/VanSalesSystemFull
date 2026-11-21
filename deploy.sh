@@ -24,8 +24,9 @@ git fetch origin main
 git reset --hard origin/main
 
 echo "🐍 [2/5] Updating Backend (Python packages, migrations & static)..."
+chmod 1777 /dev/shm 2>/dev/null || true
 sed -i "s/^ssl = on/ssl = off/" /etc/postgresql/18/main/postgresql.conf 2>/dev/null || true
-pg_ctlcluster 18 main start 2>/dev/null || true
+pg_ctlcluster 18 main restart 2>/dev/null || true
 systemctl start postgresql 2>/dev/null || true
 systemctl enable postgresql 2>/dev/null || true
 systemctl enable postgresql@18-main 2>/dev/null || true
