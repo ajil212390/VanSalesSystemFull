@@ -18,12 +18,112 @@ class _AdminScreenState extends State<AdminScreen> {
   int _currentIndex = 0; // 0: Overview, 1: Van Fleet, 2: Revenue, 3: Stock
   bool _isRefreshing = false;
 
+  final TextEditingController _vanSearchController = TextEditingController();
+  final FocusNode _vanSearchFocusNode = FocusNode();
+  String _vanSearchQuery = '';
+
+  final TextEditingController _revenueSearchController = TextEditingController();
+  final FocusNode _revenueSearchFocusNode = FocusNode();
+  String _revenueSearchQuery = '';
+
+  final TextEditingController _stockSearchController = TextEditingController();
+  final FocusNode _stockSearchFocusNode = FocusNode();
+  String _stockSearchQuery = '';
+
   @override
   void initState() {
     super.initState();
+    _vanSearchFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
+    _revenueSearchFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
+    _stockSearchFocusNode.addListener(() {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refreshAdminData();
     });
+  }
+
+  @override
+  void dispose() {
+    _vanSearchController.dispose();
+    _vanSearchFocusNode.dispose();
+    _revenueSearchController.dispose();
+    _revenueSearchFocusNode.dispose();
+    _stockSearchController.dispose();
+    _stockSearchFocusNode.dispose();
+    super.dispose();
+  }
+
+  Widget _buildAdminSearchBar({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required String hintText,
+    required String searchQuery,
+    required ValueChanged<String> onChanged,
+    required VoidCallback onClear,
+  }) {
+    final isFocused = focusNode.hasFocus;
+    return Container(
+      height: 46,
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isFocused ? const Color(0xFF800020) : const Color(0xFFCBD5E1),
+          width: isFocused ? 1.4 : 1.0,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x060F172A),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: TextField(
+          controller: controller,
+          focusNode: focusNode,
+          cursorColor: const Color(0xFF800020),
+          cursorWidth: 2.0,
+          cursorRadius: const Radius.circular(2),
+          onChanged: onChanged,
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF0F172A),
+          ),
+          decoration: InputDecoration(
+            hintText: hintText,
+            hintStyle: GoogleFonts.inter(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF94A3B8),
+            ),
+            prefixIcon: Icon(
+              Icons.search_rounded,
+              color: isFocused ? const Color(0xFF800020) : const Color(0xFF64748B),
+              size: 20,
+            ),
+            suffixIcon: searchQuery.isNotEmpty
+                ? IconButton(
+                    splashRadius: 18,
+                    icon: const Icon(Icons.cancel_rounded, size: 18, color: Color(0xFF64748B)),
+                    onPressed: onClear,
+                  )
+                : null,
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _refreshAdminData() async {
@@ -672,6 +772,16 @@ class _AdminScreenState extends State<AdminScreen> {
               'Phone': d.phone,
             }).toList();
 
+    final q = _vanSearchQuery.toLowerCase();
+    final filteredVanList = vanList.where((van) {
+      if (q.isEmpty) return true;
+      final plate = (van['VehicleNumber'] ?? van['plate_number'] ?? '').toString().toLowerCase();
+      final driver = (van['DriverName'] ?? van['driver_name'] ?? '').toString().toLowerCase();
+      final route = (van['RouteName'] ?? van['route_name'] ?? '').toString().toLowerCase();
+      final phone = (van['Phone'] ?? van['DriverPhone'] ?? '').toString().toLowerCase();
+      return plate.contains(q) || driver.contains(q) || route.contains(q) || phone.contains(q);
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: _refreshAdminData,
       color: const Color(0xFF800020),
@@ -695,7 +805,9 @@ class _AdminScreenState extends State<AdminScreen> {
                   ),
                 ),
                 Text(
-                  '${vanList.length} Vehicles',
+                  _vanSearchQuery.isNotEmpty
+                      ? '${filteredVanList.length} of ${vanList.length} Vehicles'
+                      : '${vanList.length} Vehicles',
                   style: GoogleFonts.inter(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
@@ -705,24 +817,44 @@ class _AdminScreenState extends State<AdminScreen> {
               ],
             ),
 
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
-            if (vanList.isEmpty)
+            _buildAdminSearchBar(
+              controller: _vanSearchController,
+              focusNode: _vanSearchFocusNode,
+              hintText: 'Search vehicle number, driver, route...',
+              searchQuery: _vanSearchQuery,
+              onChanged: (val) => setState(() => _vanSearchQuery = val.trim()),
+              onClear: () {
+                _vanSearchController.clear();
+                setState(() => _vanSearchQuery = '');
+              },
+            ),
+
+            if (filteredVanList.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 40),
                 child: Center(
-                  child: Text(
-                    'No delivery vehicles found.',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: const Color(0xFF64748B),
-                    ),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.search_off_rounded, size: 36, color: Color(0xFF94A3B8)),
+                      const SizedBox(height: 8),
+                      Text(
+                        _vanSearchQuery.isNotEmpty
+                            ? 'No delivery vehicles match "$_vanSearchQuery"'
+                            : 'No delivery vehicles found.',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               )
             else
-              ...vanList.map((van) {
+              ...filteredVanList.map((van) {
                 final plate = (van['VehicleNumber'] ?? van['plate_number'] ?? 'Vehicle').toString().toUpperCase();
                 final driver = (van['DriverName'] ?? van['driver_name'] ?? 'Driver').toString();
                 final route = (van['RouteName'] ?? van['route_name'] ?? 'Assigned Route').toString();
@@ -1268,6 +1400,15 @@ class _AdminScreenState extends State<AdminScreen> {
       'Expenses': 0.0,
     }).toList();
 
+    final rq = _revenueSearchQuery.toLowerCase();
+    final filteredRevenueVans = vanList.where((van) {
+      if (rq.isEmpty) return true;
+      final plate = (van['VehicleNumber'] ?? van['plate_number'] ?? '').toString().toLowerCase();
+      final driver = (van['DriverName'] ?? van['driver_name'] ?? '').toString().toLowerCase();
+      final route = (van['RouteName'] ?? van['route_name'] ?? '').toString().toLowerCase();
+      return plate.contains(rq) || driver.contains(rq) || route.contains(rq);
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: _refreshAdminData,
       color: const Color(0xFF800020),
@@ -1450,30 +1591,64 @@ class _AdminScreenState extends State<AdminScreen> {
             const SizedBox(height: 18),
 
             // Route-wise Financial Breakdown Header
-            Text(
-              'ROUTE-WISE SETTLEMENT BREAKDOWN',
-              style: GoogleFonts.inter(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w800,
-                color: const Color(0xFF64748B),
-                letterSpacing: 0.5,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'ROUTE-WISE SETTLEMENT BREAKDOWN',
+                  style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF64748B),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                if (_revenueSearchQuery.isNotEmpty)
+                  Text(
+                    '${filteredRevenueVans.length} of ${vanList.length}',
+                    style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF800020),
+                    ),
+                  ),
+              ],
             ),
 
             const SizedBox(height: 10),
 
-            if (vanList.isEmpty)
+            _buildAdminSearchBar(
+              controller: _revenueSearchController,
+              focusNode: _revenueSearchFocusNode,
+              hintText: 'Search vehicle, driver, route...',
+              searchQuery: _revenueSearchQuery,
+              onChanged: (val) => setState(() => _revenueSearchQuery = val.trim()),
+              onClear: () {
+                _revenueSearchController.clear();
+                setState(() => _revenueSearchQuery = '');
+              },
+            ),
+
+            if (filteredRevenueVans.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 30),
                 child: Center(
-                  child: Text(
-                    'No route financial data available.',
-                    style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B)),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.search_off_rounded, size: 36, color: Color(0xFF94A3B8)),
+                      const SizedBox(height: 8),
+                      Text(
+                        _revenueSearchQuery.isNotEmpty
+                            ? 'No settlements match "$_revenueSearchQuery"'
+                            : 'No route financial data available.',
+                        style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B)),
+                      ),
+                    ],
                   ),
                 ),
               )
             else
-              ...vanList.map((van) {
+              ...filteredRevenueVans.map((van) {
                 final plate = (van['VehicleNumber'] ?? van['plate_number'] ?? 'Vehicle').toString().toUpperCase();
                 final driver = (van['DriverName'] ?? van['driver_name'] ?? 'Driver').toString();
                 final route = (van['RouteName'] ?? van['route_name'] ?? 'Route').toString();
@@ -1623,6 +1798,31 @@ class _AdminScreenState extends State<AdminScreen> {
 
     final catalogProducts = state.warehouseItems;
 
+    final sq = _stockSearchQuery.toLowerCase();
+
+    final filteredGodowns = godowns.where((g) {
+      if (sq.isEmpty) return true;
+      final name = (g['GodownName'] ?? g['name'] ?? '').toString().toLowerCase();
+      final address = (g['Address'] ?? g['location'] ?? '').toString().toLowerCase();
+      final manager = (g['ManagerName'] ?? '').toString().toLowerCase();
+      return name.contains(sq) || address.contains(sq) || manager.contains(sq);
+    }).toList();
+
+    final filteredVans = vans.where((v) {
+      if (sq.isEmpty) return true;
+      final plate = (v['VehicleNumber'] ?? v['plate_number'] ?? '').toString().toLowerCase();
+      final driver = (v['DriverName'] ?? v['driver_name'] ?? '').toString().toLowerCase();
+      final route = (v['RouteName'] ?? v['route_name'] ?? '').toString().toLowerCase();
+      return plate.contains(sq) || driver.contains(sq) || route.contains(sq);
+    }).toList();
+
+    final filteredProducts = catalogProducts.where((p) {
+      if (sq.isEmpty) return true;
+      final title = p.title.toLowerCase();
+      final weight = p.weight.toLowerCase();
+      return title.contains(sq) || weight.contains(sq);
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: _refreshAdminData,
       color: const Color(0xFF800020),
@@ -1715,7 +1915,19 @@ class _AdminScreenState extends State<AdminScreen> {
               ),
             ),
 
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
+
+            _buildAdminSearchBar(
+              controller: _stockSearchController,
+              focusNode: _stockSearchFocusNode,
+              hintText: 'Search godowns, vans, routes, products...',
+              searchQuery: _stockSearchQuery,
+              onChanged: (val) => setState(() => _stockSearchQuery = val.trim()),
+              onClear: () {
+                _stockSearchController.clear();
+                setState(() => _stockSearchQuery = '');
+              },
+            ),
 
             // STORAGE GODOWNS LIST
             Container(
@@ -1732,29 +1944,45 @@ class _AdminScreenState extends State<AdminScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'DISTRIBUTION HUBS (GODOWNS)',
-                    style: GoogleFonts.inter(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF64748B),
-                      letterSpacing: 0.5,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'DISTRIBUTION HUBS (GODOWNS)',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF64748B),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      if (_stockSearchQuery.isNotEmpty)
+                        Text(
+                          '${filteredGodowns.length} of ${godowns.length}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 12),
 
-                  if (godowns.isEmpty)
+                  if (filteredGodowns.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Center(
                         child: Text(
-                          'Central Godown',
-                          style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF0F172A)),
+                          _stockSearchQuery.isNotEmpty
+                              ? 'No godowns match "$_stockSearchQuery"'
+                              : 'Central Godown',
+                          style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B)),
                         ),
                       ),
                     )
                   else
-                    ...godowns.map((g) {
+                    ...filteredGodowns.map((g) {
                       final name = (g['GodownName'] ?? 'Godown').toString();
                       final isCentral = g['IsCentral'] == true;
                       final filled = safeInt(g['FilledQty']);
@@ -1841,29 +2069,45 @@ class _AdminScreenState extends State<AdminScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'DELIVERY VANS (ONBOARD STOCK)',
-                    style: GoogleFonts.inter(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF64748B),
-                      letterSpacing: 0.5,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'DELIVERY VANS (ONBOARD STOCK)',
+                        style: GoogleFonts.inter(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF64748B),
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      if (_stockSearchQuery.isNotEmpty)
+                        Text(
+                          '${filteredVans.length} of ${vans.length}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF800020),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 12),
 
-                  if (vans.isEmpty)
+                  if (filteredVans.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       child: Center(
                         child: Text(
-                          'No vans currently on road.',
+                          _stockSearchQuery.isNotEmpty
+                              ? 'No delivery vans match "$_stockSearchQuery"'
+                              : 'No vans currently on road.',
                           style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B)),
                         ),
                       ),
                     )
                   else
-                    ...vans.map((v) {
+                    ...filteredVans.map((v) {
                       final plate = (v['VehicleNumber'] ?? 'Van').toString();
                       final driver = (v['DriverName'] ?? 'Driver').toString();
                       final route = (v['RouteName'] ?? 'Route').toString();
@@ -1954,17 +2198,44 @@ class _AdminScreenState extends State<AdminScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'PRODUCT INVENTORY BREAKDOWN',
-                      style: GoogleFonts.inter(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                        color: const Color(0xFF64748B),
-                        letterSpacing: 0.5,
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'PRODUCT INVENTORY BREAKDOWN',
+                          style: GoogleFonts.inter(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF64748B),
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        if (_stockSearchQuery.isNotEmpty)
+                          Text(
+                            '${filteredProducts.length} of ${catalogProducts.length}',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF800020),
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 12),
-                    ...catalogProducts.map((p) {
+                    if (filteredProducts.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: Text(
+                            _stockSearchQuery.isNotEmpty
+                                ? 'No products match "$_stockSearchQuery"'
+                                : 'No catalog products available.',
+                            style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF64748B)),
+                          ),
+                        ),
+                      )
+                    else
+                      ...filteredProducts.map((p) {
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(12),
