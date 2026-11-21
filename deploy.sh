@@ -5,6 +5,17 @@ echo "==========================================="
 echo "🚀 Starting Royal Agencies Deployment..."
 echo "==========================================="
 
+# Ensure 2GB swap space exists so the VPS never runs out of RAM and freezes
+if [ ! -f /swapfile ]; then
+    echo "💾 Creating 2GB Swap Memory..."
+    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile 2>/dev/null || true
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+swapon /swapfile 2>/dev/null || true
+
 # Navigate to project root
 cd /var/www/royalagencies
 
@@ -13,6 +24,7 @@ git fetch origin main
 git reset --hard origin/main
 
 echo "🐍 [2/5] Updating Backend (Python packages, migrations & static)..."
+sed -i "s/^ssl = on/ssl = off/" /etc/postgresql/18/main/postgresql.conf 2>/dev/null || true
 pg_ctlcluster 18 main start 2>/dev/null || true
 systemctl start postgresql 2>/dev/null || true
 systemctl enable postgresql 2>/dev/null || true
