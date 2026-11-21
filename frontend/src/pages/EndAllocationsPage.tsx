@@ -45,7 +45,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
-import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
+import { formatDateDDMMYY, DateInputDDMMYY } from '../components/DateInputDDMMYY';
 
 interface EndRouteDriverLineItem {
   EndRouteDriverLineId: number;
@@ -141,6 +141,48 @@ export const EndAllocationsPage: React.FC = () => {
   const [unsoldGodowns, setUnsoldGodowns] = useState<Record<number, string>>({});
   const [emptyGodowns, setEmptyGodowns] = useState<Record<number, string>>({});
   const [printingId, setPrintingId] = useState<number | null>(null);
+
+  // Date Filter & Sort State (matching other screens)
+  type DateFilterType = 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
+  const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
+  const [customStartDate, setCustomStartDate] = useState<string>('');
+  const [customEndDate, setCustomEndDate] = useState<string>('');
+  const [sortBy, setSortBy] = useState<string>('newest');
+
+  const isDateInFilter = (dateStr?: string | null) => {
+    if (!dateStr || dateFilter === 'all') return true;
+    const d = dateStr.slice(0, 10);
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    if (dateFilter === 'today') {
+      return d === todayStr;
+    }
+    if (dateFilter === 'yesterday') {
+      const yest = new Date(today);
+      yest.setDate(today.getDate() - 1);
+      const yesterdayStr = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+      return d === yesterdayStr;
+    }
+    if (dateFilter === 'this_week') {
+      const day = today.getDay();
+      const diff = (day === 0 ? -6 : 1) - day;
+      const monday = new Date(today);
+      monday.setDate(today.getDate() + diff);
+      const mondayStr = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+      return d >= mondayStr && d <= todayStr;
+    }
+    if (dateFilter === 'this_month') {
+      const monthStartStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+      return d >= monthStartStr && d <= todayStr;
+    }
+    if (dateFilter === 'custom') {
+      if (customStartDate && d < customStartDate) return false;
+      if (customEndDate && d > customEndDate) return false;
+      return true;
+    }
+    return true;
+  };
 
   const handlePrintTripSheet = async (item: EndRouteDriverItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -268,25 +310,40 @@ export const EndAllocationsPage: React.FC = () => {
     [endRouteDrivers]
   );
 
-  // Filtered List
+  // Filtered List with Date Range, Status & Sorting
   const filteredData = useMemo(() => {
-    return endRouteDrivers.filter((item) => {
-      const s = item.Status?.toUpperCase() || '';
-      if (statusFilter === 'pending' && s !== 'PENDING') return false;
-      if (statusFilter === 'settled' && s !== 'SETTLED') return false;
+    return endRouteDrivers
+      .filter((item) => {
+        const s = item.Status?.toUpperCase() || '';
+        if (statusFilter === 'pending' && s !== 'PENDING') return false;
+        if (statusFilter === 'settled' && s !== 'SETTLED') return false;
 
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      return (
-        item.driver_name?.toLowerCase().includes(q) ||
-        item.vehicle_number?.toLowerCase().includes(q) ||
-        item.route_name?.toLowerCase().includes(q) ||
-        item.ledger_name?.toLowerCase().includes(q) ||
-        item.Remarks?.toLowerCase().includes(q) ||
-        String(item.EndRouteDriverId).includes(q)
-      );
-    });
-  }, [endRouteDrivers, statusFilter, searchQuery]);
+        if (!isDateInFilter(item.ShiftDate || item.CreatedAt)) return false;
+
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        return (
+          item.driver_name?.toLowerCase().includes(q) ||
+          item.vehicle_number?.toLowerCase().includes(q) ||
+          item.route_name?.toLowerCase().includes(q) ||
+          item.ledger_name?.toLowerCase().includes(q) ||
+          item.Remarks?.toLowerCase().includes(q) ||
+          String(item.EndRouteDriverId).includes(q)
+        );
+      })
+      .sort((a, b) => {
+        if (sortBy === 'oldest') {
+          return (a.EndRouteDriverId || 0) - (b.EndRouteDriverId || 0);
+        }
+        if (sortBy === 'route_asc') {
+          return (a.route_name || '').localeCompare(b.route_name || '');
+        }
+        if (sortBy === 'driver_asc') {
+          return (a.driver_name || '').localeCompare(b.driver_name || '');
+        }
+        return (b.EndRouteDriverId || 0) - (a.EndRouteDriverId || 0);
+      });
+  }, [endRouteDrivers, statusFilter, dateFilter, customStartDate, customEndDate, sortBy, searchQuery]);
 
   // Handle open details modal
   const handleOpenDetail = (item: EndRouteDriverItem) => {
@@ -417,14 +474,102 @@ export const EndAllocationsPage: React.FC = () => {
           </Text>
         </div>
 
-        <Group gap="sm" align="center">
+        <Group gap="xs" align="center" wrap="wrap">
+          {/* Date Filter Pills matching other pages */}
+          <SegmentedControl
+            size="xs"
+            radius="xl"
+            color="burgundy"
+            transitionDuration={250}
+            transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+            value={dateFilter}
+            onChange={(val) => setDateFilter(val as any)}
+            data={[
+              { label: 'All', value: 'all' },
+              { label: 'Today', value: 'today' },
+              { label: 'Yesterday', value: 'yesterday' },
+              { label: 'This Week', value: 'this_week' },
+              { label: 'This Month', value: 'this_month' },
+              { label: 'Custom', value: 'custom' },
+            ]}
+            styles={{
+              root: {
+                backgroundColor: '#f1f5f9',
+                border: '1px solid #e2e8f0',
+                padding: 3,
+                borderRadius: 9999,
+                boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.04)',
+              },
+              control: {
+                border: 'none',
+              },
+              indicator: {
+                backgroundColor: '#800020',
+                borderRadius: 9999,
+                boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                border: 'none',
+                outline: 'none',
+              },
+              label: {
+                fontSize: 12,
+                fontWeight: 600,
+                padding: '5px 14px',
+                transition: 'color 150ms ease, font-weight 150ms ease',
+              },
+            }}
+          />
+
+          {dateFilter === 'custom' && (
+            <Group gap="xs" align="center">
+              <Box style={{ width: 120 }}>
+                <DateInputDDMMYY
+                  placeholder="From Date"
+                  value={customStartDate}
+                  onChange={(val) => setCustomStartDate(val)}
+                />
+              </Box>
+              <Text size="xs" c="dimmed">to</Text>
+              <Box style={{ width: 120 }}>
+                <DateInputDDMMYY
+                  placeholder="To Date"
+                  value={customEndDate}
+                  onChange={(val) => setCustomEndDate(val)}
+                />
+              </Box>
+            </Group>
+          )}
+
+          {/* Sort Select */}
+          <Select
+            size="xs"
+            radius="xl"
+            value={sortBy}
+            onChange={(val) => setSortBy(val || 'newest')}
+            data={[
+              { value: 'newest', label: 'Newest First' },
+              { value: 'oldest', label: 'Oldest First' },
+              { value: 'route_asc', label: 'Route (A - Z)' },
+              { value: 'driver_asc', label: 'Driver (A - Z)' },
+            ]}
+            style={{ width: 135 }}
+            styles={{
+              input: {
+                backgroundColor: '#f1f5f9',
+                border: '1px solid #e2e8f0',
+                fontWeight: 600,
+                fontSize: 12,
+              },
+            }}
+          />
+
           <Button
             variant="default"
-            size="sm"
-            leftSection={<IconRefresh size={15} className={isRefetching ? 'animate-spin' : ''} />}
+            size="xs"
+            radius="xl"
+            leftSection={<IconRefresh size={14} className={isRefetching ? 'animate-spin' : ''} />}
             onClick={() => refetch()}
             loading={isRefetching}
-            style={{ borderColor: '#e2e8f0', color: '#800020', fontWeight: 600 }}
+            style={{ borderColor: '#e2e8f0', color: '#800020', fontWeight: 600, backgroundColor: '#ffffff' }}
           >
             Refresh
           </Button>

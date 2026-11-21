@@ -283,6 +283,34 @@ def generate_tax_invoice_pdf(sale):
 
     story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceAfter=8))
 
+    # Pre-fetch lines & calculate empty cylinder breakdown by weight (e.g. 19 KG: 2 NOS)
+    lines = sale.lines.select_related('Product', 'Unit').all()
+    empty_breakdown_parts = []
+    for line in lines:
+        eq = int(line.EmptyQuantity or 0)
+        if eq <= 0 and is_empty_return:
+            eq = int(line.Quantity or 0)
+        if eq > 0:
+            p_name = line.ProductName or (line.Product.ProductName if line.Product else '')
+            kg_match = re.search(r'(\d+(?:\.\d+)?\s*(?:KG|kg))', p_name)
+            if kg_match:
+                lbl = f"{kg_match.group(1).upper()} ({eq} NOS)"
+            elif p_name:
+                lbl = f"{p_name} ({eq} NOS)"
+            else:
+                lbl = f"{eq} NOS"
+            empty_breakdown_parts.append(lbl)
+
+    if not empty_breakdown_parts and sale.Notes:
+        note_empties = re.findall(r'(\d+(?:\.\d+)?\s*(?:KG|kg)[\s:]*\d+\s*(?:NOS|nos)?)', sale.Notes)
+        if note_empties:
+            empty_breakdown_parts.extend(note_empties)
+
+    empty_breakdown_str = ", ".join(empty_breakdown_parts)
+    empties_display_text = f"{int(sale.TotalEmptyQty or 0)} NOS"
+    if empty_breakdown_str:
+        empties_display_text += f"<br/><font size=7.5 color='#475569'>&bull; {empty_breakdown_str}</font>"
+
     # -------------------------------------------------------------
     # 2. CUSTOMER & DELIVERY INFO CARDS
     # -------------------------------------------------------------
@@ -305,7 +333,7 @@ def generate_tax_invoice_pdf(sale):
                 f"<b>Driver Name:</b> {sale.DriverName or 'Driver'}<br/>"
                 f"<b>Vehicle Number:</b> {sale.VehicleName or 'Delivery Van'}<br/>"
                 f"<b>Full Cylinders Delivered:</b> {int(sale.TotalDeliveredQty or 0)} NOS<br/>"
-                f"<b>Empty Cylinders Collected:</b> {int(sale.TotalEmptyQty or 0)} NOS",
+                f"<b>Empty Cylinders Collected:</b> {empties_display_text}",
                 cell_norm
             )
         ]
@@ -635,11 +663,21 @@ def generate_tax_invoice_pdf(sale):
 
     # Empty cylinders return narration
     empty_qty_int = int(sale.TotalEmptyQty or 0)
-    narration_text = f"{empty_qty_int} Return Qty." if empty_qty_int > 0 else "No Return Empties"
+    if empty_breakdown_str:
+        narration_text = f"Empty Return: {empty_breakdown_str} [Total: {empty_qty_int} NOS]"
+    elif empty_qty_int > 0:
+        narration_text = f"{empty_qty_int} Return Qty."
+    else:
+        narration_text = "No Return Empties"
+
     if is_split:
         narration_text += f" (Split: Cash Rs.{c_split:.2f} + UPI Rs.{u_split:.2f})"
     elif sale.PaymentMethod:
         narration_text += f" (Payment: {sale.PaymentMethod.upper()})"
+
+    empties_count_display = f"<b>{empty_qty_int} NOS</b>"
+    if empty_breakdown_str:
+        empties_count_display += f"<br/><font size=7 color='#64748B'>{empty_breakdown_str}</font>"
 
     # Left Box: Customer Account Summary (Handwritten layout)
     # Right Box: Tax Breakdown (Handwritten layout)
@@ -647,7 +685,7 @@ def generate_tax_invoice_pdf(sale):
         cust_summary_rows = [
             [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
             [Paragraph("Previous Balance :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)],
-            [Paragraph("Returned Cylinders :", cell_norm), Paragraph(f"<b>{empty_qty_int} NOS</b>", cell_right_bold)],
+            [Paragraph("Returned Cylinders :", cell_norm), Paragraph(empties_count_display, cell_right_bold)],
             [Paragraph("Amount Paid :", cell_norm), Paragraph("Rs. 0.00", cell_right)],
             [Paragraph("<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
             [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
@@ -715,7 +753,7 @@ def generate_tax_invoice_pdf(sale):
     if is_empty_return:
         tax_summary_table = Table([
             [Paragraph("<b>EMPTY RETURN VERIFICATION</b>", section_title), Paragraph("", cell_norm)],
-            [Paragraph("Empties Inward Qty :", cell_norm), Paragraph(f"<b>{int(sale.TotalEmptyQty or 0)} NOS</b>", cell_right_bold)],
+            [Paragraph("Empties Inward Qty :", cell_norm), Paragraph(empties_count_display, cell_right_bold)],
             [Paragraph("Bill Amount :", cell_muted), Paragraph("Rs. 0.00", cell_right)],
             [Paragraph("Amount Collected :", cell_muted), Paragraph("Rs. 0.00", cell_right)],
             [Paragraph("Stock Destination :", cell_muted), Paragraph("Van Stock", cell_right)],
@@ -728,7 +766,7 @@ def generate_tax_invoice_pdf(sale):
             [Paragraph("<b>PAYMENT RECEIPT BREAKDOWN</b>", section_title), Paragraph("", cell_norm)],
             [Paragraph("Amount Received :", cell_norm), Paragraph(f"<b>Rs. {paid_amt:.2f}</b>", cell_right_bold)],
             [Paragraph("Payment Mode :", cell_muted), Paragraph(f"<b>{pm_upper}</b>", cell_right)],
-            [Paragraph("Empties Collected :", cell_muted), Paragraph(f"{int(sale.TotalEmptyQty or 0)} NOS", cell_right)],
+            [Paragraph("Empties Collected :", cell_muted), Paragraph(empties_count_display, cell_right)],
             [Paragraph("Current Bill :", cell_muted), Paragraph("Rs. 0.00", cell_right)],
             [Paragraph("<b>Credited To :</b>", cell_bold), Paragraph("<b>Customer Account</b>", cell_right_bold)],
             [Paragraph("<b>Net Amount Paid :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
