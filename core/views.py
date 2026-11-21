@@ -1777,56 +1777,239 @@ class LedgerViewSet(viewsets.ModelViewSet):
             Voucher__IsCancelled=False
         ).select_related('Voucher').order_by('Voucher__VoucherDate', 'VoucherLineId')
 
+        # Prefetch related sales and purchases for rich Tally-style particulars and shared invoice references
+        sales_map = {s.SalesId: s for s in Sales.objects.filter(CustomerLedger=ledger).prefetch_related('lines__Product', 'lines__Unit')}
+        purchases_map = {p.PurchaseId: p for p in Purchase.objects.filter(SupplierLedger=ledger).prefetch_related('lines__Product', 'lines__Unit')}
+
         entries = []
         for vl in vl_qs:
             v = vl.Voucher
-            counter_line = v.lines.exclude(Ledger=ledger).first()
-            counter_name = counter_line.Ledger.LedgerName if counter_line and counter_line.Ledger else ''
-            particulars = vl.Narration or v.Narration or counter_name or v.VoucherType
+            ref_no = v.VoucherNo
             vtype = v.VoucherType
-            if vl.CreditAmount > 0 and vl.DebitAmount == 0 and vtype == 'SALES':
-                vtype = 'RECEIPT'
+            particulars = vl.Narration or v.Narration or v.VoucherType
 
-            entries.append({
-                'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
-                'ref': v.VoucherNo,
-                'voucher_type': vtype,
-                'particulars': particulars,
-                'debit': float(vl.DebitAmount or 0),
-                'credit': float(vl.CreditAmount or 0),
-            })
+            if v.ReferenceTable == 'Sales' and v.ReferenceId in sales_map:
+                s = sales_map[v.ReferenceId]
+                clean_ref = s.InvoiceNo or s.SalesNo or ref_no
+                ref_no = clean_ref
+
+                if vl.DebitAmount > 0:
+                    vtype = 'SALES'
+                    prod_items = []
+                    for line in s.lines.all():
+                        pname = line.Product.ProductName if line.Product else 'LPG Cylinder'
+                        q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
+                        u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
+                        prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+                    if len(prod_items) == 1:
+                        particulars = f"Sales: {prod_items[0]}"
+                    elif len(prod_items) > 1:
+                        particulars = "Sales:\n" + "\n".join(f"• {it}" for it in prod_items)
+                    else:
+                        particulars = f"Sales Invoice #{clean_ref}"
+
+                    entries.append({
+                        'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                        'ref': ref_no,
+                        'voucher_type': vtype,
+                        'particulars': particulars,
+                        'debit': float(vl.DebitAmount or 0),
+                        'credit': 0.0,
+                    })
+                elif vl.CreditAmount > 0:
+                    vtype = 'RECEIPT'
+                    narr = vl.Narration or ''
+                    # Handle split receipts: if an older voucher had a single combined split line, expand to 2 lines
+                    if (s.PaymentMethod or '').upper() == 'SPLIT' and ('SPLIT' in narr or narr.startswith('Payment Received')):
+                        c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
+                        u_m = re.search(r'(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
+                        c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
+                        u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
+                        paid_amt = Decimal(str(vl.CreditAmount))
+                        if c_split <= Decimal('0.00') and u_split <= Decimal('0.00'):
+                            c_split = paid_amt
+                        elif c_split > Decimal('0.00') and u_split <= Decimal('0.00') and paid_amt > c_split:
+                            u_split = paid_amt - c_split
+                        elif u_split > Decimal('0.00') and c_split <= Decimal('0.00') and paid_amt > u_split:
+                            c_split = paid_amt - u_split
+                        if (c_split + u_split) != paid_amt and (c_split > 0 or u_split > 0):
+                            if c_split > 0:
+                                u_split = max(Decimal('0.00'), paid_amt - c_split)
+                            else:
+                                c_split = max(Decimal('0.00'), paid_amt - u_split)
+
+                        if c_split > 0:
+                            entries.append({
+                                'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                                'ref': clean_ref,
+                                'voucher_type': 'RECEIPT',
+                                'particulars': "Receipt (Cash Split)",
+                                'debit': 0.0,
+                                'credit': float(c_split),
+                            })
+                        if u_split > 0:
+                            entries.append({
+                                'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                                'ref': clean_ref,
+                                'voucher_type': 'RECEIPT',
+                                'particulars': "Receipt (UPI Split)",
+                                'debit': 0.0,
+                                'credit': float(u_split),
+                            })
+                    else:
+                        part_narr = vl.Narration if (vl.Narration and 'Receipt' in vl.Narration) else f"Receipt ({s.PaymentMethod or 'CASH'})"
+                        entries.append({
+                            'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                            'ref': clean_ref,
+                            'voucher_type': 'RECEIPT',
+                            'particulars': part_narr,
+                            'debit': 0.0,
+                            'credit': float(vl.CreditAmount or 0),
+                        })
+
+            elif v.ReferenceTable == 'Purchase' and v.ReferenceId in purchases_map:
+                p = purchases_map[v.ReferenceId]
+                clean_ref = p.InvoiceNo or p.PurchaseNo or ref_no
+                ref_no = clean_ref
+                if vl.CreditAmount > 0:
+                    vtype = 'PURCHASE'
+                    prod_items = []
+                    for line in p.lines.all():
+                        pname = line.Product.ProductName if line.Product else 'Item'
+                        q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
+                        u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else ""
+                        prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+                    if len(prod_items) == 1:
+                        particulars = f"Purchase: {prod_items[0]}"
+                    elif len(prod_items) > 1:
+                        particulars = "Purchase:\n" + "\n".join(f"• {it}" for it in prod_items)
+                    else:
+                        particulars = f"Purchase Bill #{clean_ref}"
+                    entries.append({
+                        'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                        'ref': clean_ref,
+                        'voucher_type': vtype,
+                        'particulars': particulars,
+                        'debit': 0.0,
+                        'credit': float(vl.CreditAmount or 0),
+                    })
+                else:
+                    entries.append({
+                        'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                        'ref': clean_ref,
+                        'voucher_type': 'PAYMENT',
+                        'particulars': vl.Narration or f"Payment for #{clean_ref}",
+                        'debit': float(vl.DebitAmount or 0),
+                        'credit': 0.0,
+                    })
+
+            else:
+                counter_line = v.lines.exclude(Ledger=ledger).first()
+                counter_name = counter_line.Ledger.LedgerName if counter_line and counter_line.Ledger else ''
+                particulars = vl.Narration or v.Narration or counter_name or v.VoucherType
+                if vl.CreditAmount > 0 and vl.DebitAmount == 0 and vtype == 'SALES':
+                    vtype = 'RECEIPT'
+
+                entries.append({
+                    'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                    'ref': v.VoucherNo,
+                    'voucher_type': vtype,
+                    'particulars': particulars,
+                    'debit': float(vl.DebitAmount or 0),
+                    'credit': float(vl.CreditAmount or 0),
+                })
 
         if not entries:
-            purchases = Purchase.objects.filter(SupplierLedger=ledger).order_by('PurchaseDate', 'PurchaseId')
+            purchases = Purchase.objects.filter(SupplierLedger=ledger).prefetch_related('lines__Product', 'lines__Unit').order_by('PurchaseDate', 'PurchaseId')
             for p in purchases:
+                clean_ref = p.InvoiceNo or p.PurchaseNo or f"PUR-{p.PurchaseId}"
+                prod_items = []
+                for line in p.lines.all():
+                    pname = line.Product.ProductName if line.Product else 'Item'
+                    q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
+                    u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else ""
+                    prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+                part = ("Purchase:\n" + "\n".join(f"• {it}" for it in prod_items)) if prod_items else f"Purchase Bill #{clean_ref}"
                 entries.append({
                     'date': p.PurchaseDate.strftime('%Y-%m-%d') if p.PurchaseDate else '',
-                    'ref': p.InvoiceNo or p.PurchaseNo or f"PUR-{p.PurchaseId}",
+                    'ref': clean_ref,
                     'voucher_type': 'PURCHASE',
-                    'particulars': f"Purchase Bill #{p.InvoiceNo or p.PurchaseNo}",
+                    'particulars': part,
                     'debit': 0.0,
                     'credit': float(p.GrandTotal or 0),
                 })
-            sales = Sales.objects.filter(CustomerLedger=ledger, IsApproved=True).exclude(Status='CANCELLED').order_by('SalesDate', 'SalesId')
+            sales = Sales.objects.filter(CustomerLedger=ledger, IsApproved=True).exclude(Status='CANCELLED').prefetch_related('lines__Product', 'lines__Unit').order_by('SalesDate', 'SalesId')
             for s in sales:
+                clean_ref = s.InvoiceNo or s.SalesNo or f"INV-{s.SalesId}"
+                prod_items = []
+                for line in s.lines.all():
+                    pname = line.Product.ProductName if line.Product else 'LPG Cylinder'
+                    q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
+                    u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
+                    prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+
+                if len(prod_items) == 1:
+                    part = f"Sales: {prod_items[0]}"
+                elif len(prod_items) > 1:
+                    part = "Sales:\n" + "\n".join(f"• {it}" for it in prod_items)
+                else:
+                    part = f"Sales Invoice #{clean_ref}"
+
                 entries.append({
                     'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
-                    'ref': s.InvoiceNo or s.SalesNo or f"INV-{s.SalesId}",
+                    'ref': clean_ref,
                     'voucher_type': 'SALES',
-                    'particulars': f"Sales Invoice #{s.InvoiceNo or s.SalesNo}",
+                    'particulars': part,
                     'debit': float(s.GrandTotal or 0),
                     'credit': 0.0,
                 })
                 if s.PaidAmount and s.PaidAmount > 0:
-                    pm_str = s.PaymentMethod or 'CASH'
-                    entries.append({
-                        'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
-                        'ref': f"PAY-{s.InvoiceNo or s.SalesNo or s.SalesId}",
-                        'voucher_type': 'RECEIPT',
-                        'particulars': f"Payment Received ({pm_str}) for #{s.InvoiceNo or s.SalesNo}",
-                        'debit': 0.0,
-                        'credit': float(s.PaidAmount),
-                    })
+                    pm_str = (s.PaymentMethod or 'CASH').upper()
+                    if pm_str == 'SPLIT':
+                        c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
+                        u_m = re.search(r'(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
+                        c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
+                        u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
+                        paid_amt = Decimal(str(s.PaidAmount))
+                        if c_split <= Decimal('0.00') and u_split <= Decimal('0.00'):
+                            c_split = paid_amt
+                        elif c_split > Decimal('0.00') and u_split <= Decimal('0.00') and paid_amt > c_split:
+                            u_split = paid_amt - c_split
+                        elif u_split > Decimal('0.00') and c_split <= Decimal('0.00') and paid_amt > u_split:
+                            c_split = paid_amt - u_split
+                        if (c_split + u_split) != paid_amt and (c_split > 0 or u_split > 0):
+                            if c_split > 0:
+                                u_split = max(Decimal('0.00'), paid_amt - c_split)
+                            else:
+                                c_split = max(Decimal('0.00'), paid_amt - u_split)
+
+                        if c_split > 0:
+                            entries.append({
+                                'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
+                                'ref': clean_ref,
+                                'voucher_type': 'RECEIPT',
+                                'particulars': "Receipt (Cash Split)",
+                                'debit': 0.0,
+                                'credit': float(c_split),
+                            })
+                        if u_split > 0:
+                            entries.append({
+                                'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
+                                'ref': clean_ref,
+                                'voucher_type': 'RECEIPT',
+                                'particulars': "Receipt (UPI Split)",
+                                'debit': 0.0,
+                                'credit': float(u_split),
+                            })
+                    else:
+                        entries.append({
+                            'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
+                            'ref': clean_ref,
+                            'voucher_type': 'RECEIPT',
+                            'particulars': f"Receipt ({pm_str})",
+                            'debit': 0.0,
+                            'credit': float(s.PaidAmount),
+                        })
             payments = Payment.objects.filter(PartyLedger=ledger).order_by('CreatedAt', 'PaymentId')
             for pm in payments:
                 vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
@@ -9015,10 +9198,24 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
     if customer:
         affected_ledgers.add(customer.LedgerId)
         if gross_bill > 0:
+            prod_items = []
+            for line in sale.lines.select_related('Product', 'Unit').all():
+                pname = line.Product.ProductName if line.Product else 'LPG Cylinder'
+                q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
+                u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
+                prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+
+            if len(prod_items) == 1:
+                bill_narr = f"Sales: {prod_items[0]}"
+            elif len(prod_items) > 1:
+                bill_narr = "Sales:\n" + "\n".join(f"• {it}" for it in prod_items)
+            else:
+                bill_narr = f"Sales Invoice #{sale.InvoiceNo or sale.SalesNo}"
+
             VoucherLine.objects.create(
                 Voucher=voucher, LineNo=line_no, Ledger=customer,
                 DebitAmount=gross_bill, CreditAmount=Decimal('0.00'),
-                Narration=f"Bill {sale.SalesNo}"
+                Narration=bill_narr
             )
             line_no += 1
             if subtotal > 0 and sales_led:
@@ -9086,7 +9283,7 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
                     VoucherLine.objects.create(
                         Voucher=voucher, LineNo=line_no, Ledger=cash_led,
                         DebitAmount=c_split, CreditAmount=Decimal('0.00'),
-                        Narration=f"Payment (Cash Split) for {sale.SalesNo}"
+                        Narration=f"Payment (Cash Split) for {sale.InvoiceNo or sale.SalesNo}"
                     )
                     line_no += 1
                 if u_split > 0 and bank_led:
@@ -9094,29 +9291,39 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
                     VoucherLine.objects.create(
                         Voucher=voucher, LineNo=line_no, Ledger=bank_led,
                         DebitAmount=u_split, CreditAmount=Decimal('0.00'),
-                        Narration=f"Payment (UPI Split) for {sale.SalesNo}"
+                        Narration=f"Payment (UPI Split) for {sale.InvoiceNo or sale.SalesNo}"
                     )
                     line_no += 1
-                total_split_paid = (c_split if (c_split > 0 and cash_led) else Decimal('0.00')) + (u_split if (u_split > 0 and bank_led) else Decimal('0.00'))
-                cust_vl = VoucherLine.objects.create(
-                    Voucher=voucher, LineNo=line_no, Ledger=customer,
-                    DebitAmount=Decimal('0.00'), CreditAmount=total_split_paid,
-                    Narration=f"Payment Received (SPLIT)"
-                )
-                line_no += 1
-                sync_sales_billwise_allocation(sale, cust_vl)
+
+                # Emit individual split credit lines on the customer ledger under the same voucher
+                if c_split > 0:
+                    cust_c_vl = VoucherLine.objects.create(
+                        Voucher=voucher, LineNo=line_no, Ledger=customer,
+                        DebitAmount=Decimal('0.00'), CreditAmount=c_split,
+                        Narration="Receipt (Cash Split)"
+                    )
+                    line_no += 1
+                    sync_sales_billwise_allocation(sale, cust_c_vl)
+                if u_split > 0:
+                    cust_u_vl = VoucherLine.objects.create(
+                        Voucher=voucher, LineNo=line_no, Ledger=customer,
+                        DebitAmount=Decimal('0.00'), CreditAmount=u_split,
+                        Narration="Receipt (UPI Split)"
+                    )
+                    line_no += 1
+                    sync_sales_billwise_allocation(sale, cust_u_vl)
             elif cash_or_bank:
                 affected_ledgers.add(cash_or_bank.LedgerId)
                 VoucherLine.objects.create(
                     Voucher=voucher, LineNo=line_no, Ledger=cash_or_bank,
                     DebitAmount=cash_paid_spot, CreditAmount=Decimal('0.00'),
-                    Narration=f"Payment for {sale.SalesNo} ({pm})"
+                    Narration=f"Payment for {sale.InvoiceNo or sale.SalesNo} ({pm})"
                 )
                 line_no += 1
                 cust_vl = VoucherLine.objects.create(
                     Voucher=voucher, LineNo=line_no, Ledger=customer,
                     DebitAmount=Decimal('0.00'), CreditAmount=cash_paid_spot,
-                    Narration=f"Payment Received ({pm})"
+                    Narration=f"Receipt ({pm})"
                 )
                 line_no += 1
                 sync_sales_billwise_allocation(sale, cust_vl)

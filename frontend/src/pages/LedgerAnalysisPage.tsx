@@ -647,11 +647,26 @@ export const LedgerAnalysisPage: React.FC = () => {
                           {tx.ref}
                         </Table.Td>
                         <Table.Td>
-                          <Badge size="xs" variant="light" color="gray" radius="sm">
+                          <Badge
+                            size="xs"
+                            variant="light"
+                            color={
+                              tx.voucher_type === 'SALES'
+                                ? 'burgundy'
+                                : tx.voucher_type === 'RECEIPT'
+                                ? 'teal'
+                                : tx.voucher_type === 'PURCHASE'
+                                ? 'blue'
+                                : tx.voucher_type === 'PAYMENT'
+                                ? 'orange'
+                                : 'gray'
+                            }
+                            radius="sm"
+                          >
                             {tx.voucher_type || 'VOUCHER'}
                           </Badge>
                         </Table.Td>
-                        <Table.Td style={{ fontSize: 12, color: '#0f172a', fontWeight: isOp ? 600 : 400 }}>
+                        <Table.Td style={{ fontSize: 12, color: '#0f172a', fontWeight: isOp ? 600 : 400, whiteSpace: 'pre-line', lineHeight: 1.4 }}>
                           {tx.particulars}
                         </Table.Td>
                         <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>

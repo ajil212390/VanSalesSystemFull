@@ -3631,7 +3631,7 @@ def generate_ledger_statement_pdf(
     story.append(Spacer(1, 10))
 
     # 3. Entries Table
-    col_widths = [55, 85, 65, 155, 60, 60, 65]
+    col_widths = [50, 75, 50, 190, 60, 60, 60]
     table_rows = [
         [
             Paragraph("<b>DATE</b>", cell_bold),
@@ -3669,6 +3669,8 @@ def generate_ledger_statement_pdf(
         ref_str = str(e.get('ref') or '—')
         vtype_str = str(e.get('voucher_type') or e.get('type') or '—')
         part_str = str(e.get('particulars') or '—')
+        part_str = part_str.replace('₹', 'Rs. ')
+        part_formatted = html.escape(part_str).replace('\n', '<br/>')
 
         d = Decimal(str(e.get('debit', 0) or 0))
         c = Decimal(str(e.get('credit', 0) or 0))
@@ -3699,7 +3701,7 @@ def generate_ledger_statement_pdf(
             Paragraph(html.escape(date_str), cell_norm),
             Paragraph(f"<b>{html.escape(ref_str)}</b>", cell_norm),
             Paragraph(html.escape(vtype_str), cell_norm),
-            Paragraph(html.escape(part_str), cell_norm),
+            Paragraph(part_formatted, cell_norm),
             Paragraph(d_str, cell_right),
             Paragraph(c_str, cell_right),
             Paragraph(bal_str, cell_right_burg if run_bal != 0 else cell_right),
