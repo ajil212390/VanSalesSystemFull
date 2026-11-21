@@ -1260,11 +1260,6 @@ export const AccountsPage: React.FC = () => {
                                       {ledger.LedgerName}
                                     </Text>
                                     <Group gap={6} align="center" mt={2} wrap="nowrap">
-                                      {ledger.CustomerCode && (
-                                        <Badge size="xs" color="gray" variant="outline" radius="sm">
-                                          {ledger.CustomerCode}
-                                        </Badge>
-                                      )}
                                       <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                                         {ledger.group_name || 'General'}
                                       </Text>
