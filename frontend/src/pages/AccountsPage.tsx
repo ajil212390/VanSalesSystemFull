@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Title,
   Paper,
@@ -170,12 +170,18 @@ export const AccountsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
   const [selectedRouteFilter, setSelectedRouteFilter] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState<number>(100);
   const [formOpened, setFormOpened] = useState(false);
   const [editingLedger, setEditingLedger] = useState<LedgerItem | null>(null);
   const [ledgerToDelete, setLedgerToDelete] = useState<LedgerItem | null>(null);
   const [billsModalOpened, setBillsModalOpened] = useState(false);
   const [pendingBills, setPendingBills] = useState<ImportedBillItem[]>([]);
   const [bulkImportModalOpened, setBulkImportModalOpened] = useState(false);
+
+  // Reset progressive display limit to 100 on filter or search change
+  useEffect(() => {
+    setVisibleCount(100);
+  }, [searchQuery, selectedGroupFilter, selectedRouteFilter]);
 
   // 1. Fetch Ledgers
   const { data: ledgers = [], isLoading: isLoadingLedgers } = useQuery<LedgerItem[]>({
@@ -462,6 +468,11 @@ export const AccountsPage: React.FC = () => {
       return matchesSearch && matchesGroup && matchesRoute;
     });
   }, [ledgers, searchQuery, selectedGroupFilter, selectedRouteFilter]);
+
+  // Sliced list for smooth progressive loading (100 accounts at a time)
+  const visibleLedgers = useMemo(() => {
+    return filteredLedgers.slice(0, visibleCount);
+  }, [filteredLedgers, visibleCount]);
 
   const groupOptions = useMemo(() => {
     return groups.map((g) => ({
@@ -1243,7 +1254,7 @@ export const AccountsPage: React.FC = () => {
                       </Table.Thead>
 
                       <Table.Tbody>
-                        {filteredLedgers.map((ledger) => {
+                        {visibleLedgers.map((ledger) => {
                           const isBlockDelete = Boolean(ledger.delete_block_reason);
                           const currVal = Number(ledger.CurrentBalance || 0);
                           const isZero = currVal === 0;
@@ -1398,6 +1409,39 @@ export const AccountsPage: React.FC = () => {
                             </Table.Tr>
                           );
                         })}
+
+                        {filteredLedgers.length > visibleCount && (
+                          <Table.Tr style={{ backgroundColor: '#fbf0f2' }}>
+                            <Table.Td colSpan={8} style={{ textAlign: 'center', padding: '14px 16px' }}>
+                              <Group justify="center" gap="md" wrap="wrap">
+                                <Text size="xs" fw={600} c="#800020">
+                                  Showing {visibleLedgers.length} of {filteredLedgers.length} accounts
+                                </Text>
+                                <Button
+                                  size="xs"
+                                  variant="filled"
+                                  color="burgundy"
+                                  radius="md"
+                                  onClick={() => setVisibleCount((prev) => prev + 100)}
+                                  style={{ backgroundColor: '#800020', fontWeight: 600 }}
+                                >
+                                  Load Next 100 Accounts
+                                </Button>
+                                {filteredLedgers.length - visibleCount > 100 && (
+                                  <Button
+                                    size="xs"
+                                    variant="subtle"
+                                    color="gray"
+                                    radius="md"
+                                    onClick={() => setVisibleCount(filteredLedgers.length)}
+                                  >
+                                    Show All ({filteredLedgers.length})
+                                  </Button>
+                                )}
+                              </Group>
+                            </Table.Td>
+                          </Table.Tr>
+                        )}
                       </Table.Tbody>
 
                       {/* Financial Column Totals in Table Footer */}
@@ -1405,7 +1449,7 @@ export const AccountsPage: React.FC = () => {
                         <Table.Tr>
                           <Table.Td style={{ padding: '12px 14px' }}>
                             <Text size="sm" fw={700} c="#1e293b" tt="uppercase" style={{ letterSpacing: '0.4px' }}>
-                              Totals ({filteredLedgers.length} Ledgers):
+                              Totals ({filteredLedgers.length} Ledgers{filteredLedgers.length > visibleCount ? ` • Showing ${visibleLedgers.length}` : ''}):
                             </Text>
                           </Table.Td>
                           <Table.Td style={{ textAlign: 'right', padding: '12px 14px', whiteSpace: 'nowrap' }}>

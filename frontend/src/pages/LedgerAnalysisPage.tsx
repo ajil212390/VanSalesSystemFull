@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Title,
   Paper,
@@ -75,6 +75,12 @@ export const LedgerAnalysisPage: React.FC = () => {
   const [selectedGroupFilter, setSelectedGroupFilter] = useState<string | null>(null);
   const [selectedRouteFilter, setSelectedRouteFilter] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<string>('name_asc');
+  const [visibleCount, setVisibleCount] = useState<number>(100);
+
+  // Reset visible limit to 100 whenever filters or search query change
+  useEffect(() => {
+    setVisibleCount(100);
+  }, [searchQuery, selectedGroupFilter, selectedRouteFilter, sortBy]);
 
   // Statement Filters
   const [datePreset, setDatePreset] = useState<string>('ALL');
@@ -206,6 +212,11 @@ export const LedgerAnalysisPage: React.FC = () => {
 
     return list;
   }, [ledgers, searchQuery, selectedGroupFilter, selectedRouteFilter, sortBy]);
+
+  // Sliced list for smooth progressive loading (100 accounts at a time)
+  const visibleLedgers = useMemo(() => {
+    return filteredLedgers.slice(0, visibleCount);
+  }, [filteredLedgers, visibleCount]);
 
   // Overall Financial Totals matching Accounts Page Strip
   const financialTotals = useMemo(() => {
@@ -881,7 +892,7 @@ export const LedgerAnalysisPage: React.FC = () => {
               </Table.Thead>
 
               <Table.Tbody>
-                {filteredLedgers.map((ledger) => {
+                {visibleLedgers.map((ledger) => {
                   const currVal = Number(ledger.CurrentBalance || 0);
                   const isZero = currVal === 0;
                   const isDr = currVal >= 0;
@@ -1024,6 +1035,39 @@ export const LedgerAnalysisPage: React.FC = () => {
                     </Table.Tr>
                   );
                 })}
+
+                {filteredLedgers.length > visibleCount && (
+                  <Table.Tr style={{ backgroundColor: '#fbf0f2' }}>
+                    <Table.Td colSpan={8} style={{ textAlign: 'center', padding: '14px 16px' }}>
+                      <Group justify="center" gap="md" wrap="wrap">
+                        <Text size="xs" fw={600} c="#800020">
+                          Showing {visibleLedgers.length} of {filteredLedgers.length} accounts
+                        </Text>
+                        <Button
+                          size="xs"
+                          variant="filled"
+                          color="burgundy"
+                          radius="md"
+                          onClick={() => setVisibleCount((prev) => prev + 100)}
+                          style={{ backgroundColor: '#800020', fontWeight: 600 }}
+                        >
+                          Load Next 100 Accounts
+                        </Button>
+                        {filteredLedgers.length - visibleCount > 100 && (
+                          <Button
+                            size="xs"
+                            variant="subtle"
+                            color="gray"
+                            radius="md"
+                            onClick={() => setVisibleCount(filteredLedgers.length)}
+                          >
+                            Show All ({filteredLedgers.length})
+                          </Button>
+                        )}
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                )}
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
