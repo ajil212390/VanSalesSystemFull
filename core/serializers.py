@@ -81,6 +81,18 @@ class LoginSerializer(serializers.Serializer):
 
         user = User.objects.filter(Username__iexact=username).first()
         if not user:
+            # Also check if username matches a Driver's PhoneNumber or DriverName linked to a User
+            from .models import Driver
+            from django.db.models import Q
+            matching_driver = Driver.objects.filter(
+                Q(PhoneNumber__iexact=username) | Q(DriverName__iexact=username)
+            ).first()
+            if matching_driver:
+                user = User.objects.filter(DriverId=matching_driver.DriverId).first()
+                if not user:
+                    user = User.objects.filter(Username__iexact=matching_driver.DriverName).first()
+
+        if not user:
             raise serializers.ValidationError({"non_field_errors": ["Invalid login details"]})
 
         pwd_valid = False
@@ -698,6 +710,7 @@ class LedgerSerializer(serializers.ModelSerializer):
             'RouteId',
             'RouteName',
             'route_name',
+            'CustomerCode',
             'OpeningBalance',
             'OpeningBalanceType',
             'DebitBalance',

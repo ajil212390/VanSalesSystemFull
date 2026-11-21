@@ -96,7 +96,7 @@ def sync_ledger_balances(*ledger_ids):
 
 
 class AuthAnonThrottle(AnonRateThrottle):
-    rate = '20/min'
+    rate = '300/min'
 
 
 class LoginView(APIView):
@@ -1688,6 +1688,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
             data.append({
                 'LedgerId': l.LedgerId,
                 'LedgerName': l.LedgerName,
+                'CustomerCode': getattr(l, 'CustomerCode', None),
                 'GroupName': l.Group.GroupName if l.Group else 'Sundry Debtors',
                 'RouteId': l.Route_id,
                 'Route': l.Route_id,

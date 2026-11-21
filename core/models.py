@@ -306,6 +306,7 @@ class Ledger(models.Model):
     CreditPeriodDays = models.IntegerField(default=0, db_column='CreditPeriodDays')
     DeliveryFrequencyDays = models.IntegerField(default=15, db_column='DeliveryFrequencyDays')
     Route = models.ForeignKey(Route, on_delete=models.SET_NULL, null=True, blank=True, db_column='RouteId', related_name='ledgers')
+    CustomerCode = models.CharField(max_length=50, null=True, blank=True, db_column='CustomerCode')
     CreditLimit = models.DecimalField(max_digits=18, decimal_places=2, default=0, db_column='CreditLimit')
     BankName = models.CharField(max_length=150, null=True, blank=True, db_column='BankName')
     BankAccountNumber = models.CharField(max_length=50, null=True, blank=True, db_column='BankAccountNumber')

@@ -18,7 +18,8 @@ import {
     ActionIcon,
     Box,
     Transition,
-    Tooltip } from '@mantine/core';
+    Tooltip,
+    SegmentedControl } from '@mantine/core';
 import {
     IconPencil,
     IconTrash,
@@ -68,15 +69,19 @@ const formatDDMMYYYY = (dateStr?: string | null): string => {
     return `${day}-${month}-${year}`;
 };
 
-// Helper: check if date is strictly expired (before today)
-const isDateExpired = (dateStr?: string | null): boolean => {
-    if (!dateStr) return false;
+// Helper: check expiry status of date: 'expired' (< today), 'due_soon' (within 30 days), or 'normal'
+const getExpiryStatus = (dateStr?: string | null): 'expired' | 'due_soon' | 'normal' => {
+    if (!dateStr) return 'normal';
     const match = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
     const target = match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : new Date(dateStr);
-    if (isNaN(target.getTime())) return false;
+    if (isNaN(target.getTime())) return 'normal';
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    return target.getTime() < today.getTime();
+    const diffMs = target.getTime() - today.getTime();
+    const daysLeft = Math.round(diffMs / (1000 * 60 * 60 * 24));
+    if (daysLeft < 0) return 'expired';
+    if (daysLeft <= 30) return 'due_soon';
+    return 'normal';
 };
 
 // Helper: parse date to timestamp for sorting
@@ -87,25 +92,51 @@ const getDateTimestamp = (dateStr?: string | null): number => {
     return isNaN(d.getTime()) ? Infinity : d.getTime();
 };
 
-// Helper: render clean date cell with DD-MM-YYYY format; burgundy if expired, normal dark text otherwise
+// Helper: render clean date cell with DD-MM-YYYY format:
+// Red for expired (overdue), Reddish-yellow (amber) for due soon, normal dark for valid
 const renderDateCell = (dateStr?: string | null) => {
     if (!dateStr) {
         return <Text size="sm" c="dimmed">-</Text>;
     }
     const formatted = formatDDMMYYYY(dateStr);
-    const expired = isDateExpired(dateStr);
+    const status = getExpiryStatus(dateStr);
+
+    let color = '#1e293b';
+    let fw = 400;
+
+    if (status === 'expired') {
+        color = '#dc2626'; // Red
+        fw = 600;
+    } else if (status === 'due_soon') {
+        color = '#d97706'; // Reddish yellow / warm amber
+        fw = 600;
+    }
+
     return (
         <Text
             size="sm"
             style={{
-                color: expired ? '#800020' : '#1e293b',
-                fontWeight: expired ? 600 : 400,
+                color,
+                fontWeight: fw,
                 whiteSpace: 'nowrap',
             }}
         >
             {formatted}
         </Text>
     );
+};
+
+// Helper: check if vehicle has any expired or due soon date across the 4 compliance areas
+const getVehicleStatus = (v: VehicleItem) => {
+    const statuses = [
+        getExpiryStatus(v.RcExpiryDate),
+        getExpiryStatus(v.InsuranceExpiryDate),
+        getExpiryStatus(v.FitnessExpiryDate),
+        getExpiryStatus(v.PollutionExpiryDate),
+    ];
+    const isOverdue = statuses.includes('expired');
+    const isDueSoon = statuses.includes('due_soon');
+    return { isOverdue, isDueSoon };
 };
 
 export const VehiclesPage: React.FC = () => {
@@ -116,6 +147,7 @@ export const VehiclesPage: React.FC = () => {
     const [deleteTarget, setDeleteTarget] = useState<{ id: number; number: string } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<string>('default');
+    const [complianceTab, setComplianceTab] = useState<'all' | 'overdue' | 'due_soon'>('all');
 
     // 1. Fetch vehicles list (excluding internal godown storage)
     const { data: vehicles = [], isLoading } = useQuery<VehicleItem[]>({
@@ -126,14 +158,32 @@ export const VehiclesPage: React.FC = () => {
             return list.filter((v: any) => !v.VehicleNumber?.toLowerCase().includes('godown') && !v.VehicleName?.toLowerCase().includes('godown'));
         } });
 
-    // Client-side search and clean sorting
+    // Expiry statistics for the UI toggle
+    const stats = useMemo(() => {
+        let overdue = 0;
+        let dueSoon = 0;
+        for (const v of vehicles) {
+            const { isOverdue, isDueSoon } = getVehicleStatus(v);
+            if (isOverdue) overdue++;
+            if (isDueSoon) dueSoon++;
+        }
+        return { total: vehicles.length, overdue, dueSoon };
+    }, [vehicles]);
+
+    // Client-side search, toggle filtering, and sorting
     const filteredVehicles = useMemo(() => {
         const q = searchQuery.toLowerCase().trim();
         let list = vehicles.filter((v) => {
-            return !q || (
+            const matchesQuery = !q || (
                 (v.VehicleNumber && v.VehicleNumber.toLowerCase().includes(q)) ||
                 (v.VehicleName && v.VehicleName.toLowerCase().includes(q))
             );
+            if (!matchesQuery) return false;
+
+            const { isOverdue, isDueSoon } = getVehicleStatus(v);
+            if (complianceTab === 'overdue' && !isOverdue) return false;
+            if (complianceTab === 'due_soon' && !isDueSoon) return false;
+            return true;
         });
 
         if (sortBy === 'default') {
@@ -175,7 +225,7 @@ export const VehiclesPage: React.FC = () => {
 
             return 0;
         });
-    }, [vehicles, searchQuery, sortBy]);
+    }, [vehicles, searchQuery, complianceTab, sortBy]);
 
     // 2. Form state
     const {
@@ -361,6 +411,41 @@ export const VehiclesPage: React.FC = () => {
                 </Group>
             </Group>
 
+            {/* Compliance Status Toggle Pills */}
+            <Transition mounted={!formOpened} transition="fade" duration={200}>
+                {(styles) => (
+                    <Group justify="flex-start" align="center" style={styles}>
+                        <SegmentedControl
+                            size="xs"
+                            radius="xl"
+                            color="burgundy"
+                            transitionDuration={250}
+                            transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+                            value={complianceTab}
+                            onChange={(val) => setComplianceTab(val as any)}
+                            data={[
+                                { label: `All (${stats.total})`, value: 'all' },
+                                { label: `Overdue (${stats.overdue})`, value: 'overdue' },
+                                { label: `Due Soon (${stats.dueSoon})`, value: 'due_soon' },
+                            ]}
+                            styles={{
+                                root: {
+                                    backgroundColor: '#f1f5f9',
+                                    border: '1px solid #e2e8f0',
+                                    padding: 3,
+                                    borderRadius: 9999,
+                                },
+                                label: {
+                                    fontWeight: 600,
+                                    fontSize: 12,
+                                    padding: '4px 14px',
+                                },
+                            }}
+                        />
+                    </Group>
+                )}
+            </Transition>
+
             {/* Seamless Form & Table Container - wraps both to eliminate flex gap jumping */}
             <Box>
                 {/* Smooth Slide-Down Form Panel */}
@@ -490,6 +575,7 @@ export const VehiclesPage: React.FC = () => {
                                     onClick={() => {
                                         setSearchQuery('');
                                         setSortBy('default');
+                                        setComplianceTab('all');
                                     }}
                                 >
                                     Reset Filters

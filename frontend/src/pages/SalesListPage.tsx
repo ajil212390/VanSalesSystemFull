@@ -901,11 +901,6 @@ export const SalesListPage: React.FC = () => {
                         <Text size="10px" c="dimmed">
                           {sale.vehicle_number || sale.VehicleName || 'Direct'} &bull; {sale.driver_name || sale.DriverName || 'Admin'}
                         </Text>
-                        {sale.payment_group_name && (
-                          <Badge size="xs" variant="light" color="blue" mt={3} styles={{ root: { fontSize: 9, height: 16, paddingLeft: 5, paddingRight: 5 } }}>
-                            {sale.payment_group_name}
-                          </Badge>
-                        )}
                       </Table.Td>
 
                       <Table.Td style={{ textAlign: 'center' }}>
@@ -959,9 +954,17 @@ export const SalesListPage: React.FC = () => {
                           ) && (
                             <Badge
                               size="xs"
-                              variant="light"
-                              color="blue"
-                              styles={{ root: { fontSize: 9, height: 16, paddingLeft: 5, paddingRight: 5 } }}
+                              variant="outline"
+                              style={{
+                                fontSize: 9,
+                                height: 16,
+                                paddingLeft: 5,
+                                paddingRight: 5,
+                                color: '#800020',
+                                borderColor: '#f5c2cb',
+                                backgroundColor: '#fff5f7',
+                                fontWeight: 600,
+                              }}
                             >
                               {sale.payment_group_name}
                             </Badge>

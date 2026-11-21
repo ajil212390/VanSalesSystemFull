@@ -62,6 +62,7 @@ export interface LedgerItem {
   RouteId?: number | null;
   RouteName?: string;
   route_name?: string;
+  CustomerCode?: string | null;
   OpeningBalance: number;
   OpeningBalanceType: 'DR' | 'CR';
   DebitBalance: number;
@@ -96,6 +97,7 @@ export interface LedgerItem {
 
 interface LedgerFormValues {
   LedgerName: string;
+  CustomerCode?: string;
   Group: string;
   Route: string | null;
   OpeningBalance: number | string;
@@ -130,6 +132,7 @@ interface LedgerFormValues {
 
 const defaultLedgerValues: LedgerFormValues = {
   LedgerName: '',
+  CustomerCode: '',
   Group: '',
   Route: null,
   OpeningBalance: '',
@@ -240,6 +243,7 @@ export const AccountsPage: React.FC = () => {
 
       const payload: any = {
         LedgerName: (data.LedgerName || '').trim(),
+        CustomerCode: safeStr(data.CustomerCode),
         Group: parseInt(String(data.Group), 10),
         Route: data.Route ? parseInt(String(data.Route), 10) : null,
         RouteId: data.Route ? parseInt(String(data.Route), 10) : null,
@@ -401,6 +405,7 @@ export const AccountsPage: React.FC = () => {
     }
     reset({
       LedgerName: ledger.LedgerName,
+      CustomerCode: ledger.CustomerCode || '',
       Group: String(ledger.Group),
       Route: ledger.Route ? String(ledger.Route) : (ledger.RouteId ? String(ledger.RouteId) : null),
       OpeningBalance: Number(ledger.OpeningBalance) !== 0 ? Number(ledger.OpeningBalance) : '',
@@ -441,6 +446,7 @@ export const AccountsPage: React.FC = () => {
       const matchesSearch =
         !q ||
         l.LedgerName.toLowerCase().includes(q) ||
+        (l.CustomerCode && l.CustomerCode.toLowerCase().includes(q)) ||
         (l.group_name && l.group_name.toLowerCase().includes(q)) ||
         (l.MobileNumber && l.MobileNumber.toLowerCase().includes(q)) ||
         (l.GSTIN && l.GSTIN.toLowerCase().includes(q));
@@ -645,13 +651,18 @@ export const AccountsPage: React.FC = () => {
                 />
 
                 {/* Row 1: Primary Account Info */}
-                <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
+                <SimpleGrid cols={{ base: 1, sm: 2, md: 5 }} spacing="md">
                   <TextInput
                     label="Ledger Name"
                     placeholder="e.g. State Bank of India, Office Rent"
                     required
                     {...register('LedgerName', { required: 'Ledger name is required' })}
                     error={errors.LedgerName?.message}
+                  />
+                  <TextInput
+                    label="Customer Code"
+                    placeholder="e.g. CUST-001 (Optional)"
+                    {...register('CustomerCode')}
                   />
                   <Controller
                     name="Group"
@@ -1249,12 +1260,17 @@ export const AccountsPage: React.FC = () => {
                                       {ledger.LedgerName}
                                     </Text>
                                     <Group gap={6} align="center" mt={2} wrap="nowrap">
+                                      {ledger.CustomerCode && (
+                                        <Badge size="xs" color="gray" variant="outline" radius="sm">
+                                          {ledger.CustomerCode}
+                                        </Badge>
+                                      )}
                                       <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                                         {ledger.group_name || 'General'}
                                       </Text>
                                       {(ledger.RouteName || ledger.route_name) && (
                                         <Badge size="xs" color="burgundy" variant="light" radius="sm">
-                                          📍 {ledger.RouteName || ledger.route_name}
+                                           {ledger.RouteName || ledger.route_name}
                                         </Badge>
                                       )}
                                     </Group>

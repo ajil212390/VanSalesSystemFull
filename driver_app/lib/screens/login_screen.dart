@@ -101,24 +101,18 @@ class _LoginScreenState extends State<LoginScreen> {
         final driverId = safeIntNullable(userData?['driver_id']);
         final role = userData?['role']?.toString().toLowerCase() ?? '';
 
-        // Hydrate live data from backend (allocated van, onboard cylinders, customers)
-        await state.syncFromBackend(driverIdParam: driverId);
-        if (!mounted) return;
-
         setState(() => _isLoading = false);
 
         final isAdminRole = role.contains('admin') || role.contains('manager');
-        if (isAdminRole) {
-          Navigator.pushReplacement(
-            context,
-            SmoothPageRoute(page: const AdminScreen()),
-          );
-        } else {
-          Navigator.pushReplacement(
-            context,
-            SmoothPageRoute(page: const HomeShell()),
-          );
-        }
+        Navigator.pushReplacement(
+          context,
+          SmoothPageRoute(page: isAdminRole ? const AdminScreen() : const HomeShell()),
+        );
+
+        // Hydrate live data from backend in background without blocking screen transition
+        state.syncFromBackend(driverIdParam: driverId).catchError((e) {
+          debugPrint('Background live hydration error: $e');
+        });
       } else {
         setState(() => _isLoading = false);
         _showFeedback(res['message'] ?? 'Login failed. Please check credentials.');

@@ -134,12 +134,13 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ),
+    'NUM_PROXIES': 1,
     'DEFAULT_THROTTLE_CLASSES': (
         'rest_framework.throttling.AnonRateThrottle',
     ),
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '60/min',
-        'auth_burst': '10/min',
+        'anon': '300/min',
+        'auth_burst': '120/min',
     }
 }
 
