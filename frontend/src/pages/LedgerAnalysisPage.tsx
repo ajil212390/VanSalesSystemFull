@@ -654,7 +654,13 @@ export const LedgerAnalysisPage: React.FC = () => {
                           {tx.particulars}
                         </Table.Td>
                         <Table.Td style={{ fontSize: 12, color: '#334155', fontWeight: 500 }}>
-                          {tx.item_name || '—'}
+                          {tx.item_name
+                            ? tx.item_name
+                                .replace(/LPG\s*/gi, '')
+                                .replace(/\s*GAS\s*CYLINDER/gi, '')
+                                .replace(/\s*CYLINDER/gi, '')
+                                .trim()
+                            : '—'}
                         </Table.Td>
                         <Table.Td style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: tx.full_qty ? '#0f172a' : '#94a3b8' }}>
                           {tx.full_qty !== undefined && tx.full_qty !== null && tx.full_qty !== '' ? tx.full_qty : '—'}

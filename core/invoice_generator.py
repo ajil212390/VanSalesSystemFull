@@ -3692,9 +3692,9 @@ def generate_ledger_statement_pdf(
             Paragraph("<b>EMPTY QTY</b>", th_center),
             Paragraph("<b>VCH TYPE</b>", th_left),
             Paragraph("<b>VCH NO.</b>", th_left),
-            Paragraph("<b>DEBIT (₹)</b>", th_right),
-            Paragraph("<b>CREDIT (₹)</b>", th_right),
-            Paragraph("<b>BALANCE (₹)</b>", th_right),
+            Paragraph("<b>DEBIT (Rs.)</b>", th_right),
+            Paragraph("<b>CREDIT (Rs.)</b>", th_right),
+            Paragraph("<b>BALANCE (Rs.)</b>", th_right),
         ]
     ]
 
@@ -3706,7 +3706,8 @@ def generate_ledger_statement_pdf(
         ref_str = str(e.get('vch_no') or e.get('ref') or '—').replace('SALE-', '').replace('REC-', '')
         vtype_str = str(e.get('voucher_type') or e.get('type') or '')
         part_str = str(e.get('particulars') or '—')
-        item_str = str(e.get('item_name') or '')
+        raw_item_str = str(e.get('item_name') or '')
+        item_str = raw_item_str.replace('LPG ', '').replace(' GAS CYLINDER', '').replace(' CYLINDER', '').strip()
         full_q = e.get('full_qty')
         empty_q = e.get('empty_qty')
 
@@ -3721,21 +3722,21 @@ def generate_ledger_statement_pdf(
             run_bal = effective_op
             ref_str = ''
             vtype_str = ''
-            d_str = f"₹{abs(effective_op):,.2f}" if ((effective_op > 0 and is_dr_normal) or (effective_op < 0 and not is_dr_normal)) else ""
-            c_str = f"₹{abs(effective_op):,.2f}" if ((effective_op > 0 and not is_dr_normal) or (effective_op < 0 and is_dr_normal)) else ""
+            d_str = f"{abs(effective_op):,.2f}" if ((effective_op > 0 and is_dr_normal) or (effective_op < 0 and not is_dr_normal)) else ""
+            c_str = f"{abs(effective_op):,.2f}" if ((effective_op > 0 and not is_dr_normal) or (effective_op < 0 and is_dr_normal)) else ""
         else:
             if 'runningBalance' in e and e.get('runningBalance') is not None:
                 run_bal = Decimal(str(e.get('runningBalance') or 0))
             else:
                 running_track += (d - c) if is_dr_normal else (c - d)
                 run_bal = running_track
-            d_str = f"₹{d:,.2f}" if d > 0 else ""
-            c_str = f"₹{c:,.2f}" if c > 0 else ""
+            d_str = f"{d:,.2f}" if d > 0 else ""
+            c_str = f"{c:,.2f}" if c > 0 else ""
 
         bal_sfx = 'Dr' if run_bal >= 0 else 'Cr'
         if not is_dr_normal:
             bal_sfx = 'Cr' if run_bal >= 0 else 'Dr'
-        bal_str = f"₹{abs(run_bal):,.2f} {bal_sfx}"
+        bal_str = f"{abs(run_bal):,.2f} {bal_sfx}"
 
         is_bold_part = is_op or part_str.startswith('To')
         table_rows.append([
@@ -3760,13 +3761,13 @@ def generate_ledger_statement_pdf(
         Paragraph("", td_center),
         Paragraph("", td_left),
         Paragraph("", td_left),
-        Paragraph(f"<b>₹{tot_debit:,.2f}</b>", td_right_bold),
-        Paragraph(f"<b>₹{tot_credit:,.2f}</b>", td_right_bold),
+        Paragraph(f"<b>Rs. {tot_debit:,.2f}</b>", td_right_bold),
+        Paragraph(f"<b>Rs. {tot_credit:,.2f}</b>", td_right_bold),
         Paragraph("", td_right),
     ])
 
     # Summary Row 2: Closing Balance
-    close_amt_str = f"₹{abs(closing_bal):,.2f} {final_close_sfx}"
+    close_amt_str = f"Rs. {abs(closing_bal):,.2f} {final_close_sfx}"
     table_rows.append([
         Paragraph("<b>CLOSING BALANCE</b>", td_left_bold),
         Paragraph("", td_left),

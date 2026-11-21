@@ -1925,13 +1925,19 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     vtype = 'Sales'
                     particulars = 'To SALE'
                     s_lines = list(s.lines.all())
+                    def _get_line_disp(line):
+                        if line.Product:
+                            return line.Product.AppProductName or line.Product.ProductName or (line.ProductName or 'Item')
+                        p_name = line.ProductName or 'Item'
+                        return p_name.replace('LPG ', '').replace(' GAS CYLINDER', '').replace(' CYLINDER', '').strip()
+
                     if len(s_lines) == 1:
                         l0 = s_lines[0]
-                        item_name = l0.Product.ProductName if l0.Product else (l0.ProductName or 'LPG Cylinder')
+                        item_name = _get_line_disp(l0)
                         full_qty = int(l0.Quantity) if l0.Quantity == int(l0.Quantity) else float(l0.Quantity)
                         empty_qty = int(l0.EmptyQuantity) if l0.EmptyQuantity == int(l0.EmptyQuantity) else float(l0.EmptyQuantity)
                     elif len(s_lines) > 1:
-                        item_name = ", ".join(l.Product.ProductName if l.Product else (l.ProductName or 'Item') for l in s_lines)
+                        item_name = ", ".join(_get_line_disp(l) for l in s_lines)
                         full_qty = sum(int(l.Quantity) if l.Quantity == int(l.Quantity) else float(l.Quantity) for l in s_lines)
                         empty_qty = sum(int(l.EmptyQuantity) if l.EmptyQuantity == int(l.EmptyQuantity) else float(l.EmptyQuantity) for l in s_lines)
 
@@ -2127,13 +2133,19 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 s_item = ''
                 s_full = None
                 s_empty = None
+                def _get_line_disp2(line):
+                    if line.Product:
+                        return line.Product.AppProductName or line.Product.ProductName or (line.ProductName or 'Item')
+                    p_name = line.ProductName or 'Item'
+                    return p_name.replace('LPG ', '').replace(' GAS CYLINDER', '').replace(' CYLINDER', '').strip()
+
                 if len(s_lines) == 1:
                     l0 = s_lines[0]
-                    s_item = l0.Product.ProductName if l0.Product else (l0.ProductName or 'LPG Cylinder')
+                    s_item = _get_line_disp2(l0)
                     s_full = int(l0.Quantity) if l0.Quantity == int(l0.Quantity) else float(l0.Quantity)
                     s_empty = int(l0.EmptyQuantity) if l0.EmptyQuantity == int(l0.EmptyQuantity) else float(l0.EmptyQuantity)
                 elif len(s_lines) > 1:
-                    s_item = ", ".join(l.Product.ProductName if l.Product else (l.ProductName or 'Item') for l in s_lines)
+                    s_item = ", ".join(_get_line_disp2(l) for l in s_lines)
                     s_full = sum(int(l.Quantity) if l.Quantity == int(l.Quantity) else float(l.Quantity) for l in s_lines)
                     s_empty = sum(int(l.EmptyQuantity) if l.EmptyQuantity == int(l.EmptyQuantity) else float(l.EmptyQuantity) for l in s_lines)
 
