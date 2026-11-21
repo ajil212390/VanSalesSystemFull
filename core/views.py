@@ -1854,8 +1854,8 @@ class LedgerViewSet(viewsets.ModelViewSet):
         """
         ledger = self.get_object()
         company_id = getattr(request.user, 'CompanyId', 1) or ledger.CompanyId or 1
-        from_date = request.query_params.get('from_date') or None
-        to_date = request.query_params.get('to_date') or None
+        from_date = request.query_params.get('from_date') or (request.data.get('from_date') if request.method == 'POST' else None) or None
+        to_date = request.query_params.get('to_date') or (request.data.get('to_date') if request.method == 'POST' else None) or None
         summary_stats = request.data.get('summary_stats') if request.method == 'POST' else None
         entries_data = request.data.get('entries') if request.method == 'POST' else None
 

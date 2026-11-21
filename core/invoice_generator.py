@@ -1,6 +1,7 @@
 import os
 import io
 import re
+import html
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 
@@ -3439,3 +3440,575 @@ def generate_ledger_report_pdf(
     # Build document with NumberedCanvas for automatic multi-page page numbering
     doc.build(story, canvasmaker=NumberedCanvas)
     return buf.getvalue()
+
+
+def generate_ledger_statement_pdf(
+    ledger,
+    entries_data,
+    company_id=1,
+    from_date=None,
+    to_date=None,
+    summary_stats=None
+):
+    """
+    Generates a publication-grade, multi-page A4 PDF statement of account for any ledger.
+    Works for customers, suppliers, banks, cash, or general expense/income accounts.
+    Includes account profile card, KPI statistics strip, running balance ledger table,
+    and official signatory block.
+    """
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=25,
+        bottomMargin=32
+    )
+
+    company_name = "FUTURE GAS"
+    company_subtitle = "LPG Commercial & Domestic Distribution Network"
+    company_address = "Civil Station, Kozhikode, Kerala - 673020"
+    company_contact = "Ph: +91 98470 12345 | Email: accounts@futuregas.in"
+    company_gstin = "32AABCF1234F1Z8"
+
+    try:
+        from core.models import Company
+        co = Company.objects.filter(CompanyId=company_id).first()
+        if co:
+            company_name = co.CompanyName or company_name
+            company_address = co.Address or company_address
+            company_gstin = co.GSTIN or company_gstin
+            company_contact = f"Ph: {co.PhoneNumber or co.MobileNumber or '+91 98470 12345'}"
+    except Exception:
+        pass
+
+    # Ledger Information
+    ledger_name = getattr(ledger, 'LedgerName', '') or ''
+    group_name = ledger.Group.GroupName if getattr(ledger, 'Group', None) else ''
+    group_nature = getattr(ledger.Group, 'Nature', '') if getattr(ledger, 'Group', None) else 'Asset'
+    customer_code = getattr(ledger, 'CustomerCode', '') or ''
+    route_name = ledger.Route.RouteName if getattr(ledger, 'Route', None) else ''
+    gstin = getattr(ledger, 'GSTIN', '') or ''
+    phone = getattr(ledger, 'PhoneNumber', '') or getattr(ledger, 'MobileNumber', '') or ''
+    address = f"{getattr(ledger, 'AddressLine1', '') or ''} {getattr(ledger, 'City', '') or ''}".strip()
+
+    is_dr_normal = (group_nature or '').lower() in ('asset', 'expense')
+
+    # Date Period Formatting
+    period_text = "All Records to Date"
+    if from_date and to_date:
+        period_text = f"{from_date} to {to_date}"
+    elif from_date:
+        period_text = f"From {from_date}"
+    elif to_date:
+        period_text = f"Up to {to_date}"
+
+    # Calculate effective opening balance & check summary stats
+    effective_op = None
+    tot_debit = Decimal('0.00')
+    tot_credit = Decimal('0.00')
+    closing_bal = Decimal('0.00')
+
+    if summary_stats and isinstance(summary_stats, dict):
+        if 'effectiveOpening' in summary_stats:
+            effective_op = Decimal(str(summary_stats.get('effectiveOpening') or 0))
+        if 'totDebit' in summary_stats:
+            tot_debit = Decimal(str(summary_stats.get('totDebit') or 0))
+        if 'totCredit' in summary_stats:
+            tot_credit = Decimal(str(summary_stats.get('totCredit') or 0))
+        if 'closingBal' in summary_stats:
+            closing_bal = Decimal(str(summary_stats.get('closingBal') or 0))
+
+    if effective_op is None:
+        op_bal = Decimal(str(getattr(ledger, 'OpeningBalance', 0) or 0))
+        op_type = (getattr(ledger, 'OpeningBalanceType', 'DR') or 'DR').upper()
+        init_dr = op_bal if op_type == 'DR' else Decimal('0.00')
+        init_cr = op_bal if op_type == 'CR' else Decimal('0.00')
+        effective_op = (init_dr - init_cr) if is_dr_normal else (init_cr - init_dr)
+
+    # Styles
+    title_company = ParagraphStyle('LdgStmCompT', fontName=FONT_BOLD, fontSize=16, leading=20, textColor=PRIMARY_COLOR)
+    hdr_right_title = ParagraphStyle('LdgStmHdrR', fontName=FONT_BOLD, fontSize=14, leading=18, textColor=PRIMARY_COLOR, alignment=2)
+
+    box_label = ParagraphStyle('LdgStmBxLbl', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=MUTED_COLOR)
+    box_val_title = ParagraphStyle('LdgStmBxValT', fontName=FONT_BOLD, fontSize=11, leading=14, textColor=PRIMARY_COLOR)
+    box_text = ParagraphStyle('LdgStmBxTxt', fontName=FONT_NAME, fontSize=8, leading=11, textColor=DARK_COLOR)
+    box_text_bold = ParagraphStyle('LdgStmBxTxtB', fontName=FONT_BOLD, fontSize=8, leading=11, textColor=DARK_COLOR)
+
+    cell_norm = ParagraphStyle('LdgStmCell', fontName=FONT_NAME, fontSize=7.5, leading=9.5, textColor=DARK_COLOR)
+    cell_bold = ParagraphStyle('LdgStmCellB', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR)
+    cell_right = ParagraphStyle('LdgStmCellR', fontName=FONT_NAME, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=2)
+    cell_right_bold = ParagraphStyle('LdgStmCellRB', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=2)
+    cell_right_burg = ParagraphStyle('LdgStmCellRBurg', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=2)
+
+    story = []
+
+    # 1. Header
+    header_data = [
+        [
+            Paragraph(
+                f"<b>{html.escape(company_name)}</b><br/>"
+                f"<font size=7 color='#64748B'>{html.escape(company_subtitle)}</font><br/>"
+                f"<font size=7 color='#64748B'>{html.escape(company_address)}</font><br/>"
+                f"<font size=7 color='#64748B'>{html.escape(company_contact)} | GSTIN: <b>{html.escape(company_gstin)}</b></font>",
+                title_company
+            ),
+            Paragraph(
+                f"<b>STATEMENT OF ACCOUNT</b><br/>"
+                f"<font size=8 color='#64748B'>Ledger Transactions &amp; Running Balance</font><br/>"
+                f"<font size=7.5 color='#64748B'>Period: <b>{html.escape(period_text)}</b></font><br/>"
+                f"<font size=7 color='#64748B'>Generated: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}</font>",
+                hdr_right_title
+            )
+        ]
+    ]
+    hdr_table = Table(header_data, colWidths=[320, 225])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(hdr_table)
+    story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=8))
+
+    # 2. Account Profile & Summary KPI Boxes
+    extra_details = []
+    if customer_code:
+        extra_details.append(f"Code: <b>{html.escape(customer_code)}</b>")
+    if route_name:
+        extra_details.append(f"Route: <b>{html.escape(route_name)}</b>")
+    extra_str = " | ".join(extra_details)
+
+    left_box = [
+        Paragraph("ACCOUNT DETAILS", box_label),
+        Spacer(1, 2),
+        Paragraph(f"<b>{html.escape(ledger_name)}</b>", box_val_title),
+        Paragraph(f"Group: <b>{html.escape(group_name or 'General Ledger')}</b> ({html.escape(group_nature or 'Asset')})", box_text),
+    ]
+    if extra_str:
+        left_box.append(Paragraph(extra_str, box_text))
+    if phone or address:
+        left_box.append(Paragraph(f"Phone: <b>{html.escape(phone or '—')}</b> | {html.escape(address or '—')}", box_text))
+    if gstin:
+        left_box.append(Paragraph(f"GSTIN: <b>{html.escape(gstin)}</b>", box_text))
+
+    op_sfx = 'Dr' if effective_op >= 0 else 'Cr'
+    if not is_dr_normal:
+        op_sfx = 'Cr' if effective_op >= 0 else 'Dr'
+
+    right_box = [
+        Paragraph("ACCOUNT SUMMARY", box_label),
+        Spacer(1, 2),
+        Paragraph(f"Opening Balance: <b>Rs. {abs(effective_op):,.2f} {op_sfx}</b>", box_text),
+        Paragraph(f"Period Turnover: Dr <b>Rs. {tot_debit:,.2f}</b> | Cr <b>Rs. {tot_credit:,.2f}</b>", box_text),
+        Spacer(1, 4),
+        Paragraph("CLOSING BALANCE", box_label),
+    ]
+
+    close_sfx = 'Dr' if closing_bal >= 0 else 'Cr'
+    if not is_dr_normal:
+        close_sfx = 'Cr' if closing_bal >= 0 else 'Dr'
+
+    right_box.append(
+        Paragraph(f"<font size=11 color='#800020'><b>Rs. {abs(closing_bal):,.2f} {close_sfx}</b></font>", box_text_bold)
+    )
+
+    top_grid = Table([[left_box, right_box]], colWidths=[310, 235])
+    top_grid.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.5, BORDER_COLOR),
+        ('BOX', (1, 0), (1, 0), 0.5, PRIMARY_COLOR),
+        ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
+        ('BACKGROUND', (1, 0), (1, 0), CARD_BG),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(top_grid)
+    story.append(Spacer(1, 10))
+
+    # 3. Entries Table
+    col_widths = [55, 85, 65, 155, 60, 60, 65]
+    table_rows = [
+        [
+            Paragraph("<b>DATE</b>", cell_bold),
+            Paragraph("<b>REF / VOUCHER #</b>", cell_bold),
+            Paragraph("<b>TYPE</b>", cell_bold),
+            Paragraph("<b>PARTICULARS</b>", cell_bold),
+            Paragraph("<b>DEBIT (Rs.)</b>", cell_right_bold),
+            Paragraph("<b>CREDIT (Rs.)</b>", cell_right_bold),
+            Paragraph("<b>BALANCE (Rs.)</b>", cell_right_bold),
+        ]
+    ]
+
+    raw_entries = list(entries_data or [])
+    has_op_row = any(str(e.get('ref') or '') == 'OP-BAL' for e in raw_entries)
+
+    if not has_op_row and (effective_op != Decimal('0.00') or len(raw_entries) == 0):
+        d_val = abs(effective_op) if ((effective_op > 0 and is_dr_normal) or (effective_op < 0 and not is_dr_normal)) else Decimal('0.00')
+        c_val = abs(effective_op) if ((effective_op > 0 and not is_dr_normal) or (effective_op < 0 and is_dr_normal)) else Decimal('0.00')
+        raw_entries.insert(0, {
+            'date': from_date or '—',
+            'ref': 'OP-BAL',
+            'voucher_type': 'OPENING',
+            'particulars': 'Opening Balance (b/f)',
+            'debit': d_val,
+            'credit': c_val,
+            'runningBalance': effective_op,
+        })
+
+    calc_run_bal = effective_op
+    calc_tot_dr = Decimal('0.00')
+    calc_tot_cr = Decimal('0.00')
+
+    for idx, e in enumerate(raw_entries):
+        date_str = str(e.get('date') or '—')
+        ref_str = str(e.get('ref') or '—')
+        vtype_str = str(e.get('voucher_type') or e.get('type') or '—')
+        part_str = str(e.get('particulars') or '—')
+
+        d = Decimal(str(e.get('debit', 0) or 0))
+        c = Decimal(str(e.get('credit', 0) or 0))
+
+        if ref_str == 'OP-BAL':
+            run_bal = effective_op
+        else:
+            calc_tot_dr += d
+            calc_tot_cr += c
+            if 'runningBalance' in e and e.get('runningBalance') is not None:
+                run_bal = Decimal(str(e.get('runningBalance') or 0))
+            else:
+                if is_dr_normal:
+                    calc_run_bal += (d - c)
+                else:
+                    calc_run_bal += (c - d)
+                run_bal = calc_run_bal
+
+        d_str = f"{d:,.2f}" if d > 0 else "—"
+        c_str = f"{c:,.2f}" if c > 0 else "—"
+
+        bal_sfx = 'Dr' if run_bal >= 0 else 'Cr'
+        if not is_dr_normal:
+            bal_sfx = 'Cr' if run_bal >= 0 else 'Dr'
+        bal_str = f"{abs(run_bal):,.2f} {bal_sfx}"
+
+        table_rows.append([
+            Paragraph(html.escape(date_str), cell_norm),
+            Paragraph(f"<b>{html.escape(ref_str)}</b>", cell_norm),
+            Paragraph(html.escape(vtype_str), cell_norm),
+            Paragraph(html.escape(part_str), cell_norm),
+            Paragraph(d_str, cell_right),
+            Paragraph(c_str, cell_right),
+            Paragraph(bal_str, cell_right_burg if run_bal != 0 else cell_right),
+        ])
+
+    # If summary stats was not passed from frontend, use calculated totals
+    if not summary_stats:
+        tot_debit = calc_tot_dr
+        tot_credit = calc_tot_cr
+        closing_bal = calc_run_bal
+
+    final_close_sfx = 'Dr' if closing_bal >= 0 else 'Cr'
+    if not is_dr_normal:
+        final_close_sfx = 'Cr' if closing_bal >= 0 else 'Dr'
+
+    # Totals Row
+    table_rows.append([
+        Paragraph("<b>TOTALS</b>", cell_bold),
+        Paragraph(f"<b>{len(raw_entries)} Entries</b>", cell_bold),
+        Paragraph("", cell_norm),
+        Paragraph("<b>Closing Balance</b>", cell_bold),
+        Paragraph(f"<b>Rs. {tot_debit:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {tot_credit:,.2f}</b>", cell_right_bold),
+        Paragraph(f"<b>Rs. {abs(closing_bal):,.2f} {final_close_sfx}</b>", cell_right_burg),
+    ])
+
+    stmt_table = Table(table_rows, colWidths=col_widths, repeatRows=1)
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FDF2F4')),
+        ('LINEABOVE', (0, -1), (-1, -1), 1.2, PRIMARY_COLOR),
+        ('LINEBELOW', (0, -1), (-1, -1), 1.5, PRIMARY_COLOR),
+        ('TOPPADDING', (0, -1), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, -1), (-1, -1), 5),
+    ]
+
+    for i in range(1, len(raw_entries) + 1):
+        if i % 2 == 0:
+            t_style.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor('#F8FAFC')))
+
+    stmt_table.setStyle(TableStyle(t_style))
+    story.append(stmt_table)
+    story.append(Spacer(1, 14))
+
+    # 4. Signatory & Audit notes
+    notes_content = [
+        Paragraph("<b>Audit &amp; Reporting Compliance Notes:</b>", ParagraphStyle('LdgStmNtH', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=DARK_COLOR)),
+        Paragraph("&bull; This statement reflects all double-entry journal vouchers, delivery invoices, and receipts.", ParagraphStyle('LdgStmNtB', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=MUTED_COLOR)),
+        Paragraph("&bull; For any discrepancies, please notify accounts within 7 working days.", ParagraphStyle('LdgStmNtB2', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=MUTED_COLOR)),
+    ]
+
+    sig_content = [
+        Spacer(1, 14),
+        Paragraph("_______________________________________", ParagraphStyle('LdgStmSgL', fontName=FONT_NAME, fontSize=8, leading=10, textColor=colors.HexColor('#94A3B8'), alignment=2)),
+        Paragraph("<b>Authorized Signatory / Accountant</b>", ParagraphStyle('LdgStmSgA', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)),
+        Paragraph(f"<font size=6.5 color='#64748B'>Date: {datetime.now().strftime('%d-%b-%Y')}</font>", ParagraphStyle('LdgStmSgD', fontName=FONT_NAME, fontSize=6.5, leading=8, textColor=MUTED_COLOR, alignment=2)),
+    ]
+
+    bottom_table = Table([[notes_content, '', sig_content]], colWidths=[315, 20, 210])
+    bottom_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#F8FAFC')),
+        ('BOX', (2, 0), (2, 0), 0.75, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (2, 0), (2, 0), colors.white),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(KeepTogether(bottom_table))
+
+    doc.build(story, canvasmaker=NumberedCanvas)
+    return buf.getvalue()
+
+
+def generate_route_trip_sheet_pdf(route, details_data, company_id=1):
+    """
+    Generates a clean, professional Daily Route Trip Sheet PDF for a van distribution route.
+    Details vehicle, driver, allocated cylinder stock, sales count, collections, expenses, and net cash.
+    """
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=25,
+        bottomMargin=32
+    )
+
+    company_name = "FUTURE GAS"
+    company_subtitle = "LPG Commercial & Domestic Distribution Network"
+    company_address = "Civil Station, Kozhikode, Kerala - 673020"
+    company_contact = "Ph: +91 98470 12345 | Email: accounts@futuregas.in"
+    company_gstin = "32AABCF1234F1Z8"
+
+    try:
+        from core.models import Company
+        co = Company.objects.filter(CompanyId=company_id).first()
+        if co:
+            company_name = co.CompanyName or company_name
+            company_address = co.Address or company_address
+            company_gstin = co.GSTIN or company_gstin
+            company_contact = f"Ph: {co.PhoneNumber or co.MobileNumber or '+91 98470 12345'}"
+    except Exception:
+        pass
+
+    route_name = getattr(route, 'RouteName', '') if route else ''
+    veh_data = details_data.get('vehicle', {}) if details_data else {}
+    drv_data = details_data.get('driver', {}) if details_data else {}
+    veh_num = veh_data.get('vehicle_number', 'Not Assigned')
+    drv_name = drv_data.get('name', 'Not Assigned')
+    status_str = str(details_data.get('status', 'idle')).upper()
+
+    stock = details_data.get('stock', {}) if details_data else {}
+    collection = details_data.get('collection', {}) if details_data else {}
+    expense = details_data.get('expense', {}) if details_data else {}
+    products = details_data.get('products', []) if details_data else []
+
+    title_company = ParagraphStyle('RTSCompT', fontName=FONT_BOLD, fontSize=16, leading=20, textColor=PRIMARY_COLOR)
+    hdr_right_title = ParagraphStyle('RTSHdrR', fontName=FONT_BOLD, fontSize=14, leading=18, textColor=PRIMARY_COLOR, alignment=2)
+    box_label = ParagraphStyle('RTSBxLbl', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=MUTED_COLOR)
+    box_val_title = ParagraphStyle('RTSBxValT', fontName=FONT_BOLD, fontSize=11, leading=14, textColor=PRIMARY_COLOR)
+    box_text = ParagraphStyle('RTSBxTxt', fontName=FONT_NAME, fontSize=8, leading=11, textColor=DARK_COLOR)
+    box_text_bold = ParagraphStyle('RTSBxTxtB', fontName=FONT_BOLD, fontSize=8, leading=11, textColor=DARK_COLOR)
+
+    cell_norm = ParagraphStyle('RTSCell', fontName=FONT_NAME, fontSize=7.5, leading=9.5, textColor=DARK_COLOR)
+    cell_bold = ParagraphStyle('RTSCellB', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR)
+    cell_right = ParagraphStyle('RTSCellR', fontName=FONT_NAME, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=2)
+    cell_right_bold = ParagraphStyle('RTSCellRB', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=2)
+    cell_right_burg = ParagraphStyle('RTSCellRBurg', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)
+
+    story = []
+
+    # 1. Header
+    header_data = [
+        [
+            Paragraph(
+                f"<b>{html.escape(company_name)}</b><br/>"
+                f"<font size=7 color='#64748B'>{html.escape(company_subtitle)}</font><br/>"
+                f"<font size=7 color='#64748B'>{html.escape(company_address)}</font><br/>"
+                f"<font size=7 color='#64748B'>{html.escape(company_contact)} | GSTIN: <b>{html.escape(company_gstin)}</b></font>",
+                title_company
+            ),
+            Paragraph(
+                f"<b>ROUTE TRIP SHEET</b><br/>"
+                f"<font size=8 color='#64748B'>Daily Distribution &amp; Settlement</font><br/>"
+                f"<font size=7.5 color='#64748B'>Route: <b>{html.escape(route_name.upper())}</b></font><br/>"
+                f"<font size=7 color='#64748B'>Date: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}</font>",
+                hdr_right_title
+            )
+        ]
+    ]
+    hdr_table = Table(header_data, colWidths=[320, 225])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(hdr_table)
+    story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=8))
+
+    # 2. Operational Information Grid
+    left_box = [
+        Paragraph("ROUTE &amp; CREW ASSIGNMENT", box_label),
+        Spacer(1, 2),
+        Paragraph(f"<b>Route: {html.escape(route_name)}</b>", box_val_title),
+        Paragraph(f"Vehicle: <b>{html.escape(veh_num)}</b>", box_text),
+        Paragraph(f"Driver: <b>{html.escape(drv_name)}</b>", box_text),
+        Paragraph(f"Status: <b>{html.escape(status_str)}</b>", box_text),
+    ]
+
+    tot_coll = Decimal(str(collection.get('total_collection', 0) or 0))
+    cash_coll = Decimal(str(collection.get('cash_collection', 0) or 0))
+    tot_exp = Decimal(str(expense.get('total_expense', 0) or 0))
+    net_cash = Decimal(str(expense.get('net_cash', 0) or 0))
+
+    right_box = [
+        Paragraph("FINANCIAL SETTLEMENT", box_label),
+        Spacer(1, 2),
+        Paragraph(f"Total Collections: <b>Rs. {tot_coll:,.2f}</b> (Cash: Rs. {cash_coll:,.2f})", box_text),
+        Paragraph(f"Total Expenses: <b>Rs. {tot_exp:,.2f}</b>", box_text),
+        Spacer(1, 4),
+        Paragraph("NET CASH TO HAND OVER", box_label),
+        Paragraph(f"<font size=11 color='#800020'><b>Rs. {net_cash:,.2f}</b></font>", box_text_bold),
+    ]
+
+    top_grid = Table([[left_box, right_box]], colWidths=[310, 235])
+    top_grid.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.5, BORDER_COLOR),
+        ('BOX', (1, 0), (1, 0), 0.5, PRIMARY_COLOR),
+        ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
+        ('BACKGROUND', (1, 0), (1, 0), CARD_BG),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(top_grid)
+    story.append(Spacer(1, 10))
+
+    # 3. Product Breakdown Table
+    col_widths = [165, 80, 75, 75, 75, 75]
+    table_rows = [
+        [
+            Paragraph("<b>PRODUCT NAME</b>", cell_bold),
+            Paragraph("<b>ALLOCATED</b>", cell_right_bold),
+            Paragraph("<b>DELIVERED</b>", cell_right_bold),
+            Paragraph("<b>BALANCE</b>", cell_right_bold),
+            Paragraph("<b>EMPTY RET.</b>", cell_right_bold),
+            Paragraph("<b>TOTAL ON VAN</b>", cell_right_bold),
+        ]
+    ]
+
+    tot_alloc = 0
+    tot_deliv = 0
+    tot_bal = 0
+    tot_empty = 0
+    tot_van = 0
+
+    for p in products:
+        p_name = p.get('ProductName', '')
+        p_code = p.get('ProductCode', '')
+        if p_code and p_code != '—':
+            p_display = f"<b>{html.escape(p_name)}</b> <font size=6 color='#64748B'>({html.escape(p_code)})</font>"
+        else:
+            p_display = f"<b>{html.escape(p_name)}</b>"
+
+        alloc = int(p.get('AllocatedQty', 0) or 0)
+        deliv = int(p.get('DeliveredQty', 0) or 0)
+        bal = int(p.get('BalanceQty', 0) or 0)
+        emp = int(p.get('EmptyQty', 0) or 0)
+        qty = int(p.get('Qty', 0) or (bal + emp))
+
+        tot_alloc += alloc
+        tot_deliv += deliv
+        tot_bal += bal
+        tot_empty += emp
+        tot_van += qty
+
+        table_rows.append([
+            Paragraph(p_display, cell_norm),
+            Paragraph(str(alloc), cell_right),
+            Paragraph(str(deliv), cell_right),
+            Paragraph(str(bal), cell_right),
+            Paragraph(str(emp), cell_right),
+            Paragraph(str(qty), cell_right_bold),
+        ])
+
+    table_rows.append([
+        Paragraph("<b>TOTAL CYLINDERS &amp; ITEMS</b>", cell_bold),
+        Paragraph(f"<b>{tot_alloc}</b>", cell_right_bold),
+        Paragraph(f"<b>{tot_deliv}</b>", cell_right_bold),
+        Paragraph(f"<b>{tot_bal}</b>", cell_right_bold),
+        Paragraph(f"<b>{tot_empty}</b>", cell_right_bold),
+        Paragraph(f"<b>{tot_van}</b>", cell_right_burg),
+    ])
+
+    prod_table = Table(table_rows, colWidths=col_widths, repeatRows=1)
+    t_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#FDF2F4')),
+        ('LINEABOVE', (0, -1), (-1, -1), 1.2, PRIMARY_COLOR),
+        ('LINEBELOW', (0, -1), (-1, -1), 1.5, PRIMARY_COLOR),
+        ('TOPPADDING', (0, -1), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, -1), (-1, -1), 5),
+    ]
+
+    for i in range(1, len(products) + 1):
+        if i % 2 == 0:
+            t_style.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor('#F8FAFC')))
+
+    prod_table.setStyle(TableStyle(t_style))
+    story.append(prod_table)
+    story.append(Spacer(1, 14))
+
+    # 4. Signatures
+    sig_data = [
+        [
+            Paragraph("<b>Driver Signature:</b> ___________________", cell_norm),
+            Paragraph("<b>Verified By (Dispatcher):</b> ___________________", cell_norm),
+            Paragraph("<b>Accounts Signatory:</b> ___________________", cell_right),
+        ]
+    ]
+    sig_table = Table(sig_data, colWidths=[180, 185, 180])
+    sig_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(KeepTogether(sig_table))
+
+    doc.build(story, canvasmaker=NumberedCanvas)
+    return buf.getvalue()
+
