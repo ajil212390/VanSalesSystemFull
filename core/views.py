@@ -64,6 +64,27 @@ from core.serializers import (
 from core.permissions import HasModulePermission, MODULE_COMPANY
 
 
+def safe_sync_sequence(table_name, pk_col):
+    """
+    Safely adjusts PostgreSQL sequence to MAX(pk_col) using an isolated savepoint.
+    Never crashes and never aborts the parent transaction.
+    """
+    try:
+        from django.db import connection, transaction
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute(f"SELECT pg_get_serial_sequence('\"{table_name}\"', '{pk_col}')")
+                res = cursor.fetchone()
+                if res and res[0]:
+                    seq = res[0]
+                    cursor.execute(f'SELECT COALESCE(MAX("{pk_col}"), 0) FROM "{table_name}"')
+                    max_id = cursor.fetchone()[0]
+                    if max_id > 0:
+                        cursor.execute("SELECT setval(%s, %s, true)", [seq, max_id])
+    except Exception:
+        pass
+
+
 def sync_ledger_balances(*ledger_ids):
     """
     Recalculates DebitBalance, CreditBalance, and CurrentBalance for the given ledger IDs
@@ -1559,10 +1580,10 @@ class LedgerViewSet(viewsets.ModelViewSet):
     pagination_class = None
 
     def get_permissions(self):
-        if self.action in ['customers', 'suppliers', 'list', 'receivables_summary_pdf', 'payables_summary_pdf'] and (
-            self.request.query_params.get('AccountType', '').upper() in ('CUSTOMER', 'DEBTOR', 'SUNDRY_DEBTOR')
+        if self.action in ['customers', 'suppliers', 'list', 'sync_balances', 'receivables_summary_pdf', 'payables_summary_pdf'] and (
+            self.action in ['customers', 'suppliers', 'sync_balances', 'receivables_summary_pdf', 'payables_summary_pdf']
+            or self.request.query_params.get('AccountType', '').upper() in ('CUSTOMER', 'DEBTOR', 'SUNDRY_DEBTOR')
             or self.request.query_params.get('is_customer')
-            or self.action in ['customers', 'suppliers', 'receivables_summary_pdf', 'payables_summary_pdf']
         ):
             return [AllowAny()]
         return super().get_permissions()
@@ -1654,24 +1675,43 @@ class LedgerViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post', 'get'], url_path='sync-balances', permission_classes=[AllowAny])
     def sync_balances(self, request):
         company_id = getattr(request.user, 'CompanyId', 1) or 1
+        safe_sync_sequence('Voucher', 'VoucherId')
+        safe_sync_sequence('VoucherLine', 'VoucherLineId')
+        safe_sync_sequence('Payment', 'PaymentId')
+        safe_sync_sequence('PaymentLine', 'PaymentLineId')
+        safe_sync_sequence('BillwiseAllocation', 'BillwiseAllocationId')
+
         # Synchronize ALL existing valid sales into Accounts with Double-Entry Vouchers & Receipts
         sales_qs = Sales.objects.filter(
             Q(IsApproved=True) | Q(Status='COMPLETED')
         ).exclude(Status='CANCELLED').order_by('SalesDate', 'SalesId')
 
         count = 0
+        failed = []
         for s in sales_qs:
-            if not s.IsApproved:
-                s.IsApproved = True
-                s.Status = 'COMPLETED'
-                s.save(update_fields=['IsApproved', 'Status'])
-            post_sale_voucher(s, s.CompanyId or company_id, sync_balances=False)
-            count += 1
+            try:
+                if not s.IsApproved:
+                    s.IsApproved = True
+                    s.Status = 'COMPLETED'
+                    s.save(update_fields=['IsApproved', 'Status'])
+                cid = s.CompanyId or company_id
+                post_sale_voucher(s, cid, sync_balances=False)
+                count += 1
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                failed.append(f"Sale #{s.SalesId} ({s.SalesNo}): {str(e)}")
 
-        sync_ledger_balances()
+        try:
+            sync_ledger_balances()
+        except Exception as e:
+            failed.append(f"sync_ledger_balances: {str(e)}")
+
         return Response({
             'success': True,
             'synced_sales': count,
+            'failed_count': len(failed),
+            'failed_details': failed[:20],
             'message': f'Successfully synchronized {count} existing sales into Accounts with Double-Entry Vouchers and Customer Receipts.'
         })
 
@@ -3482,68 +3522,47 @@ def sync_sales_billwise_allocation(sale, voucher_line=None):
     excess_amt = max(Decimal('0.00'), paid_amt - gross_bill)
     receipt_vl_id = voucher_line.VoucherLineId if voucher_line else None
 
-    # Safely synchronize sequence for BillwiseAllocation
-    try:
-        from django.db import connection
-        with connection.cursor() as cursor:
-            cursor.execute('SELECT COALESCE(MAX("BillwiseAllocationId"), 0) FROM "BillwiseAllocation"')
-            m = cursor.fetchone()[0]
-            if m > 0:
-                cursor.execute(f'SELECT setval(\'"BillwiseAllocation_BillwiseAllocationId_seq"\', {m}, true);')
-            else:
-                cursor.execute('SELECT setval(\'"BillwiseAllocation_BillwiseAllocationId_seq"\', 1, false);')
-    except Exception:
-        pass
+    safe_sync_sequence('BillwiseAllocation', 'BillwiseAllocationId')
+
+    # Clean up prior allocations for this sale reference to avoid duplicate key or MultipleObjectsReturned
+    BillwiseAllocation.objects.filter(
+        CompanyId=company_id,
+        ReferenceTable='Sales',
+        ReferenceId=sale.SalesId
+    ).delete()
 
     # 1. Allocation against the sale invoice itself
     if bill_alloc_amt > 0:
-        BillwiseAllocation.objects.update_or_create(
+        BillwiseAllocation.objects.create(
             CompanyId=company_id,
             ReferenceTable='Sales',
             ReferenceId=sale.SalesId,
             BillType='SALES',
-            defaults={
-                'PaymentLine': None,
-                'ReceiptLineId': receipt_vl_id,
-                'BillReference': sale.SalesNo,
-                'BillDate': sale.SalesDate,
-                'DueDate': None,
-                'AllocationType': 'Against Reference',
-                'AllocatedAmount': bill_alloc_amt,
-            }
+            PaymentLine=None,
+            ReceiptLineId=receipt_vl_id,
+            BillReference=sale.SalesNo,
+            BillDate=sale.SalesDate,
+            DueDate=None,
+            AllocationType='Against Reference',
+            AllocatedAmount=bill_alloc_amt,
         )
-    else:
-        BillwiseAllocation.objects.filter(
-            CompanyId=company_id,
-            ReferenceTable='Sales',
-            ReferenceId=sale.SalesId,
-            BillType='SALES',
-        ).delete()
 
     # 2. Allocation for excess payment against opening balance
     if excess_amt > 0:
-        BillwiseAllocation.objects.update_or_create(
+        BillwiseAllocation.objects.create(
             CompanyId=company_id,
             ReferenceTable='Sales',
             ReferenceId=sale.SalesId,
             BillType='OPENING',
-            defaults={
-                'PaymentLine': None,
-                'ReceiptLineId': receipt_vl_id,
-                'BillReference': 'OPENING',
-                'BillDate': sale.SalesDate,
-                'DueDate': None,
-                'AllocationType': 'Against Reference',
-                'AllocatedAmount': excess_amt,
-            }
+            PaymentLine=None,
+            ReceiptLineId=receipt_vl_id,
+            BillReference='OPENING',
+            BillDate=sale.SalesDate,
+            DueDate=None,
+            AllocationType='Against Reference',
+            AllocatedAmount=excess_amt,
         )
-    else:
-        BillwiseAllocation.objects.filter(
-            CompanyId=company_id,
-            ReferenceTable='Sales',
-            ReferenceId=sale.SalesId,
-            BillType='OPENING',
-        ).delete()
+    return
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
@@ -9176,95 +9195,94 @@ def rollback_sale_advance_adjustments(sale):
 
 def post_sale_voucher(sale, company_id=1, sync_balances=True):
     """
-    Creates or updates the double-entry accounting voucher for an approved sale.
-    Guarantees that pending sales do not affect accounts until approved.
-    Maintains 100% strict double-entry balance (Debit == Credit) across Cash, Bank,
-    Customer, Sales and GST ledgers.
+    Creates or updates the double-entry accounting vouchers for an approved sale:
+    1. Sales Voucher (SALE-...): Dr Customer Ledger, Cr Sales Account, Cr GST Output.
+       Strictly balanced (Total Debit == Total Credit == Gross Bill).
+       Appears in Voucher table.
+    2. Customer Receipt (REC-...) & Payment record:
+       When payment was received on spot (PaidAmount > 0):
+       - Payment record in Payment table (visible in /receipts section).
+       - Receipt Voucher (REC-...) in Voucher table: Dr Cash/Bank, Cr Customer.
+       - BillwiseAllocation linking Receipt to Sales invoice.
+    3. Guarantees 100% strict double-entry balance and consistency across
+       Voucher table, Receipts section, and Customer Ledgers.
     """
+    affected_ledgers = set()
+
     if not sale.IsApproved or sale.Status == 'CANCELLED':
-        # If a voucher previously existed for this sale, remove lines and delete it cleanly
+        # Clean up Sales voucher
         old_vch = Voucher.objects.filter(
             CompanyId=company_id,
             ReferenceTable='Sales',
             ReferenceId=sale.SalesId
         ).first()
         if old_vch:
-            affected = set(old_vch.lines.values_list('Ledger_id', flat=True))
+            affected_ledgers.update(old_vch.lines.values_list('Ledger_id', flat=True))
             old_vch.lines.all().delete()
             old_vch.delete()
-            if affected:
-                sync_ledger_balances(*affected)
-        # Clean up any associated payment/receipt
+
+        # Clean up associated Payment, Payment voucher, and BillwiseAllocation
         stale_pay = Payment.objects.filter(
             Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
         ).first()
         if stale_pay:
+            stale_vchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=stale_pay.PaymentId)
+            for sv in stale_vchs:
+                affected_ledgers.update(sv.lines.values_list('Ledger_id', flat=True))
+                sv.lines.all().delete()
+            stale_vchs.delete()
             BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=stale_pay.PaymentId).delete()
             stale_pay.lines.all().delete()
             stale_pay.delete()
+
+        if sync_balances and affected_ledgers:
+            sync_ledger_balances(*affected_ledgers)
         return None
 
-    # Check if voucher already exists
     gross_bill = Decimal(str(sale.GrandTotal or 0))
     paid_amt = Decimal(str(sale.PaidAmount or 0))
+    sales_no_str = str(sale.SalesNo or '')
 
     # Pure Empty Return Voucher (EMTRTN): zero monetary value, no accounting voucher needed
-    if sale.SalesNo.startswith('EMTRTN-') or (gross_bill <= Decimal('0.00') and paid_amt <= Decimal('0.00')):
+    if sales_no_str.startswith('EMTRTN-') or (gross_bill <= Decimal('0.00') and paid_amt <= Decimal('0.00')):
         old_vch = Voucher.objects.filter(
             CompanyId=company_id,
             ReferenceTable='Sales',
             ReferenceId=sale.SalesId
         ).first()
         if old_vch:
-            affected = set(old_vch.lines.values_list('Ledger_id', flat=True))
+            affected_ledgers.update(old_vch.lines.values_list('Ledger_id', flat=True))
             old_vch.lines.all().delete()
             old_vch.delete()
-            if affected:
-                sync_ledger_balances(*affected)
+            if sync_balances and affected_ledgers:
+                sync_ledger_balances(*affected_ledgers)
         return None
 
-    is_money_receipt = sale.SalesNo.startswith('RCPT-') or (gross_bill <= Decimal('0.00') and paid_amt > Decimal('0.00'))
-    voucher = Voucher.objects.filter(
-        CompanyId=company_id,
-        ReferenceTable='Sales',
-        ReferenceId=sale.SalesId
-    ).first()
+    is_money_receipt = sales_no_str.startswith('RCPT-') or (gross_bill <= Decimal('0.00') and paid_amt > Decimal('0.00'))
 
+    # Determine valid sale date
+    sale_date = sale.SalesDate
+    if not sale_date:
+        c_at = getattr(sale, 'CreatedAt', None)
+        sale_date = c_at.date() if isinstance(c_at, datetime) else date.today()
+
+    # Resolve Ledgers safely
     customer = sale.CustomerLedger
-    narration_text = (f"Customer Money Receipt {sale.SalesNo} - {customer.LedgerName if customer else 'Direct Customer'}"
-                      if is_money_receipt else f"Sales Bill {sale.SalesNo} - {customer.LedgerName if customer else 'Direct Customer'}")
-
-    old_ledgers = set()
-    if not voucher:
-        base_vno = sale.SalesNo if (is_money_receipt and str(sale.SalesNo).startswith('RCPT-')) else (f"RCPT-{sale.SalesNo}" if is_money_receipt else f"SALE-{sale.SalesNo}")
-        v_no = base_vno
-        cnt = 1
-        while Voucher.objects.filter(CompanyId=company_id, VoucherNo=v_no).exists():
-            v_no = f"{base_vno}-{sale.SalesId}-{cnt}"
-            cnt += 1
-
-        voucher = Voucher.objects.create(
-            CompanyId=company_id,
-            VoucherNo=v_no,
-            VoucherDate=sale.SalesDate,
-            VoucherType='RECEIPT' if is_money_receipt else 'SALES',
-            ReferenceTable='Sales',
-            ReferenceId=sale.SalesId,
-            Narration=narration_text,
-            IsCancelled=False,
+    if not customer:
+        customer = (
+            Ledger.objects.filter(CompanyId=company_id, Group_id=21).first() or
+            Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='debtor').first() or
+            Ledger.objects.filter(CompanyId=company_id, LedgerName__icontains='Cash').first() or
+            Ledger.objects.filter(CompanyId=company_id).first()
         )
-    else:
-        voucher.VoucherDate = sale.SalesDate
-        voucher.VoucherType = 'RECEIPT' if is_money_receipt else 'SALES'
-        voucher.Narration = narration_text
-        voucher.save(update_fields=['VoucherDate', 'VoucherType', 'Narration'])
-        old_ledgers = set(voucher.lines.values_list('Ledger_id', flat=True))
-        voucher.lines.all().delete()
 
     pm = (sale.PaymentMethod or 'CASH').upper()
-    cash_led = Ledger.objects.filter(LedgerId=24).first() or Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first()
+    cash_led = (
+        Ledger.objects.filter(LedgerId=24).first() or
+        Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
+        Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
+    )
 
-    # Route bank allocations to the allocated Payment Group's BankLedger (strictly upon approval)
     pg_bank_led = None
     if sale.RouteVehicleDriver and sale.RouteVehicleDriver.PaymentGroup and sale.RouteVehicleDriver.PaymentGroup.BankLedger:
         pg_bank_led = sale.RouteVehicleDriver.PaymentGroup.BankLedger
@@ -9273,358 +9291,361 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
         if rvd_match and rvd_match.PaymentGroup and rvd_match.PaymentGroup.BankLedger:
             pg_bank_led = rvd_match.PaymentGroup.BankLedger
 
-    bank_led = pg_bank_led or Ledger.objects.filter(LedgerId=56).first() or Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first()
-    sales_led = Ledger.objects.filter(LedgerId=20).first() or Ledger.objects.filter(Group__GroupName='Sales Accounts').first() or Ledger.objects.filter(LedgerName__icontains='Sales').first()
-    cgst_led = Ledger.objects.filter(LedgerId=22).first() or Ledger.objects.filter(LedgerName__icontains='CGST Output').first()
-    sgst_led = Ledger.objects.filter(LedgerId=23).first() or Ledger.objects.filter(LedgerName__icontains='SGST Output').first()
-    igst_led = Ledger.objects.filter(LedgerId=35).first() or Ledger.objects.filter(CompanyId=company_id, LedgerName__icontains='IGST Output').first()
+    bank_led = (
+        pg_bank_led or
+        Ledger.objects.filter(LedgerId=56).first() or
+        Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first() or
+        Ledger.objects.filter(Group__GroupName__icontains='Bank').first()
+    )
 
-    cash_or_bank = bank_led if ('UPI' in pm or 'BANK' in pm or 'ONLINE' in pm or 'CARD' in pm) else cash_led
-    gross_bill = Decimal(str(sale.GrandTotal or 0))
+    sales_led = (
+        Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Sales').first() or
+        Ledger.objects.filter(LedgerId=20).first() or
+        Ledger.objects.filter(Group__GroupName='Sales Accounts').first() or
+        Ledger.objects.filter(LedgerName__icontains='Sales').first() or
+        Ledger.objects.filter(Group__Nature='Income').first()
+    )
+
+    cgst_led = (
+        Ledger.objects.filter(LedgerId=22).first() or
+        Ledger.objects.filter(CompanyId=company_id, LedgerName__icontains='CGST Output').first() or
+        Ledger.objects.filter(LedgerName__icontains='CGST Output').first()
+    )
+    sgst_led = (
+        Ledger.objects.filter(LedgerId=23).first() or
+        Ledger.objects.filter(CompanyId=company_id, LedgerName__icontains='SGST Output').first() or
+        Ledger.objects.filter(LedgerName__icontains='SGST Output').first()
+    )
+    igst_led = (
+        Ledger.objects.filter(LedgerId=35).first() or
+        Ledger.objects.filter(CompanyId=company_id, LedgerName__icontains='IGST Output').first() or
+        Ledger.objects.filter(LedgerName__icontains='IGST Output').first()
+    )
+
+    cash_or_bank = bank_led if ('UPI' in pm or 'BANK' in pm or 'ONLINE' in pm or 'CARD' in pm) else (cash_led or bank_led)
+
     tax = Decimal(str(sale.TaxAmount or 0))
     subtotal = Decimal(str(sale.SubTotal or 0))
     if subtotal <= Decimal('0.00') and gross_bill > Decimal('0.00'):
         subtotal = max(Decimal('0.00'), gross_bill - tax)
-    paid_amt = Decimal(str(sale.PaidAmount or 0))
 
     is_intra = (not customer or not customer.StateId or customer.StateId in [12, 32])
-    line_no = 1
-    affected_ledgers = set(old_ledgers)
 
-    if customer:
-        affected_ledgers.add(customer.LedgerId)
-        if gross_bill > 0:
-            prod_items = []
-            for line in sale.lines.select_related('Product', 'Unit').all():
-                pname = line.Product.ProductName if line.Product else 'LPG Cylinder'
-                q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
-                u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
-                prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+    sales_voucher = None
 
-            if len(prod_items) == 1:
-                bill_narr = f"Sales: {prod_items[0]}"
-            elif len(prod_items) > 1:
-                bill_narr = "Sales:\n" + "\n".join(f"• {it}" for it in prod_items)
-            else:
-                bill_narr = f"Sales Invoice #{sale.InvoiceNo or sale.SalesNo}"
+    # ==========================================
+    # 1. SALES VOUCHER (Invoice Double-Entry)
+    # Dr Customer Ledger (Gross Bill)
+    # Cr Sales Account (SubTotal)
+    # Cr CGST / SGST / IGST (Tax)
+    # ==========================================
+    if gross_bill > Decimal('0.00') and not is_money_receipt:
+        sales_voucher = Voucher.objects.filter(
+            CompanyId=company_id,
+            ReferenceTable='Sales',
+            ReferenceId=sale.SalesId
+        ).first()
 
-            VoucherLine.objects.create(
-                Voucher=voucher, LineNo=line_no, Ledger=customer,
-                DebitAmount=gross_bill, CreditAmount=Decimal('0.00'),
-                Narration=bill_narr
+        cust_label = customer.LedgerName if customer else 'Customer'
+        bill_ref = sale.InvoiceNo or sale.SalesNo
+        s_narr = f"Sales Invoice {bill_ref} - {cust_label}"
+
+        if not sales_voucher:
+            safe_sync_sequence('Voucher', 'VoucherId')
+            base_vno = f"SALE-{sale.SalesNo}"[:50]
+            v_no = base_vno
+            cnt = 1
+            while Voucher.objects.filter(CompanyId=company_id, VoucherNo=v_no).exists():
+                v_no = f"SALE-{sale.SalesNo}-{cnt}"[:50]
+                cnt += 1
+            sales_voucher = Voucher.objects.create(
+                CompanyId=company_id,
+                VoucherNo=v_no,
+                VoucherDate=sale_date,
+                VoucherType='SALES',
+                ReferenceTable='Sales',
+                ReferenceId=sale.SalesId,
+                Narration=s_narr,
+                IsCancelled=False,
             )
-            line_no += 1
-            if subtotal > 0 and sales_led:
-                affected_ledgers.add(sales_led.LedgerId)
+        else:
+            sales_voucher.VoucherDate = sale_date
+            sales_voucher.VoucherType = 'SALES'
+            sales_voucher.Narration = s_narr
+            sales_voucher.save(update_fields=['VoucherDate', 'VoucherType', 'Narration'])
+            affected_ledgers.update(sales_voucher.lines.values_list('Ledger_id', flat=True))
+            sales_voucher.lines.all().delete()
+
+        safe_sync_sequence('VoucherLine', 'VoucherLineId')
+
+        # Build detailed item narrative
+        prod_items = []
+        for line in sale.lines.select_related('Product', 'Unit').all():
+            pname = line.Product.ProductName if line.Product else 'LPG Cylinder'
+            q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
+            u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
+            prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {line.TotalAmount:,.2f})")
+
+        if len(prod_items) == 1:
+            line_narr = f"Sales: {prod_items[0]}"
+        elif len(prod_items) > 1:
+            line_narr = "Sales:\n" + "\n".join(f"• {it}" for it in prod_items)
+        else:
+            line_narr = f"Sales Invoice #{bill_ref}"
+
+        # Line 1: Debit Customer for gross bill
+        v_line = 1
+        target_cust = customer or cash_or_bank
+        if target_cust:
+            affected_ledgers.add(target_cust.LedgerId)
+            VoucherLine.objects.create(
+                Voucher=sales_voucher, LineNo=v_line, Ledger=target_cust,
+                DebitAmount=gross_bill, CreditAmount=Decimal('0.00'),
+                Narration=line_narr
+            )
+            v_line += 1
+
+        # Credit Taxes
+        tax_credited = Decimal('0.00')
+        if is_intra:
+            half_tax = (tax / Decimal('2.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            other_half = (tax - half_tax).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            if half_tax > 0 and cgst_led:
+                affected_ledgers.add(cgst_led.LedgerId)
                 VoucherLine.objects.create(
-                    Voucher=voucher, LineNo=line_no, Ledger=sales_led,
-                    DebitAmount=Decimal('0.00'), CreditAmount=subtotal,
-                    Narration=f"Sales Taxable {sale.SalesNo}"
+                    Voucher=sales_voucher, LineNo=v_line, Ledger=cgst_led,
+                    DebitAmount=Decimal('0.00'), CreditAmount=half_tax,
+                    Narration=f"CGST Output {sale.SalesNo}"
                 )
-                line_no += 1
-            if is_intra:
-                half_tax = (tax / Decimal('2.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                other_half = (tax - half_tax).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                if half_tax > 0 and cgst_led:
-                    affected_ledgers.add(cgst_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=cgst_led,
-                        DebitAmount=Decimal('0.00'), CreditAmount=half_tax,
-                        Narration=f"CGST Output {sale.SalesNo}"
-                    )
-                    line_no += 1
-                if other_half > 0 and sgst_led:
-                    affected_ledgers.add(sgst_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=sgst_led,
-                        DebitAmount=Decimal('0.00'), CreditAmount=other_half,
-                        Narration=f"SGST Output {sale.SalesNo}"
-                    )
-                    line_no += 1
-            else:
-                if tax > 0 and igst_led:
-                    affected_ledgers.add(igst_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=igst_led,
-                        DebitAmount=Decimal('0.00'), CreditAmount=tax,
-                        Narration=f"IGST Output {sale.SalesNo}"
-                    )
-                    line_no += 1
+                tax_credited += half_tax
+                v_line += 1
+            if other_half > 0 and sgst_led:
+                affected_ledgers.add(sgst_led.LedgerId)
+                VoucherLine.objects.create(
+                    Voucher=sales_voucher, LineNo=v_line, Ledger=sgst_led,
+                    DebitAmount=Decimal('0.00'), CreditAmount=other_half,
+                    Narration=f"SGST Output {sale.SalesNo}"
+                )
+                tax_credited += other_half
+                v_line += 1
+        else:
+            if tax > 0 and igst_led:
+                affected_ledgers.add(igst_led.LedgerId)
+                VoucherLine.objects.create(
+                    Voucher=sales_voucher, LineNo=v_line, Ledger=igst_led,
+                    DebitAmount=Decimal('0.00'), CreditAmount=tax,
+                    Narration=f"IGST Output {sale.SalesNo}"
+                )
+                tax_credited += tax
+                v_line += 1
 
-        adj_from_advance = AdvanceAdjustment.objects.filter(Sales=sale).aggregate(tot=Sum('AdjustmentAmount'))['tot'] or Decimal('0.00')
-        cash_paid_spot = max(Decimal('0.00'), paid_amt - adj_from_advance)
+        # Line 2: Credit Sales Account for the balanced taxable amount
+        cr_sales_amt = gross_bill - tax_credited
+        target_sales = sales_led or customer
+        if cr_sales_amt > 0 and target_sales:
+            affected_ledgers.add(target_sales.LedgerId)
+            VoucherLine.objects.create(
+                Voucher=sales_voucher, LineNo=v_line, Ledger=target_sales,
+                DebitAmount=Decimal('0.00'), CreditAmount=cr_sales_amt,
+                Narration=f"Sales Taxable {sale.SalesNo}"
+            )
+            v_line += 1
+    elif is_money_receipt:
+        # If pure money receipt, ensure no old sales invoice voucher lingers
+        old_vch = Voucher.objects.filter(
+            CompanyId=company_id,
+            ReferenceTable='Sales',
+            ReferenceId=sale.SalesId
+        ).first()
+        if old_vch:
+            affected_ledgers.update(old_vch.lines.values_list('Ledger_id', flat=True))
+            old_vch.lines.all().delete()
+            old_vch.delete()
 
-        if cash_paid_spot > 0:
-            if pm == 'SPLIT' and (cash_led or bank_led):
-                c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
-                u_m = re.search(r'(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
-                c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
-                u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
-                if c_split <= Decimal('0.00') and u_split <= Decimal('0.00'):
-                    c_split = cash_paid_spot
-                elif c_split > Decimal('0.00') and u_split <= Decimal('0.00') and cash_paid_spot > c_split:
-                    u_split = cash_paid_spot - c_split
-                elif u_split > Decimal('0.00') and c_split <= Decimal('0.00') and cash_paid_spot > u_split:
-                    c_split = cash_paid_spot - u_split
-                
-                # Ensure the sum of splits equals cash_paid_spot exactly
-                if (c_split + u_split) != cash_paid_spot and (c_split > 0 or u_split > 0):
-                    if c_split > 0:
-                        u_split = max(Decimal('0.00'), cash_paid_spot - c_split)
-                    else:
-                        c_split = max(Decimal('0.00'), cash_paid_spot - u_split)
+    # ==========================================
+    # 2. CUSTOMER RECEIPT & RECEIPT VOUCHER
+    # When cash/bank was collected on spot:
+    # 1. Payment model (shows in /receipts)
+    # 2. Receipt Voucher (REC-...) (shows in Voucher table)
+    #    Dr Cash / Bank
+    #    Cr Customer Ledger
+    # 3. BillwiseAllocation linking Receipt to Sales
+    # ==========================================
+    adj_from_advance = AdvanceAdjustment.objects.filter(Sales=sale).aggregate(tot=Sum('AdjustmentAmount'))['tot'] or Decimal('0.00')
+    cash_paid_spot = max(Decimal('0.00'), paid_amt - adj_from_advance)
 
-                if c_split > 0 and cash_led:
-                    affected_ledgers.add(cash_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=cash_led,
-                        DebitAmount=c_split, CreditAmount=Decimal('0.00'),
-                        Narration=f"Payment (Cash Split) for {sale.InvoiceNo or sale.SalesNo}"
-                    )
-                    line_no += 1
-                if u_split > 0 and bank_led:
-                    affected_ledgers.add(bank_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=bank_led,
-                        DebitAmount=u_split, CreditAmount=Decimal('0.00'),
-                        Narration=f"Payment (UPI Split) for {sale.InvoiceNo or sale.SalesNo}"
-                    )
-                    line_no += 1
+    if cash_paid_spot > 0 and customer:
+        bill_ref = sale.InvoiceNo or sale.SalesNo
+        receipt_title = "Van Collection Receipt" if is_money_receipt else f"Sales Receipt for {bill_ref}"
+        pay_narr = f"{receipt_title} | Driver: {sale.DriverName or ''} | Route: {sale.RouteName or ''}"
 
-                # Emit individual split credit lines on the customer ledger under the same voucher
+        safe_sync_sequence('Payment', 'PaymentId')
+        pay_rec = Payment.objects.filter(
+            Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
+        ).first()
+
+        if not pay_rec:
+            pay_rec = Payment.objects.create(
+                PartyLedger=customer,
+                Amount=cash_paid_spot,
+                Narration=pay_narr,
+            )
+        else:
+            pay_rec.PartyLedger = customer
+            pay_rec.Amount = cash_paid_spot
+            pay_rec.Narration = pay_narr
+            pay_rec.save(update_fields=['PartyLedger', 'Amount', 'Narration'])
+
+        if sale_date:
+            dt = timezone.make_aware(datetime.combine(sale_date, datetime.min.time())) if timezone.is_naive(datetime.combine(sale_date, datetime.min.time())) else datetime.combine(sale_date, datetime.min.time())
+            Payment.objects.filter(pk=pay_rec.pk).update(CreatedAt=dt)
+
+        # Rebuild Payment Lines & Billwise Allocations cleanly
+        BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=pay_rec.PaymentId).delete()
+        pay_rec.lines.all().delete()
+        safe_sync_sequence('PaymentLine', 'PaymentLineId')
+        safe_sync_sequence('BillwiseAllocation', 'BillwiseAllocationId')
+
+        # Split check
+        c_split = Decimal('0.00')
+        u_split = Decimal('0.00')
+        if pm == 'SPLIT' and (cash_led or bank_led):
+            c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
+            u_m = re.search(r'(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
+            c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
+            u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
+            if c_split <= Decimal('0.00') and u_split <= Decimal('0.00'):
+                c_split = cash_paid_spot
+            elif c_split > Decimal('0.00') and u_split <= Decimal('0.00') and cash_paid_spot > c_split:
+                u_split = cash_paid_spot - c_split
+            elif u_split > Decimal('0.00') and c_split <= Decimal('0.00') and cash_paid_spot > u_split:
+                c_split = cash_paid_spot - u_split
+
+            if (c_split + u_split) != cash_paid_spot and (c_split > 0 or u_split > 0):
                 if c_split > 0:
-                    cust_c_vl = VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=customer,
-                        DebitAmount=Decimal('0.00'), CreditAmount=c_split,
-                        Narration="Receipt (Cash Split)"
-                    )
-                    line_no += 1
-                    sync_sales_billwise_allocation(sale, cust_c_vl)
-                if u_split > 0:
-                    cust_u_vl = VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=customer,
-                        DebitAmount=Decimal('0.00'), CreditAmount=u_split,
-                        Narration="Receipt (UPI Split)"
-                    )
-                    line_no += 1
-                    sync_sales_billwise_allocation(sale, cust_u_vl)
-            elif cash_or_bank:
-                affected_ledgers.add(cash_or_bank.LedgerId)
+                    u_split = max(Decimal('0.00'), cash_paid_spot - c_split)
+                else:
+                    c_split = max(Decimal('0.00'), cash_paid_spot - u_split)
+
+            if c_split > 0 and cash_led:
+                pl1 = PaymentLine.objects.create(
+                    Payment=pay_rec, LineNo=1, PaymentMode='Cash',
+                    Ledger=cash_led, Amount=c_split, Narration=f"Cash Split for {bill_ref}"
+                )
+                BillwiseAllocation.objects.create(
+                    PaymentLine=pl1, ReferenceTable='Receipt', ReferenceId=pay_rec.PaymentId,
+                    BillType='SALES', BillReference=bill_ref, BillDate=sale_date,
+                    AllocationType='Against Reference', AllocatedAmount=c_split, CompanyId=company_id
+                )
+            if u_split > 0 and bank_led:
+                pl2 = PaymentLine.objects.create(
+                    Payment=pay_rec, LineNo=2, PaymentMode='Bank',
+                    Ledger=bank_led, Amount=u_split, Narration=f"UPI Split for {bill_ref}"
+                )
+                BillwiseAllocation.objects.create(
+                    PaymentLine=pl2, ReferenceTable='Receipt', ReferenceId=pay_rec.PaymentId,
+                    BillType='SALES', BillReference=bill_ref, BillDate=sale_date,
+                    AllocationType='Against Reference', AllocatedAmount=u_split, CompanyId=company_id
+                )
+        else:
+            p_mode = 'Bank' if ('UPI' in pm or 'BANK' in pm) else 'Cash'
+            target_led = cash_or_bank or customer
+            pl = PaymentLine.objects.create(
+                Payment=pay_rec, LineNo=1, PaymentMode=p_mode,
+                Ledger=target_led, Amount=cash_paid_spot, Narration=f"{p_mode} Receipt for {bill_ref}"
+            )
+            BillwiseAllocation.objects.create(
+                PaymentLine=pl, ReferenceTable='Receipt', ReferenceId=pay_rec.PaymentId,
+                BillType='SALES', BillReference=bill_ref, BillDate=sale_date,
+                AllocationType='Against Reference', AllocatedAmount=cash_paid_spot, CompanyId=company_id
+            )
+
+        # 3. Create or update Receipt Voucher in Voucher Table (ReferenceTable='Payment', ReferenceId=pay_rec.PaymentId)
+        safe_sync_sequence('Voucher', 'VoucherId')
+        rcpt_vch = Voucher.objects.filter(
+            CompanyId=company_id,
+            ReferenceTable='Payment',
+            ReferenceId=pay_rec.PaymentId
+        ).first()
+
+        base_rvno = f"REC-{sale.SalesNo}"[:50]
+        if not rcpt_vch:
+            rv_no = base_rvno
+            rcnt = 1
+            while Voucher.objects.filter(CompanyId=company_id, VoucherNo=rv_no).exists():
+                rv_no = f"REC-{sale.SalesNo}-{rcnt}"[:50]
+                rcnt += 1
+            rcpt_vch = Voucher.objects.create(
+                CompanyId=company_id,
+                VoucherNo=rv_no,
+                VoucherDate=sale_date,
+                VoucherType='RECEIPT',
+                ReferenceTable='Payment',
+                ReferenceId=pay_rec.PaymentId,
+                Narration=f"Receipt for Sales {bill_ref} ({pm})",
+                IsCancelled=False,
+            )
+        else:
+            rcpt_vch.VoucherDate = sale_date
+            rcpt_vch.VoucherType = 'RECEIPT'
+            rcpt_vch.Narration = f"Receipt for Sales {bill_ref} ({pm})"
+            rcpt_vch.save(update_fields=['VoucherDate', 'VoucherType', 'Narration'])
+            affected_ledgers.update(rcpt_vch.lines.values_list('Ledger_id', flat=True))
+            rcpt_vch.lines.all().delete()
+
+        safe_sync_sequence('VoucherLine', 'VoucherLineId')
+        # Debit Cash/Bank
+        r_line = 1
+        if pm == 'SPLIT' and (c_split > 0 or u_split > 0):
+            if c_split > 0 and cash_led:
+                affected_ledgers.add(cash_led.LedgerId)
                 VoucherLine.objects.create(
-                    Voucher=voucher, LineNo=line_no, Ledger=cash_or_bank,
-                    DebitAmount=cash_paid_spot, CreditAmount=Decimal('0.00'),
-                    Narration=f"Payment for {sale.InvoiceNo or sale.SalesNo} ({pm})"
+                    Voucher=rcpt_vch, LineNo=r_line, Ledger=cash_led,
+                    DebitAmount=c_split, CreditAmount=Decimal('0.00'), Narration="Cash Split Receipt"
                 )
-                line_no += 1
-                cust_vl = VoucherLine.objects.create(
-                    Voucher=voucher, LineNo=line_no, Ledger=customer,
-                    DebitAmount=Decimal('0.00'), CreditAmount=cash_paid_spot,
-                    Narration=f"Receipt ({pm})"
+                r_line += 1
+            if u_split > 0 and bank_led:
+                affected_ledgers.add(bank_led.LedgerId)
+                VoucherLine.objects.create(
+                    Voucher=rcpt_vch, LineNo=r_line, Ledger=bank_led,
+                    DebitAmount=u_split, CreditAmount=Decimal('0.00'), Narration="UPI Split Receipt"
                 )
-                line_no += 1
-                sync_sales_billwise_allocation(sale, cust_vl)
+                r_line += 1
+        else:
+            target_cash_bank = cash_or_bank or customer
+            affected_ledgers.add(target_cash_bank.LedgerId)
+            VoucherLine.objects.create(
+                Voucher=rcpt_vch, LineNo=r_line, Ledger=target_cash_bank,
+                DebitAmount=cash_paid_spot, CreditAmount=Decimal('0.00'), Narration=f"Collection ({pm})"
+            )
+            r_line += 1
 
-            # Automatically create or synchronize an official Customer Receipt (Payment model) for any collection on delivery
-            if customer and cash_paid_spot > 0:
-                bill_ref = sale.InvoiceNo or sale.SalesNo
-                receipt_title = "Van Collection Receipt" if is_money_receipt else f"Sales Receipt for {bill_ref}"
-                pay_narr = f"{receipt_title} | Driver: {sale.DriverName or ''} | Route: {sale.RouteName or ''}"
-
-                pay_rec = Payment.objects.filter(
-                    Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
-                ).first()
-
-                # Safely synchronize sequence for Payment
-                try:
-                    from django.db import connection
-                    with connection.cursor() as cursor:
-                        cursor.execute('SELECT COALESCE(MAX("PaymentId"), 0) FROM "Payment"')
-                        m = cursor.fetchone()[0]
-                        if m > 0:
-                            cursor.execute(f'SELECT setval(\'"Payment_PaymentId_seq"\', {m}, true);')
-                except Exception:
-                    pass
-
-                if not pay_rec:
-                    pay_rec = Payment.objects.create(
-                        PartyLedger=customer,
-                        Amount=cash_paid_spot,
-                        Narration=pay_narr,
-                    )
-                else:
-                    pay_rec.PartyLedger = customer
-                    pay_rec.Amount = cash_paid_spot
-                    pay_rec.Narration = pay_narr
-                    pay_rec.save(update_fields=['PartyLedger', 'Amount', 'Narration'])
-
-                if sale.SalesDate:
-                    dt = timezone.make_aware(datetime.combine(sale.SalesDate, datetime.min.time())) if timezone.is_naive(datetime.combine(sale.SalesDate, datetime.min.time())) else datetime.combine(sale.SalesDate, datetime.min.time())
-                    Payment.objects.filter(pk=pay_rec.pk).update(CreatedAt=dt)
-
-                # Clean up existing allocations & lines for this payment to rebuild cleanly
-                BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=pay_rec.PaymentId).delete()
-                pay_rec.lines.all().delete()
-
-                # Safely synchronize sequence for PaymentLine
-                try:
-                    from django.db import connection
-                    with connection.cursor() as cursor:
-                        cursor.execute('SELECT COALESCE(MAX("PaymentLineId"), 0) FROM "PaymentLine"')
-                        m = cursor.fetchone()[0]
-                        if m > 0:
-                            cursor.execute(f'SELECT setval(\'"PaymentLine_PaymentLineId_seq"\', {m}, true);')
-                except Exception:
-                    pass
-
-                p_mode = 'Split' if pm == 'SPLIT' else ('Bank' if ('UPI' in pm or 'BANK' in pm) else 'Cash')
-                if pm == 'SPLIT':
-                    if c_split > 0 and cash_led:
-                        pl1 = PaymentLine.objects.create(
-                            Payment=pay_rec, LineNo=1, PaymentMode='Cash',
-                            Ledger=cash_led, Amount=c_split, Narration=f"Cash Split for {bill_ref}"
-                        )
-                        BillwiseAllocation.objects.create(
-                            PaymentLine=pl1,
-                            ReferenceTable='Receipt',
-                            ReferenceId=pay_rec.PaymentId,
-                            BillType='SALES',
-                            BillReference=bill_ref,
-                            BillDate=sale.SalesDate,
-                            DueDate=sale.SalesDate,
-                            AllocationType='Against Reference',
-                            AllocatedAmount=c_split,
-                            CompanyId=company_id
-                        )
-                    if u_split > 0 and bank_led:
-                        pl2 = PaymentLine.objects.create(
-                            Payment=pay_rec, LineNo=2, PaymentMode='Bank',
-                            Ledger=bank_led, Amount=u_split, Narration=f"UPI Split for {bill_ref}"
-                        )
-                        BillwiseAllocation.objects.create(
-                            PaymentLine=pl2,
-                            ReferenceTable='Receipt',
-                            ReferenceId=pay_rec.PaymentId,
-                            BillType='SALES',
-                            BillReference=bill_ref,
-                            BillDate=sale.SalesDate,
-                            DueDate=sale.SalesDate,
-                            AllocationType='Against Reference',
-                            AllocatedAmount=u_split,
-                            CompanyId=company_id
-                        )
-                else:
-                    target_led = cash_or_bank or (cash_led if p_mode == 'Cash' else (bank_led or cash_led)) or customer
-                    pl = PaymentLine.objects.create(
-                        Payment=pay_rec, LineNo=1, PaymentMode=p_mode,
-                        Ledger=target_led, Amount=cash_paid_spot, Narration=f"{p_mode} Receipt for {bill_ref}"
-                    )
-                    BillwiseAllocation.objects.create(
-                        PaymentLine=pl,
-                        ReferenceTable='Receipt',
-                        ReferenceId=pay_rec.PaymentId,
-                        BillType='SALES',
-                        BillReference=bill_ref,
-                        BillDate=sale.SalesDate,
-                        DueDate=sale.SalesDate,
-                        AllocationType='Against Reference',
-                        AllocatedAmount=cash_paid_spot,
-                        CompanyId=company_id
-                    )
-            elif customer and cash_paid_spot <= 0:
-                # If payment amount was zeroed or sale is pure credit, clean up any previous receipt
-                stale_pay = Payment.objects.filter(
-                    Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
-                ).first()
-                if stale_pay:
-                    BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=stale_pay.PaymentId).delete()
-                    stale_pay.lines.all().delete()
-                    stale_pay.delete()
-                sync_sales_billwise_allocation(sale, None)
-            else:
-                sync_sales_billwise_allocation(sale, None)
+        # Credit Customer Ledger
+        affected_ledgers.add(customer.LedgerId)
+        VoucherLine.objects.create(
+            Voucher=rcpt_vch, LineNo=r_line, Ledger=customer,
+            DebitAmount=Decimal('0.00'), CreditAmount=cash_paid_spot, Narration=f"Receipt credited for {bill_ref}"
+        )
     else:
-        amt = paid_amt if paid_amt > 0 else gross_bill
-        if amt > 0:
-            if pm == 'SPLIT' and (cash_led or bank_led):
-                c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
-                u_m = re.search(r'(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
-                c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
-                u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
-                if c_split <= Decimal('0.00') and u_split <= Decimal('0.00'):
-                    c_split = amt
-                elif c_split > Decimal('0.00') and u_split <= Decimal('0.00') and amt > c_split:
-                    u_split = amt - c_split
-                elif u_split > Decimal('0.00') and c_split <= Decimal('0.00') and amt > u_split:
-                    c_split = amt - u_split
-                if (c_split + u_split) != amt and (c_split > 0 or u_split > 0):
-                    if c_split > 0:
-                        u_split = max(Decimal('0.00'), amt - c_split)
-                    else:
-                        c_split = max(Decimal('0.00'), amt - u_split)
-                if c_split > 0 and cash_led:
-                    affected_ledgers.add(cash_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=cash_led,
-                        DebitAmount=c_split, CreditAmount=Decimal('0.00'),
-                        Narration=f"Cash Split Direct Sale {sale.SalesNo}"
-                    )
-                    line_no += 1
-                if u_split > 0 and bank_led:
-                    affected_ledgers.add(bank_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=bank_led,
-                        DebitAmount=u_split, CreditAmount=Decimal('0.00'),
-                        Narration=f"UPI Split Direct Sale {sale.SalesNo}"
-                    )
-                    line_no += 1
-            elif cash_or_bank:
-                affected_ledgers.add(cash_or_bank.LedgerId)
-                VoucherLine.objects.create(
-                    Voucher=voucher, LineNo=line_no, Ledger=cash_or_bank,
-                    DebitAmount=amt, CreditAmount=Decimal('0.00'),
-                    Narration=f"Cash/Direct Sale {sale.SalesNo}"
-                )
-                line_no += 1
-            if subtotal > 0 and sales_led:
-                affected_ledgers.add(sales_led.LedgerId)
-                VoucherLine.objects.create(
-                    Voucher=voucher, LineNo=line_no, Ledger=sales_led,
-                    DebitAmount=Decimal('0.00'), CreditAmount=subtotal,
-                    Narration=f"Sales Taxable {sale.SalesNo}"
-                )
-                line_no += 1
-            if is_intra:
-                half_tax = (tax / Decimal('2.00')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                other_half = (tax - half_tax).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-                if half_tax > 0 and cgst_led:
-                    affected_ledgers.add(cgst_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=cgst_led,
-                        DebitAmount=Decimal('0.00'), CreditAmount=half_tax,
-                        Narration=f"CGST Output {sale.SalesNo}"
-                    )
-                    line_no += 1
-                if other_half > 0 and sgst_led:
-                    affected_ledgers.add(sgst_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=sgst_led,
-                        DebitAmount=Decimal('0.00'), CreditAmount=other_half,
-                        Narration=f"SGST Output {sale.SalesNo}"
-                    )
-                    line_no += 1
-            else:
-                if tax > 0 and igst_led:
-                    affected_ledgers.add(igst_led.LedgerId)
-                    VoucherLine.objects.create(
-                        Voucher=voucher, LineNo=line_no, Ledger=igst_led,
-                        DebitAmount=Decimal('0.00'), CreditAmount=tax,
-                        Narration=f"IGST Output {sale.SalesNo}"
-                    )
-                    line_no += 1
+        # If no cash collected on delivery, delete any obsolete receipt & voucher
+        stale_pay = Payment.objects.filter(
+            Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
+        ).first()
+        if stale_pay:
+            stale_vchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=stale_pay.PaymentId)
+            for sv in stale_vchs:
+                affected_ledgers.update(sv.lines.values_list('Ledger_id', flat=True))
+                sv.lines.all().delete()
+            stale_vchs.delete()
+            BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=stale_pay.PaymentId).delete()
+            stale_pay.lines.all().delete()
+            stale_pay.delete()
+
+    sync_sales_billwise_allocation(sale, None)
 
     if sync_balances and affected_ledgers:
         sync_ledger_balances(*affected_ledgers)
-    return voucher
+    return sales_voucher
 
 
 class SalesViewSet(viewsets.ModelViewSet):
