@@ -59,8 +59,12 @@ interface LedgerItem {
 interface StatementEntry {
   date: string;
   ref: string;
+  vch_no?: string;
   voucher_type: string;
   particulars: string;
+  item_name?: string;
+  full_qty?: number | string | null;
+  empty_qty?: number | string | null;
   debit: number;
   credit: number;
   runningBalance?: number;
@@ -619,17 +623,20 @@ export const LedgerAnalysisPage: React.FC = () => {
               <Text size="sm" c="dimmed">No transactions recorded for this ledger in the selected period.</Text>
             </Center>
           ) : (
-            <Table.ScrollContainer minWidth={850}>
+            <Table.ScrollContainer minWidth={1050}>
               <Table verticalSpacing="xs" horizontalSpacing="md" highlightOnHover>
                 <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                   <Table.Tr>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 105 }}>DATE</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 135 }}>VOUCHER NO</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 95 }}>TYPE</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5 }}>PARTICULARS</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 120, textAlign: 'right' }}>DEBIT (₹)</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 120, textAlign: 'right' }}>CREDIT (₹)</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 135, textAlign: 'right' }}>RUNNING BAL (₹)</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 90 }}>DATE</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, minWidth: 140 }}>PARTICULARS</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, minWidth: 130 }}>ITEM NAME</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 75, textAlign: 'center' }}>FULL QTY</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 80, textAlign: 'center' }}>EMPTY QTY</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 85 }}>VCH TYPE</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 95 }}>VCH NO.</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 105, textAlign: 'right' }}>DEBIT (₹)</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 105, textAlign: 'right' }}>CREDIT (₹)</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 120, textAlign: 'right' }}>BALANCE (₹)</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -643,15 +650,24 @@ export const LedgerAnalysisPage: React.FC = () => {
                         <Table.Td style={{ whiteSpace: 'nowrap', fontSize: 12, fontWeight: isOp ? 600 : 500, color: '#475569' }}>
                           {formatDateDDMMYY(tx.date)}
                         </Table.Td>
-                        <Table.Td style={{ fontWeight: 600, fontSize: 12, color: '#800020' }}>
-                          {tx.ref}
+                        <Table.Td style={{ fontSize: 12, color: '#0f172a', fontWeight: isOp ? 600 : 500, whiteSpace: 'pre-line', lineHeight: 1.4 }}>
+                          {tx.particulars}
+                        </Table.Td>
+                        <Table.Td style={{ fontSize: 12, color: '#334155', fontWeight: 500 }}>
+                          {tx.item_name || '—'}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: tx.full_qty ? '#0f172a' : '#94a3b8' }}>
+                          {tx.full_qty !== undefined && tx.full_qty !== null && tx.full_qty !== '' ? tx.full_qty : '—'}
+                        </Table.Td>
+                        <Table.Td style={{ textAlign: 'center', fontSize: 12, fontWeight: 600, color: tx.empty_qty ? '#0f172a' : '#94a3b8' }}>
+                          {tx.empty_qty !== undefined && tx.empty_qty !== null && tx.empty_qty !== '' ? tx.empty_qty : '—'}
                         </Table.Td>
                         <Table.Td>
                           <Badge
                             size="xs"
                             variant="light"
                             color={
-                              tx.voucher_type === 'SALES'
+                              tx.voucher_type === 'SALES' || tx.voucher_type === 'SALE'
                                 ? 'burgundy'
                                 : tx.voucher_type === 'RECEIPT'
                                 ? 'teal'
@@ -666,8 +682,8 @@ export const LedgerAnalysisPage: React.FC = () => {
                             {tx.voucher_type || 'VOUCHER'}
                           </Badge>
                         </Table.Td>
-                        <Table.Td style={{ fontSize: 12, color: '#0f172a', fontWeight: isOp ? 600 : 400, whiteSpace: 'pre-line', lineHeight: 1.4 }}>
-                          {tx.particulars}
+                        <Table.Td style={{ fontWeight: 600, fontSize: 12, color: '#800020' }}>
+                          {tx.vch_no || tx.ref}
                         </Table.Td>
                         <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           {tx.debit > 0 ? `₹${Number(tx.debit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
@@ -684,7 +700,7 @@ export const LedgerAnalysisPage: React.FC = () => {
                 </Table.Tbody>
                 <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
                   <Table.Tr>
-                    <Table.Td colSpan={4} style={{ fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
+                    <Table.Td colSpan={7} style={{ fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
                       PERIOD TOTALS &amp; CLOSING BALANCE
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>

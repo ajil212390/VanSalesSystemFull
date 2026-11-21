@@ -1912,6 +1912,9 @@ class LedgerViewSet(viewsets.ModelViewSet):
             ref_no = v.VoucherNo
             vtype = v.VoucherType
             particulars = vl.Narration or v.Narration or v.VoucherType
+            item_name = ''
+            full_qty = None
+            empty_qty = None
 
             if v.ReferenceTable == 'Sales' and v.ReferenceId in sales_map:
                 s = sales_map[v.ReferenceId]
@@ -1919,31 +1922,33 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 ref_no = clean_ref
 
                 if vl.DebitAmount > 0:
-                    vtype = 'SALES'
-                    prod_items = []
-                    for line in s.lines.all():
-                        pname = line.Product.ProductName if line.Product else (line.ProductName or 'LPG Cylinder')
-                        q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
-                        u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
-                        l_amt = float(getattr(line, 'Total', getattr(line, 'TotalAmount', 0)) or 0)
-                        prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {l_amt:,.2f})")
-                    if len(prod_items) == 1:
-                        particulars = f"Sales: {prod_items[0]}"
-                    elif len(prod_items) > 1:
-                        particulars = "Sales:\n" + "\n".join(f"• {it}" for it in prod_items)
-                    else:
-                        particulars = f"Sales Invoice #{clean_ref}"
+                    vtype = 'Sales'
+                    particulars = 'To SALE'
+                    s_lines = list(s.lines.all())
+                    if len(s_lines) == 1:
+                        l0 = s_lines[0]
+                        item_name = l0.Product.ProductName if l0.Product else (l0.ProductName or 'LPG Cylinder')
+                        full_qty = int(l0.Quantity) if l0.Quantity == int(l0.Quantity) else float(l0.Quantity)
+                        empty_qty = int(l0.EmptyQuantity) if l0.EmptyQuantity == int(l0.EmptyQuantity) else float(l0.EmptyQuantity)
+                    elif len(s_lines) > 1:
+                        item_name = ", ".join(l.Product.ProductName if l.Product else (l.ProductName or 'Item') for l in s_lines)
+                        full_qty = sum(int(l.Quantity) if l.Quantity == int(l.Quantity) else float(l.Quantity) for l in s_lines)
+                        empty_qty = sum(int(l.EmptyQuantity) if l.EmptyQuantity == int(l.EmptyQuantity) else float(l.EmptyQuantity) for l in s_lines)
 
                     entries.append({
                         'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
                         'ref': ref_no,
-                        'voucher_type': vtype,
+                        'vch_no': ref_no,
+                        'voucher_type': 'Sales',
                         'particulars': particulars,
+                        'item_name': item_name,
+                        'full_qty': full_qty if full_qty else None,
+                        'empty_qty': empty_qty if empty_qty else None,
                         'debit': float(vl.DebitAmount or 0),
                         'credit': 0.0,
                     })
                 elif vl.CreditAmount > 0:
-                    vtype = 'RECEIPT'
+                    vtype = 'Receipt'
                     narr = vl.Narration or ''
                     # Handle split receipts: if an older voucher had a single combined split line, expand to 2 lines
                     if (s.PaymentMethod or '').upper() == 'SPLIT' and ('SPLIT' in narr or narr.startswith('Payment Received')):
@@ -1964,12 +1969,17 @@ class LedgerViewSet(viewsets.ModelViewSet):
                             else:
                                 c_split = max(Decimal('0.00'), paid_amt - u_split)
 
+                        bank_label = 'PAYTM SBI' if ('paytm' in (s.Notes or '').lower() or 'sbi' in (s.Notes or '').lower()) else 'Bank / UPI'
                         if c_split > 0:
                             entries.append({
                                 'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
                                 'ref': clean_ref,
-                                'voucher_type': 'RECEIPT',
-                                'particulars': "Receipt (Cash Split)",
+                                'vch_no': clean_ref,
+                                'voucher_type': 'Receipt',
+                                'particulars': "By Cash",
+                                'item_name': '',
+                                'full_qty': None,
+                                'empty_qty': None,
                                 'debit': 0.0,
                                 'credit': float(c_split),
                             })
@@ -1977,18 +1987,33 @@ class LedgerViewSet(viewsets.ModelViewSet):
                             entries.append({
                                 'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
                                 'ref': clean_ref,
-                                'voucher_type': 'RECEIPT',
-                                'particulars': "Receipt (UPI Split)",
+                                'vch_no': clean_ref,
+                                'voucher_type': 'Receipt',
+                                'particulars': f"By {bank_label}",
+                                'item_name': '',
+                                'full_qty': None,
+                                'empty_qty': None,
                                 'debit': 0.0,
                                 'credit': float(u_split),
                             })
                     else:
-                        part_narr = vl.Narration if (vl.Narration and 'Receipt' in vl.Narration) else f"Receipt ({s.PaymentMethod or 'CASH'})"
+                        pm_str = (s.PaymentMethod or 'CASH').upper()
+                        if 'CASH' in pm_str:
+                            part_narr = "By Cash"
+                        elif 'PAYTM' in pm_str or 'SBI' in pm_str:
+                            part_narr = f"By {s.PaymentMethod}"
+                        else:
+                            part_narr = "By Bank / UPI" if ('UPI' in pm_str or 'BANK' in pm_str) else f"By {s.PaymentMethod}"
+
                         entries.append({
                             'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
                             'ref': clean_ref,
-                            'voucher_type': 'RECEIPT',
+                            'vch_no': clean_ref,
+                            'voucher_type': 'Receipt',
                             'particulars': part_narr,
+                            'item_name': '',
+                            'full_qty': None,
+                            'empty_qty': None,
                             'debit': 0.0,
                             'credit': float(vl.CreditAmount or 0),
                         })
@@ -1997,26 +2022,27 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 p = purchases_map[v.ReferenceId]
                 clean_ref = p.InvoiceNo or p.PurchaseNo or ref_no
                 ref_no = clean_ref
+                p_lines = list(p.lines.all())
+                p_item_name = ''
+                p_full_qty = None
+                if len(p_lines) == 1:
+                    l0 = p_lines[0]
+                    p_item_name = l0.Product.ProductName if l0.Product else (l0.ProductName or 'Item')
+                    p_full_qty = int(l0.Quantity) if l0.Quantity == int(l0.Quantity) else float(l0.Quantity)
+                elif len(p_lines) > 1:
+                    p_item_name = ", ".join(l.Product.ProductName if l.Product else (l.ProductName or 'Item') for l in p_lines)
+                    p_full_qty = sum(int(l.Quantity) if l.Quantity == int(l.Quantity) else float(l.Quantity) for l in p_lines)
+
                 if vl.CreditAmount > 0:
-                    vtype = 'PURCHASE'
-                    prod_items = []
-                    for line in p.lines.all():
-                        pname = line.Product.ProductName if line.Product else (line.ProductName or 'Item')
-                        q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
-                        u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else ""
-                        l_amt = float(getattr(line, 'Total', getattr(line, 'TotalAmount', 0)) or 0)
-                        prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {l_amt:,.2f})")
-                    if len(prod_items) == 1:
-                        particulars = f"Purchase: {prod_items[0]}"
-                    elif len(prod_items) > 1:
-                        particulars = "Purchase:\n" + "\n".join(f"• {it}" for it in prod_items)
-                    else:
-                        particulars = f"Purchase Bill #{clean_ref}"
                     entries.append({
                         'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
                         'ref': clean_ref,
-                        'voucher_type': vtype,
-                        'particulars': particulars,
+                        'vch_no': clean_ref,
+                        'voucher_type': 'Purchase',
+                        'particulars': 'By PURCHASE',
+                        'item_name': p_item_name,
+                        'full_qty': p_full_qty if p_full_qty else None,
+                        'empty_qty': None,
                         'debit': 0.0,
                         'credit': float(vl.CreditAmount or 0),
                     })
@@ -2024,8 +2050,12 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     entries.append({
                         'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
                         'ref': clean_ref,
-                        'voucher_type': 'PAYMENT',
+                        'vch_no': clean_ref,
+                        'voucher_type': 'Payment',
                         'particulars': vl.Narration or f"Payment for #{clean_ref}",
+                        'item_name': '',
+                        'full_qty': None,
+                        'empty_qty': None,
                         'debit': float(vl.DebitAmount or 0),
                         'credit': 0.0,
                     })
@@ -2033,15 +2063,32 @@ class LedgerViewSet(viewsets.ModelViewSet):
             else:
                 counter_line = v.lines.exclude(Ledger=ledger).first()
                 counter_name = counter_line.Ledger.LedgerName if counter_line and counter_line.Ledger else ''
-                particulars = vl.Narration or v.Narration or counter_name or v.VoucherType
-                if vl.CreditAmount > 0 and vl.DebitAmount == 0 and vtype == 'SALES':
-                    vtype = 'RECEIPT'
+                clean_vno = str(v.VoucherNo).replace('REC-', '').replace('SALE-', '').replace('VCH-', '')
+
+                if vl.CreditAmount > 0:
+                    vtype_disp = 'Receipt'
+                    if 'cash' in counter_name.lower():
+                        part = 'By Cash'
+                    elif counter_name:
+                        part = f"By {counter_name}"
+                    else:
+                        part = 'By Bank / UPI'
+                elif vl.DebitAmount > 0 and v.VoucherType == 'SALES':
+                    vtype_disp = 'Sales'
+                    part = 'To SALE'
+                else:
+                    vtype_disp = v.VoucherType.title() if v.VoucherType else 'Journal'
+                    part = vl.Narration or v.Narration or counter_name or v.VoucherType
 
                 entries.append({
                     'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
                     'ref': v.VoucherNo,
-                    'voucher_type': vtype,
-                    'particulars': particulars,
+                    'vch_no': clean_vno,
+                    'voucher_type': vtype_disp,
+                    'particulars': part,
+                    'item_name': '',
+                    'full_qty': None,
+                    'empty_qty': None,
                     'debit': float(vl.DebitAmount or 0),
                     'credit': float(vl.CreditAmount or 0),
                 })
@@ -2050,45 +2097,55 @@ class LedgerViewSet(viewsets.ModelViewSet):
             purchases = Purchase.objects.filter(SupplierLedger=ledger).prefetch_related('lines__Product', 'lines__Unit').order_by('PurchaseDate', 'PurchaseId')
             for p in purchases:
                 clean_ref = p.InvoiceNo or p.PurchaseNo or f"PUR-{p.PurchaseId}"
-                prod_items = []
-                for line in p.lines.all():
-                    pname = line.Product.ProductName if line.Product else (line.ProductName or 'Item')
-                    q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
-                    u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else ""
-                    l_amt = float(getattr(line, 'Total', getattr(line, 'TotalAmount', 0)) or 0)
-                    prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {l_amt:,.2f})")
-                part = ("Purchase:\n" + "\n".join(f"• {it}" for it in prod_items)) if prod_items else f"Purchase Bill #{clean_ref}"
+                p_lines = list(p.lines.all())
+                p_item = ''
+                p_qty = None
+                if len(p_lines) == 1:
+                    l0 = p_lines[0]
+                    p_item = l0.Product.ProductName if l0.Product else (l0.ProductName or 'Item')
+                    p_qty = int(l0.Quantity) if l0.Quantity == int(l0.Quantity) else float(l0.Quantity)
+                elif len(p_lines) > 1:
+                    p_item = ", ".join(l.Product.ProductName if l.Product else (l.ProductName or 'Item') for l in p_lines)
+                    p_qty = sum(int(l.Quantity) if l.Quantity == int(l.Quantity) else float(l.Quantity) for l in p_lines)
+
                 entries.append({
                     'date': p.PurchaseDate.strftime('%Y-%m-%d') if p.PurchaseDate else '',
                     'ref': clean_ref,
-                    'voucher_type': 'PURCHASE',
-                    'particulars': part,
+                    'vch_no': clean_ref,
+                    'voucher_type': 'Purchase',
+                    'particulars': 'By PURCHASE',
+                    'item_name': p_item,
+                    'full_qty': p_qty if p_qty else None,
+                    'empty_qty': None,
                     'debit': 0.0,
                     'credit': float(p.GrandTotal or 0),
                 })
             sales = Sales.objects.filter(CustomerLedger=ledger, IsApproved=True).exclude(Status='CANCELLED').prefetch_related('lines__Product', 'lines__Unit').order_by('SalesDate', 'SalesId')
             for s in sales:
                 clean_ref = s.InvoiceNo or s.SalesNo or f"INV-{s.SalesId}"
-                prod_items = []
-                for line in s.lines.all():
-                    pname = line.Product.ProductName if line.Product else (line.ProductName or 'LPG Cylinder')
-                    q_num = int(line.Quantity) if line.Quantity == int(line.Quantity) else line.Quantity
-                    u_str = f" {line.Unit.UnitName}" if line.Unit and line.Unit.UnitName else " NOS"
-                    l_amt = float(getattr(line, 'Total', getattr(line, 'TotalAmount', 0)) or 0)
-                    prod_items.append(f"{pname} ({q_num}{u_str} @ Rs. {l_amt:,.2f})")
-
-                if len(prod_items) == 1:
-                    part = f"Sales: {prod_items[0]}"
-                elif len(prod_items) > 1:
-                    part = "Sales:\n" + "\n".join(f"• {it}" for it in prod_items)
-                else:
-                    part = f"Sales Invoice #{clean_ref}"
+                s_lines = list(s.lines.all())
+                s_item = ''
+                s_full = None
+                s_empty = None
+                if len(s_lines) == 1:
+                    l0 = s_lines[0]
+                    s_item = l0.Product.ProductName if l0.Product else (l0.ProductName or 'LPG Cylinder')
+                    s_full = int(l0.Quantity) if l0.Quantity == int(l0.Quantity) else float(l0.Quantity)
+                    s_empty = int(l0.EmptyQuantity) if l0.EmptyQuantity == int(l0.EmptyQuantity) else float(l0.EmptyQuantity)
+                elif len(s_lines) > 1:
+                    s_item = ", ".join(l.Product.ProductName if l.Product else (l.ProductName or 'Item') for l in s_lines)
+                    s_full = sum(int(l.Quantity) if l.Quantity == int(l.Quantity) else float(l.Quantity) for l in s_lines)
+                    s_empty = sum(int(l.EmptyQuantity) if l.EmptyQuantity == int(l.EmptyQuantity) else float(l.EmptyQuantity) for l in s_lines)
 
                 entries.append({
                     'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
                     'ref': clean_ref,
-                    'voucher_type': 'SALES',
-                    'particulars': part,
+                    'vch_no': clean_ref,
+                    'voucher_type': 'Sales',
+                    'particulars': 'To SALE',
+                    'item_name': s_item,
+                    'full_qty': s_full if s_full else None,
+                    'empty_qty': s_empty if s_empty else None,
                     'debit': float(s.GrandTotal or 0),
                     'credit': 0.0,
                 })
@@ -2112,12 +2169,17 @@ class LedgerViewSet(viewsets.ModelViewSet):
                             else:
                                 c_split = max(Decimal('0.00'), paid_amt - u_split)
 
+                        bank_label = 'PAYTM SBI' if ('paytm' in (s.Notes or '').lower() or 'sbi' in (s.Notes or '').lower()) else 'Bank / UPI'
                         if c_split > 0:
                             entries.append({
                                 'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
                                 'ref': clean_ref,
-                                'voucher_type': 'RECEIPT',
-                                'particulars': "Receipt (Cash Split)",
+                                'vch_no': clean_ref,
+                                'voucher_type': 'Receipt',
+                                'particulars': "By Cash",
+                                'item_name': '',
+                                'full_qty': None,
+                                'empty_qty': None,
                                 'debit': 0.0,
                                 'credit': float(c_split),
                             })
@@ -2125,17 +2187,32 @@ class LedgerViewSet(viewsets.ModelViewSet):
                             entries.append({
                                 'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
                                 'ref': clean_ref,
-                                'voucher_type': 'RECEIPT',
-                                'particulars': "Receipt (UPI Split)",
+                                'vch_no': clean_ref,
+                                'voucher_type': 'Receipt',
+                                'particulars': f"By {bank_label}",
+                                'item_name': '',
+                                'full_qty': None,
+                                'empty_qty': None,
                                 'debit': 0.0,
                                 'credit': float(u_split),
                             })
                     else:
+                        if 'CASH' in pm_str:
+                            part_narr = "By Cash"
+                        elif 'PAYTM' in pm_str or 'SBI' in pm_str:
+                            part_narr = f"By {s.PaymentMethod}"
+                        else:
+                            part_narr = "By Bank / UPI" if ('UPI' in pm_str or 'BANK' in pm_str) else f"By {s.PaymentMethod}"
+
                         entries.append({
                             'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
                             'ref': clean_ref,
-                            'voucher_type': 'RECEIPT',
-                            'particulars': f"Receipt ({pm_str})",
+                            'vch_no': clean_ref,
+                            'voucher_type': 'Receipt',
+                            'particulars': part_narr,
+                            'item_name': '',
+                            'full_qty': None,
+                            'empty_qty': None,
                             'debit': 0.0,
                             'credit': float(s.PaidAmount),
                         })
@@ -2143,24 +2220,19 @@ class LedgerViewSet(viewsets.ModelViewSet):
             for pm in payments:
                 vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
                 is_rcpt = (vch and vch.VoucherType == 'RECEIPT') or pm.lines.filter(PaymentMode__icontains='receipt').exists()
-                if is_rcpt:
-                    entries.append({
-                        'date': pm.CreatedAt.strftime('%Y-%m-%d') if pm.CreatedAt else '',
-                        'ref': vch.VoucherNo if vch else f"REC-{pm.PaymentId}",
-                        'voucher_type': 'RECEIPT',
-                        'particulars': pm.Narration or 'Receipt Collection',
-                        'debit': 0.0,
-                        'credit': float(pm.Amount or 0),
-                    })
-                else:
-                    entries.append({
-                        'date': pm.CreatedAt.strftime('%Y-%m-%d') if pm.CreatedAt else '',
-                        'ref': vch.VoucherNo if vch else f"PAY-{pm.PaymentId}",
-                        'voucher_type': 'PAYMENT',
-                        'particulars': pm.Narration or 'Payment Disbursed',
-                        'debit': float(pm.Amount or 0),
-                        'credit': 0.0,
-                    })
+                clean_no = str(vch.VoucherNo if vch else f"REC-{pm.PaymentId}").replace('REC-', '').replace('VCH-', '')
+                entries.append({
+                    'date': pm.CreatedAt.strftime('%Y-%m-%d') if pm.CreatedAt else '',
+                    'ref': vch.VoucherNo if vch else f"REC-{pm.PaymentId}",
+                    'vch_no': clean_no,
+                    'voucher_type': 'Receipt' if is_rcpt else 'Payment',
+                    'particulars': pm.Narration or ('By Cash' if is_rcpt else 'Payment'),
+                    'item_name': '',
+                    'full_qty': None,
+                    'empty_qty': None,
+                    'debit': 0.0 if is_rcpt else float(pm.Amount or 0),
+                    'credit': float(pm.Amount or 0) if is_rcpt else 0.0,
+                })
 
         entries.sort(key=lambda x: x.get('date') or '')
         ledger.refresh_from_db()
