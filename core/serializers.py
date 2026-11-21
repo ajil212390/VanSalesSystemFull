@@ -1032,7 +1032,15 @@ class PaymentSerializer(serializers.ModelSerializer):
 
     def get_voucher_type(self, obj):
         vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=obj.PaymentId).first()
-        return vch.VoucherType if vch else 'PAYMENT'
+        if vch and vch.VoucherType:
+            return vch.VoucherType
+        if obj.PartyLedger and obj.PartyLedger.Group:
+            g_name = (obj.PartyLedger.Group.GroupName or '').lower()
+            if obj.PartyLedger.Group_id == 21 or 'debtor' in g_name or 'customer' in g_name:
+                return 'RECEIPT'
+        if obj.Narration and ('receipt' in obj.Narration.lower() or 'collection' in obj.Narration.lower()):
+            return 'RECEIPT'
+        return 'PAYMENT'
 
 
 class LedgerLineSerializer(serializers.ModelSerializer):

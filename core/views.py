@@ -9154,6 +9154,14 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
             old_vch.delete()
             if affected:
                 sync_ledger_balances(*affected)
+        # Clean up any associated payment/receipt
+        stale_pay = Payment.objects.filter(
+            Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
+        ).first()
+        if stale_pay:
+            BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=stale_pay.PaymentId).delete()
+            stale_pay.lines.all().delete()
+            stale_pay.delete()
         return None
 
     # Check if voucher already exists
@@ -9376,29 +9384,124 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
                 line_no += 1
                 sync_sales_billwise_allocation(sale, cust_vl)
 
-            # For Money Receipts (RCPT), create or sync a Payment entry for the Receipts module
-            if is_money_receipt and customer and cash_paid_spot > 0:
-                pay_rec = Payment.objects.filter(Narration__icontains=sale.SalesNo).first()
+            # Automatically create or synchronize an official Customer Receipt (Payment model) for any collection on delivery
+            if customer and cash_paid_spot > 0:
+                bill_ref = sale.InvoiceNo or sale.SalesNo
+                receipt_title = "Van Collection Receipt" if is_money_receipt else f"Sales Receipt for {bill_ref}"
+                pay_narr = f"{receipt_title} | Driver: {sale.DriverName or ''} | Route: {sale.RouteName or ''}"
+
+                pay_rec = Payment.objects.filter(
+                    Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
+                ).first()
+
+                # Safely synchronize sequence for Payment
+                try:
+                    from django.db import connection
+                    with connection.cursor() as cursor:
+                        cursor.execute('SELECT COALESCE(MAX("PaymentId"), 0) FROM "Payment"')
+                        m = cursor.fetchone()[0]
+                        if m > 0:
+                            cursor.execute(f'SELECT setval(\'"Payment_PaymentId_seq"\', {m}, true);')
+                except Exception:
+                    pass
+
                 if not pay_rec:
                     pay_rec = Payment.objects.create(
                         PartyLedger=customer,
                         Amount=cash_paid_spot,
-                        Narration=f"Van Collection Receipt {sale.SalesNo} | Driver: {sale.DriverName or ''} | Route: {sale.RouteName or ''}",
+                        Narration=pay_narr,
                     )
-                    if sale.SalesDate:
-                        dt = timezone.make_aware(datetime.combine(sale.SalesDate, datetime.min.time())) if timezone.is_naive(datetime.combine(sale.SalesDate, datetime.min.time())) else datetime.combine(sale.SalesDate, datetime.min.time())
-                        Payment.objects.filter(pk=pay_rec.pk).update(CreatedAt=dt)
+                else:
+                    pay_rec.PartyLedger = customer
+                    pay_rec.Amount = cash_paid_spot
+                    pay_rec.Narration = pay_narr
+                    pay_rec.save(update_fields=['PartyLedger', 'Amount', 'Narration'])
 
-                    p_mode = 'Split' if pm == 'SPLIT' else ('Bank' if ('UPI' in pm or 'BANK' in pm) else 'Cash')
-                    if pm == 'SPLIT':
-                        if c_split > 0 and cash_led:
-                            PaymentLine.objects.create(Payment=pay_rec, LineNo=1, PaymentMode='Cash', Ledger=cash_led, Amount=c_split, Narration="Cash Split")
-                        if u_split > 0 and bank_led:
-                            PaymentLine.objects.create(Payment=pay_rec, LineNo=2, PaymentMode='Bank', Ledger=bank_led, Amount=u_split, Narration="UPI/Bank Split")
-                    else:
-                        PaymentLine.objects.create(Payment=pay_rec, LineNo=1, PaymentMode=p_mode, Ledger=cash_or_bank or customer, Amount=cash_paid_spot, Narration=f"{p_mode} Collection")
-        else:
-            sync_sales_billwise_allocation(sale, None)
+                if sale.SalesDate:
+                    dt = timezone.make_aware(datetime.combine(sale.SalesDate, datetime.min.time())) if timezone.is_naive(datetime.combine(sale.SalesDate, datetime.min.time())) else datetime.combine(sale.SalesDate, datetime.min.time())
+                    Payment.objects.filter(pk=pay_rec.pk).update(CreatedAt=dt)
+
+                # Clean up existing allocations & lines for this payment to rebuild cleanly
+                BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=pay_rec.PaymentId).delete()
+                pay_rec.lines.all().delete()
+
+                # Safely synchronize sequence for PaymentLine
+                try:
+                    from django.db import connection
+                    with connection.cursor() as cursor:
+                        cursor.execute('SELECT COALESCE(MAX("PaymentLineId"), 0) FROM "PaymentLine"')
+                        m = cursor.fetchone()[0]
+                        if m > 0:
+                            cursor.execute(f'SELECT setval(\'"PaymentLine_PaymentLineId_seq"\', {m}, true);')
+                except Exception:
+                    pass
+
+                p_mode = 'Split' if pm == 'SPLIT' else ('Bank' if ('UPI' in pm or 'BANK' in pm) else 'Cash')
+                if pm == 'SPLIT':
+                    if c_split > 0 and cash_led:
+                        pl1 = PaymentLine.objects.create(
+                            Payment=pay_rec, LineNo=1, PaymentMode='Cash',
+                            Ledger=cash_led, Amount=c_split, Narration=f"Cash Split for {bill_ref}"
+                        )
+                        BillwiseAllocation.objects.create(
+                            PaymentLine=pl1,
+                            ReferenceTable='Receipt',
+                            ReferenceId=pay_rec.PaymentId,
+                            BillType='SALES',
+                            BillReference=bill_ref,
+                            BillDate=sale.SalesDate,
+                            DueDate=sale.SalesDate,
+                            AllocationType='Against Reference',
+                            AllocatedAmount=c_split,
+                            CompanyId=company_id
+                        )
+                    if u_split > 0 and bank_led:
+                        pl2 = PaymentLine.objects.create(
+                            Payment=pay_rec, LineNo=2, PaymentMode='Bank',
+                            Ledger=bank_led, Amount=u_split, Narration=f"UPI Split for {bill_ref}"
+                        )
+                        BillwiseAllocation.objects.create(
+                            PaymentLine=pl2,
+                            ReferenceTable='Receipt',
+                            ReferenceId=pay_rec.PaymentId,
+                            BillType='SALES',
+                            BillReference=bill_ref,
+                            BillDate=sale.SalesDate,
+                            DueDate=sale.SalesDate,
+                            AllocationType='Against Reference',
+                            AllocatedAmount=u_split,
+                            CompanyId=company_id
+                        )
+                else:
+                    target_led = cash_or_bank or (cash_led if p_mode == 'Cash' else (bank_led or cash_led)) or customer
+                    pl = PaymentLine.objects.create(
+                        Payment=pay_rec, LineNo=1, PaymentMode=p_mode,
+                        Ledger=target_led, Amount=cash_paid_spot, Narration=f"{p_mode} Receipt for {bill_ref}"
+                    )
+                    BillwiseAllocation.objects.create(
+                        PaymentLine=pl,
+                        ReferenceTable='Receipt',
+                        ReferenceId=pay_rec.PaymentId,
+                        BillType='SALES',
+                        BillReference=bill_ref,
+                        BillDate=sale.SalesDate,
+                        DueDate=sale.SalesDate,
+                        AllocationType='Against Reference',
+                        AllocatedAmount=cash_paid_spot,
+                        CompanyId=company_id
+                    )
+            elif customer and cash_paid_spot <= 0:
+                # If payment amount was zeroed or sale is pure credit, clean up any previous receipt
+                stale_pay = Payment.objects.filter(
+                    Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
+                ).first()
+                if stale_pay:
+                    BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=stale_pay.PaymentId).delete()
+                    stale_pay.lines.all().delete()
+                    stale_pay.delete()
+                sync_sales_billwise_allocation(sale, None)
+            else:
+                sync_sales_billwise_allocation(sale, None)
     else:
         amt = paid_amt if paid_amt > 0 else gross_bill
         if amt > 0:
