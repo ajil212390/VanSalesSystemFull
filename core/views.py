@@ -1611,6 +1611,31 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    def list(self, request, *args, **kwargs):
+        user = getattr(request, 'user', None)
+        company_id = getattr(user, 'CompanyId', 1) or 1
+
+        # Self-healing: if any approved sales are missing vouchers, post them and sync balances
+        unposted = (
+            Sales.objects.filter(CompanyId=company_id, IsApproved=True)
+            .exclude(Status='CANCELLED')
+            .exclude(SalesId__in=Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales').values('ReferenceId'))
+        )
+        if unposted.exists():
+            aff = set()
+            for s in unposted[:50]:
+                vch = post_sale_voucher(s, company_id, sync_balances=False)
+                if vch:
+                    for vl in vch.lines.all():
+                        if vl.Ledger_id:
+                            aff.add(vl.Ledger_id)
+                if s.CustomerLedger_id:
+                    aff.add(s.CustomerLedger_id)
+            if aff:
+                sync_ledger_balances(*aff)
+
+        return super().list(request, *args, **kwargs)
+
 
     @action(detail=False, methods=['get'], url_path='suppliers', permission_classes=[AllowAny])
     def suppliers(self, request):
@@ -1673,6 +1698,26 @@ class LedgerViewSet(viewsets.ModelViewSet):
         """
         user = getattr(request, 'user', None)
         company_id = getattr(user, 'CompanyId', 1) or 1
+
+        # Self-healing: if any approved sales are missing vouchers, post them and sync balances
+        unposted = (
+            Sales.objects.filter(CompanyId=company_id, IsApproved=True)
+            .exclude(Status='CANCELLED')
+            .exclude(SalesId__in=Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales').values('ReferenceId'))
+        )
+        if unposted.exists():
+            aff = set()
+            for s in unposted[:50]:
+                vch = post_sale_voucher(s, company_id, sync_balances=False)
+                if vch:
+                    for vl in vch.lines.all():
+                        if vl.Ledger_id:
+                            aff.add(vl.Ledger_id)
+                if s.CustomerLedger_id:
+                    aff.add(s.CustomerLedger_id)
+            if aff:
+                sync_ledger_balances(*aff)
+
         debtor_ledgers = (
             Ledger.objects.filter(CompanyId=company_id)
             .filter(Q(Group__GroupName__icontains='debtor') | Q(Group__GroupName__icontains='customer'))
@@ -8560,7 +8605,7 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 )
 
             # Evaluate sales for this shift BEFORE updating status so subsequent aggregations and vouchers succeed
-            sales_list = list(sales_qs.exclude(Status='COMPLETED'))
+            sales_list = list(sales_qs.exclude(Status='CANCELLED'))
             sales_ids = [s.SalesId for s in sales_list]
 
             if sales_ids:
@@ -8873,14 +8918,17 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
 
             # 5. Generate Double-Entry Accounting Vouchers for Shift & Customer Accounts
             affected_ledgers = {24, 56, 20, 22, 23, 35}
-            if sales_ids:
-                sales_list = list(Sales.objects.filter(SalesId__in=sales_ids))
-            for sale in sales_list:
+            all_shift_sales = list(sales_qs.exclude(Status='CANCELLED'))
+            for sale in all_shift_sales:
+                sale.IsApproved = True
+                sale.Status = 'COMPLETED'
                 vch = post_sale_voucher(sale, company_id, sync_balances=False)
                 if vch:
                     for vl in vch.lines.all():
                         if vl.Ledger_id:
                             affected_ledgers.add(vl.Ledger_id)
+                if sale.CustomerLedger_id:
+                    affected_ledgers.add(sale.CustomerLedger_id)
 
             # 6. Generate Double-Entry Accounting Vouchers for Shift Route Expenses
             shift_expenses_qs = RouteExpense.objects.filter(
