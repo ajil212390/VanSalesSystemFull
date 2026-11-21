@@ -3451,23 +3451,26 @@ def generate_ledger_statement_pdf(
     summary_stats=None
 ):
     """
-    Generates a publication-grade, standard Tally-style A4 PDF statement of account for any ledger.
-    Columns: Date | Particulars | Item Name | Full Qty | Empty Qty | Vch Type | Vch No. | Debit | Credit | Balance
+    Generates a publication-grade, branded A4 PDF Statement of Account for any ledger.
+    Matches the system's royal burgundy theme, company header, customer details, and KPI summary,
+    while featuring the 10-column Tally ERP structure:
+    Date | Particulars | Item Name | Full Qty | Empty Qty | Vch Type | Vch No. | Debit | Credit | Balance
     """
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        leftMargin=20,
-        rightMargin=20,
-        topMargin=20,
-        bottomMargin=25
+        leftMargin=25,
+        rightMargin=25,
+        topMargin=25,
+        bottomMargin=28
     )
 
     company_name = "ROYAL AGENCIES"
     company_subtitle = "Authorized Franchisee of SHV Energy Pvt.Ltd"
     company_address = "5/1057, AKK BUILDING, WAYANAD ROAD KUTTIADY, Kozhikode, Kerala, 673508"
-    company_contact = "9846100990, 9946100222"
+    company_contact = "Ph: 9846100990, 9946100222"
+    company_gstin = "32AABCF1234F1Z8"
 
     try:
         from core.models import Company
@@ -3476,15 +3479,23 @@ def generate_ledger_statement_pdf(
             company_name = co.CompanyName or company_name
             if co.Address:
                 company_address = co.Address
+            if co.GSTIN:
+                company_gstin = co.GSTIN
             if co.PhoneNumber or co.MobileNumber:
-                company_contact = f"{co.PhoneNumber or ''}, {co.MobileNumber or ''}".strip(', ')
+                company_contact = f"Ph: {co.PhoneNumber or co.MobileNumber or '9846100990'}"
     except Exception:
         pass
 
     # Ledger Information
     ledger_name = getattr(ledger, 'LedgerName', '') or ''
-    group_nature = getattr(ledger.Group, 'Nature', '') if getattr(ledger, 'Group', None) else 'Asset'
+    group_obj = getattr(ledger, 'Group', None)
+    group_name = getattr(group_obj, 'GroupName', '') if group_obj else 'General Ledger'
+    group_nature = getattr(group_obj, 'Nature', '') if group_obj else 'Asset'
     customer_code = getattr(ledger, 'CustomerCode', '') or ''
+    ledger_phone = getattr(ledger, 'PhoneNumber', '') or getattr(ledger, 'MobileNumber', '') or '—'
+    ledger_address = getattr(ledger, 'Address', '') or getattr(ledger, 'AddressLine1', '') or '—'
+    ledger_gstin = getattr(ledger, 'GSTIN', '') or 'Unregistered Consumer'
+    ledger_route = getattr(ledger.Route, 'RouteName', '') if getattr(ledger, 'Route', None) else 'Direct / All Routes'
 
     is_dr_normal = (group_nature or '').lower() in ('asset', 'expense')
 
@@ -3512,7 +3523,7 @@ def generate_ledger_statement_pdf(
     elif to_date:
         period_text = f"Up to {format_short_date(to_date)}"
 
-    # Effective Opening Balance
+    # Effective Opening Balance & Totals
     effective_op = None
     tot_debit = Decimal('0.00')
     tot_credit = Decimal('0.00')
@@ -3536,58 +3547,71 @@ def generate_ledger_statement_pdf(
         effective_op = (init_dr - init_cr) if is_dr_normal else (init_cr - init_dr)
 
     # Styles
-    comp_title_center = ParagraphStyle('LdgStmCompTC', fontName=FONT_BOLD, fontSize=12, leading=15, alignment=1)
-    comp_sub_center = ParagraphStyle('LdgStmCompSub', fontName=FONT_NAME, fontSize=8, leading=11, alignment=1)
-    comp_addr_center = ParagraphStyle('LdgStmCompAddr', fontName=FONT_NAME, fontSize=7.5, leading=10, alignment=1)
+    title_style = ParagraphStyle('StmtBrandT', fontName=FONT_BOLD, fontSize=16, leading=20, textColor=PRIMARY_COLOR)
+    hdr_right = ParagraphStyle('StmtBrandR', fontName=FONT_BOLD, fontSize=13, leading=16, textColor=PRIMARY_COLOR, alignment=2)
+    meta_style = ParagraphStyle('StmtBrandM', fontName=FONT_NAME, fontSize=7.5, leading=10.5, textColor=DARK_COLOR)
+    meta_bold = ParagraphStyle('StmtBrandMB', fontName=FONT_BOLD, fontSize=8, leading=11, textColor=DARK_COLOR)
 
-    ldg_code_name = f"{customer_code}-{ledger_name}" if customer_code else ledger_name
-    ledger_title_center = ParagraphStyle('LdgStmLdgTC', fontName=FONT_BOLD, fontSize=10.5, leading=13.5, alignment=1)
-    ledger_sub_center = ParagraphStyle('LdgStmLdgSub', fontName=FONT_NAME, fontSize=8, leading=11, alignment=1)
-    period_center = ParagraphStyle('LdgStmPer', fontName=FONT_NAME, fontSize=7.5, leading=10, alignment=1)
+    th_left = ParagraphStyle('ThL2', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=colors.white, alignment=0)
+    th_center = ParagraphStyle('ThC2', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=colors.white, alignment=1)
+    th_right = ParagraphStyle('ThR2', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=colors.white, alignment=2)
 
-    th_left = ParagraphStyle('ThL', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, alignment=0)
-    th_center = ParagraphStyle('ThC', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, alignment=1)
-    th_right = ParagraphStyle('ThR', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, alignment=2)
-
-    td_left = ParagraphStyle('TdL', fontName=FONT_NAME, fontSize=7, leading=9, alignment=0)
-    td_left_bold = ParagraphStyle('TdLb', fontName=FONT_BOLD, fontSize=7, leading=9, alignment=0)
-    td_center = ParagraphStyle('TdC', fontName=FONT_NAME, fontSize=7, leading=9, alignment=1)
-    td_right = ParagraphStyle('TdR', fontName=FONT_NAME, fontSize=7, leading=9, alignment=2)
-    td_right_bold = ParagraphStyle('TdRb', fontName=FONT_BOLD, fontSize=7, leading=9, alignment=2)
+    td_left = ParagraphStyle('TdL2', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=0)
+    td_left_bold = ParagraphStyle('TdLb2', fontName=FONT_BOLD, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=0)
+    td_center = ParagraphStyle('TdC2', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=1)
+    td_right = ParagraphStyle('TdR2', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=2)
+    td_right_bold = ParagraphStyle('TdRb2', fontName=FONT_BOLD, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=2)
+    td_right_burg = ParagraphStyle('TdRBg2', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=PRIMARY_COLOR, alignment=2)
 
     story = []
 
-    # 1. Header (Centered like Tally Statement)
-    story.append(Paragraph(f"<b>{html.escape(company_name.upper())}</b>", comp_title_center))
-    if company_subtitle:
-        story.append(Paragraph(html.escape(company_subtitle), comp_sub_center))
-    story.append(Paragraph(html.escape(company_address), comp_addr_center))
-    story.append(Paragraph(html.escape(company_contact), comp_addr_center))
-    story.append(Spacer(1, 8))
-
-    story.append(Paragraph(f"<b>{html.escape(ldg_code_name)}</b>", ledger_title_center))
-    story.append(Paragraph("Ledger Account", ledger_sub_center))
-    story.append(Paragraph(html.escape(period_text), period_center))
-    story.append(Spacer(1, 8))
-
-    # 2. Entries Table
-    # Widths sum = 555pt
-    col_widths = [52, 95, 80, 36, 40, 44, 46, 52, 52, 58]
-
-    table_rows = [
+    # 1. BRAND HEADER
+    header_data = [
         [
-            Paragraph("<b>Date</b>", th_left),
-            Paragraph("<b>Particulars</b>", th_left),
-            Paragraph("<b>Item Name</b>", th_left),
-            Paragraph("<b>Full Qty</b>", th_center),
-            Paragraph("<b>Empty Qty</b>", th_center),
-            Paragraph("<b>Vch Type</b>", th_left),
-            Paragraph("<b>Vch No.</b>", th_left),
-            Paragraph("<b>Debit</b>", th_right),
-            Paragraph("<b>Credit</b>", th_right),
-            Paragraph("<b>Balance</b>", th_right),
+            Paragraph(
+                f"<b>{html.escape(company_name)}</b><br/>"
+                f"<font size=7 color='#64748B'>{html.escape(company_subtitle)}</font><br/>"
+                f"<font size=7 color='#64748B'>{html.escape(company_address)}</font><br/>"
+                f"<font size=7 color='#64748B'>{html.escape(company_contact)} | GSTIN: <b>{html.escape(company_gstin)}</b></font>",
+                title_style
+            ),
+            Paragraph(
+                f"<b>STATEMENT OF ACCOUNT</b><br/>"
+                f"<font size=7.5 color='#64748B'>Ledger Analysis &amp; Cylinder Audit</font><br/>"
+                f"<font size=7.5 color='#64748B'>Period: <b>{html.escape(period_text)}</b></font><br/>"
+                f"<font size=6.5 color='#64748B'>Generated: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}</font>",
+                hdr_right
+            )
         ]
     ]
+    hdr_table = Table(header_data, colWidths=[330, 215])
+    hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(hdr_table)
+    story.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=8))
+
+    # 2. PARTY INFORMATION & SUMMARY KPI CARDS
+    ldg_display_name = f"{customer_code} - {ledger_name}" if customer_code else ledger_name
+    op_suffix = 'Dr' if effective_op >= 0 else 'Cr'
+    if not is_dr_normal:
+        op_suffix = 'Cr' if effective_op >= 0 else 'Dr'
+
+    cust_box_content = [
+        Paragraph("<b>ACCOUNT / PARTY DETAILS:</b>", meta_bold),
+        Paragraph(f"<b>{html.escape(ldg_display_name)}</b>", ParagraphStyle('CN2', parent=meta_bold, fontSize=10, textColor=PRIMARY_COLOR)),
+        Paragraph(f"Group: <b>{html.escape(group_name)}</b> ({html.escape(group_nature)})", meta_style),
+        Paragraph(f"Phone: <b>{html.escape(ledger_phone)}</b> | Route: {html.escape(ledger_route)}", meta_style),
+        Paragraph(f"Address: {html.escape(ledger_address)}", meta_style),
+        Paragraph(f"GSTIN / Tax ID: <b>{html.escape(ledger_gstin)}</b>", meta_style),
+    ]
+
+    calc_run_bal = effective_op
+    calc_tot_dr = Decimal('0.00')
+    calc_tot_cr = Decimal('0.00')
 
     raw_entries = list(entries_data or [])
     has_op_row = any(str(e.get('ref') or '') == 'OP-BAL' for e in raw_entries)
@@ -3608,67 +3632,16 @@ def generate_ledger_statement_pdf(
             'runningBalance': effective_op,
         })
 
-    calc_run_bal = effective_op
-    calc_tot_dr = Decimal('0.00')
-    calc_tot_cr = Decimal('0.00')
-
     for idx, e in enumerate(raw_entries):
-        date_raw = str(e.get('date') or '—')
-        date_disp = format_short_date(date_raw)
-        ref_str = str(e.get('vch_no') or e.get('ref') or '—').replace('SALE-', '').replace('REC-', '').replace('INV-', '')
-        vtype_str = str(e.get('voucher_type') or e.get('type') or '')
-        part_str = str(e.get('particulars') or '—')
-        item_str = str(e.get('item_name') or '')
-        full_q = e.get('full_qty')
-        empty_q = e.get('empty_qty')
-
-        full_q_str = str(full_q) if full_q is not None and str(full_q) != '0' else ''
-        empty_q_str = str(empty_q) if empty_q is not None and str(empty_q) != '0' else ''
-
         d = Decimal(str(e.get('debit', 0) or 0))
         c = Decimal(str(e.get('credit', 0) or 0))
-
-        if str(e.get('ref') or '') == 'OP-BAL':
-            run_bal = effective_op
-            ref_str = ''
-            vtype_str = ''
-        else:
+        if str(e.get('ref') or '') != 'OP-BAL':
             calc_tot_dr += d
             calc_tot_cr += c
-            if 'runningBalance' in e and e.get('runningBalance') is not None:
-                run_bal = Decimal(str(e.get('runningBalance') or 0))
+            if is_dr_normal:
+                calc_run_bal += (d - c)
             else:
-                if is_dr_normal:
-                    calc_run_bal += (d - c)
-                else:
-                    calc_run_bal += (c - d)
-                run_bal = calc_run_bal
-
-        d_str = f"{d:,.2f}" if d > 0 else ""
-        c_str = f"{c:,.2f}" if c > 0 else ""
-
-        bal_sfx = 'Dr' if run_bal >= 0 else 'Cr'
-        if not is_dr_normal:
-            bal_sfx = 'Cr' if run_bal >= 0 else 'Dr'
-        bal_str = f"{abs(run_bal):,.2f} {bal_sfx}"
-
-        is_op = str(e.get('ref') or '') == 'OP-BAL'
-        if is_op:
-            d_str = f"{abs(effective_op):,.2f}" if ((effective_op > 0 and is_dr_normal) or (effective_op < 0 and not is_dr_normal)) else ""
-            c_str = f"{abs(effective_op):,.2f}" if ((effective_op > 0 and not is_dr_normal) or (effective_op < 0 and is_dr_normal)) else ""
-
-        table_rows.append([
-            Paragraph(html.escape(date_disp), td_left),
-            Paragraph(html.escape(part_str), td_left_bold if is_op or part_str.startswith('To') else td_left),
-            Paragraph(html.escape(item_str), td_left),
-            Paragraph(html.escape(full_q_str), td_center),
-            Paragraph(html.escape(empty_q_str), td_center),
-            Paragraph(html.escape(vtype_str), td_left),
-            Paragraph(html.escape(ref_str), td_left),
-            Paragraph(d_str, td_right),
-            Paragraph(c_str, td_right),
-            Paragraph(bal_str, td_right),
-        ])
+                calc_run_bal += (c - d)
 
     if not summary_stats:
         tot_debit = calc_tot_dr
@@ -3679,73 +3652,190 @@ def generate_ledger_statement_pdf(
     if not is_dr_normal:
         final_close_sfx = 'Cr' if closing_bal >= 0 else 'Dr'
 
-    # Summary Rows:
-    # 1. Total Turnover Row
+    kpi_box_content = [
+        Paragraph("<b>ACCOUNT SUMMARY &amp; BALANCE:</b>", meta_bold),
+        Paragraph(f"Opening Balance: <b>Rs. {abs(effective_op):,.2f} {op_suffix}</b>", meta_style),
+        Paragraph(f"Total Debits: <b>Rs. {tot_debit:,.2f}</b>", meta_style),
+        Paragraph(f"Total Credits: <b>Rs. {tot_credit:,.2f}</b>", meta_style),
+        Spacer(1, 2),
+        Paragraph(
+            f"Closing Balance: <font size=10 color='#800020'><b>Rs. {abs(closing_bal):,.2f} {final_close_sfx}</b></font>",
+            meta_bold
+        ),
+    ]
+
+    top_grid = Table([[cust_box_content, kpi_box_content]], colWidths=[320, 225])
+    top_grid.setStyle(TableStyle([
+        ('BOX', (0, 0), (0, 0), 0.5, BORDER_COLOR),
+        ('BOX', (1, 0), (1, 0), 0.5, PRIMARY_COLOR),
+        ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
+        ('BACKGROUND', (1, 0), (1, 0), CARD_BG),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 7),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 7),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    story.append(top_grid)
+    story.append(Spacer(1, 8))
+
+    # 3. 10-COLUMN STATEMENT TABLE (Sum = 545pt)
+    # Widths: [46, 92, 74, 34, 38, 42, 46, 54, 54, 65] = 545pt
+    col_widths = [46, 92, 74, 34, 38, 42, 46, 54, 54, 65]
+
+    table_rows = [
+        [
+            Paragraph("<b>DATE</b>", th_left),
+            Paragraph("<b>PARTICULARS</b>", th_left),
+            Paragraph("<b>ITEM NAME</b>", th_left),
+            Paragraph("<b>FULL QTY</b>", th_center),
+            Paragraph("<b>EMPTY QTY</b>", th_center),
+            Paragraph("<b>VCH TYPE</b>", th_left),
+            Paragraph("<b>VCH NO.</b>", th_left),
+            Paragraph("<b>DEBIT (₹)</b>", th_right),
+            Paragraph("<b>CREDIT (₹)</b>", th_right),
+            Paragraph("<b>BALANCE (₹)</b>", th_right),
+        ]
+    ]
+
+    running_track = effective_op
+
+    for idx, e in enumerate(raw_entries):
+        date_raw = str(e.get('date') or '—')
+        date_disp = format_short_date(date_raw)
+        ref_str = str(e.get('vch_no') or e.get('ref') or '—').replace('SALE-', '').replace('REC-', '')
+        vtype_str = str(e.get('voucher_type') or e.get('type') or '')
+        part_str = str(e.get('particulars') or '—')
+        item_str = str(e.get('item_name') or '')
+        full_q = e.get('full_qty')
+        empty_q = e.get('empty_qty')
+
+        full_q_str = str(full_q) if full_q is not None and str(full_q) != '0' and str(full_q) != '' else ''
+        empty_q_str = str(empty_q) if empty_q is not None and str(empty_q) != '0' and str(empty_q) != '' else ''
+
+        d = Decimal(str(e.get('debit', 0) or 0))
+        c = Decimal(str(e.get('credit', 0) or 0))
+
+        is_op = str(e.get('ref') or '') == 'OP-BAL'
+        if is_op:
+            run_bal = effective_op
+            ref_str = ''
+            vtype_str = ''
+            d_str = f"₹{abs(effective_op):,.2f}" if ((effective_op > 0 and is_dr_normal) or (effective_op < 0 and not is_dr_normal)) else ""
+            c_str = f"₹{abs(effective_op):,.2f}" if ((effective_op > 0 and not is_dr_normal) or (effective_op < 0 and is_dr_normal)) else ""
+        else:
+            if 'runningBalance' in e and e.get('runningBalance') is not None:
+                run_bal = Decimal(str(e.get('runningBalance') or 0))
+            else:
+                running_track += (d - c) if is_dr_normal else (c - d)
+                run_bal = running_track
+            d_str = f"₹{d:,.2f}" if d > 0 else ""
+            c_str = f"₹{c:,.2f}" if c > 0 else ""
+
+        bal_sfx = 'Dr' if run_bal >= 0 else 'Cr'
+        if not is_dr_normal:
+            bal_sfx = 'Cr' if run_bal >= 0 else 'Dr'
+        bal_str = f"₹{abs(run_bal):,.2f} {bal_sfx}"
+
+        is_bold_part = is_op or part_str.startswith('To')
+        table_rows.append([
+            Paragraph(html.escape(date_disp), td_left),
+            Paragraph(html.escape(part_str), td_left_bold if is_bold_part else td_left),
+            Paragraph(html.escape(item_str), td_left),
+            Paragraph(html.escape(full_q_str), td_center),
+            Paragraph(html.escape(empty_q_str), td_center),
+            Paragraph(html.escape(vtype_str), td_left),
+            Paragraph(html.escape(ref_str), td_left_bold if ref_str else td_left),
+            Paragraph(d_str, td_right),
+            Paragraph(c_str, td_right),
+            Paragraph(bal_str, td_right_burg if run_bal > 0 else td_right),
+        ])
+
+    # Summary Row 1: Period Turnover Totals
     table_rows.append([
-        Paragraph("", td_left),
+        Paragraph("<b>PERIOD TOTALS</b>", td_left_bold),
         Paragraph("", td_left),
         Paragraph("", td_left),
         Paragraph("", td_center),
         Paragraph("", td_center),
         Paragraph("", td_left),
         Paragraph("", td_left),
-        Paragraph(f"<b>{tot_debit:,.2f}</b>", td_right_bold),
-        Paragraph(f"<b>{tot_credit:,.2f}</b>", td_right_bold),
+        Paragraph(f"<b>₹{tot_debit:,.2f}</b>", td_right_bold),
+        Paragraph(f"<b>₹{tot_credit:,.2f}</b>", td_right_bold),
         Paragraph("", td_right),
     ])
 
-    # 2. Closing Balance Row
-    close_amt_str = f"{abs(closing_bal):,.2f}"
-    is_close_cr_col = (closing_bal >= 0 and is_dr_normal) or (closing_bal < 0 and not is_dr_normal)
+    # Summary Row 2: Closing Balance
+    close_amt_str = f"₹{abs(closing_bal):,.2f} {final_close_sfx}"
     table_rows.append([
+        Paragraph("<b>CLOSING BALANCE</b>", td_left_bold),
         Paragraph("", td_left),
-        Paragraph(f"By Closing Balance" if is_close_cr_col else "To Closing Balance", td_left_bold),
         Paragraph("", td_left),
         Paragraph("", td_center),
         Paragraph("", td_center),
         Paragraph("", td_left),
         Paragraph("", td_left),
-        Paragraph("" if is_close_cr_col else f"<b>{close_amt_str}</b>", td_right_bold),
-        Paragraph(f"<b>{close_amt_str}</b>" if is_close_cr_col else "", td_right_bold),
         Paragraph("", td_right),
-    ])
-
-    # 3. Grand Total Checked Row
-    grand_tot = max(tot_debit, tot_credit + (abs(closing_bal) if is_close_cr_col else 0))
-    table_rows.append([
-        Paragraph("", td_left),
-        Paragraph("", td_left),
-        Paragraph("", td_left),
-        Paragraph("", td_center),
-        Paragraph("", td_center),
-        Paragraph("", td_left),
-        Paragraph("", td_left),
-        Paragraph(f"<b>{grand_tot:,.2f}</b>", td_right_bold),
-        Paragraph(f"<b>{grand_tot:,.2f}</b>", td_right_bold),
-        Paragraph(f"<b>{abs(closing_bal):,.2f} {final_close_sfx}</b>", td_right_bold),
+        Paragraph("", td_right),
+        Paragraph(f"<b>{close_amt_str}</b>", td_right_burg),
     ])
 
     stmt_table = Table(table_rows, colWidths=col_widths, repeatRows=1)
     n_rows = len(table_rows)
 
     t_style = [
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 2),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-        ('LEFTPADDING', (0, 0), (-1, -1), 2),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-        # Header borders
-        ('LINEABOVE', (0, 0), (-1, 0), 0.75, colors.black),
-        ('LINEBELOW', (0, 0), (-1, 0), 0.75, colors.black),
-        # First summary row line above (above Total)
-        ('LINEABOVE', (7, n_rows - 3), (8, n_rows - 3), 0.5, colors.black),
-        # Grand total double underline
-        ('LINEABOVE', (7, n_rows - 1), (8, n_rows - 1), 0.5, colors.black),
-        ('LINEBELOW', (7, n_rows - 1), (8, n_rows - 1), 1.2, colors.black),
+        # Table Header Styling: Signature Royal Burgundy background with white bold headers
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ('GRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        # Period Totals Row Styling
+        ('SPAN', (0, n_rows - 2), (6, n_rows - 2)),
+        ('BACKGROUND', (0, n_rows - 2), (-1, n_rows - 2), colors.HexColor('#F1F5F9')),
+        ('LINEABOVE', (0, n_rows - 2), (-1, n_rows - 2), 1, PRIMARY_COLOR),
+        # Closing Balance Row Styling
+        ('SPAN', (0, n_rows - 1), (6, n_rows - 1)),
+        ('BACKGROUND', (0, n_rows - 1), (-1, n_rows - 1), LIGHT_BG),
+        ('LINEBELOW', (0, n_rows - 1), (-1, n_rows - 1), 1.5, PRIMARY_COLOR),
     ]
+
+    # Alternating row colors for data rows
+    for r_idx in range(1, n_rows - 2):
+        if r_idx % 2 == 0:
+            t_style.append(('BACKGROUND', (0, r_idx), (-1, r_idx), colors.HexColor('#F8FAFC')))
 
     stmt_table.setStyle(TableStyle(t_style))
     story.append(stmt_table)
+    story.append(Spacer(1, 10))
+
+    # 4. FOOTER NOTE & SIGNATURE
+    footer_data = [
+        [
+            Paragraph(
+                "<b>Important Note:</b> This statement of account reflects all double-entry sales, cylinder quantities, "
+                "recorded receipts, and running account balances. For any reconciliation or queries, please contact accounts within 7 days.<br/>"
+                "<font size=6.5 color='#64748B'>Thank you for your valued partnership with Royal Agencies.</font>",
+                meta_style
+            ),
+            Paragraph(
+                f"For <b>{html.escape(company_name)}</b><br/><br/><br/>"
+                "<b>Authorized Signatory</b><br/>"
+                "<font size=6.5 color='#64748B'>Accounts &amp; Audit Department</font>",
+                ParagraphStyle('SigR3', parent=meta_style, alignment=2)
+            )
+        ]
+    ]
+    footer_table = Table(footer_data, colWidths=[320, 225])
+    footer_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(footer_table)
 
     doc.build(story, canvasmaker=NumberedCanvas)
     return buf.getvalue()
