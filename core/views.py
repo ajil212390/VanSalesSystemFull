@@ -1762,6 +1762,16 @@ class LedgerViewSet(viewsets.ModelViewSet):
         ledger = self.get_object()
         company_id = getattr(request.user, 'CompanyId', 1) or ledger.CompanyId or 1
 
+        # Automatically post vouchers for any approved sales for this ledger that missed voucher posting
+        unposted_sales = Sales.objects.filter(CustomerLedger=ledger, IsApproved=True).exclude(Status='CANCELLED')
+        needs_sync = False
+        for s in unposted_sales:
+            if not Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales', ReferenceId=s.SalesId).exists():
+                post_sale_voucher(s, company_id, sync_balances=False)
+                needs_sync = True
+        if needs_sync:
+            sync_ledger_balances(ledger.LedgerId)
+
         vl_qs = VoucherLine.objects.filter(
             Ledger=ledger,
             Voucher__IsCancelled=False
@@ -1772,12 +1782,15 @@ class LedgerViewSet(viewsets.ModelViewSet):
             v = vl.Voucher
             counter_line = v.lines.exclude(Ledger=ledger).first()
             counter_name = counter_line.Ledger.LedgerName if counter_line and counter_line.Ledger else ''
-            particulars = v.Narration or counter_name or v.VoucherType
+            particulars = vl.Narration or v.Narration or counter_name or v.VoucherType
+            vtype = v.VoucherType
+            if vl.CreditAmount > 0 and vl.DebitAmount == 0 and vtype == 'SALES':
+                vtype = 'RECEIPT'
 
             entries.append({
                 'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
                 'ref': v.VoucherNo,
-                'voucher_type': v.VoucherType,
+                'voucher_type': vtype,
                 'particulars': particulars,
                 'debit': float(vl.DebitAmount or 0),
                 'credit': float(vl.CreditAmount or 0),
@@ -1804,6 +1817,16 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     'debit': float(s.GrandTotal or 0),
                     'credit': 0.0,
                 })
+                if s.PaidAmount and s.PaidAmount > 0:
+                    pm_str = s.PaymentMethod or 'CASH'
+                    entries.append({
+                        'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
+                        'ref': f"PAY-{s.InvoiceNo or s.SalesNo or s.SalesId}",
+                        'voucher_type': 'RECEIPT',
+                        'particulars': f"Payment Received ({pm_str}) for #{s.InvoiceNo or s.SalesNo}",
+                        'debit': 0.0,
+                        'credit': float(s.PaidAmount),
+                    })
             payments = Payment.objects.filter(PartyLedger=ledger).order_by('CreatedAt', 'PaymentId')
             for pm in payments:
                 vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
@@ -1828,6 +1851,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     })
 
         entries.sort(key=lambda x: x.get('date') or '')
+        ledger.refresh_from_db()
 
         return Response({
             'ledger': {
@@ -8363,6 +8387,9 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     ApprovedBy=request.user if request.user.is_authenticated else None,
                     ApprovedAt=timezone.now()
                 )
+                for s in sales_list:
+                    s.Status = 'COMPLETED'
+                    s.IsApproved = True
 
             # 3. Empty the van completely: Transfer ALL remaining unsold filled cylinders & customer empty returns to Originating/Target Godown
             # Remove any provisional unloads created earlier during end_shift so definitive settlement movements apply accurately
@@ -8663,6 +8690,8 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
 
             # 5. Generate Double-Entry Accounting Vouchers for Shift & Customer Accounts
             affected_ledgers = {24, 56, 20, 22, 23, 35}
+            if sales_ids:
+                sales_list = list(Sales.objects.filter(SalesId__in=sales_ids))
             for sale in sales_list:
                 vch = post_sale_voucher(sale, company_id, sync_balances=False)
                 if vch:
