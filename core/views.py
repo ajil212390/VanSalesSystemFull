@@ -1615,26 +1615,47 @@ class LedgerViewSet(viewsets.ModelViewSet):
         user = getattr(request, 'user', None)
         company_id = getattr(user, 'CompanyId', 1) or 1
 
-        # Self-healing: if any approved sales are missing vouchers, post them and sync balances
-        unposted = (
-            Sales.objects.filter(CompanyId=company_id, IsApproved=True)
-            .exclude(Status='CANCELLED')
-            .exclude(SalesId__in=Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales').values('ReferenceId'))
-        )
-        if unposted.exists():
-            aff = set()
-            for s in unposted[:50]:
-                vch = post_sale_voucher(s, company_id, sync_balances=False)
-                if vch:
-                    for vl in vch.lines.all():
-                        if vl.Ledger_id:
-                            aff.add(vl.Ledger_id)
-                if s.CustomerLedger_id:
-                    aff.add(s.CustomerLedger_id)
-            if aff:
-                sync_ledger_balances(*aff)
+        # 1. Self-healing: Check for any approved, non-cancelled sales whose vouchers are missing or have no lines
+        try:
+            approved_sales = Sales.objects.filter(IsApproved=True).exclude(Status='CANCELLED')
+            vch_with_lines = set(Voucher.objects.filter(
+                ReferenceTable='Sales', lines__isnull=False
+            ).values_list('ReferenceId', flat=True).distinct())
+
+            missing_sales = [s for s in approved_sales if s.SalesId not in vch_with_lines]
+            recalculated = False
+            if missing_sales:
+                for s in missing_sales[:50]:
+                    cid = s.CompanyId or company_id
+                    post_sale_voucher(s, cid, sync_balances=False)
+                recalculated = True
+
+            # 2. Check if any ledger with non-cancelled voucher lines has zero DebitBalance & CreditBalance
+            out_of_sync = Ledger.objects.filter(
+                voucher_lines__Voucher__IsCancelled=False,
+                DebitBalance=Decimal('0.00'),
+                CreditBalance=Decimal('0.00')
+            ).exists()
+
+            if recalculated or out_of_sync:
+                sync_ledger_balances()
+        except Exception:
+            pass
 
         return super().list(request, *args, **kwargs)
+
+    @action(detail=False, methods=['post', 'get'], url_path='sync-balances', permission_classes=[AllowAny])
+    def sync_balances(self, request):
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        approved_sales = Sales.objects.filter(IsApproved=True).exclude(Status='CANCELLED')
+        vch_with_lines = set(Voucher.objects.filter(ReferenceTable='Sales', lines__isnull=False).values_list('ReferenceId', flat=True).distinct())
+        count = 0
+        for s in approved_sales:
+            if s.SalesId not in vch_with_lines:
+                post_sale_voucher(s, s.CompanyId or company_id, sync_balances=False)
+                count += 1
+        sync_ledger_balances()
+        return Response({'success': True, 'synced_sales': count, 'message': 'All ledger balances synchronized successfully.'})
 
 
     @action(detail=False, methods=['get'], url_path='suppliers', permission_classes=[AllowAny])
@@ -1809,10 +1830,11 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
         # Automatically post vouchers for any approved sales for this ledger that missed voucher posting
         unposted_sales = Sales.objects.filter(CustomerLedger=ledger, IsApproved=True).exclude(Status='CANCELLED')
+        vch_with_lines = set(Voucher.objects.filter(ReferenceTable='Sales', lines__isnull=False).values_list('ReferenceId', flat=True).distinct())
         needs_sync = False
         for s in unposted_sales:
-            if not Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales', ReferenceId=s.SalesId).exists():
-                post_sale_voucher(s, company_id, sync_balances=False)
+            if s.SalesId not in vch_with_lines:
+                post_sale_voucher(s, s.CompanyId or company_id, sync_balances=False)
                 needs_sync = True
         if needs_sync:
             sync_ledger_balances(ledger.LedgerId)
