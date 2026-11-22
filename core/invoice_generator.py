@@ -3510,7 +3510,8 @@ def generate_ledger_statement_pdf(
     company_id=1,
     from_date=None,
     to_date=None,
-    summary_stats=None
+    summary_stats=None,
+    payment_mode='ALL'
 ):
     """
     Generates a publication-grade, branded A4 PDF Statement of Account for any ledger.
@@ -3528,25 +3529,23 @@ def generate_ledger_statement_pdf(
         bottomMargin=28
     )
 
-    company_name = "ROYAL AGENCIES"
-    company_subtitle = "Authorized Franchisee of SHV Energy Pvt.Ltd"
-    company_address = "5/1057, AKK BUILDING, WAYANAD ROAD KUTTIADY, Kozhikode, Kerala, 673508"
-    company_contact = "Ph: 9846100990, 9946100222"
-    company_gstin = "32AABCF1234F1Z8"
-
+    company = None
     try:
         from core.models import Company
-        co = Company.objects.filter(CompanyId=company_id).first()
-        if co:
-            company_name = co.CompanyName or company_name
-            if co.Address:
-                company_address = co.Address
-            if co.GSTIN:
-                company_gstin = co.GSTIN
-            if co.PhoneNumber or co.MobileNumber:
-                company_contact = f"Ph: {co.PhoneNumber or co.MobileNumber or '9846100990'}"
+        company = Company.objects.filter(CompanyId=company_id).first() or Company.objects.first()
     except Exception:
         pass
+
+    company_name = (company.Name if company and company.Name else "FUTURE GAS").strip()
+    company_subtitle = "LPG Cylinders & Industrial Gas Solutions"
+    addr_parts = [p.strip() for p in [company.AddressLine1 if company else '', company.AddressLine2 if company else '', company.AddressLine3 if company else ''] if p and p.strip()]
+    company_address = ", ".join(addr_parts) if addr_parts else "Kuttyaddi, Kozhikode, Kerala"
+    if company and company.Pincode:
+        company_address += f" - {company.Pincode}"
+    company_phone = company.Phone if company and company.Phone else "9876543210"
+    company_email = company.Email if company and company.Email else "info@futuregas.com"
+    company_contact = f"Ph: {company_phone} | Email: {company_email}"
+    company_gstin = company.GstNo if company and company.GstNo else "32ABCDE1234F1Z5" 
 
     # Ledger Information
     ledger_name = getattr(ledger, 'LedgerName', '') or ''
@@ -3895,7 +3894,7 @@ def generate_ledger_statement_pdf(
             Paragraph(
                 "<b>Important Note:</b> This statement of account reflects all double-entry sales, cylinder quantities, "
                 "recorded receipts, and running account balances. For any reconciliation or queries, please contact accounts within 7 days.<br/>"
-                "<font size=6.5 color='#64748B'>Thank you for your valued partnership with Royal Agencies.</font>",
+                f"<font size=6.5 color='#64748B'>Thank you for your valued partnership with {html.escape(company_name)}.</font>",
                 meta_style
             ),
             Paragraph(

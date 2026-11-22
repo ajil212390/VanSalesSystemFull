@@ -92,7 +92,6 @@ export const LedgerAnalysisPage: React.FC = () => {
   const [customFromDate, setCustomFromDate] = useState<string>('');
   const [customToDate, setCustomToDate] = useState<string>('');
   const [paymentModeFilter, setPaymentModeFilter] = useState<string>('ALL');
-  const [stmtSortBy, setStmtSortBy] = useState<string>('date_asc');
   const [stmtSearch, setStmtSearch] = useState<string>('');
 
   // PDF Generation States
@@ -362,31 +361,6 @@ export const LedgerAnalysisPage: React.FC = () => {
       }
     });
 
-    // Apply Sorting
-    if (stmtSortBy === 'date_desc') {
-      finalEntries.sort((a, b) => {
-        if (a.ref === 'OP-BAL') return -1;
-        if (b.ref === 'OP-BAL') return 1;
-        return (b.date || '').localeCompare(a.date || '');
-      });
-    } else if (stmtSortBy === 'amount_desc') {
-      finalEntries.sort((a, b) => {
-        if (a.ref === 'OP-BAL') return -1;
-        if (b.ref === 'OP-BAL') return 1;
-        const valA = Math.max(Number(a.debit || 0), Number(a.credit || 0));
-        const valB = Math.max(Number(b.debit || 0), Number(b.credit || 0));
-        return valB - valA;
-      });
-    } else if (stmtSortBy === 'amount_asc') {
-      finalEntries.sort((a, b) => {
-        if (a.ref === 'OP-BAL') return -1;
-        if (b.ref === 'OP-BAL') return 1;
-        const valA = Math.max(Number(a.debit || 0), Number(a.credit || 0));
-        const valB = Math.max(Number(b.debit || 0), Number(b.credit || 0));
-        return valA - valB;
-      });
-    }
-
     // Compute running balance
     let runBal = 0;
     let sumDebit = 0;
@@ -413,7 +387,7 @@ export const LedgerAnalysisPage: React.FC = () => {
       totCredit: sumCredit,
       closingBal: runBal,
     };
-  }, [statementData, datePreset, customFromDate, customToDate, paymentModeFilter, stmtSortBy, stmtSearch]);
+  }, [statementData, datePreset, customFromDate, customToDate, paymentModeFilter, stmtSearch]);
 
   // Official PDF Generation for the main Chart of Accounts / Ledger Report
   const handlePrintLedgerReport = async () => {
@@ -677,20 +651,7 @@ export const LedgerAnalysisPage: React.FC = () => {
                 style={{ width: 165 }}
               />
 
-              {/* Sort By Selector */}
-              <Select
-                size="xs"
-                radius="md"
-                value={stmtSortBy}
-                onChange={(val) => setStmtSortBy(val || 'date_asc')}
-                data={[
-                  { label: 'Date: Oldest First', value: 'date_asc' },
-                  { label: 'Date: Newest First', value: 'date_desc' },
-                  { label: 'Amount: High to Low', value: 'amount_desc' },
-                  { label: 'Amount: Low to High', value: 'amount_asc' },
-                ]}
-                style={{ width: 165 }}
-              />
+
             </Group>
 
             <TextInput
