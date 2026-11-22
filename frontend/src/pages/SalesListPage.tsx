@@ -16,6 +16,7 @@ import {
   Modal,
   Divider,
   SegmentedControl,
+  ThemeIcon,
   Box } from '@mantine/core';
 import {
   IconPlus,
@@ -34,6 +35,10 @@ import {
   IconArrowLeft,
   IconArrowRight,
   IconArrowUpRight,
+  IconUser,
+  IconCalendar,
+  IconTruck,
+  IconFileText,
   IconReceipt } from '@tabler/icons-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -1167,96 +1172,275 @@ export const SalesListPage: React.FC = () => {
         opened={!!viewingSale}
         onClose={handleCloseViewingModal}
         title={
-          <Group gap="xs">
-            <IconReceipt2 size={22} color="#800020" />
-            <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
-              Invoice Details — {viewingSale?.InvoiceNo || viewingSale?.SalesNo}
-            </Text>
+          <Group gap="sm" align="center">
+            <ThemeIcon size={38} radius="md" variant="light" style={{ backgroundColor: '#fdf2f4', color: '#800020', border: '1px solid #fecdd3' }}>
+              <IconReceipt2 size={20} />
+            </ThemeIcon>
+            <div>
+              <Group gap={8} align="center">
+                <Text fw={800} style={{ color: '#800020', fontSize: 17, letterSpacing: '-0.3px' }}>
+                  Invoice Details — {viewingSale?.InvoiceNo || viewingSale?.SalesNo}
+                </Text>
+                {viewingSale?.IsApproved ? (
+                  <Badge size="xs" variant="filled" color="teal" radius="sm" style={{ fontWeight: 700 }}>
+                    APPROVED
+                  </Badge>
+                ) : (
+                  <Badge size="xs" variant="outline" color="orange" radius="sm" style={{ fontWeight: 700, backgroundColor: '#fffbeb', borderColor: '#fde68a', color: '#b45309' }}>
+                    PENDING APPROVAL
+                  </Badge>
+                )}
+              </Group>
+              <Text size="xs" c="dimmed">
+                Invoice ID: #{viewingSale?.SalesId} &bull; Delivery Ticket
+              </Text>
+            </div>
           </Group>
         }
-        size={880}
-        radius="md"
+        size={920}
+        radius="lg"
         centered
-        padding="lg"
+        padding="xl"
       >
         {viewingSale && (
           <Stack gap="md">
-            <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
-              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <Text size="11px" c="dimmed" tt="uppercase" fw={600}>
-                  Customer
-                </Text>
-                <Text size="sm" fw={700} c="#0f172a" truncate>
+            {/* Top Info Cards */}
+            <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="sm">
+              <Paper p="sm" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <Group gap={8} mb={4}>
+                  <ThemeIcon size={22} radius="sm" variant="subtle" color="gray">
+                    <IconUser size={14} color="#64748b" />
+                  </ThemeIcon>
+                  <Text size="11px" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.5px' }}>
+                    Customer
+                  </Text>
+                </Group>
+                <Text size="sm" fw={800} c="#0f172a" style={{ lineHeight: 1.3 }}>
                   {viewingSale.customer_name || 'Walk-in Customer'}
                 </Text>
-              </Paper>
-              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <Text size="11px" c="dimmed" tt="uppercase" fw={600}>
-                  Sales Date
+                <Text size="11px" c="dimmed" mt={2}>
+                  Ledger ID: #{viewingSale.CustomerLedger || 'Direct'}
                 </Text>
-                <Text size="sm" fw={600} c="#0f172a">
+              </Paper>
+
+              <Paper p="sm" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <Group gap={8} mb={4}>
+                  <ThemeIcon size={22} radius="sm" variant="subtle" color="gray">
+                    <IconCalendar size={14} color="#64748b" />
+                  </ThemeIcon>
+                  <Text size="11px" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.5px' }}>
+                    Sales Date
+                  </Text>
+                </Group>
+                <Text size="sm" fw={800} c="#0f172a" style={{ lineHeight: 1.3 }}>
                   {formatDateDDMMYY(viewingSale.SalesDate)}
                 </Text>
-              </Paper>
-              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <Text size="11px" c="dimmed" tt="uppercase" fw={600}>
-                  Route &amp; Vehicle
-                </Text>
-                <Text size="sm" fw={600} c="#0f172a" truncate>
-                  {viewingSale.route_name || viewingSale.RouteName || 'Main Godown'} &bull; {viewingSale.vehicle_number || viewingSale.VehicleName || 'Godown Stock'}
+                <Text size="11px" c="dimmed" mt={2}>
+                  {viewingSale.CreatedAt ? new Date(viewingSale.CreatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recorded Date'}
                 </Text>
               </Paper>
-              <Paper p="xs" radius="sm" withBorder style={{ backgroundColor: '#f8fafc', borderColor: '#e2e8f0' }}>
-                <Text size="11px" c="dimmed" tt="uppercase" fw={600}>
-                  Payment Mode
+
+              <Paper p="sm" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <Group gap={8} mb={4}>
+                  <ThemeIcon size={22} radius="sm" variant="subtle" color="gray">
+                    <IconTruck size={14} color="#64748b" />
+                  </ThemeIcon>
+                  <Text size="11px" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.5px' }}>
+                    Route &amp; Vehicle
+                  </Text>
+                </Group>
+                <Text size="sm" fw={800} c="#0f172a" style={{ lineHeight: 1.3 }}>
+                  {viewingSale.route_name || viewingSale.RouteName || 'Main Route'}
                 </Text>
-                <Text size="sm" fw={700} style={{ color: (viewingSale.PaymentMethod || '').toUpperCase() === 'CASH' ? '#16a34a' : '#800020' }}>
+                <Text size="11px" c="dimmed" mt={2}>
+                  {viewingSale.vehicle_number || viewingSale.VehicleName || 'Van Stock'}
+                  {(viewingSale.driver_name || viewingSale.DriverName) ? ` • ${viewingSale.driver_name || viewingSale.DriverName}` : ''}
+                </Text>
+              </Paper>
+
+              <Paper p="sm" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+                <Group gap={8} mb={4}>
+                  <ThemeIcon size={22} radius="sm" variant="subtle" color="gray">
+                    <IconCash size={14} color="#64748b" />
+                  </ThemeIcon>
+                  <Text size="11px" c="dimmed" tt="uppercase" fw={700} style={{ letterSpacing: '0.5px' }}>
+                    Payment Mode
+                  </Text>
+                </Group>
+                <Badge
+                  size="md"
+                  radius="sm"
+                  variant="light"
+                  color={
+                    (viewingSale.PaymentMethod || '').toUpperCase() === 'CASH'
+                      ? 'teal'
+                      : (viewingSale.PaymentMethod || '').toUpperCase() === 'CREDIT'
+                      ? 'yellow'
+                      : (viewingSale.PaymentMethod || '').toUpperCase() === 'SPLIT'
+                      ? 'indigo'
+                      : 'burgundy'
+                  }
+                  style={{ fontWeight: 800, textTransform: 'uppercase' }}
+                >
                   {viewingSale.PaymentMethod || 'Cash'}
+                </Badge>
+                <Text size="11px" c="dimmed" mt={3}>
+                  {(viewingSale.PaymentMethod || '').toUpperCase() === 'CREDIT' ? 'Payment on Credit' : 'Payment Received'}
                 </Text>
               </Paper>
             </SimpleGrid>
 
-            <Divider />
+            {/* Line Items Table */}
+            <Box style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+              <Group justify="space-between" align="center" px="md" py="xs" style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                <Group gap={6}>
+                  <IconPackage size={16} color="#64748b" />
+                  <Text size="xs" fw={700} c="#334155" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                    Line Items ({(viewingSale.lines || []).length})
+                  </Text>
+                </Group>
+                {Number(viewingSale.TotalEmptyQty || 0) > 0 && (
+                  <Badge size="xs" color="cyan" variant="light" radius="sm" style={{ fontWeight: 700 }}>
+                    {Number(viewingSale.TotalEmptyQty)} Empties Collected
+                  </Badge>
+                )}
+              </Group>
 
-            <Text size="xs" fw={700} c="#475569" tt="uppercase">
-              Line Items ({(viewingSale.lines || []).length})
-            </Text>
-            <Table verticalSpacing="xs" highlightOnHover>
-              <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
-                <Table.Tr>
-                  <Table.Th style={{ fontSize: 11 }}>PRODUCT</Table.Th>
-                  <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>QTY</Table.Th>
-                  <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>RATE</Table.Th>
-                  <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>GST %</Table.Th>
-                  <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>TOTAL</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {(viewingSale.lines || []).map((ln: any, idx: number) => (
-                  <Table.Tr key={idx}>
-                    <Table.Td>
-                      <Text size="xs" fw={600}>
-                        {ln.ProductName || ln.product_name}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="xs">{ln.Quantity || ln.quantity}</Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="xs">₹{Number(ln.SalesPrice || ln.rate || 0).toFixed(2)}</Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="xs">{Number(ln.TaxPercent || 0)}%</Text>
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right' }}>
-                      <Text size="xs" fw={700}>
-                        ₹{Number(ln.Total || ln.total || 0).toFixed(2)}
-                      </Text>
-                    </Table.Td>
+              <Table verticalSpacing="sm" highlightOnHover>
+                <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
+                  <Table.Tr>
+                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px' }}>PRODUCT</Table.Th>
+                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>DELIVERED QTY</Table.Th>
+                    {viewingSale.lines?.some((l: any) => Number(l.EmptyQuantity || 0) > 0) && (
+                      <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>EMPTY RETURN</Table.Th>
+                    )}
+                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>UNIT RATE</Table.Th>
+                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>GST %</Table.Th>
+                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>LINE TOTAL</Table.Th>
                   </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
+                </Table.Thead>
+                <Table.Tbody>
+                  {(viewingSale.lines || []).map((ln: any, idx: number) => (
+                    <Table.Tr key={idx}>
+                      <Table.Td>
+                        <Text size="xs" fw={700} c="#0f172a">
+                          {ln.ProductName || ln.product_name}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Badge size="sm" variant="light" color="dark" radius="sm" style={{ fontWeight: 700 }}>
+                          {ln.Quantity || ln.quantity} NOS
+                        </Badge>
+                      </Table.Td>
+                      {viewingSale.lines?.some((l: any) => Number(l.EmptyQuantity || 0) > 0) && (
+                        <Table.Td style={{ textAlign: 'right' }}>
+                          {Number(ln.EmptyQuantity || 0) > 0 ? (
+                            <Badge size="sm" variant="light" color="cyan" radius="sm" style={{ fontWeight: 700 }}>
+                              {ln.EmptyQuantity} Ret
+                            </Badge>
+                          ) : (
+                            <Text size="xs" c="dimmed">-</Text>
+                          )}
+                        </Table.Td>
+                      )}
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Text size="xs" fw={600} c="#334155">
+                          ₹{Number(ln.SalesPrice || ln.rate || 0).toFixed(2)}
+                        </Text>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Badge size="xs" variant="outline" color="gray" radius="sm">
+                          {Number(ln.TaxPercent || 0)}%
+                        </Badge>
+                      </Table.Td>
+                      <Table.Td style={{ textAlign: 'right' }}>
+                        <Text size="xs" fw={800} c="#0f172a">
+                          ₹{Number(ln.Total || ln.total || 0).toFixed(2)}
+                        </Text>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Box>
+
+            {/* Notes / Empty Return Narration Callout */}
+            {viewingSale.Notes && (
+              <Paper p="xs" radius="md" style={{ backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
+                <Group gap={6} align="flex-start" wrap="nowrap">
+                  <IconFileText size={16} color="#64748b" style={{ flexShrink: 0, marginTop: 2 }} />
+                  <div>
+                    <Text size="11px" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                      Delivery Narration &bull; Empties
+                    </Text>
+                    <Text size="xs" c="#334155" style={{ fontStyle: 'italic', marginTop: 1 }}>
+                      {viewingSale.Notes}
+                    </Text>
+                  </div>
+                </Group>
+              </Paper>
+            )}
+
+            {/* Financial Summary Card */}
+            <Paper p="md" radius="md" style={{ backgroundColor: '#fcfaf9', border: '1px solid #f2e2e4' }}>
+              <Group justify="space-between" align="center" wrap="wrap" gap="md">
+                <Group gap="xl" wrap="wrap">
+                  <div>
+                    <Text size="11px" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                      Taxable SubTotal
+                    </Text>
+                    <Text size="sm" fw={700} c="#334155">
+                      ₹{Number(viewingSale.SubTotal || (Number(viewingSale.GrandTotal || 0) - Number(viewingSale.TaxAmount || 0))).toFixed(2)}
+                    </Text>
+                  </div>
+                  <div>
+                    <Text size="11px" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                      GST (Tax)
+                    </Text>
+                    <Text size="sm" fw={700} c="#334155">
+                      ₹{Number(viewingSale.TaxAmount || 0).toFixed(2)}
+                    </Text>
+                  </div>
+                  <Divider orientation="vertical" />
+                  <div>
+                    <Text size="11px" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                      Grand Total
+                    </Text>
+                    <Text size="xl" fw={800} style={{ color: '#800020', lineHeight: 1.2 }}>
+                      ₹{Number(viewingSale.GrandTotal || 0).toFixed(2)}
+                    </Text>
+                  </div>
+                  <div>
+                    <Text size="11px" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                      Amount Paid
+                    </Text>
+                    <Text size="md" fw={800} style={{ color: '#0f766e', lineHeight: 1.2 }}>
+                      ₹{Number(viewingSale.PaidAmount || 0).toFixed(2)}
+                    </Text>
+                  </div>
+                  {Number(viewingSale.GrandTotal || 0) > Number(viewingSale.PaidAmount || 0) && (
+                    <div>
+                      <Text size="11px" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                        Balance Due
+                      </Text>
+                      <Text size="md" fw={800} style={{ color: '#b91c1c', lineHeight: 1.2 }}>
+                        ₹{(Number(viewingSale.GrandTotal || 0) - Number(viewingSale.PaidAmount || 0)).toFixed(2)}
+                      </Text>
+                    </div>
+                  )}
+                  {Number(viewingSale.PaidAmount || 0) > Number(viewingSale.GrandTotal || 0) && (
+                    <div>
+                      <Text size="11px" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                        Advance / Excess Paid
+                      </Text>
+                      <Text size="md" fw={800} style={{ color: '#0f766e', lineHeight: 1.2 }}>
+                        ₹{(Number(viewingSale.PaidAmount || 0) - Number(viewingSale.GrandTotal || 0)).toFixed(2)} Cr
+                      </Text>
+                    </div>
+                  )}
+                </Group>
+              </Group>
+            </Paper>
 
             {viewingSale.edit_history && viewingSale.edit_history.length > 0 && (
               <>
@@ -1325,29 +1509,25 @@ export const SalesListPage: React.FC = () => {
 
             <Divider />
 
-            <Group justify="space-between" align="center" wrap="wrap" gap="md">
-              <div>
-                <Text size="xs" c="dimmed">
-                  Grand Total:
-                </Text>
-                <Text size="lg" fw={800} style={{ color: '#800020' }}>
-                  ₹{Number(viewingSale.GrandTotal || 0).toFixed(2)}
-                </Text>
-                <Text size="xs" fw={600} mt={2}>
-                  Paid: <span style={{ color: '#0d9488' }}>₹{Number(viewingSale.PaidAmount || 0).toFixed(2)}</span>
-                  {Number(viewingSale.GrandTotal || 0) > Number(viewingSale.PaidAmount || 0) && (
-                    <span style={{ color: '#dc2626', marginLeft: 8 }}>
-                      (Due: ₹{(Number(viewingSale.GrandTotal || 0) - Number(viewingSale.PaidAmount || 0)).toFixed(2)})
-                    </span>
-                  )}
-                </Text>
-              </div>
+            {/* Action Buttons Footer */}
+            <Group justify="space-between" align="center" wrap="wrap" pt="xs">
+              <Button
+                variant="subtle"
+                color="red"
+                size="sm"
+                leftSection={<IconTrash size={16} />}
+                loading={deleteSaleMutation.isPending}
+                onClick={() => handleDeleteSale(viewingSale)}
+              >
+                Delete Invoice
+              </Button>
 
               <Group gap="sm" wrap="wrap">
                 {Number(viewingSale.GrandTotal || 0) > Number(viewingSale.PaidAmount || 0) && (
                   <Button
                     variant="light"
                     color="burgundy"
+                    size="sm"
                     leftSection={<IconCash size={16} />}
                     loading={applyAdvanceMutation.isPending}
                     onClick={() => applyAdvanceMutation.mutate(viewingSale.SalesId)}
@@ -1358,6 +1538,7 @@ export const SalesListPage: React.FC = () => {
                 {!viewingSale.IsApproved && (
                   <Button
                     variant="filled"
+                    size="sm"
                     style={{ backgroundColor: '#800020', fontWeight: 600 }}
                     leftSection={<IconUserCheck size={16} />}
                     loading={approveMutation.isPending}
@@ -1372,6 +1553,7 @@ export const SalesListPage: React.FC = () => {
                 <Button
                   variant="light"
                   color="burgundy"
+                  size="sm"
                   leftSection={<IconEdit size={16} />}
                   onClick={() => {
                     navigate(`/sales/${viewingSale.SalesId}/edit`);
@@ -1380,17 +1562,9 @@ export const SalesListPage: React.FC = () => {
                   Edit Invoice
                 </Button>
                 <Button
-                  variant="subtle"
-                  color="red"
-                  leftSection={<IconTrash size={16} />}
-                  loading={deleteSaleMutation.isPending}
-                  onClick={() => handleDeleteSale(viewingSale)}
-                >
-                  Delete Invoice
-                </Button>
-                <Button
+                  size="sm"
                   leftSection={<IconPrinter size={16} />}
-                  style={{ backgroundColor: '#800020', fontWeight: 600 }}
+                  style={{ backgroundColor: '#800020', fontWeight: 700, boxShadow: '0 2px 4px rgba(128,0,32,0.2)' }}
                   onClick={() => handlePrintPdf(viewingSale)}
                 >
                   Print GST Tax Invoice
