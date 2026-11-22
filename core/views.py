@@ -116,6 +116,28 @@ def sync_ledger_balances(*ledger_ids):
         )
 
 
+_payment_columns_checked = False
+
+
+def ensure_payment_columns():
+    global _payment_columns_checked
+    if _payment_columns_checked:
+        return
+    try:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "PaymentNo" varchar(100);
+                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "ReferenceNumber" varchar(100);
+                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "Status" varchar(50) DEFAULT 'APPROVED';
+                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "DeliveryNoteId" bigint;
+                UPDATE "Payment" SET "Status" = 'APPROVED' WHERE "Status" IS NULL;
+            """)
+        _payment_columns_checked = True
+    except Exception:
+        pass
+
+
 class AuthAnonThrottle(AnonRateThrottle):
     rate = '300/min'
 
@@ -1883,6 +1905,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='statement', permission_classes=[AllowAny])
     def statement(self, request, pk=None):
+        ensure_payment_columns()
         ledger = self.get_object()
         company_id = getattr(request.user, 'CompanyId', 1) or ledger.CompanyId or 1
 
@@ -1911,34 +1934,37 @@ class LedgerViewSet(viewsets.ModelViewSet):
         # matching what appears in the Receipts list (/receipts) where receipts are numbered sequentially REC-001, REC-002...
         bill_to_receipt_map = {}
         payment_vch_map = {}
-        all_receipt_pmts = list(Payment.objects.all().order_by('PaymentId').prefetch_related('lines__allocations'))
-        for idx, pm in enumerate(all_receipt_pmts):
-            vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
-            if pm.PaymentNo:
-                clean_r_no = str(pm.PaymentNo)
-            elif vch and vch.VoucherNo and not vch.VoucherNo.startswith('REC-VCH-'):
-                clean_r_no = str(vch.VoucherNo)
-            else:
-                clean_r_no = f"REC-{idx + 1:03d}"
-            payment_vch_map[pm.PaymentId] = clean_r_no
+        try:
+            all_receipt_pmts = list(Payment.objects.all().order_by('PaymentId').prefetch_related('lines__allocations'))
+            for idx, pm in enumerate(all_receipt_pmts):
+                vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
+                if getattr(pm, 'PaymentNo', None):
+                    clean_r_no = str(pm.PaymentNo)
+                elif vch and vch.VoucherNo and not vch.VoucherNo.startswith('REC-VCH-'):
+                    clean_r_no = str(vch.VoucherNo)
+                else:
+                    clean_r_no = f"REC-{idx + 1:03d}"
+                payment_vch_map[pm.PaymentId] = clean_r_no
 
-            for p_line in pm.lines.all():
-                for alloc in p_line.allocations.all():
-                    b_ref = str(alloc.BillReference or '').strip().upper()
-                    if b_ref:
-                        bill_to_receipt_map[b_ref] = clean_r_no
-                        bill_to_receipt_map[b_ref.replace('INV-', '').replace('SALE-', '')] = clean_r_no
-            if pm.Narration:
-                for m_ref in re.findall(r'(INV-?\d+|SALE-?\d+)', pm.Narration, re.IGNORECASE):
-                    bill_to_receipt_map[m_ref.upper()] = clean_r_no
-                    bill_to_receipt_map[m_ref.upper().replace('INV-', '').replace('SALE-', '')] = clean_r_no
+                for p_line in pm.lines.all():
+                    for alloc in p_line.allocations.all():
+                        b_ref = str(alloc.BillReference or '').strip().upper()
+                        if b_ref:
+                            bill_to_receipt_map[b_ref] = clean_r_no
+                            bill_to_receipt_map[b_ref.replace('INV-', '').replace('SALE-', '')] = clean_r_no
+                if pm.Narration:
+                    for m_ref in re.findall(r'(INV-?\d+|SALE-?\d+)', pm.Narration, re.IGNORECASE):
+                        bill_to_receipt_map[m_ref.upper()] = clean_r_no
+                        bill_to_receipt_map[m_ref.upper().replace('INV-', '').replace('SALE-', '')] = clean_r_no
 
-        for bwa in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment']):
-            b_ref = str(bwa.BillReference or '').strip().upper()
-            if b_ref:
-                clean_r_no = payment_vch_map.get(bwa.ReferenceId) or f"REC-{bwa.ReferenceId:03d}"
-                bill_to_receipt_map[b_ref] = clean_r_no
-                bill_to_receipt_map[b_ref.replace('INV-', '').replace('SALE-', '')] = clean_r_no
+            for bwa in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment']):
+                b_ref = str(bwa.BillReference or '').strip().upper()
+                if b_ref:
+                    clean_r_no = payment_vch_map.get(bwa.ReferenceId) or f"REC-{bwa.ReferenceId:03d}"
+                    bill_to_receipt_map[b_ref] = clean_r_no
+                    bill_to_receipt_map[b_ref.replace('INV-', '').replace('SALE-', '')] = clean_r_no
+        except Exception:
+            pass
 
         def get_receipt_no_for_sale(sale, fallback_ref):
             clean_s_ref = str(fallback_ref or '').strip().upper()
@@ -2290,23 +2316,26 @@ class LedgerViewSet(viewsets.ModelViewSet):
                             'debit': 0.0,
                             'credit': float(s.PaidAmount),
                         })
-            payments = Payment.objects.filter(PartyLedger=ledger).order_by('CreatedAt', 'PaymentId')
-            for pm in payments:
-                vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
-                is_rcpt = (vch and vch.VoucherType == 'RECEIPT') or pm.lines.filter(PaymentMode__icontains='receipt').exists()
-                clean_no = payment_vch_map.get(pm.PaymentId) or f"REC-{pm.PaymentId:03d}"
-                entries.append({
-                    'date': pm.CreatedAt.strftime('%Y-%m-%d') if pm.CreatedAt else '',
-                    'ref': vch.VoucherNo if vch else f"REC-{pm.PaymentId}",
-                    'vch_no': clean_no,
-                    'voucher_type': 'Receipt' if is_rcpt else 'Payment',
-                    'particulars': pm.Narration or ('By Cash' if is_rcpt else 'Payment'),
-                    'item_name': '',
-                    'full_qty': None,
-                    'empty_qty': None,
-                    'debit': 0.0 if is_rcpt else float(pm.Amount or 0),
-                    'credit': float(pm.Amount or 0) if is_rcpt else 0.0,
-                })
+            try:
+                payments = Payment.objects.filter(PartyLedger=ledger).order_by('CreatedAt', 'PaymentId')
+                for pm in payments:
+                    vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
+                    is_rcpt = (vch and vch.VoucherType == 'RECEIPT') or pm.lines.filter(PaymentMode__icontains='receipt').exists()
+                    clean_no = payment_vch_map.get(pm.PaymentId) or f"REC-{pm.PaymentId:03d}"
+                    entries.append({
+                        'date': pm.CreatedAt.strftime('%Y-%m-%d') if pm.CreatedAt else '',
+                        'ref': vch.VoucherNo if vch else f"REC-{pm.PaymentId}",
+                        'vch_no': clean_no,
+                        'voucher_type': 'Receipt' if is_rcpt else 'Payment',
+                        'particulars': pm.Narration or ('By Cash' if is_rcpt else 'Payment'),
+                        'item_name': '',
+                        'full_qty': None,
+                        'empty_qty': None,
+                        'debit': 0.0 if is_rcpt else float(pm.Amount or 0),
+                        'credit': float(pm.Amount or 0) if is_rcpt else 0.0,
+                    })
+            except Exception:
+                pass
 
         entries.sort(key=lambda x: x.get('date') or '')
         ledger.refresh_from_db()
@@ -3735,25 +3764,7 @@ def get_next_temp_receipt_number():
     return f"TREC-{max_num + 1:03d}"
 
 
-_payment_columns_checked = False
 
-def ensure_payment_columns():
-    global _payment_columns_checked
-    if _payment_columns_checked:
-        return
-    try:
-        from django.db import connection
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "PaymentNo" varchar(100);
-                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "ReferenceNumber" varchar(100);
-                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "Status" varchar(50) DEFAULT 'APPROVED';
-                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "DeliveryNoteId" bigint;
-                UPDATE "Payment" SET "Status" = 'APPROVED' WHERE "Status" IS NULL;
-            """)
-        _payment_columns_checked = True
-    except Exception:
-        pass
 
 
 class PaymentViewSet(viewsets.ModelViewSet):
