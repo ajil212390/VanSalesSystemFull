@@ -1384,10 +1384,19 @@ export const EndAllocationsPage: React.FC = () => {
                                   <Stack gap={2}>
                                     <Badge
                                       size="xs"
-                                      variant="gradient"
-                                      gradient={{ from: 'teal', to: 'blue', deg: 60 }}
+                                      variant="light"
                                       radius="xs"
-                                      styles={{ root: { fontWeight: 700, padding: '0 5px', height: 18, alignSelf: 'flex-start' } }}
+                                      styles={{
+                                        root: {
+                                          backgroundColor: '#fdf2f4',
+                                          color: '#800020',
+                                          border: '1px solid #fbcfe8',
+                                          fontWeight: 700,
+                                          padding: '0 5px',
+                                          height: 18,
+                                          alignSelf: 'flex-start',
+                                        },
+                                      }}
                                     >
                                       SPLIT
                                     </Badge>
