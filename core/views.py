@@ -134,21 +134,35 @@ def ensure_payment_columns():
                 UPDATE "Payment" SET "Status" = 'APPROVED' WHERE "Status" IS NULL;
             """)
 
-        # Auto-assign sequential PaymentNo (REC-001, REC-002...) to existing payments that don't have one
+        # Clean up: Supplier Payments (Sundry Creditors like Super Gas) must NEVER have REC- numbers!
+        from core.models import Ledger
+        supplier_ledger_ids = set(
+            Ledger.objects.filter(
+                Q(Group_id=22) | Q(Group__GroupName__icontains='creditor') | Q(Group__GroupName__icontains='supplier')
+            ).values_list('LedgerId', flat=True)
+        )
+        if supplier_ledger_ids:
+            Payment.objects.filter(
+                PartyLedger_id__in=supplier_ledger_ids,
+                PaymentNo__startswith='REC-'
+            ).update(PaymentNo=None)
+
+        # Auto-assign sequential PaymentNo (REC-001, REC-002...) ONLY to customer receipts
         existing_pmts = Payment.objects.filter(
             route_expenses__isnull=True
         ).exclude(
             PartyLedger_id=31
         ).exclude(
             PartyLedger__LedgerName__icontains='travelling'
+        ).exclude(
+            PartyLedger_id__in=supplier_ledger_ids
         ).order_by('PaymentId')
 
         c_seq = 1
         for p in existing_pmts:
-            if not getattr(p, 'PaymentNo', None):
-                p.PaymentNo = f"REC-{c_seq:03d}"
-                p.Status = 'APPROVED'
-                p.save(update_fields=['PaymentNo', 'Status'])
+            p.PaymentNo = f"REC-{c_seq:03d}"
+            p.Status = 'APPROVED'
+            p.save(update_fields=['PaymentNo', 'Status'])
             c_seq += 1
 
         _payment_columns_checked = True

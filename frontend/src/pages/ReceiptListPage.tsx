@@ -111,12 +111,13 @@ export const ReceiptListPage: React.FC = () => {
 
     return allPayments.filter((p) => {
       const vt = String(p.voucher_type || '').toUpperCase();
+      // Strictly exclude Supplier / Expense Payments from Receipts screen!
+      if (vt === 'PAYMENT') return false;
       if (vt === 'RECEIPT') return true;
       if (customerLedgerIds.has(p.PartyLedgerId)) return true;
-      if (String(p.PaymentNo || '').toUpperCase().startsWith('REC-')) return true;
       if (String(p.ReferenceNumber || '').toUpperCase().startsWith('TREC-')) return true;
-      if (vt === 'PAYMENT') return false;
-      return true;
+      if (String(p.PaymentNo || '').toUpperCase().startsWith('REC-')) return true;
+      return false;
     });
   }, [allPayments, ledgers]);
 
