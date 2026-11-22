@@ -11,6 +11,7 @@ import {
   Button,
   Table,
   TextInput,
+  NumberInput,
   ActionIcon,
   Divider,
   Collapse,
@@ -39,7 +40,10 @@ import {
   IconHistory,
   IconArrowRight,
   IconArrowUpRight,
-  IconBuildingWarehouse } from '@tabler/icons-react';
+  IconBuildingWarehouse,
+  IconPencil,
+  IconX,
+} from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -141,6 +145,14 @@ export const EndAllocationsPage: React.FC = () => {
   const [unsoldGodowns, setUnsoldGodowns] = useState<Record<number, string>>({});
   const [emptyGodowns, setEmptyGodowns] = useState<Record<number, string>>({});
   const [printingId, setPrintingId] = useState<number | null>(null);
+
+  // Manager Settlement Edit State
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [adjustedLines, setAdjustedLines] = useState<Record<number, { filled_qty: number; empty_qty: number }>>({});
+  const [adjustedCash, setAdjustedCash] = useState<number>(0);
+  const [adjustedBank, setAdjustedBank] = useState<number>(0);
+  const [adjustedExpenses, setAdjustedExpenses] = useState<number>(0);
+  const [adjustedRemarks, setAdjustedRemarks] = useState<string>('');
 
   // Date Filter & Sort State (matching other screens)
   type DateFilterType = 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
@@ -261,14 +273,31 @@ export const EndAllocationsPage: React.FC = () => {
     mutationFn: async ({
       id,
       godown_id,
-      godown_splits }: {
+      godown_splits,
+      adjusted_lines,
+      cash_amount,
+      bank_amount,
+      trip_expenses,
+      remarks,
+    }: {
       id: number;
       godown_id?: number;
       godown_splits?: any;
+      adjusted_lines?: any[];
+      cash_amount?: number;
+      bank_amount?: number;
+      trip_expenses?: number;
+      remarks?: string;
     }) => {
       const res = await apiClient.post(`/end-route-drivers/${id}/settle/`, {
         godown_id,
-        godown_splits });
+        godown_splits,
+        adjusted_lines,
+        cash_amount,
+        bank_amount,
+        trip_expenses,
+        remarks,
+      });
       return res.data;
     },
     onSuccess: (data) => {
@@ -345,71 +374,6 @@ export const EndAllocationsPage: React.FC = () => {
       });
   }, [endRouteDrivers, statusFilter, dateFilter, customStartDate, customEndDate, sortBy, searchQuery]);
 
-  // Handle open details modal
-  const handleOpenDetail = (item: EndRouteDriverItem) => {
-    setSelectedItem(item);
-    setIsDetailOpen(true);
-
-    const defaultGid = String(item.source_godown_id || 1);
-    setSelectedTargetGodown(defaultGid);
-    const initialUnsold: Record<number, string> = {};
-    const initialEmpty: Record<number, string> = {};
-    (item.lines || []).forEach((l) => {
-      const pid = l.Product || l.EndRouteDriverLineId;
-      initialUnsold[pid] = defaultGid;
-      initialEmpty[pid] = defaultGid;
-    });
-    setUnsoldGodowns(initialUnsold);
-    setEmptyGodowns(initialEmpty);
-  };
-
-  const handleApproveSettlement = () => {
-    if (!selectedItem) return;
-
-    const modalLinesList = selectedItem.lines || [];
-    const splitsPayload: Record<number, any[]> = {};
-    const sourceGid = Number(selectedItem.source_godown_id || 1);
-    const targetGid = Number(selectedTargetGodown || sourceGid);
-    const isCross = targetGid !== sourceGid;
-
-    for (const line of modalLinesList) {
-      const pid = line.Product || line.EndRouteDriverLineId;
-      const unsoldGid = Number(unsoldGodowns[pid] || targetGid);
-      const emptyGid = Number(emptyGodowns[pid] || targetGid);
-      const totalF = Number(line.FilledQty) || 0;
-      const totalE = Number(line.EmptyQty) || 0;
-
-      if (unsoldGid === emptyGid) {
-        splitsPayload[pid] = [
-          {
-            godown_id: unsoldGid,
-            filled_qty: totalF,
-            empty_qty: totalE,
-          },
-        ];
-      } else {
-        splitsPayload[pid] = [
-          {
-            godown_id: unsoldGid,
-            filled_qty: totalF,
-            empty_qty: 0,
-          },
-          {
-            godown_id: emptyGid,
-            filled_qty: 0,
-            empty_qty: totalE,
-          },
-        ];
-      }
-    }
-
-    settleMutation.mutate({
-      id: selectedItem.EndRouteDriverId,
-      godown_id: targetGid,
-      godown_splits: isCross ? undefined : splitsPayload,
-    });
-  };
-
   // Helper to extract amounts from backend API attributes or fallback remarks
   const parseSettlementAmounts = (item: EndRouteDriverItem | null) => {
     if (!item) return { cash: 0, bank: 0, total: 0, cashExpense: 0, bankExpense: 0, netCash: 0, netBank: 0, netBalance: 0 };
@@ -439,10 +403,133 @@ export const EndAllocationsPage: React.FC = () => {
     return { cash, bank, total: cash + bank, cashExpense, bankExpense, netCash, netBank, netBalance };
   };
 
-  const modalAmounts = parseSettlementAmounts(selectedItem);
+  // Handle open details modal
+  const handleOpenDetail = (item: EndRouteDriverItem) => {
+    setSelectedItem(item);
+    setIsDetailOpen(true);
+    setIsEditMode(false);
+
+    const defaultGid = String(item.source_godown_id || 1);
+    setSelectedTargetGodown(defaultGid);
+    const initialUnsold: Record<number, string> = {};
+    const initialEmpty: Record<number, string> = {};
+    const initialAdjusted: Record<number, { filled_qty: number; empty_qty: number }> = {};
+
+    (item.lines || []).forEach((l) => {
+      const pid = l.Product || l.EndRouteDriverLineId;
+      initialUnsold[pid] = defaultGid;
+      initialEmpty[pid] = defaultGid;
+      initialAdjusted[pid] = {
+        filled_qty: Number(l.FilledQty) || 0,
+        empty_qty: Number(l.EmptyQty) || 0,
+      };
+    });
+    setUnsoldGodowns(initialUnsold);
+    setEmptyGodowns(initialEmpty);
+    setAdjustedLines(initialAdjusted);
+
+    const amounts = parseSettlementAmounts(item);
+    setAdjustedCash(amounts.cash);
+    setAdjustedBank(amounts.bank);
+    setAdjustedExpenses(Number(item.trip_expenses) || 0);
+    setAdjustedRemarks(item.Remarks || '');
+  };
+
+  const handleApproveSettlement = () => {
+    if (!selectedItem) return;
+
+    const modalLinesList = selectedItem.lines || [];
+    const splitsPayload: Record<number, any[]> = {};
+    const sourceGid = Number(selectedItem.source_godown_id || 1);
+    const targetGid = Number(selectedTargetGodown || sourceGid);
+    const isCross = targetGid !== sourceGid;
+
+    for (const line of modalLinesList) {
+      const pid = line.Product || line.EndRouteDriverLineId;
+      const unsoldGid = Number(unsoldGodowns[pid] || targetGid);
+      const emptyGid = Number(emptyGodowns[pid] || targetGid);
+      const totalF = isEditMode && adjustedLines[pid] !== undefined ? Number(adjustedLines[pid].filled_qty) : (Number(line.FilledQty) || 0);
+      const totalE = isEditMode && adjustedLines[pid] !== undefined ? Number(adjustedLines[pid].empty_qty) : (Number(line.EmptyQty) || 0);
+
+      if (unsoldGid === emptyGid) {
+        splitsPayload[pid] = [
+          {
+            godown_id: unsoldGid,
+            filled_qty: totalF,
+            empty_qty: totalE,
+          },
+        ];
+      } else {
+        splitsPayload[pid] = [
+          {
+            godown_id: unsoldGid,
+            filled_qty: totalF,
+            empty_qty: 0,
+          },
+          {
+            godown_id: emptyGid,
+            filled_qty: 0,
+            empty_qty: totalE,
+          },
+        ];
+      }
+    }
+
+    const adjustedPayload = Object.entries(adjustedLines).map(([pid, val]) => ({
+      product_id: Number(pid),
+      filled_qty: Number(val.filled_qty),
+      empty_qty: Number(val.empty_qty),
+    }));
+
+    settleMutation.mutate({
+      id: selectedItem.EndRouteDriverId,
+      godown_id: targetGid,
+      godown_splits: isCross ? undefined : splitsPayload,
+      adjusted_lines: isEditMode || Object.keys(adjustedLines).length > 0 ? adjustedPayload : undefined,
+      cash_amount: isEditMode ? adjustedCash : undefined,
+      bank_amount: isEditMode ? adjustedBank : undefined,
+      trip_expenses: isEditMode ? adjustedExpenses : undefined,
+      remarks: isEditMode ? adjustedRemarks : undefined,
+    });
+  };
+
+  const rawModalAmounts = parseSettlementAmounts(selectedItem);
+  const modalAmounts = useMemo(() => {
+    if (!isEditMode) return rawModalAmounts;
+    const cash = Number(adjustedCash) || 0;
+    const bank = Number(adjustedBank) || 0;
+    const totalExp = Number(adjustedExpenses) || 0;
+    const cashExp = rawModalAmounts.cashExpense;
+    const bankExp = rawModalAmounts.bankExpense;
+    const netCash = cash - cashExp;
+    const netBank = bank - bankExp;
+    const netBalance = (cash + bank) - totalExp;
+    return {
+      cash,
+      bank,
+      total: cash + bank,
+      cashExpense: cashExp,
+      bankExpense: bankExp,
+      netCash,
+      netBank,
+      netBalance,
+    };
+  }, [isEditMode, adjustedCash, adjustedBank, adjustedExpenses, rawModalAmounts]);
+
   const modalLines = selectedItem?.lines || [];
-  const modalTotalFilled = modalLines.reduce((acc, l) => acc + (Number(l.FilledQty) || 0), 0);
-  const modalTotalEmpty = modalLines.reduce((acc, l) => acc + (Number(l.EmptyQty) || 0), 0);
+  const modalTotalFilled = useMemo(() => {
+    if (isEditMode) {
+      return Object.values(adjustedLines).reduce((acc, l) => acc + (Number(l.filled_qty) || 0), 0);
+    }
+    return modalLines.reduce((acc, l) => acc + (Number(l.FilledQty) || 0), 0);
+  }, [isEditMode, adjustedLines, modalLines]);
+
+  const modalTotalEmpty = useMemo(() => {
+    if (isEditMode) {
+      return Object.values(adjustedLines).reduce((acc, l) => acc + (Number(l.empty_qty) || 0), 0);
+    }
+    return modalLines.reduce((acc, l) => acc + (Number(l.EmptyQty) || 0), 0);
+  }, [isEditMode, adjustedLines, modalLines]);
 
   const sourceGodownId = selectedItem?.source_godown_id || 1;
   const targetGodownId = Number(selectedTargetGodown || sourceGodownId);
@@ -772,16 +859,44 @@ export const EndAllocationsPage: React.FC = () => {
                 </Text>
               </div>
 
-              <CloseButton
-                size="md"
-                onClick={() => {
-                  setIsDetailOpen(false);
-                  setSelectedItem(null);
-                }}
-              />
+              <Group gap="xs" align="center">
+                {selectedItem.Status?.toUpperCase() === 'PENDING' && (
+                  <Button
+                    size="xs"
+                    variant={isEditMode ? 'filled' : 'outline'}
+                    color={isEditMode ? 'orange' : 'burgundy'}
+                    radius="sm"
+                    leftSection={isEditMode ? <IconX size={14} /> : <IconPencil size={14} />}
+                    onClick={() => setIsEditMode(!isEditMode)}
+                  >
+                    {isEditMode ? 'Done Editing' : 'Edit Settlement Details'}
+                  </Button>
+                )}
+                <CloseButton
+                  size="md"
+                  onClick={() => {
+                    setIsDetailOpen(false);
+                    setSelectedItem(null);
+                    setIsEditMode(false);
+                  }}
+                />
+              </Group>
             </Group>
 
             <Stack gap="md">
+              {isEditMode && (
+                <Paper p="xs" radius="sm" style={{ backgroundColor: '#fffbeb', border: '1px solid #fde68a' }}>
+                  <Group gap="xs" align="center">
+                    <ThemeIcon size={24} color="yellow" variant="light">
+                      <IconPencil size={14} />
+                    </ThemeIcon>
+                    <Text size="xs" c="#b45309" fw={600}>
+                      <strong>Edit Mode Active:</strong> You can adjust unsold full cylinders, empty cylinder returns, cash and bank handover amounts, and settlement notes. When satisfied, click &quot;Approve &amp; Settle Shift&quot; below to record verified counts into the godown ledger.
+                    </Text>
+                  </Group>
+                </Paper>
+              )}
+
               {/* Financial Reconcilation Cards (Matching Van Management) */}
               <Box
                 style={{
@@ -828,6 +943,43 @@ export const EndAllocationsPage: React.FC = () => {
               </Box>
 
               {/* Cash & Bank Net Settlement Breakdown Strip */}
+              {isEditMode ? (
+                <Paper p="sm" radius="sm" style={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1' }}>
+                  <Text size="xs" fw={700} c="#800020" tt="uppercase" mb="xs">
+                    Adjust Handover Cash, Digital Bank &amp; Expenses
+                  </Text>
+                  <Grid>
+                    <Grid.Col span={{ base: 12, sm: 4 }}>
+                      <NumberInput
+                        size="xs"
+                        label="Gross Cash Handover (₹)"
+                        min={0}
+                        value={adjustedCash}
+                        onChange={(v) => setAdjustedCash(Number(v) || 0)}
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, sm: 4 }}>
+                      <NumberInput
+                        size="xs"
+                        label="Digital UPI / Bank (₹)"
+                        min={0}
+                        value={adjustedBank}
+                        onChange={(v) => setAdjustedBank(Number(v) || 0)}
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, sm: 4 }}>
+                      <NumberInput
+                        size="xs"
+                        label="Trip Expenses (₹)"
+                        min={0}
+                        value={adjustedExpenses}
+                        onChange={(v) => setAdjustedExpenses(Number(v) || 0)}
+                      />
+                    </Grid.Col>
+                  </Grid>
+                </Paper>
+              ) : null}
+
               <Box
                 style={{
                   display: 'grid',
@@ -860,12 +1012,24 @@ export const EndAllocationsPage: React.FC = () => {
               </Box>
 
               {/* Remarks */}
-              {selectedItem.Remarks && (
-                <Paper p="xs" radius="sm" style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <Text size="xs" c="#334155">
-                    <strong>Remarks:</strong> {selectedItem.Remarks}
-                  </Text>
+              {isEditMode ? (
+                <Paper p="xs" radius="sm" style={{ backgroundColor: '#ffffff', border: '1px solid #cbd5e1' }}>
+                  <TextInput
+                    size="xs"
+                    label="Manager Settlement Remarks / Gate Adjustments"
+                    placeholder="Enter manager settlement notes or reason for cylinder count adjustments..."
+                    value={adjustedRemarks}
+                    onChange={(e) => setAdjustedRemarks(e.currentTarget.value)}
+                  />
                 </Paper>
+              ) : (
+                selectedItem.Remarks && (
+                  <Paper p="xs" radius="sm" style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <Text size="xs" c="#334155">
+                      <strong>Remarks:</strong> {selectedItem.Remarks}
+                    </Text>
+                  </Paper>
+                )
               )}
 
               {/* Target Godown Selection Card */}
@@ -978,16 +1142,74 @@ export const EndAllocationsPage: React.FC = () => {
                       </Table.Thead>
                       <Table.Tbody>
                         {modalLines.map((line) => {
+                          const pid = line.Product || line.EndRouteDriverLineId;
+                          const currentFilled = isEditMode && adjustedLines[pid] !== undefined ? adjustedLines[pid].filled_qty : line.FilledQty;
+                          const currentEmpty = isEditMode && adjustedLines[pid] !== undefined ? adjustedLines[pid].empty_qty : line.EmptyQty;
+
                           return (
                             <Table.Tr key={line.EndRouteDriverLineId}>
                               <Table.Td style={{ fontWeight: 600, fontSize: 12.5, color: '#0f172a', paddingLeft: 16 }}>{line.product_name}</Table.Td>
                               <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{line.LoadedQty ?? '-'}</Table.Td>
                               <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>{line.DeliveredQty ?? '-'}</Table.Td>
                               <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13.5, color: '#0f172a' }}>
-                                {line.FilledQty}
+                                {isEditMode ? (
+                                  <NumberInput
+                                    size="xs"
+                                    min={0}
+                                    value={currentFilled}
+                                    onChange={(val) => {
+                                      setAdjustedLines((prev) => ({
+                                        ...prev,
+                                        [pid]: {
+                                          filled_qty: Math.max(0, Number(val) || 0),
+                                          empty_qty: prev[pid]?.empty_qty ?? (Number(line.EmptyQty) || 0),
+                                        },
+                                      }));
+                                    }}
+                                    styles={{
+                                      input: {
+                                        textAlign: 'center',
+                                        fontWeight: 700,
+                                        width: 85,
+                                        margin: '0 auto',
+                                        borderColor: '#800020',
+                                        color: '#0f172a',
+                                      },
+                                    }}
+                                  />
+                                ) : (
+                                  line.FilledQty
+                                )}
                               </Table.Td>
                               <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 13.5, color: '#800020' }}>
-                                {line.EmptyQty}
+                                {isEditMode ? (
+                                  <NumberInput
+                                    size="xs"
+                                    min={0}
+                                    value={currentEmpty}
+                                    onChange={(val) => {
+                                      setAdjustedLines((prev) => ({
+                                        ...prev,
+                                        [pid]: {
+                                          filled_qty: prev[pid]?.filled_qty ?? (Number(line.FilledQty) || 0),
+                                          empty_qty: Math.max(0, Number(val) || 0),
+                                        },
+                                      }));
+                                    }}
+                                    styles={{
+                                      input: {
+                                        textAlign: 'center',
+                                        fontWeight: 700,
+                                        width: 85,
+                                        margin: '0 auto',
+                                        borderColor: '#800020',
+                                        color: '#800020',
+                                      },
+                                    }}
+                                  />
+                                ) : (
+                                  line.EmptyQty
+                                )}
                               </Table.Td>
                             </Table.Tr>
                           );

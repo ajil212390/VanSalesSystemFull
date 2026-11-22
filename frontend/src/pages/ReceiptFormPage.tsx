@@ -198,6 +198,7 @@ export const ReceiptFormPage: React.FC = () => {
   const [modalAllocations, setModalAllocations] = useState<BillAllocationItem[]>([]);
   const [isLoadingBills, setIsLoadingBills] = useState(false);
   const [isLoadingExisting, setIsLoadingExisting] = useState(false);
+  const [existingStatus, setExistingStatus] = useState<string>('APPROVED');
   const [expandedBillRef, setExpandedBillRef] = useState<string | null>(null);
 
   // 1. Fetch All Ledgers
@@ -322,7 +323,8 @@ export const ReceiptFormPage: React.FC = () => {
         .get(`/payments/${id}/`)
         .then((res) => {
           const p = res.data;
-          setReceiptNo(String(p.PaymentId).padStart(3, '0'));
+          setReceiptNo(p.PaymentNo || p.ReferenceNumber || String(p.PaymentId).padStart(3, '0'));
+          if (p.Status) setExistingStatus(String(p.Status).toUpperCase());
           if (p.payment_date) {
             setReceiptDate(p.payment_date);
           } else if (p.CreatedAt) {
@@ -786,7 +788,7 @@ export const ReceiptFormPage: React.FC = () => {
 
   // Save / Post Mutation
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (asTemporary: boolean = false) => {
       if (!saveValidation.canSave) {
         throw new Error(saveValidation.reason || 'Please complete all required fields and bill allocations.');
       }
@@ -817,6 +819,8 @@ export const ReceiptFormPage: React.FC = () => {
         PaymentLedgerId: Number(bankOrCashLedgerId),
         PaymentMode: autoPaymentMode,
         voucher_type: 'RECEIPT',
+        is_temporary: asTemporary,
+        status: asTemporary ? 'PENDING' : 'APPROVED',
         payment_date: receiptDate,
         Date: receiptDate,
         PaymentDate: receiptDate,
@@ -835,22 +839,23 @@ export const ReceiptFormPage: React.FC = () => {
 
       if (isEditing && id) {
         const res = await apiClient.put(`/payments/${id}/`, payload);
-        return res.data;
+        return { data: res.data, asTemporary };
       } else {
         const res = await apiClient.post('/payments/', payload);
-        return res.data;
+        return { data: res.data, asTemporary };
       }
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['payments'] });
       queryClient.invalidateQueries({ queryKey: ['sales'] });
       queryClient.invalidateQueries({ queryKey: ['ledgers'] });
+      const asTemp = result?.asTemporary;
       notifications.show({
-        title: isEditing ? 'Receipt Updated' : 'Receipt Saved',
-        message: isEditing
-          ? 'Receipt voucher updated successfully.'
-          : 'Receipt voucher and allocations posted successfully.',
-        color: 'teal',
+        title: asTemp ? 'Temporary Receipt Saved' : (isEditing ? 'Receipt Updated' : 'Receipt Posted'),
+        message: asTemp
+          ? 'Saved as temporary receipt (TREC). General ledger has not been affected.'
+          : 'Receipt approved and posted to General Ledger (REC).',
+        color: asTemp ? 'yellow' : 'teal',
       });
       if (returnTo === 'sales') {
         navigate(saleId ? `/sales?open_sale_id=${saleId}` : '/sales');
@@ -1345,7 +1350,7 @@ export const ReceiptFormPage: React.FC = () => {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
-                      saveMutation.mutate();
+                      saveMutation.mutate(false);
                     }
                   }}
                   radius="md"
@@ -1380,20 +1385,32 @@ export const ReceiptFormPage: React.FC = () => {
                     Cancel
                   </Button>
                   <Button
+                    variant="outline"
+                    color="yellow"
+                    size="xs"
+                    radius={8}
+                    loading={saveMutation.isPending}
+                    disabled={!saveValidation.canSave}
+                    onClick={() => saveMutation.mutate(true)}
+                    title="Save as temporary receipt (TREC) without posting to general ledger"
+                  >
+                    Save as Temporary (TREC)
+                  </Button>
+                  <Button
                     color="burgundy"
                     size="xs"
                     radius={8}
                     leftSection={<IconCheck size={14} />}
                     loading={saveMutation.isPending}
                     disabled={!saveValidation.canSave}
-                    onClick={() => saveMutation.mutate()}
+                    onClick={() => saveMutation.mutate(false)}
                     style={{
                       backgroundColor: !saveValidation.canSave ? '#cbd5e1' : '#800020',
                       cursor: !saveValidation.canSave ? 'not-allowed' : 'pointer',
                     }}
-                    title={!saveValidation.canSave ? saveValidation.reason : undefined}
+                    title={!saveValidation.canSave ? saveValidation.reason : 'Approve and post permanently to General Ledger (REC)'}
                   >
-                    {isEditing ? 'Update Receipt Voucher' : 'Post Receipt Voucher'}
+                    {isEditing && existingStatus !== 'PENDING' ? 'Update & Post to Ledger' : 'Approve & Post to Ledger (REC)'}
                   </Button>
                 </Group>
               </Group>

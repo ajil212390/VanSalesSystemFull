@@ -1017,12 +1017,17 @@ class PaymentSerializer(serializers.ModelSerializer):
         model = Payment
         fields = [
             'PaymentId', 'PartyLedgerId', 'party_name',
-            'Amount', 'Narration', 'CreatedAt', 'UpdatedAt',
+            'Amount', 'Narration', 'PaymentNo', 'ReferenceNumber', 'Status',
+            'CreatedAt', 'UpdatedAt',
             'payment_date', 'primary_mode', 'voucher_type', 'voucher_no', 'against_bills', 'lines'
         ]
         read_only_fields = ['PaymentId', 'CreatedAt', 'UpdatedAt']
 
     def get_voucher_no(self, obj):
+        if obj.PaymentNo:
+            return obj.PaymentNo
+        if obj.ReferenceNumber:
+            return obj.ReferenceNumber
         vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=obj.PaymentId).first()
         if vch and vch.VoucherNo:
             return vch.VoucherNo.replace('REC-VCH-', 'REC-').replace('VCH-', '')

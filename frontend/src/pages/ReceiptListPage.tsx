@@ -14,14 +14,19 @@ import {
   ActionIcon,
   SegmentedControl,
   Select,
-  Box } from '@mantine/core';
+  Box,
+  Badge,
+  Tooltip,
+} from '@mantine/core';
 import {
   IconPlus,
   IconSearch,
   IconReceipt,
   IconTrash,
   IconPencil,
-  IconArrowLeft } from '@tabler/icons-react';
+  IconArrowLeft,
+  IconCheck,
+} from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
@@ -56,6 +61,9 @@ interface ReceiptItem {
   against_bills?: string[];
   payment_date?: string;
   lines?: PaymentLineItem[];
+  PaymentNo?: string;
+  ReferenceNumber?: string;
+  Status?: string;
 }
 
 export const ReceiptListPage: React.FC = () => {
@@ -68,6 +76,7 @@ export const ReceiptListPage: React.FC = () => {
   // Filters State
   type DateFilterType = 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
   const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved'>('all');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('date_desc');
@@ -78,7 +87,8 @@ export const ReceiptListPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/payments/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
-    } });
+    },
+  });
 
   // Fetch ledgers to identify customers (Sundry Debtors)
   const { data: ledgers = [] } = useQuery<any[]>({
@@ -86,7 +96,8 @@ export const ReceiptListPage: React.FC = () => {
     queryFn: async () => {
       const res = await apiClient.get('/ledgers/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
-    } });
+    },
+  });
 
   // Filter strictly for Customer Receipts
   const receipts = useMemo(() => {
@@ -108,12 +119,31 @@ export const ReceiptListPage: React.FC = () => {
     });
   }, [allPayments, ledgers]);
 
+  // Counts for status tabs
+  const pendingCount = useMemo(() => {
+    return receipts.filter((p) => String(p.Status).toUpperCase() === 'PENDING').length;
+  }, [receipts]);
+
+  const approvedCount = useMemo(() => {
+    return receipts.filter((p) => String(p.Status).toUpperCase() !== 'PENDING').length;
+  }, [receipts]);
+
   const receiptNumMap = useMemo(() => {
     const map = new Map<number, string>();
-    const sorted = [...receipts].sort((a, b) => a.PaymentId - b.PaymentId);
-    sorted.forEach((p, idx) => {
-      map.set(p.PaymentId, `REC-${String(idx + 1).padStart(3, '0')}`);
+    const sortedApproved = [...receipts]
+      .filter((p) => String(p.Status).toUpperCase() !== 'PENDING')
+      .sort((a, b) => a.PaymentId - b.PaymentId);
+    sortedApproved.forEach((p, idx) => {
+      map.set(p.PaymentId, p.PaymentNo || `REC-${String(idx + 1).padStart(3, '0')}`);
     });
+
+    const sortedPending = [...receipts]
+      .filter((p) => String(p.Status).toUpperCase() === 'PENDING')
+      .sort((a, b) => a.PaymentId - b.PaymentId);
+    sortedPending.forEach((p, idx) => {
+      map.set(p.PaymentId, p.ReferenceNumber || `TREC-${String(idx + 1).padStart(3, '0')}`);
+    });
+
     return map;
   }, [receipts]);
 
@@ -177,15 +207,21 @@ export const ReceiptListPage: React.FC = () => {
   const filteredReceipts = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     let result = receipts.filter((p) => {
-      // 1. Date filter
+      // 1. Status filter
+      const isPending = String(p.Status).toUpperCase() === 'PENDING';
+      if (statusFilter === 'pending' && !isPending) return false;
+      if (statusFilter === 'approved' && isPending) return false;
+
+      // 2. Date filter
       const itemDate = p.payment_date || (p.CreatedAt ? p.CreatedAt.slice(0, 10) : '');
       if (!isDateInFilter(itemDate)) return false;
 
-      // 2. Search query
+      // 3. Search query
       if (!q) return true;
       const againstStr = getAgainstBills(p).join(' ').toLowerCase();
+      const displayNo = (receiptNumMap.get(p.PaymentId) || p.PaymentNo || p.ReferenceNumber || String(p.PaymentId)).toLowerCase();
       return (
-        (receiptNumMap.get(p.PaymentId) || String(p.PaymentId)).toLowerCase().includes(q) ||
+        displayNo.includes(q) ||
         (p.party_name && p.party_name.toLowerCase().includes(q)) ||
         againstStr.includes(q) ||
         (p.Narration && p.Narration.toLowerCase().includes(q)) ||
@@ -194,7 +230,7 @@ export const ReceiptListPage: React.FC = () => {
       );
     });
 
-    // 3. Sorting
+    // 4. Sorting
     result = [...result].sort((a, b) => {
       if (sortBy === 'date_asc') {
         const da = a.payment_date || a.CreatedAt || '';
@@ -215,7 +251,32 @@ export const ReceiptListPage: React.FC = () => {
     });
 
     return result;
-  }, [receipts, searchQuery, receiptNumMap, dateFilter, customStartDate, customEndDate, sortBy]);
+  }, [receipts, searchQuery, receiptNumMap, dateFilter, statusFilter, customStartDate, customEndDate, sortBy]);
+
+  // Approve Temporary Receipt Mutation
+  const approveMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiClient.post(`/payments/${id}/approve/`);
+      return res.data;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+      notifications.show({
+        title: 'Receipt Approved',
+        message: data.message || 'Receipt approved and posted to General Ledger.',
+        color: 'teal',
+      });
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Approval Failed',
+        message: err.response?.data?.detail || err.message || 'Could not approve receipt.',
+        color: 'red',
+      });
+    },
+  });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -238,7 +299,8 @@ export const ReceiptListPage: React.FC = () => {
         msg = err.message;
       }
       notifications.show({ title: 'Error', message: msg, color: 'red' });
-    } });
+    },
+  });
 
   return (
     <Stack gap="lg">
@@ -260,7 +322,7 @@ export const ReceiptListPage: React.FC = () => {
             Receipts
           </Title>
           <Text size="sm" c="dimmed">
-            Manage customer collections, bank & cash receipts, and bill-wise allocations.
+            Manage customer collections, temporary receipts (TREC), and approved ledger postings (REC).
           </Text>
         </div>
 
@@ -286,6 +348,60 @@ export const ReceiptListPage: React.FC = () => {
           </Button>
         </Group>
       </Group>
+
+      {/* Status Segmented Control & Summary Banner */}
+      <Paper
+        p="xs"
+        radius="md"
+        withBorder
+        style={{
+          backgroundColor: '#ffffff',
+          borderColor: '#e2e8f0',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
+        }}
+      >
+        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
+          <Group gap="xs" align="center">
+            <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+              Receipt Status:
+            </Text>
+            <SegmentedControl
+              size="xs"
+              radius="xl"
+              color="burgundy"
+              value={statusFilter}
+              onChange={(val) => setStatusFilter(val as any)}
+              data={[
+                { label: `All Receipts (${receipts.length})`, value: 'all' },
+                { label: `Pending Verification (${pendingCount})`, value: 'pending' },
+                { label: `Approved & Posted (${approvedCount})`, value: 'approved' },
+              ]}
+              styles={{
+                root: {
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  padding: 3,
+                },
+                indicator: {
+                  backgroundColor: '#800020',
+                  boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
+                },
+                label: {
+                  fontSize: 12,
+                  fontWeight: 600,
+                  padding: '5px 14px',
+                },
+              }}
+            />
+          </Group>
+
+          {pendingCount > 0 && (
+            <Badge color="yellow" variant="light" size="sm" radius="sm" style={{ border: '1px solid #fde68a', fontWeight: 600 }}>
+              {pendingCount} Temporary Receipt{pendingCount > 1 ? 's' : ''} awaiting accountant approval
+            </Badge>
+          )}
+        </Group>
+      </Paper>
 
       {/* Date Filter & Sort Card */}
       <Paper
@@ -413,17 +529,17 @@ export const ReceiptListPage: React.FC = () => {
             </Stack>
           </Center>
         ) : (
-          <Table.ScrollContainer minWidth={920}>
+          <Table.ScrollContainer minWidth={940}>
             <Table verticalSpacing="sm" horizontalSpacing="sm" highlightOnHover>
               <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140, minWidth: 130 }}>Receipt No</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 170, minWidth: 150 }}>Receipt No</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, minWidth: 100, whiteSpace: 'nowrap' }}>Date</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 190, minWidth: 160 }}>Party Name</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 110 }}>Account</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 220 }}>Narration</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 200 }}>Narration</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 110, textAlign: 'right' }}>Total (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 85, minWidth: 80, textAlign: 'center' }}>Actions</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, minWidth: 100, textAlign: 'center' }}>Actions</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -433,16 +549,29 @@ export const ReceiptListPage: React.FC = () => {
                     ? new Date(item.CreatedAt).toISOString().split('T')[0]
                     : '—');
                   const againstBills = getAgainstBills(item);
+                  const isPending = String(item.Status).toUpperCase() === 'PENDING';
+                  const displayNo = receiptNumMap.get(item.PaymentId) || item.PaymentNo || item.ReferenceNumber || `REC-${String(item.PaymentId).padStart(3, '0')}`;
 
                   return (
-                    <Table.Tr key={item.PaymentId}>
+                    <Table.Tr key={item.PaymentId} style={{ backgroundColor: isPending ? '#fffdf7' : undefined }}>
                       <Table.Td style={{ whiteSpace: 'nowrap' }}>
                         <Group gap={6} wrap="nowrap" align="center">
-                          <IconReceipt size={16} color="#800020" style={{ flexShrink: 0 }} />
+                          <IconReceipt size={16} color={isPending ? '#d97706' : '#800020'} style={{ flexShrink: 0 }} />
                           <div>
-                            <Text fw={700} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
-                              {receiptNumMap.get(item.PaymentId) || item.voucher_no || `REC-${String(item.PaymentId).padStart(3, '0')}`}
-                            </Text>
+                            <Group gap={6} align="center">
+                              <Text fw={700} size="sm" c={isPending ? '#b45309' : '#1e293b'} style={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                                {displayNo}
+                              </Text>
+                              {isPending ? (
+                                <Badge size="xs" color="yellow" variant="light" radius="xs" style={{ border: '1px solid #fde68a', fontWeight: 700 }}>
+                                  TREC Pending
+                                </Badge>
+                              ) : (
+                                <Badge size="xs" color="teal" variant="light" radius="xs" style={{ border: '1px solid #a7f3d0', fontWeight: 700 }}>
+                                  Approved
+                                </Badge>
+                              )}
+                            </Group>
                             {againstBills.length > 0 && (
                               <Text size="10.5px" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
                                 Agst: {againstBills.join(', ')}
@@ -470,7 +599,7 @@ export const ReceiptListPage: React.FC = () => {
                           <Text size="xs" c="#94a3b8">—</Text>
                         )}
                       </Table.Td>
-                      <Table.Td style={{ minWidth: 220, maxWidth: 360 }}>
+                      <Table.Td style={{ minWidth: 200, maxWidth: 360 }}>
                         <Text size="sm" c="#64748b" title={item.Narration || ''} style={{ wordBreak: 'break-word', lineHeight: 1.4 }}>
                           {item.Narration && !item.Narration.startsWith('Payment voucher #')
                             ? item.Narration
@@ -483,7 +612,20 @@ export const ReceiptListPage: React.FC = () => {
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>
-                        <Group gap={4} justify="center" wrap="nowrap">
+                        <Group gap={6} justify="center" wrap="nowrap">
+                          {isPending && (
+                            <Tooltip label="Approve & Post to General Ledger" withArrow position="top">
+                              <ActionIcon
+                                variant="filled"
+                                color="teal"
+                                size="sm"
+                                loading={approveMutation.isPending && (approveMutation.variables as any) === item.PaymentId}
+                                onClick={() => approveMutation.mutate(item.PaymentId)}
+                              >
+                                <IconCheck size={15} />
+                              </ActionIcon>
+                            </Tooltip>
+                          )}
                           <ActionIcon
                             variant="subtle"
                             color="burgundy"
@@ -530,16 +672,11 @@ export const ReceiptListPage: React.FC = () => {
           setDeleteModalOpened(false);
           setDeleteTarget(null);
         }}
-        itemName={deleteTarget ? `Receipt #REC-${String(deleteTarget.PaymentId).padStart(3, '0')}` : ''}
-        itemType="receipt voucher"
+        title="Delete Receipt"
+        itemName={deleteTarget ? (receiptNumMap.get(deleteTarget.PaymentId) || `Receipt #${deleteTarget.PaymentId}`) : 'this receipt'}
+        description="Any associated double-entry ledger vouchers and bill allocations will be deleted."
       />
-
-      {/* Bottom Footer Count */}
-      <Group justify="flex-end" pt="xs" pb="md">
-        <Text size="sm" c="dimmed">
-          Showing {filteredReceipts.length} receipt(s).
-        </Text>
-      </Group>
     </Stack>
   );
 };
+export default ReceiptListPage;

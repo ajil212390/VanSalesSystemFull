@@ -678,6 +678,9 @@ class Payment(models.Model):
     )
     Amount = models.DecimalField(max_digits=18, decimal_places=2, db_column='Amount')
     Narration = models.CharField(max_length=500, null=True, blank=True, db_column='Narration')
+    PaymentNo = models.CharField(max_length=100, null=True, blank=True, db_column='PaymentNo')
+    ReferenceNumber = models.CharField(max_length=100, null=True, blank=True, db_column='ReferenceNumber')
+    Status = models.CharField(max_length=50, default='PENDING', db_column='Status')
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
     UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
 
