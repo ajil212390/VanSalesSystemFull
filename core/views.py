@@ -147,7 +147,7 @@ def ensure_payment_columns():
                 PaymentNo__startswith='REC-'
             ).update(PaymentNo=None)
 
-        # Auto-assign sequential PaymentNo (REC-001, REC-002...) ONLY to customer receipts
+        # Auto-assign sequential PaymentNo (REC-001, REC-002...) ONLY to customer receipts that lack a PaymentNo
         existing_pmts = Payment.objects.filter(
             route_expenses__isnull=True
         ).exclude(
@@ -158,12 +158,11 @@ def ensure_payment_columns():
             PartyLedger_id__in=supplier_ledger_ids
         ).order_by('PaymentId')
 
-        c_seq = 1
         for p in existing_pmts:
-            p.PaymentNo = f"REC-{c_seq:03d}"
-            p.Status = 'APPROVED'
-            p.save(update_fields=['PaymentNo', 'Status'])
-            c_seq += 1
+            if not p.PaymentNo and p.Status != 'PENDING':
+                p.PaymentNo = get_next_receipt_number()
+                p.Status = 'APPROVED'
+                p.save(update_fields=['PaymentNo', 'Status'])
 
         _payment_columns_checked = True
     except Exception:
@@ -3831,8 +3830,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
             .all()
         )
         if company_id:
-            # Filter by ledgers belonging to the active company
-            qs = qs.filter(PartyLedger__CompanyId=company_id)
+            # Filter by ledgers belonging to the active company or unassigned
+            qs = qs.filter(Q(PartyLedger__CompanyId=company_id) | Q(PartyLedger__CompanyId__isnull=True) | Q(PartyLedger__CompanyId=0))
         return qs.order_by('-PaymentId')
 
     @action(detail=False, methods=['get'], url_path='pending-bills')
@@ -6541,9 +6540,87 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             sale.Status = 'LIVE'
             sale.save(update_fields=['Status'])
 
-            # Wire billwise allocation for customer payment
-            if sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
+            # Wire billwise allocation for customer payment & generate Temporary Route Receipt (TREC)
+            if sale.PaidAmount and sale.PaidAmount > 0 and customer:
                 sync_sales_billwise_allocation(sale, None)
+
+                try:
+                    safe_sync_sequence('Payment', 'PaymentId')
+                    safe_sync_sequence('PaymentLine', 'PaymentLineId')
+                    safe_sync_sequence('BillwiseAllocation', 'BillwiseAllocationId')
+
+                    trec_no = get_next_temp_receipt_number()
+                    bill_ref = sale.InvoiceNo or sale.SalesNo
+                    is_rcpt_only = str(ticket_id).startswith('RCPT-')
+                    receipt_title = "Van Collection Receipt" if is_rcpt_only else f"Sales Receipt for {bill_ref}"
+                    driver_n = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
+                    route_n = alloc.Route.RouteName if (alloc and alloc.Route) else ''
+                    pay_narr = f"{receipt_title} | Driver: {driver_n} | Route: {route_n}"
+
+                    cash_led = (
+                        Ledger.objects.filter(LedgerId=24).first() or
+                        Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
+                        Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
+                    )
+                    bank_led = (
+                        Ledger.objects.filter(LedgerId=56).first() or
+                        Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first() or
+                        Ledger.objects.filter(Group__GroupName__icontains='Bank').first() or
+                        cash_led
+                    )
+
+                    temp_pmt = Payment.objects.create(
+                        PartyLedger=customer,
+                        Amount=sale.PaidAmount,
+                        Narration=pay_narr,
+                        PaymentNo=None,
+                        ReferenceNumber=trec_no,
+                        Status='PENDING',
+                        DeliveryNoteId=latest_dn.DeliveryNoteId if latest_dn else None,
+                    )
+
+                    pm_upper = (payment_method or 'CASH').upper()
+                    if is_split and (cash_amount > 0 or upi_amount > 0):
+                        c_amt = cash_amount if cash_amount > 0 else (sale.PaidAmount - upi_amount)
+                        u_amt = upi_amount if upi_amount > 0 else (sale.PaidAmount - cash_amount)
+                        if (c_amt + u_amt) != sale.PaidAmount:
+                            c_amt = min(sale.PaidAmount, c_amt)
+                            u_amt = max(Decimal('0.00'), sale.PaidAmount - c_amt)
+
+                        if c_amt > 0 and cash_led:
+                            pl1 = PaymentLine.objects.create(
+                                Payment=temp_pmt, LineNo=1, PaymentMode='Cash',
+                                Ledger=cash_led, Amount=c_amt, Narration=f"Cash Split for {bill_ref}"
+                            )
+                            BillwiseAllocation.objects.create(
+                                PaymentLine=pl1, ReferenceTable='Receipt', ReferenceId=temp_pmt.PaymentId,
+                                BillType='SALES', BillReference=bill_ref, BillDate=date.today(),
+                                AllocationType='Against Reference', AllocatedAmount=c_amt, CompanyId=company_id
+                            )
+                        if u_amt > 0 and bank_led:
+                            pl2 = PaymentLine.objects.create(
+                                Payment=temp_pmt, LineNo=2, PaymentMode='Bank',
+                                Ledger=bank_led, Amount=u_amt, Narration=f"UPI Split for {bill_ref}"
+                            )
+                            BillwiseAllocation.objects.create(
+                                PaymentLine=pl2, ReferenceTable='Receipt', ReferenceId=temp_pmt.PaymentId,
+                                BillType='SALES', BillReference=bill_ref, BillDate=date.today(),
+                                AllocationType='Against Reference', AllocatedAmount=u_amt, CompanyId=company_id
+                            )
+                    else:
+                        p_mode = 'Bank' if ('UPI' in pm_upper or 'BANK' in pm_upper or 'ONLINE' in pm_upper) else 'Cash'
+                        target_led = bank_led if p_mode == 'Bank' else cash_led
+                        pl = PaymentLine.objects.create(
+                            Payment=temp_pmt, LineNo=1, PaymentMode=p_mode,
+                            Ledger=target_led or customer, Amount=sale.PaidAmount, Narration=f"{p_mode} Receipt for {bill_ref}"
+                        )
+                        BillwiseAllocation.objects.create(
+                            PaymentLine=pl, ReferenceTable='Receipt', ReferenceId=temp_pmt.PaymentId,
+                            BillType='SALES', BillReference=bill_ref, BillDate=date.today(),
+                            AllocationType='Against Reference', AllocatedAmount=sale.PaidAmount, CompanyId=company_id
+                        )
+                except Exception:
+                    pass
 
         now_time = datetime.now().strftime("%I:%M %p")
         return Response({
@@ -9476,26 +9553,20 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
 
                 if pm.Narration:
                     pm_narr = pm.Narration.upper()
-                    if any(ref in pm_narr for ref in shift_sale_nos):
+                    if any(ref in pm_narr for ref in shift_sale_nos if ref):
                         shift_pending_pmts.append(pm)
                         continue
 
                 if pm.PartyLedger_id in shift_customer_ids:
-                    pm_dt = pm.CreatedAt
-                    is_in_window = True
-                    if dn.CreatedAt and pm_dt and pm_dt < dn.CreatedAt:
-                        is_in_window = False
-                    if next_dn and next_dn.CreatedAt and pm_dt and pm_dt > next_dn.CreatedAt:
-                        is_in_window = False
-                    if is_in_window:
-                        shift_pending_pmts.append(pm)
+                    shift_pending_pmts.append(pm)
+                    continue
 
             pv_helper = PaymentViewSet()
             for pm in shift_pending_pmts:
                 if str(pm.Status).upper() == 'APPROVED':
                     continue
 
-                rec_no = get_next_receipt_number()
+                rec_no = pm.PaymentNo if (pm.PaymentNo and str(pm.PaymentNo).startswith('REC-')) else get_next_receipt_number()
                 pm.PaymentNo = rec_no
                 pm.Status = 'APPROVED'
                 update_fields = ['PaymentNo', 'Status', 'UpdatedAt']
@@ -9504,35 +9575,37 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     update_fields.append('DeliveryNoteId')
                 pm.save(update_fields=update_fields)
 
-                pv_lines = list(pm.lines.all())
-                pv_allocs = []
-                for ba in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=pm.PaymentId):
-                    pv_allocs.append((ba, ba.BillType, ba.BillReference, ba.AllocatedAmount))
+                # Avoid duplicate vouchers if post_sale_voucher already created one
+                if not Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).exists():
+                    pv_lines = list(pm.lines.all())
+                    pv_allocs = []
+                    for ba in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=pm.PaymentId):
+                        pv_allocs.append((ba, ba.BillType, ba.BillReference, ba.AllocatedAmount))
 
-                g_name = (pm.PartyLedger.Group.GroupName or '').lower() if pm.PartyLedger and pm.PartyLedger.Group else ''
-                is_cust = (
-                    (pm.PartyLedger and pm.PartyLedger.Group_id == 21)
-                    or 'debtor' in g_name
-                    or 'customer' in g_name
-                    or any(b_t == 'SALES' for _, b_t, _, _ in pv_allocs)
-                )
+                    g_name = (pm.PartyLedger.Group.GroupName or '').lower() if pm.PartyLedger and pm.PartyLedger.Group else ''
+                    is_cust = (
+                        (pm.PartyLedger and pm.PartyLedger.Group_id == 21)
+                        or 'debtor' in g_name
+                        or 'customer' in g_name
+                        or any(b_t == 'SALES' for _, b_t, _, _ in pv_allocs)
+                    )
 
-                vch_date = pm.CreatedAt.date() if pm.CreatedAt else shift_date
-                vch = pv_helper._post_voucher_for_payment(
-                    payment=pm,
-                    party=pm.PartyLedger,
-                    amount=pm.Amount,
-                    created_lines=pv_lines,
-                    alloc_instances=pv_allocs,
-                    company_id=company_id,
-                    custom_payment_date=vch_date,
-                    narration=pm.Narration,
-                    is_customer_receipt=is_cust,
-                )
-                if vch:
-                    for vl in vch.lines.all():
-                        if vl.Ledger_id:
-                            affected_ledgers.add(vl.Ledger_id)
+                    vch_date = pm.CreatedAt.date() if pm.CreatedAt else shift_date
+                    vch = pv_helper._post_voucher_for_payment(
+                        payment=pm,
+                        party=pm.PartyLedger,
+                        amount=pm.Amount,
+                        created_lines=pv_lines,
+                        alloc_instances=pv_allocs,
+                        company_id=company_id,
+                        custom_payment_date=vch_date,
+                        narration=pm.Narration,
+                        is_customer_receipt=is_cust,
+                    )
+                    if vch:
+                        for vl in vch.lines.all():
+                            if vl.Ledger_id:
+                                affected_ledgers.add(vl.Ledger_id)
                 if pm.PartyLedger_id:
                     affected_ledgers.add(pm.PartyLedger_id)
 
@@ -9940,17 +10013,34 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
             Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
         ).first()
 
+        assigned_rec_no = None
+        if sale.IsApproved:
+            if pay_rec and pay_rec.PaymentNo and str(pay_rec.PaymentNo).startswith('REC-'):
+                assigned_rec_no = pay_rec.PaymentNo
+            else:
+                assigned_rec_no = get_next_receipt_number()
+
         if not pay_rec:
             pay_rec = Payment.objects.create(
                 PartyLedger=customer,
                 Amount=cash_paid_spot,
                 Narration=pay_narr,
+                PaymentNo=assigned_rec_no,
+                ReferenceNumber=get_next_temp_receipt_number() if not sale.IsApproved else None,
+                Status='APPROVED' if sale.IsApproved else 'PENDING',
+                DeliveryNoteId=sale.RouteTripId,
             )
         else:
             pay_rec.PartyLedger = customer
             pay_rec.Amount = cash_paid_spot
             pay_rec.Narration = pay_narr
-            pay_rec.save(update_fields=['PartyLedger', 'Amount', 'Narration'])
+            if sale.RouteTripId and not pay_rec.DeliveryNoteId:
+                pay_rec.DeliveryNoteId = sale.RouteTripId
+            if sale.IsApproved:
+                pay_rec.Status = 'APPROVED'
+                if assigned_rec_no:
+                    pay_rec.PaymentNo = assigned_rec_no
+            pay_rec.save()
 
         if sale_date:
             dt = timezone.make_aware(datetime.combine(sale_date, datetime.min.time())) if timezone.is_naive(datetime.combine(sale_date, datetime.min.time())) else datetime.combine(sale_date, datetime.min.time())
@@ -10024,12 +10114,12 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
             ReferenceId=pay_rec.PaymentId
         ).first()
 
-        base_rvno = f"REC-{sale.SalesNo}"[:50]
+        base_rvno = pay_rec.PaymentNo or f"REC-{sale.SalesNo}"[:50]
         if not rcpt_vch:
             rv_no = base_rvno
             rcnt = 1
             while Voucher.objects.filter(CompanyId=company_id, VoucherNo=rv_no).exists():
-                rv_no = f"REC-{sale.SalesNo}-{rcnt}"[:50]
+                rv_no = f"{base_rvno}-{rcnt}"[:50]
                 rcnt += 1
             rcpt_vch = Voucher.objects.create(
                 CompanyId=company_id,

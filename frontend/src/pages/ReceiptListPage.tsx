@@ -110,13 +110,21 @@ export const ReceiptListPage: React.FC = () => {
     );
 
     return allPayments.filter((p) => {
+      // 1. Explicit Customer Receipt identifier (REC- or TREC-)
+      const pNo = String(p.PaymentNo || '').toUpperCase();
+      const rNo = String(p.ReferenceNumber || '').toUpperCase();
+      if (pNo.startsWith('REC-') || rNo.startsWith('TREC-')) return true;
+
+      // 2. Customer ledgers (Sundry Debtors)
+      const isCust = customerLedgerIds.has(p.PartyLedgerId);
+
+      // 3. Voucher type
       const vt = String(p.voucher_type || '').toUpperCase();
-      // Strictly exclude Supplier / Expense Payments from Receipts screen!
-      if (vt === 'PAYMENT') return false;
       if (vt === 'RECEIPT') return true;
-      if (customerLedgerIds.has(p.PartyLedgerId)) return true;
-      if (String(p.ReferenceNumber || '').toUpperCase().startsWith('TREC-')) return true;
-      if (String(p.PaymentNo || '').toUpperCase().startsWith('REC-')) return true;
+      if (isCust && vt !== 'PAYMENT') return true;
+      if (isCust && (p.Narration || '').toLowerCase().includes('receipt')) return true;
+
+      // Supplier / Expense payments (like Super Gas) are excluded
       return false;
     });
   }, [allPayments, ledgers]);

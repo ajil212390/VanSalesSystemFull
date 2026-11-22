@@ -255,6 +255,8 @@ export const EndAllocationsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['van-stock'] });
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
       queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
       setIsDetailOpen(false);
       setSelectedItem(null);
       notifications.show({
@@ -307,6 +309,8 @@ export const EndAllocationsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['van-stock'] });
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
       queryClient.invalidateQueries({ queryKey: ['stock-analysis'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
       setIsDetailOpen(false);
       notifications.show({
         title: 'Settlement Approved',
