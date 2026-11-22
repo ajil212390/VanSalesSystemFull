@@ -1352,7 +1352,7 @@ class SaleEditHistorySerializer(serializers.ModelSerializer):
 
 class SalesSerializer(serializers.ModelSerializer):
     lines = SalesLineSerializer(many=True, required=False)
-    edit_history = SaleEditHistorySerializer(many=True, read_only=True)
+    edit_history = serializers.SerializerMethodField()
     route_name = serializers.CharField(source='RouteVehicleDriver.Route.RouteName', read_only=True)
     vehicle_number = serializers.CharField(source='RouteVehicleDriver.Vehicle.VehicleNumber', read_only=True)
     driver_name = serializers.CharField(source='RouteVehicleDriver.Driver.DriverName', read_only=True)
@@ -1368,6 +1368,25 @@ class SalesSerializer(serializers.ModelSerializer):
     cash_amount = serializers.SerializerMethodField()
     upi_amount = serializers.SerializerMethodField()
     bank_amount = serializers.SerializerMethodField()
+
+    def get_edit_history(self, obj):
+        histories = list(obj.edit_history.all().order_by('EditId'))
+        if not histories:
+            return []
+        
+        gt = Decimal(str(obj.GrandTotal or 0))
+        for i in range(len(histories)):
+            h = histories[i]
+            target_new = gt if i == len(histories) - 1 else histories[i + 1].OldGrandTotal
+            target_old = histories[i - 1].NewGrandTotal if i > 0 else h.OldGrandTotal
+
+            if target_new and target_new > Decimal('0.00') and h.NewGrandTotal != target_new:
+                h.NewGrandTotal = target_new
+            if target_old and target_old > Decimal('0.00') and h.OldGrandTotal != target_old:
+                h.OldGrandTotal = target_old
+
+        histories.reverse()
+        return SaleEditHistorySerializer(histories, many=True).data
 
     def get_cash_amount(self, obj):
         pm = (obj.PaymentMethod or '').upper()

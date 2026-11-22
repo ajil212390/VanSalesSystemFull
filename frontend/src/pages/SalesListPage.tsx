@@ -47,6 +47,64 @@ import { apiClient } from '../api/client';
 import { formatDateDDMMYY, DateInputDDMMYY } from '../components/DateInputDDMMYY';
 import { DeleteConfirmModal } from '../components/DeleteConfirmModal';
 
+interface SanitizedEditHistory {
+  raw: any;
+  timestamp: string;
+  editor: string;
+  oldTotal: number;
+  newTotal: number;
+  oldPaymentMethod: string;
+  newPaymentMethod: string;
+  notes: string;
+  amountChanged: boolean;
+  paymentModeChanged: boolean;
+}
+
+const formatSaleEditHistory = (histories: any[] = [], currentGrandTotal?: number): SanitizedEditHistory[] => {
+  if (!Array.isArray(histories) || histories.length === 0) return [];
+
+  const sorted = [...histories].sort((a, b) => {
+    const tA = new Date(a.EditedAt || a.edited_at || 0).getTime();
+    const tB = new Date(b.EditedAt || b.edited_at || 0).getTime();
+    return tA - tB;
+  });
+
+  const parsed = sorted.map((h) => ({
+    raw: h,
+    timestamp: h.EditedAt || h.edited_at,
+    editor: h.EditedBy || h.edited_by || 'Admin / User',
+    oldTotal: Number(h.OldGrandTotal ?? h.old_grand_total ?? 0),
+    newTotal: Number(h.NewGrandTotal ?? h.new_grand_total ?? 0),
+    oldPaymentMethod: h.OldPaymentMethod || h.old_payment_method || '',
+    newPaymentMethod: h.NewPaymentMethod || h.new_payment_method || '',
+    notes: h.Notes || h.notes || 'Invoice details updated',
+  }));
+
+  const n = parsed.length;
+  if (currentGrandTotal !== undefined && currentGrandTotal > 0 && n > 0) {
+    parsed[n - 1].newTotal = Number(currentGrandTotal);
+  }
+
+  for (let i = n - 1; i >= 0; i--) {
+    if (i < n - 1) {
+      if (parsed[i + 1].oldTotal > 0 && parsed[i].newTotal !== parsed[i + 1].oldTotal) {
+        parsed[i].newTotal = parsed[i + 1].oldTotal;
+      }
+    }
+  }
+  for (let i = 1; i < n; i++) {
+    if (parsed[i].oldTotal === 0 && parsed[i - 1].newTotal > 0) {
+      parsed[i].oldTotal = parsed[i - 1].newTotal;
+    }
+  }
+
+  return parsed.map((item) => ({
+    ...item,
+    amountChanged: Math.abs(item.oldTotal - item.newTotal) > 0.01,
+    paymentModeChanged: Boolean(item.oldPaymentMethod && item.newPaymentMethod && item.oldPaymentMethod !== item.newPaymentMethod),
+  }));
+};
+
 export const SalesListPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1458,46 +1516,65 @@ export const SalesListPage: React.FC = () => {
                     <Table.Tr>
                       <Table.Th style={{ fontSize: 11 }}>TIMESTAMP</Table.Th>
                       <Table.Th style={{ fontSize: 11 }}>EDITED BY</Table.Th>
-                      <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>OLD AMOUNT</Table.Th>
-                      <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>NEW AMOUNT</Table.Th>
+                      <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>AMOUNT CHANGE</Table.Th>
                       <Table.Th style={{ fontSize: 11 }}>PAYMENT MODE</Table.Th>
                       <Table.Th style={{ fontSize: 11 }}>REASON / NOTES</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {viewingSale.edit_history.map((eh: any, idx: number) => (
+                    {formatSaleEditHistory(viewingSale.edit_history, viewingSale.GrandTotal).map((eh, idx) => (
                       <Table.Tr key={idx}>
                         <Table.Td style={{ whiteSpace: 'nowrap' }}>
                           <Text size="xs" fw={600}>
-                            {new Date(eh.EditedAt).toLocaleDateString()}
+                            {eh.timestamp ? new Date(eh.timestamp).toLocaleDateString() : '—'}
                           </Text>
                           <Text size="10px" c="dimmed">
-                            {new Date(eh.EditedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            {eh.timestamp ? new Date(eh.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                           </Text>
                         </Table.Td>
                         <Table.Td>
                           <Badge size="xs" color="gray" variant="outline">
-                            {eh.EditedBy || 'User'}
+                            {eh.editor}
                           </Badge>
                         </Table.Td>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          <Text size="xs" td="line-through" c="dimmed">
-                            ₹{Number(eh.OldGrandTotal || 0).toFixed(2)}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td style={{ textAlign: 'right' }}>
-                          <Text size="xs" fw={700} c="#800020">
-                            ₹{Number(eh.NewGrandTotal || 0).toFixed(2)}
-                          </Text>
+                        <Table.Td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {eh.amountChanged ? (
+                            <Group gap={6} justify="flex-end" wrap="nowrap">
+                              <Text size="xs" td="line-through" c="dimmed">
+                                ₹{eh.oldTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                              <IconArrowRight size={12} color="#800020" />
+                              <Text size="xs" fw={700} c="#800020">
+                                ₹{eh.newTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                            </Group>
+                          ) : (
+                            <Group gap={4} justify="flex-end" wrap="nowrap">
+                              <Text size="xs" fw={600} c="#334155">
+                                ₹{eh.newTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                              <Badge size="9px" color="gray" variant="light" radius="xs" px={4}>
+                                Unchanged
+                              </Badge>
+                            </Group>
+                          )}
                         </Table.Td>
                         <Table.Td>
-                          <Text size="xs">
-                            {eh.NewPaymentMethod || eh.OldPaymentMethod || '-'}
-                          </Text>
+                          {eh.paymentModeChanged ? (
+                            <Group gap={4} wrap="nowrap">
+                              <Text size="xs" c="dimmed">{eh.oldPaymentMethod}</Text>
+                              <IconArrowRight size={11} color="#800020" />
+                              <Text size="xs" fw={700} c="#800020">{eh.newPaymentMethod}</Text>
+                            </Group>
+                          ) : (
+                            <Text size="xs">
+                              {eh.newPaymentMethod || eh.oldPaymentMethod || '-'}
+                            </Text>
+                          )}
                         </Table.Td>
                         <Table.Td>
                           <Text size="xs" c="dimmed">
-                            {eh.Notes || '-'}
+                            {eh.notes}
                           </Text>
                         </Table.Td>
                       </Table.Tr>
@@ -1696,51 +1773,52 @@ export const SalesListPage: React.FC = () => {
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {historySale.edit_history.map((eh: any, idx: number) => {
-                      const editDate = eh.EditedAt || eh.edited_at;
-                      const editor = eh.EditedBy || eh.edited_by || 'Driver / Admin';
-                      const oldTotal = eh.OldGrandTotal ?? eh.old_grand_total ?? 0;
-                      const newTotal = eh.NewGrandTotal ?? eh.new_grand_total ?? 0;
-                      const oldMode = eh.OldPaymentMethod || eh.old_payment_method || '';
-                      const newMode = eh.NewPaymentMethod || eh.new_payment_method || '';
-                      const noteText = eh.Notes || eh.notes || 'Invoice details updated';
-
-                      return (
-                        <Table.Tr key={eh.EditId || eh.edit_id || idx}>
-                          <Table.Td style={{ fontSize: 12, color: '#475569', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                            {editDate ? new Date(editDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}
-                          </Table.Td>
-                          <Table.Td style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
-                            {editor}
-                          </Table.Td>
-                          <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                    {formatSaleEditHistory(historySale.edit_history, historySale.GrandTotal).map((eh, idx) => (
+                      <Table.Tr key={eh.raw.EditId || eh.raw.edit_id || idx}>
+                        <Table.Td style={{ fontSize: 12, color: '#475569', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                          {eh.timestamp ? new Date(eh.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                        </Table.Td>
+                        <Table.Td style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap' }}>
+                          {eh.editor}
+                        </Table.Td>
+                        <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                          {eh.amountChanged ? (
                             <Group gap={6} wrap="nowrap">
                               <Text size="xs" td="line-through" c="dimmed">
-                                ₹{Number(oldTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                ₹{eh.oldTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </Text>
                               <IconArrowRight size={13} color="#800020" />
                               <Text size="sm" fw={800} style={{ color: '#800020' }}>
-                                ₹{Number(newTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                ₹{eh.newTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </Text>
                             </Group>
-                          </Table.Td>
-                          <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
-                            {oldMode && oldMode !== newMode ? (
-                              <Group gap={4} wrap="nowrap">
-                                <Text size="xs" c="dimmed">{oldMode}</Text>
-                                <IconArrowRight size={12} color="#800020" />
-                                <Text size="xs" fw={700} style={{ color: '#800020' }}>{newMode}</Text>
-                              </Group>
-                            ) : (
-                              <Text size="xs" fw={600} c="#0f172a">{newMode || 'Cash'}</Text>
-                            )}
-                          </Table.Td>
-                          <Table.Td style={{ fontSize: 12, color: '#334155', fontWeight: 500 }}>
-                            {noteText}
-                          </Table.Td>
-                        </Table.Tr>
-                      );
-                    })}
+                          ) : (
+                            <Group gap={6} wrap="nowrap">
+                              <Text size="xs" fw={700} c="#334155">
+                                ₹{eh.newTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
+                              <Badge size="xs" color="gray" variant="light" radius="xs">
+                                Unchanged
+                              </Badge>
+                            </Group>
+                          )}
+                        </Table.Td>
+                        <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
+                          {eh.paymentModeChanged ? (
+                            <Group gap={4} wrap="nowrap">
+                              <Text size="xs" c="dimmed">{eh.oldPaymentMethod}</Text>
+                              <IconArrowRight size={12} color="#800020" />
+                              <Text size="xs" fw={700} style={{ color: '#800020' }}>{eh.newPaymentMethod}</Text>
+                            </Group>
+                          ) : (
+                            <Text size="xs" fw={600} c="#0f172a">{eh.newPaymentMethod || eh.oldPaymentMethod || 'Cash'}</Text>
+                          )}
+                        </Table.Td>
+                        <Table.Td style={{ fontSize: 12, color: '#334155', fontWeight: 500 }}>
+                          {eh.notes}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
                   </Table.Tbody>
                 </Table>
               </Table.ScrollContainer>

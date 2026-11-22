@@ -85,6 +85,30 @@ def safe_sync_sequence(table_name, pk_col):
         pass
 
 
+def sanitize_sale_edit_history(histories, current_grand_total):
+    """
+    Sanitizes sale edit history records to ensure a continuous, mathematically sound audit trail.
+    Heals any legacy records where NewGrandTotal was accidentally saved as PaidAmount.
+    """
+    h_list = list(histories)
+    if not h_list:
+        return []
+    from decimal import Decimal
+    gt = Decimal(str(current_grand_total or 0))
+    for i in range(len(h_list)):
+        h = h_list[i]
+        target_new = gt if i == len(h_list) - 1 else getattr(h_list[i + 1], 'OldGrandTotal', 0)
+        target_old = getattr(h_list[i - 1], 'NewGrandTotal', 0) if i > 0 else getattr(h, 'OldGrandTotal', 0)
+
+        if target_new and Decimal(str(target_new)) > Decimal('0.00') and getattr(h, 'NewGrandTotal', 0) != target_new:
+            h.NewGrandTotal = target_new
+        if target_old and Decimal(str(target_old)) > Decimal('0.00') and getattr(h, 'OldGrandTotal', 0) != target_old:
+            h.OldGrandTotal = target_old
+
+    h_list.reverse()
+    return h_list
+
+
 def sync_ledger_balances(*ledger_ids):
     """
     Recalculates DebitBalance, CreditBalance, and CurrentBalance for the given ledger IDs
@@ -225,6 +249,30 @@ def ensure_payment_columns():
                                 Voucher=rc_vch, LineNo=3, Ledger=p_rec.PartyLedger,
                                 DebitAmount=Decimal('0.00'), CreditAmount=p_rec.Amount, Narration="Collection (SPLIT)"
                             )
+
+        # Heal any historical SaleEditHistory rows where NewGrandTotal was saved as PaidAmount
+        try:
+            from core.models import SaleEditHistory
+            for s in Sales.objects.filter(edit_history__isnull=False).distinct():
+                h_list = list(s.edit_history.all().order_by('EditId'))
+                if not h_list:
+                    continue
+                s_gt = s.GrandTotal or Decimal('0.00')
+                for i in range(len(h_list)):
+                    eh = h_list[i]
+                    t_new = s_gt if i == len(h_list) - 1 else getattr(h_list[i + 1], 'OldGrandTotal', 0)
+                    t_old = getattr(h_list[i - 1], 'NewGrandTotal', 0) if i > 0 else getattr(eh, 'OldGrandTotal', 0)
+                    dirty = False
+                    if t_new and Decimal(str(t_new)) > Decimal('0.00') and eh.NewGrandTotal != t_new:
+                        eh.NewGrandTotal = t_new
+                        dirty = True
+                    if t_old and Decimal(str(t_old)) > Decimal('0.00') and eh.OldGrandTotal != t_old:
+                        eh.OldGrandTotal = t_old
+                        dirty = True
+                    if dirty:
+                        eh.save(update_fields=['OldGrandTotal', 'NewGrandTotal'])
+        except Exception:
+            pass
 
         _payment_columns_checked = True
     except Exception:
@@ -985,7 +1033,8 @@ class RouteViewSet(viewsets.ModelViewSet):
                     'total': float(ln.Total or 0),
                 })
             history_list = []
-            for h in s.edit_history.all().order_by('-EditedAt'):
+            clean_histories = sanitize_sale_edit_history(s.edit_history.all().order_by('EditId'), s.GrandTotal)
+            for h in clean_histories:
                 history_list.append({
                     'edit_id': h.EditId,
                     'EditId': h.EditId,
@@ -7423,7 +7472,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 EditedBy=editor_name,
                 EditedAt=timezone.now(),
                 OldGrandTotal=old_amount,
-                NewGrandTotal=sale.PaidAmount,
+                NewGrandTotal=sale.GrandTotal,
                 OldPaymentMethod=old_pm,
                 NewPaymentMethod=sale.PaymentMethod,
                 Notes=sale.EditReason,
@@ -8999,6 +9048,7 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
 
             sales_data = []
             for s in sales_qs.select_related('CustomerLedger').prefetch_related('edit_history'):
+                clean_edits = sanitize_sale_edit_history(s.edit_history.all().order_by('EditId'), s.GrandTotal)
                 edits = [{
                     'EditId': eh.EditId,
                     'EditedAt': eh.EditedAt.isoformat() if eh.EditedAt else None,
@@ -9008,7 +9058,7 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     'OldPaymentMethod': eh.OldPaymentMethod or 'Cash',
                     'NewPaymentMethod': eh.NewPaymentMethod or 'Cash',
                     'Notes': eh.Notes or '',
-                } for eh in s.edit_history.all().order_by('-EditedAt')]
+                } for eh in clean_edits]
                 c_name = getattr(s, 'CustomerName', None) or (s.CustomerLedger.LedgerName if s.CustomerLedger else 'Customer')
                 pmt = Payment.objects.filter(
                     Q(Narration__icontains=s.SalesNo) | (Q(Narration__icontains=s.InvoiceNo) if s.InvoiceNo else Q())
