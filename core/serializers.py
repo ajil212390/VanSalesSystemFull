@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
@@ -1370,23 +1371,29 @@ class SalesSerializer(serializers.ModelSerializer):
     bank_amount = serializers.SerializerMethodField()
 
     def get_edit_history(self, obj):
-        histories = list(obj.edit_history.all().order_by('EditId'))
-        if not histories:
-            return []
-        
-        gt = Decimal(str(obj.GrandTotal or 0))
-        for i in range(len(histories)):
-            h = histories[i]
-            target_new = gt if i == len(histories) - 1 else histories[i + 1].OldGrandTotal
-            target_old = histories[i - 1].NewGrandTotal if i > 0 else h.OldGrandTotal
+        try:
+            histories = list(obj.edit_history.all().order_by('EditId'))
+            if not histories:
+                return []
+            
+            gt = Decimal(str(obj.GrandTotal or 0))
+            for i in range(len(histories)):
+                h = histories[i]
+                target_new = gt if i == len(histories) - 1 else getattr(histories[i + 1], 'OldGrandTotal', Decimal('0.00'))
+                target_old = getattr(histories[i - 1], 'NewGrandTotal', Decimal('0.00')) if i > 0 else getattr(h, 'OldGrandTotal', Decimal('0.00'))
 
-            if target_new and target_new > Decimal('0.00') and h.NewGrandTotal != target_new:
-                h.NewGrandTotal = target_new
-            if target_old and target_old > Decimal('0.00') and h.OldGrandTotal != target_old:
-                h.OldGrandTotal = target_old
+                if target_new and target_new > Decimal('0.00') and h.NewGrandTotal != target_new:
+                    h.NewGrandTotal = target_new
+                if target_old and target_old > Decimal('0.00') and h.OldGrandTotal != target_old:
+                    h.OldGrandTotal = target_old
 
-        histories.reverse()
-        return SaleEditHistorySerializer(histories, many=True).data
+            histories.reverse()
+            return SaleEditHistorySerializer(histories, many=True).data
+        except Exception:
+            try:
+                return SaleEditHistorySerializer(obj.edit_history.all().order_by('-EditedAt'), many=True).data
+            except Exception:
+                return []
 
     def get_cash_amount(self, obj):
         pm = (obj.PaymentMethod or '').upper()
