@@ -1903,20 +1903,21 @@ class LedgerViewSet(viewsets.ModelViewSet):
         ).select_related('Voucher').order_by('Voucher__VoucherDate', 'VoucherLineId')
 
         # Prefetch related sales and purchases for rich Tally-style particulars and shared invoice references
-        sales_map = {s.SalesId: s for s in Sales.objects.filter(CustomerLedger=ledger).prefetch_related('lines__Product', 'lines__Unit')}
+        sales_ids = [v.ReferenceId for v in [vl.Voucher for vl in vl_qs] if v and str(v.ReferenceTable or '').lower() == 'sales' and v.ReferenceId]
+        sales_map = {s.SalesId: s for s in Sales.objects.filter(models.Q(CustomerLedger=ledger) | models.Q(SalesId__in=sales_ids)).prefetch_related('lines__Product', 'lines__Unit')}
         purchases_map = {p.PurchaseId: p for p in Purchase.objects.filter(SupplierLedger=ledger).prefetch_related('lines__Product', 'lines__Unit')}
 
         # Pre-build mapping from bill reference (e.g. INV-87995, INV-80210) to exact Receipt Number (e.g. REC-007, REC-002)
-        # matching what appears in the Receipts list (/receipts)
+        # matching what appears in the Receipts list (/receipts) where receipts are numbered sequentially REC-001, REC-002...
         bill_to_receipt_map = {}
         payment_vch_map = {}
-        cust_pmts = list(Payment.objects.filter(PartyLedger=ledger).prefetch_related('lines__allocations'))
-        for pm in cust_pmts:
-            p_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
-            if p_vch and p_vch.VoucherNo and not p_vch.VoucherNo.startswith('REC-VCH-'):
-                clean_r_no = str(p_vch.VoucherNo)
+        all_receipt_pmts = list(Payment.objects.all().order_by('PaymentId').prefetch_related('lines__allocations'))
+        for idx, pm in enumerate(all_receipt_pmts):
+            vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
+            if vch and vch.VoucherNo and not vch.VoucherNo.startswith('REC-VCH-'):
+                clean_r_no = str(vch.VoucherNo)
             else:
-                clean_r_no = f"REC-{pm.PaymentId:03d}"
+                clean_r_no = f"REC-{idx + 1:03d}"
             payment_vch_map[pm.PaymentId] = clean_r_no
 
             for p_line in pm.lines.all():
@@ -1930,21 +1931,17 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     bill_to_receipt_map[m_ref.upper()] = clean_r_no
                     bill_to_receipt_map[m_ref.upper().replace('INV-', '').replace('SALE-', '')] = clean_r_no
 
-        # Also check direct BillwiseAllocation with ReferenceTable in ('Receipt', 'Payment') for this customer's payments
-        pmt_ids = [pm.PaymentId for pm in cust_pmts]
-        if pmt_ids:
-            for bwa in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId__in=pmt_ids):
-                b_ref = str(bwa.BillReference or '').strip().upper()
-                if b_ref:
-                    clean_r_no = payment_vch_map.get(bwa.ReferenceId) or f"REC-{bwa.ReferenceId:03d}"
-                    bill_to_receipt_map[b_ref] = clean_r_no
-                    bill_to_receipt_map[b_ref.replace('INV-', '').replace('SALE-', '')] = clean_r_no
+        for bwa in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment']):
+            b_ref = str(bwa.BillReference or '').strip().upper()
+            if b_ref:
+                clean_r_no = payment_vch_map.get(bwa.ReferenceId) or f"REC-{bwa.ReferenceId:03d}"
+                bill_to_receipt_map[b_ref] = clean_r_no
+                bill_to_receipt_map[b_ref.replace('INV-', '').replace('SALE-', '')] = clean_r_no
 
         def get_receipt_no_for_sale(sale, fallback_ref):
             clean_s_ref = str(fallback_ref or '').strip().upper()
             inv_no = str(sale.InvoiceNo or '').strip().upper() if sale else ''
             sales_no = str(sale.SalesNo or '').strip().upper() if sale else ''
-            s_id = sale.SalesId if sale else None
 
             for key in [
                 clean_s_ref,
@@ -1956,9 +1953,10 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 if key and key in bill_to_receipt_map:
                     return bill_to_receipt_map[key]
 
-            if s_id:
-                return f"REC-{s_id:03d}"
             clean_digits = re.sub(r'\D', '', clean_s_ref)
+            if clean_digits and clean_digits in bill_to_receipt_map:
+                return bill_to_receipt_map[clean_digits]
+
             if clean_digits:
                 return f"REC-{clean_digits}"
             return f"REC-{clean_s_ref}"
@@ -2138,6 +2136,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         part = f"By {counter_name}"
                     else:
                         part = 'By Bank / UPI'
+                    clean_vno = get_receipt_no_for_sale(None, v.VoucherNo)
                 elif vl.DebitAmount > 0 and v.VoucherType == 'SALES':
                     vtype_disp = 'Sales'
                     part = 'To SALE'
@@ -2147,7 +2146,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
                 entries.append({
                     'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
-                    'ref': v.VoucherNo,
+                    'ref': clean_vno if vtype_disp == 'Receipt' else v.VoucherNo,
                     'vch_no': clean_vno,
                     'voucher_type': vtype_disp,
                     'particulars': part,
