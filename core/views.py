@@ -1976,11 +1976,12 @@ class LedgerViewSet(viewsets.ModelViewSet):
                                 c_split = max(Decimal('0.00'), paid_amt - u_split)
 
                         bank_label = 'PAYTM SBI' if ('paytm' in (s.Notes or '').lower() or 'sbi' in (s.Notes or '').lower()) else 'Bank / UPI'
+                        rcpt_no = f"REC-{clean_ref.replace('INV-', '').replace('SALE-', '')}"
                         if c_split > 0:
                             entries.append({
                                 'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
-                                'ref': clean_ref,
-                                'vch_no': clean_ref,
+                                'ref': rcpt_no,
+                                'vch_no': rcpt_no,
                                 'voucher_type': 'Receipt',
                                 'particulars': "By Cash",
                                 'item_name': '',
@@ -1992,8 +1993,8 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         if u_split > 0:
                             entries.append({
                                 'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
-                                'ref': clean_ref,
-                                'vch_no': clean_ref,
+                                'ref': rcpt_no,
+                                'vch_no': rcpt_no,
                                 'voucher_type': 'Receipt',
                                 'particulars': f"By {bank_label}",
                                 'item_name': '',
@@ -2011,10 +2012,11 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         else:
                             part_narr = "By Bank / UPI" if ('UPI' in pm_str or 'BANK' in pm_str) else f"By {s.PaymentMethod}"
 
+                        rcpt_no = f"REC-{clean_ref.replace('INV-', '').replace('SALE-', '')}"
                         entries.append({
                             'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
-                            'ref': clean_ref,
-                            'vch_no': clean_ref,
+                            'ref': rcpt_no,
+                            'vch_no': rcpt_no,
                             'voucher_type': 'Receipt',
                             'particulars': part_narr,
                             'item_name': '',
@@ -2182,11 +2184,12 @@ class LedgerViewSet(viewsets.ModelViewSet):
                                 c_split = max(Decimal('0.00'), paid_amt - u_split)
 
                         bank_label = 'PAYTM SBI' if ('paytm' in (s.Notes or '').lower() or 'sbi' in (s.Notes or '').lower()) else 'Bank / UPI'
+                        rcpt_no = f"REC-{clean_ref.replace('INV-', '').replace('SALE-', '')}"
                         if c_split > 0:
                             entries.append({
                                 'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
-                                'ref': clean_ref,
-                                'vch_no': clean_ref,
+                                'ref': rcpt_no,
+                                'vch_no': rcpt_no,
                                 'voucher_type': 'Receipt',
                                 'particulars': "By Cash",
                                 'item_name': '',
@@ -2198,8 +2201,8 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         if u_split > 0:
                             entries.append({
                                 'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
-                                'ref': clean_ref,
-                                'vch_no': clean_ref,
+                                'ref': rcpt_no,
+                                'vch_no': rcpt_no,
                                 'voucher_type': 'Receipt',
                                 'particulars': f"By {bank_label}",
                                 'item_name': '',
@@ -2216,10 +2219,11 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         else:
                             part_narr = "By Bank / UPI" if ('UPI' in pm_str or 'BANK' in pm_str) else f"By {s.PaymentMethod}"
 
+                        rcpt_no = f"REC-{clean_ref.replace('INV-', '').replace('SALE-', '')}"
                         entries.append({
                             'date': s.SalesDate.strftime('%Y-%m-%d') if s.SalesDate else '',
-                            'ref': clean_ref,
-                            'vch_no': clean_ref,
+                            'ref': rcpt_no,
+                            'vch_no': rcpt_no,
                             'voucher_type': 'Receipt',
                             'particulars': part_narr,
                             'item_name': '',
@@ -2232,7 +2236,9 @@ class LedgerViewSet(viewsets.ModelViewSet):
             for pm in payments:
                 vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
                 is_rcpt = (vch and vch.VoucherType == 'RECEIPT') or pm.lines.filter(PaymentMode__icontains='receipt').exists()
-                clean_no = str(vch.VoucherNo if vch else f"REC-{pm.PaymentId}").replace('REC-', '').replace('VCH-', '')
+                clean_no = str(vch.VoucherNo if vch else f"REC-{pm.PaymentId}").replace('REC-VCH-', 'REC-').replace('VCH-', '')
+                if is_rcpt and not clean_no.startswith('REC-'):
+                    clean_no = f"REC-{clean_no}"
                 entries.append({
                     'date': pm.CreatedAt.strftime('%Y-%m-%d') if pm.CreatedAt else '',
                     'ref': vch.VoucherNo if vch else f"REC-{pm.PaymentId}",

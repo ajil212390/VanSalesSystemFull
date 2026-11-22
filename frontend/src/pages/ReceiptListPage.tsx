@@ -37,6 +37,12 @@ interface PaymentLineItem {
   ledger_name?: string;
   Amount: number | string;
   InstrumentNumber?: string;
+  allocations?: Array<{
+    BillReference?: string;
+    BillType?: string;
+    AllocationType?: string;
+    AllocatedAmount?: number;
+  }>;
 }
 
 interface ReceiptItem {
@@ -47,6 +53,8 @@ interface ReceiptItem {
   Narration?: string;
   CreatedAt?: string;
   voucher_type?: string;
+  voucher_no?: string;
+  against_bills?: string[];
   payment_date?: string;
   lines?: PaymentLineItem[];
 }
@@ -110,6 +118,28 @@ export const ReceiptListPage: React.FC = () => {
     return map;
   }, [receipts]);
 
+  const getAgainstBills = (item: any): string[] => {
+    if (Array.isArray(item.against_bills) && item.against_bills.length > 0) {
+      return item.against_bills;
+    }
+    const bills: string[] = [];
+    (item.lines || []).forEach((line: any) => {
+      (line.allocations || []).forEach((alloc: any) => {
+        const ref = alloc.BillReference ? String(alloc.BillReference).trim() : '';
+        if (ref && !bills.includes(ref)) {
+          bills.push(ref);
+        }
+      });
+    });
+    if (bills.length === 0 && item.Narration) {
+      const match = item.Narration.match(/(INV-?\d+|SALE-?\d+)/i);
+      if (match && !bills.includes(match[1].toUpperCase())) {
+        bills.push(match[1].toUpperCase());
+      }
+    }
+    return bills;
+  };
+
   const isDateInFilter = (dateStr?: string) => {
     if (!dateStr || dateFilter === 'all') return true;
     const d = dateStr.slice(0, 10);
@@ -154,9 +184,11 @@ export const ReceiptListPage: React.FC = () => {
 
       // 2. Search query
       if (!q) return true;
+      const againstStr = getAgainstBills(p).join(' ').toLowerCase();
       return (
         (receiptNumMap.get(p.PaymentId) || String(p.PaymentId)).toLowerCase().includes(q) ||
         (p.party_name && p.party_name.toLowerCase().includes(q)) ||
+        againstStr.includes(q) ||
         (p.Narration && p.Narration.toLowerCase().includes(q)) ||
         (p.payment_date && (p.payment_date.includes(q) || formatDateDDMMYY(p.payment_date).includes(q))) ||
         (p.CreatedAt && formatDateDDMMYY(p.CreatedAt).includes(q))
@@ -386,14 +418,14 @@ export const ReceiptListPage: React.FC = () => {
             <Table verticalSpacing="sm" horizontalSpacing="sm" highlightOnHover>
               <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, minWidth: 100 }}>Voucher No</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 100, minWidth: 90 }}>Type</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 120, minWidth: 110, whiteSpace: 'nowrap' }}>Date</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 200, minWidth: 180 }}>Party Name</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140, minWidth: 120 }}>Account</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 140 }}>Narration</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140, minWidth: 120, textAlign: 'right' }}>Total (₹)</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 90, minWidth: 90, textAlign: 'center' }}>Actions</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 120, minWidth: 110 }}>Receipt No</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 160, minWidth: 140 }}>Against Invoice</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, minWidth: 100, whiteSpace: 'nowrap' }}>Date</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 190, minWidth: 160 }}>Party Name</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 110 }}>Account</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130 }}>Narration</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 110, textAlign: 'right' }}>Total (₹)</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 85, minWidth: 80, textAlign: 'center' }}>Actions</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -402,26 +434,48 @@ export const ReceiptListPage: React.FC = () => {
                   const dateStr = item.payment_date || (item.CreatedAt
                     ? new Date(item.CreatedAt).toISOString().split('T')[0]
                     : '—');
+                  const againstBills = getAgainstBills(item);
 
                   return (
                     <Table.Tr key={item.PaymentId}>
                       <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                        <Group gap={6} wrap="nowrap">
+                        <Group gap={6} wrap="nowrap" align="center">
                           <IconReceipt size={16} color="#800020" style={{ flexShrink: 0 }} />
-                          <Text fw={600} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
-                            {receiptNumMap.get(item.PaymentId) || `REC-${String(item.PaymentId).padStart(3, '0')}`}
-                          </Text>
+                          <div>
+                            <Text fw={700} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                              {receiptNumMap.get(item.PaymentId) || item.voucher_no || `REC-${String(item.PaymentId).padStart(3, '0')}`}
+                            </Text>
+                            {againstBills.length > 0 && (
+                              <Text size="10.5px" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                                Agst: {againstBills.join(', ')}
+                              </Text>
+                            )}
+                          </div>
                         </Group>
                       </Table.Td>
                       <Table.Td>
-                        <Badge
-                          size="xs"
-                          variant="light"
-                          color="burgundy"
-                          styles={{ root: { fontWeight: 600, textTransform: 'uppercase' } }}
-                        >
-                          Receipt
-                        </Badge>
+                        {againstBills.length > 0 ? (
+                          <Group gap={4} wrap="wrap">
+                            {againstBills.map((b, bIdx) => {
+                              const isAdv = b.toLowerCase().includes('advance');
+                              return (
+                                <Badge
+                                  key={bIdx}
+                                  size="xs"
+                                  variant={isAdv ? 'outline' : 'light'}
+                                  color={isAdv ? 'blue' : 'burgundy'}
+                                  styles={{ root: { fontWeight: 600, textTransform: 'none', letterSpacing: '0.2px' } }}
+                                >
+                                  {isAdv ? 'Customer Advance' : b}
+                                </Badge>
+                              );
+                            })}
+                          </Group>
+                        ) : (
+                          <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontWeight: 500, color: '#64748b' } }}>
+                            Direct Receipt
+                          </Badge>
+                        )}
                       </Table.Td>
                       <Table.Td style={{ whiteSpace: 'nowrap', minWidth: 110, width: 120 }}>
                         <Text size="sm" c="#475569" style={{ whiteSpace: 'nowrap', wordBreak: 'keep-all', display: 'inline-block' }}>

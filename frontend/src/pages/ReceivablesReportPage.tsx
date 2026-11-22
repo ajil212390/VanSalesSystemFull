@@ -569,10 +569,11 @@ export const ReceivablesReportPage: React.FC = () => {
       const counterPaidOnSale = Math.max(0, Number(s.PaidAmount || 0) - allocatedFromReceipt - adjFromAdvance);
 
       if (counterPaidOnSale > 0) {
+        const rcptRef = `REC-${rawRef.replace(/^INV-?/i, '')}`;
         allTx.push({
           date: dt,
-          ref: formatShortRef(`PAY-${rawRef}`),
-          rawRef: `PAY-${rawRef}`,
+          ref: formatShortRef(rcptRef),
+          rawRef: rcptRef,
           particulars: 'Payment Received on Sale',
           debit: 0,
           credit: counterPaidOnSale,

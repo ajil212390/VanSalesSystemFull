@@ -3703,8 +3703,14 @@ def generate_ledger_statement_pdf(
     for idx, e in enumerate(raw_entries):
         date_raw = str(e.get('date') or '—')
         date_disp = format_short_date(date_raw)
-        ref_str = str(e.get('vch_no') or e.get('ref') or '—').replace('SALE-', '').replace('REC-', '')
         vtype_str = str(e.get('voucher_type') or e.get('type') or '')
+        ref_raw = str(e.get('vch_no') or e.get('ref') or '—')
+        if vtype_str.lower() == 'sales':
+            ref_str = f"INV-{ref_raw.replace('INV-', '').replace('SALE-', '')}"
+        elif vtype_str.lower() == 'receipt':
+            ref_str = f"REC-{ref_raw.replace('REC-', '').replace('INV-', '').replace('PAY-', '')}"
+        else:
+            ref_str = ref_raw
         part_str = str(e.get('particulars') or '—')
         raw_item_str = str(e.get('item_name') or '')
         item_str = raw_item_str.replace('LPG ', '').replace(' GAS CYLINDER', '').replace(' CYLINDER', '').strip()

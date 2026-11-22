@@ -1010,15 +1010,39 @@ class PaymentSerializer(serializers.ModelSerializer):
     payment_date = serializers.SerializerMethodField()
     primary_mode = serializers.SerializerMethodField()
     voucher_type = serializers.SerializerMethodField()
+    voucher_no = serializers.SerializerMethodField()
+    against_bills = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
         fields = [
             'PaymentId', 'PartyLedgerId', 'party_name',
             'Amount', 'Narration', 'CreatedAt', 'UpdatedAt',
-            'payment_date', 'primary_mode', 'voucher_type', 'lines'
+            'payment_date', 'primary_mode', 'voucher_type', 'voucher_no', 'against_bills', 'lines'
         ]
         read_only_fields = ['PaymentId', 'CreatedAt', 'UpdatedAt']
+
+    def get_voucher_no(self, obj):
+        vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=obj.PaymentId).first()
+        if vch and vch.VoucherNo:
+            return vch.VoucherNo.replace('REC-VCH-', 'REC-').replace('VCH-', '')
+        return f"REC-{obj.PaymentId:03d}"
+
+    def get_against_bills(self, obj):
+        bills = []
+        for line in obj.lines.all():
+            for alloc in line.allocations.all():
+                ref = alloc.BillReference
+                if ref and ref not in bills:
+                    bills.append(ref)
+        if not bills and obj.Narration:
+            import re
+            m = re.findall(r'(INV-?\d+|SALE-?\d+)', obj.Narration, re.IGNORECASE)
+            for ref in m:
+                r_up = ref.upper()
+                if r_up not in bills:
+                    bills.append(r_up)
+        return bills
 
     def get_payment_date(self, obj):
         vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=obj.PaymentId).first()
