@@ -3825,7 +3825,7 @@ def generate_ledger_statement_pdf(
             Paragraph(html.escape(ref_str), td_left_bold if ref_str else td_left),
             Paragraph(d_str, td_right),
             Paragraph(c_str, td_right),
-            Paragraph(bal_str, td_right_burg if run_bal > 0 else td_right),
+            Paragraph(bal_str, td_right_bold),
         ])
 
     # Summary Row 1: Period Turnover Totals
