@@ -615,8 +615,9 @@ export const DashboardPage: React.FC = () => {
   }, [filteredSales, receiptAllocBySale]);
 
   const totalCustomerReceipts = useMemo(() => {
-    return netSalesPaid;
-  }, [netSalesPaid]);
+    const totalReceipts = filteredCustomerReceipts.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
+    return totalReceipts + netSalesPaid;
+  }, [filteredCustomerReceipts, netSalesPaid]);
 
   // Direct collections received on sales invoices (Cash, UPI, etc.)
   const salesWithPaidCount = useMemo(() => {
@@ -628,8 +629,19 @@ export const DashboardPage: React.FC = () => {
   }, [filteredSales]);
 
   const totalCollectionsCount = useMemo(() => {
-    return salesWithPaidCount;
-  }, [salesWithPaidCount]);
+    const receiptCount = filteredCustomerReceipts.length;
+    const unallocatedPaidSales = filteredSales.filter((s: any) => {
+      const rawPaid = Number(s.PaidAmount || 0);
+      const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
+      const cashPaidOnSale = Math.max(0, rawPaid - advAdj);
+      if (cashPaidOnSale <= 0) return false;
+      const invRef = s.InvoiceNo ? String(s.InvoiceNo).trim().toUpperCase() : '';
+      const salRef = s.SalesNo ? String(s.SalesNo).trim().toUpperCase() : '';
+      const hasReceipt = (invRef && receiptAllocBySale.has(invRef)) || (salRef && receiptAllocBySale.has(salRef));
+      return !hasReceipt;
+    }).length;
+    return Math.max(salesWithPaidCount, receiptCount + unallocatedPaidSales);
+  }, [filteredCustomerReceipts, filteredSales, receiptAllocBySale, salesWithPaidCount]);
 
   const receivableBalance = totalCustomerOpeningReceivable + totalSales - totalCustomerReceipts;
 
