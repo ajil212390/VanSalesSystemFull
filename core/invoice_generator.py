@@ -632,11 +632,16 @@ def generate_tax_invoice_pdf(sale):
     current_bill_amount = total_gross_sum if total_gross_sum > 0 else Decimal(str(sale.GrandTotal or 0))
 
     # Determine Paid Amount:
+    c_split, u_split = extract_split_amounts(sale)
+    is_split = (sale.PaymentMethod or '').upper() == 'SPLIT' or (c_split > Decimal('0.00') and u_split > Decimal('0.00'))
+
     paid_amt = Decimal('0.00')
     pm_upper = (sale.PaymentMethod or 'CASH').upper()
     if pm_upper == 'CREDIT':
         paid_amt = Decimal('0.00')
-    elif hasattr(sale, 'PaidAmount') and sale.PaidAmount is not None:
+    elif is_split and (c_split + u_split) > Decimal('0.00'):
+        paid_amt = c_split + u_split
+    elif getattr(sale, 'PaidAmount', None) is not None:
         paid_amt = Decimal(str(sale.PaidAmount))
     else:
         vl = VoucherLine.objects.filter(
@@ -651,7 +656,7 @@ def generate_tax_invoice_pdf(sale):
         elif pm_upper in ['CASH', 'UPI', 'BANK', 'ONLINE']:
             paid_amt = Decimal(str(sale.GrandTotal or current_bill_amount))
 
-    # Determine Previous Pending and Closing Balance (Point-in-Time as of this invoice):
+    # Advance adjusted on this sale:
     adv_adj = Decimal('0.00')
     if hasattr(sale, 'advance_adjustments'):
         try:
@@ -661,61 +666,128 @@ def generate_tax_invoice_pdf(sale):
     if adv_adj == Decimal('0.00') and hasattr(sale, 'AdvanceAdjusted') and sale.AdvanceAdjusted:
         adv_adj = Decimal(str(sale.AdvanceAdjusted))
 
+    # Determine Previous Pending and Closing Balance (Point-in-Time as of this invoice):
     if customer:
         op = customer.OpeningBalance or Decimal('0.00')
         op_net = op if (customer.OpeningBalanceType or 'DR').upper() == 'DR' else -op
 
-        this_vch = Voucher.objects.filter(
-            ReferenceTable='Sales', ReferenceId=sale.SalesId, IsCancelled=False
-        ).first()
+        # Gather any payment ID or reference linked specifically to this sale
+        from core.models import Sales, Payment, BillwiseAllocation
+        sale_no = str(sale.SalesNo or '').strip()
+        inv_no = str(sale.InvoiceNo or '').strip()
 
-        prior_vl_qs = VoucherLine.objects.filter(
-            Ledger=customer, Voucher__IsCancelled=False
-        )
-        if this_vch:
-            prior_vl_qs = prior_vl_qs.filter(
-                Q(Voucher__VoucherDate__lt=this_vch.VoucherDate) |
-                Q(Voucher__VoucherDate=this_vch.VoucherDate, Voucher_id__lt=this_vch.VoucherId)
-            )
-            prior_agg = prior_vl_qs.aggregate(
-                dr=Sum('DebitAmount'), cr=Sum('CreditAmount')
-            )
-            prior_dr = prior_agg['dr'] or Decimal('0.00')
-            prior_cr = prior_agg['cr'] or Decimal('0.00')
-            previous_bill_pending = max(Decimal('0.00'), op_net + prior_dr - prior_cr)
-        else:
-            from core.models import Sales, Payment
-            prior_sales_qs = Sales.objects.filter(
-                CustomerLedger=customer, CompanyId=sale.CompanyId
-            ).exclude(Status='CANCELLED').exclude(SalesId=sale.SalesId)
-            if sale.SalesDate:
-                prior_sales_qs = prior_sales_qs.filter(
-                    Q(SalesDate__lt=sale.SalesDate) |
-                    Q(SalesDate=sale.SalesDate, SalesId__lt=sale.SalesId)
+        this_sale_pmt_filter = Q()
+        if sale_no:
+            this_sale_pmt_filter |= Q(Narration__icontains=sale_no)
+        if inv_no:
+            this_sale_pmt_filter |= Q(Narration__icontains=inv_no)
+
+        this_sale_alloc_pmt_ids = set()
+        for ref in [sale_no, inv_no]:
+            if ref:
+                this_sale_alloc_pmt_ids.update(
+                    BillwiseAllocation.objects.filter(
+                        ReferenceTable__in=['Receipt', 'Payment'],
+                        BillReference__iexact=ref
+                    ).values_list('ReferenceId', flat=True)
                 )
-            prior_sales_total = prior_sales_qs.aggregate(s=Sum('GrandTotal'))['s'] or Decimal('0.00')
+                this_sale_alloc_pmt_ids.update(
+                    BillwiseAllocation.objects.filter(
+                        PaymentLine__Payment__isnull=False,
+                        BillReference__iexact=ref
+                    ).values_list('PaymentLine__Payment_id', flat=True)
+                )
+        bwa_sales = BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId)
+        for b in bwa_sales:
+            if b.PaymentLine and b.PaymentLine.Payment_id:
+                this_sale_alloc_pmt_ids.add(b.PaymentLine.Payment_id)
 
-            prior_payments_qs = Payment.objects.filter(PartyLedger=customer)
-            if sale.SalesDate:
-                prior_payments_qs = prior_payments_qs.filter(CreatedAt__date__lte=sale.SalesDate)
-            prior_payments_total = prior_payments_qs.aggregate(s=Sum('Amount'))['s'] or Decimal('0.00')
+        # 1. Prior Sales to this customer (Debit)
+        prior_sales_qs = Sales.objects.filter(
+            CustomerLedger=customer, CompanyId=sale.CompanyId
+        ).exclude(Status='CANCELLED').exclude(SalesId=sale.SalesId)
 
-            previous_bill_pending = max(Decimal('0.00'), op_net + prior_sales_total - prior_payments_total)
+        if getattr(sale, 'CreatedAt', None):
+            prior_sales_qs = prior_sales_qs.filter(
+                Q(CreatedAt__lt=sale.CreatedAt) |
+                (Q(CreatedAt=sale.CreatedAt) & Q(SalesId__lt=sale.SalesId))
+            )
+        elif sale.SalesDate:
+            prior_sales_qs = prior_sales_qs.filter(
+                Q(SalesDate__lt=sale.SalesDate) |
+                (Q(SalesDate=sale.SalesDate) & Q(SalesId__lt=sale.SalesId))
+            )
+        else:
+            prior_sales_qs = prior_sales_qs.filter(SalesId__lt=sale.SalesId)
+
+        prior_sales_total = prior_sales_qs.aggregate(s=Sum('GrandTotal'))['s'] or Decimal('0.00')
+
+        # 2. Prior Payments from this customer (Credit)
+        prior_payments_qs = Payment.objects.filter(
+            PartyLedger=customer
+        ).exclude(Status__in=['CANCELLED', 'REJECTED'])
+
+        if this_sale_alloc_pmt_ids:
+            prior_payments_qs = prior_payments_qs.exclude(PaymentId__in=this_sale_alloc_pmt_ids)
+        if this_sale_pmt_filter:
+            prior_payments_qs = prior_payments_qs.exclude(this_sale_pmt_filter)
+
+        if getattr(sale, 'CreatedAt', None):
+            prior_payments_qs = prior_payments_qs.filter(
+                CreatedAt__lt=sale.CreatedAt
+            )
+        elif sale.SalesDate:
+            prior_payments_qs = prior_payments_qs.filter(
+                CreatedAt__date__lt=sale.SalesDate
+            )
+
+        prior_payments_total = prior_payments_qs.aggregate(s=Sum('Amount'))['s'] or Decimal('0.00')
+
+        # 3. Any manual journal voucher adjustments for this customer (not Sales and not Payment)
+        manual_vls = VoucherLine.objects.filter(
+            Ledger=customer, Voucher__IsCancelled=False
+        ).exclude(Voucher__ReferenceTable__in=['Sales', 'Payment', 'Receipt'])
+        if sale.SalesDate:
+            manual_vls = manual_vls.filter(Voucher__VoucherDate__lte=sale.SalesDate)
+        manual_dr = manual_vls.aggregate(s=Sum('DebitAmount'))['s'] or Decimal('0.00')
+        manual_cr = manual_vls.aggregate(s=Sum('CreditAmount'))['s'] or Decimal('0.00')
+        manual_net = manual_dr - manual_cr
+
+        net_prior = op_net + manual_net + prior_sales_total - prior_payments_total
+
+        # net_prior > 0 means customer owes money (Dr)
+        # net_prior < 0 means customer has advance credit (Cr)
+        if net_prior >= Decimal('0.00'):
+            previous_bill_pending = net_prior
+            is_prev_advance = False
+        else:
+            previous_bill_pending = abs(net_prior)
+            is_prev_advance = True
 
         if is_money_receipt:
-            closing_balance = max(Decimal('0.00'), previous_bill_pending - paid_amt)
+            closing_net = net_prior - paid_amt
         elif is_empty_return:
-            closing_balance = previous_bill_pending
+            closing_net = net_prior
         else:
-            closing_balance = max(Decimal('0.00'), previous_bill_pending + current_bill_amount - adv_adj - paid_amt)
+            closing_net = net_prior + current_bill_amount - adv_adj - paid_amt
+
+        if closing_net >= Decimal('0.00'):
+            closing_balance = closing_net
+            is_closing_advance = False
+        else:
+            closing_balance = abs(closing_net)
+            is_closing_advance = True
     else:
         # Walk-in customer
         previous_bill_pending = Decimal('0.00')
-        closing_balance = max(Decimal('0.00'), current_bill_amount - adv_adj - paid_amt)
-
-    # Parse split amounts if payment mode is SPLIT
-    c_split, u_split = extract_split_amounts(sale)
-    is_split = (sale.PaymentMethod or '').upper() == 'SPLIT' or (c_split > Decimal('0.00') and u_split > Decimal('0.00'))
+        is_prev_advance = False
+        closing_net = current_bill_amount - adv_adj - paid_amt
+        if closing_net >= Decimal('0.00'):
+            closing_balance = closing_net
+            is_closing_advance = False
+        else:
+            closing_balance = abs(closing_net)
+            is_closing_advance = True
 
     # Empty cylinders return narration
     empty_qty_int = int(sale.TotalEmptyQty or 0)
@@ -740,27 +812,39 @@ def generate_tax_invoice_pdf(sale):
     if is_empty_return:
         cust_summary_rows = [
             [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
-            [Paragraph("Previous Balance :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)],
+            [Paragraph("Previous Balance :" if not is_prev_advance else "Previous Advance :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}" + (" Cr" if is_prev_advance else ""), cell_right_bold)],
             [Paragraph("Returned Cylinders :", cell_norm), Paragraph(empties_count_display, cell_right_bold)],
             [Paragraph("Amount Paid :", cell_norm), Paragraph("Rs. 0.00", cell_right)],
-            [Paragraph("<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
+            [Paragraph("<b>Advance Balance :</b>" if is_closing_advance else "<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}" + (" Cr" if is_closing_advance else "") + "</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR if not is_closing_advance else colors.HexColor('#047857'), fontSize=9.5))],
             [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
         ]
     elif is_money_receipt:
         cust_summary_rows = [
             [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
-            [Paragraph("Previous Balance :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)],
+            [Paragraph("Previous Balance :" if not is_prev_advance else "Previous Advance :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}" + (" Cr" if is_prev_advance else ""), cell_right_bold)],
             [Paragraph("<b>Payment Received :</b>", cell_bold), Paragraph(f"<b>(-) Rs. {paid_amt:.2f}</b>", ParagraphStyle('RcvAmt', parent=cell_right_bold, textColor=colors.HexColor('#047857')))],
             [Paragraph("Payment Mode :", cell_muted), Paragraph(f"<b>{pm_upper}</b>", cell_right)],
-            [Paragraph("<b>Remaining Balance :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
+            [Paragraph("<b>Remaining Advance :</b>" if is_closing_advance else "<b>Remaining Balance :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}" + (" Cr" if is_closing_advance else "") + "</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR if not is_closing_advance else colors.HexColor('#047857'), fontSize=9.5))],
             [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
         ]
     else:
         cust_summary_rows = [
             [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
-            [Paragraph("Previous Bill Pending :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)],
-            [Paragraph("Current Bill :", cell_norm), Paragraph(f"(+) Rs. {current_bill_amount:.2f}", cell_right)],
         ]
+        if is_prev_advance:
+            cust_summary_rows.append([
+                Paragraph("Previous Advance :", ParagraphStyle('PrevAdvLbl', parent=cell_bold, textColor=colors.HexColor('#0D9488'))),
+                Paragraph(f"(-) Rs. {previous_bill_pending:.2f}", ParagraphStyle('PrevAdvVal', parent=cell_right_bold, textColor=colors.HexColor('#0D9488')))
+            ])
+        else:
+            cust_summary_rows.append([
+                Paragraph("Previous Bill Pending :", cell_norm),
+                Paragraph(f"Rs. {previous_bill_pending:.2f}", cell_right_bold)
+            ])
+        cust_summary_rows.append([
+            Paragraph("Current Bill :", cell_norm),
+            Paragraph(f"(+) Rs. {current_bill_amount:.2f}", cell_right)
+        ])
         if adv_adj > Decimal('0.00'):
             cust_summary_rows.append([
                 Paragraph("Advance Adjusted :", ParagraphStyle('AdvLbl', parent=cell_bold, textColor=colors.HexColor('#0D9488'))),
@@ -789,9 +873,20 @@ def generate_tax_invoice_pdf(sale):
                 Paragraph("Paid Amount :", cell_norm),
                 Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right)
             ])
-        cust_summary_rows.extend([
-            [Paragraph("<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
-            [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
+
+        if is_closing_advance and closing_balance > Decimal('0.00'):
+            cust_summary_rows.append([
+                Paragraph("<b>Advance Remaining :</b>", cell_bold),
+                Paragraph(f"<b>Rs. {closing_balance:.2f} Cr</b>", ParagraphStyle('BalAdv', parent=cell_right_bold, textColor=colors.HexColor('#047857'), fontSize=9.5))
+            ])
+        else:
+            cust_summary_rows.append([
+                Paragraph("<b>Balance Due :</b>", cell_bold),
+                Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))
+            ])
+        cust_summary_rows.append([
+            Paragraph("<b>Narration :</b>", cell_bold),
+            Paragraph(f"<i>{narration_text}</i>", cell_norm)
         ])
 
     cust_summary_table = Table(cust_summary_rows, colWidths=[130, 125])
