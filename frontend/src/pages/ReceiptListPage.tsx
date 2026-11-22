@@ -540,13 +540,9 @@ export const ReceiptListPage: React.FC = () => {
                               <Text fw={700} size="sm" c={isPending ? '#b45309' : '#1e293b'} style={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
                                 {displayNo}
                               </Text>
-                              {isPending ? (
+                              {isPending && (
                                 <Badge size="xs" color="yellow" variant="light" radius="xs" style={{ border: '1px solid #fde68a', fontWeight: 600 }}>
-                                  TREC Pending (Awaiting Shift Settlement)
-                                </Badge>
-                              ) : (
-                                <Badge size="xs" color="teal" variant="light" radius="xs" style={{ border: '1px solid #a7f3d0', fontWeight: 700 }}>
-                                  Approved (REC)
+                                  Pending
                                 </Badge>
                               )}
                             </Group>
