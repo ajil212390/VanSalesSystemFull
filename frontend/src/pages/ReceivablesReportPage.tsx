@@ -941,13 +941,13 @@ export const ReceivablesReportPage: React.FC = () => {
                       Particulars
                     </Table.Th>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 140 }}>
-                      Debit (Invoiced ₹)
+                      Debit
                     </Table.Th>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 140 }}>
-                      Credit (Received ₹)
+                      Credit
                     </Table.Th>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 160 }}>
-                      Running Balance (₹)
+                      Balance
                     </Table.Th>
                   </Table.Tr>
                 </Table.Thead>

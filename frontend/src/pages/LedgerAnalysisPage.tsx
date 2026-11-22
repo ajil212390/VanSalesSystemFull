@@ -634,9 +634,9 @@ export const LedgerAnalysisPage: React.FC = () => {
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 80, textAlign: 'center' }}>EMPTY QTY</Table.Th>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 85 }}>VCH TYPE</Table.Th>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 95 }}>VCH NO.</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 105, textAlign: 'right' }}>DEBIT (₹)</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 105, textAlign: 'right' }}>CREDIT (₹)</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 120, textAlign: 'right' }}>BALANCE (₹)</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 105, textAlign: 'right' }}>DEBIT</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 105, textAlign: 'right' }}>CREDIT</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 11.5, width: 120, textAlign: 'right' }}>BALANCE</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>

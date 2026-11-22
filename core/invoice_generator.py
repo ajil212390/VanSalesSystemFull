@@ -1264,9 +1264,9 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
             Paragraph("<b>DATE</b>", cell_bold),
             Paragraph("<b>REF / INVOICE #</b>", cell_bold),
             Paragraph("<b>PARTICULARS</b>", cell_bold),
-            Paragraph("<b>DEBIT (Rs.)</b>", cell_right_b),
-            Paragraph("<b>CREDIT (Rs.)</b>", cell_right_b),
-            Paragraph("<b>BALANCE (Rs.)</b>", cell_right_b),
+            Paragraph("<b>DEBIT</b>", cell_right_b),
+            Paragraph("<b>CREDIT</b>", cell_right_b),
+            Paragraph("<b>BALANCE</b>", cell_right_b),
         ]
     ]
 
@@ -1557,9 +1557,9 @@ def generate_supplier_statement_pdf(supplier, purchases_qs, payments_qs, company
             Paragraph("<b>DATE</b>", cell_bold),
             Paragraph("<b>REF / BILL #</b>", cell_bold),
             Paragraph("<b>PARTICULARS</b>", cell_bold),
-            Paragraph("<b>DEBIT (Rs.)</b>", cell_right_b),
-            Paragraph("<b>CREDIT (Rs.)</b>", cell_right_b),
-            Paragraph("<b>BALANCE (Rs.)</b>", cell_right_b),
+            Paragraph("<b>DEBIT</b>", cell_right_b),
+            Paragraph("<b>CREDIT</b>", cell_right_b),
+            Paragraph("<b>BALANCE</b>", cell_right_b),
         ]
     ]
 
@@ -3692,9 +3692,9 @@ def generate_ledger_statement_pdf(
             Paragraph("<b>EMPTY QTY</b>", th_center),
             Paragraph("<b>VCH TYPE</b>", th_left),
             Paragraph("<b>VCH NO.</b>", th_left),
-            Paragraph("<b>DEBIT (Rs.)</b>", th_right),
-            Paragraph("<b>CREDIT (Rs.)</b>", th_right),
-            Paragraph("<b>BALANCE (Rs.)</b>", th_right),
+            Paragraph("<b>DEBIT</b>", th_right),
+            Paragraph("<b>CREDIT</b>", th_right),
+            Paragraph("<b>BALANCE</b>", th_right),
         ]
     ]
 
