@@ -815,16 +815,16 @@ def generate_tax_invoice_pdf(sale):
             [Paragraph("Previous Balance :" if not is_prev_advance else "Previous Advance :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}" + (" Cr" if is_prev_advance else ""), cell_right_bold)],
             [Paragraph("Returned Cylinders :", cell_norm), Paragraph(empties_count_display, cell_right_bold)],
             [Paragraph("Amount Paid :", cell_norm), Paragraph("Rs. 0.00", cell_right)],
-            [Paragraph("<b>Advance Balance :</b>" if is_closing_advance else "<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}" + (" Cr" if is_closing_advance else "") + "</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR if not is_closing_advance else colors.HexColor('#047857'), fontSize=9.5))],
+            [Paragraph("<b>Advance Balance :</b>" if is_closing_advance else "<b>Balance Due :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}" + (" Cr" if is_closing_advance else "") + "</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
             [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
         ]
     elif is_money_receipt:
         cust_summary_rows = [
             [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
             [Paragraph("Previous Balance :" if not is_prev_advance else "Previous Advance :", cell_norm), Paragraph(f"Rs. {previous_bill_pending:.2f}" + (" Cr" if is_prev_advance else ""), cell_right_bold)],
-            [Paragraph("<b>Payment Received :</b>", cell_bold), Paragraph(f"<b>(-) Rs. {paid_amt:.2f}</b>", ParagraphStyle('RcvAmt', parent=cell_right_bold, textColor=colors.HexColor('#047857')))],
+            [Paragraph("<b>Payment Received :</b>", cell_bold), Paragraph(f"<b>(-) Rs. {paid_amt:.2f}</b>", cell_right_bold)],
             [Paragraph("Payment Mode :", cell_muted), Paragraph(f"<b>{pm_upper}</b>", cell_right)],
-            [Paragraph("<b>Remaining Advance :</b>" if is_closing_advance else "<b>Remaining Balance :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}" + (" Cr" if is_closing_advance else "") + "</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR if not is_closing_advance else colors.HexColor('#047857'), fontSize=9.5))],
+            [Paragraph("<b>Remaining Advance :</b>" if is_closing_advance else "<b>Remaining Balance :</b>", cell_bold), Paragraph(f"<b>Rs. {closing_balance:.2f}" + (" Cr" if is_closing_advance else "") + "</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))],
             [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
         ]
     else:
@@ -833,8 +833,8 @@ def generate_tax_invoice_pdf(sale):
         ]
         if is_prev_advance:
             cust_summary_rows.append([
-                Paragraph("Previous Advance :", ParagraphStyle('PrevAdvLbl', parent=cell_bold, textColor=colors.HexColor('#0D9488'))),
-                Paragraph(f"(-) Rs. {previous_bill_pending:.2f}", ParagraphStyle('PrevAdvVal', parent=cell_right_bold, textColor=colors.HexColor('#0D9488')))
+                Paragraph("Previous Advance :", cell_norm),
+                Paragraph(f"(-) Rs. {previous_bill_pending:.2f}", cell_right_bold)
             ])
         else:
             cust_summary_rows.append([
@@ -847,8 +847,8 @@ def generate_tax_invoice_pdf(sale):
         ])
         if adv_adj > Decimal('0.00'):
             cust_summary_rows.append([
-                Paragraph("Advance Adjusted :", ParagraphStyle('AdvLbl', parent=cell_bold, textColor=colors.HexColor('#0D9488'))),
-                Paragraph(f"(-) Rs. {adv_adj:.2f}", ParagraphStyle('AdvVal', parent=cell_right_bold, textColor=colors.HexColor('#0D9488')))
+                Paragraph("Advance Adjusted :", cell_bold),
+                Paragraph(f"(-) Rs. {adv_adj:.2f}", cell_right_bold)
             ])
         if is_split:
             cust_summary_rows.append([
@@ -877,7 +877,7 @@ def generate_tax_invoice_pdf(sale):
         if is_closing_advance and closing_balance > Decimal('0.00'):
             cust_summary_rows.append([
                 Paragraph("<b>Advance Remaining :</b>", cell_bold),
-                Paragraph(f"<b>Rs. {closing_balance:.2f} Cr</b>", ParagraphStyle('BalAdv', parent=cell_right_bold, textColor=colors.HexColor('#047857'), fontSize=9.5))
+                Paragraph(f"<b>Rs. {closing_balance:.2f} Cr</b>", ParagraphStyle('BalAdv', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))
             ])
         else:
             cust_summary_rows.append([
