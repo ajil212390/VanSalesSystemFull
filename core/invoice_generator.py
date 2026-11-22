@@ -124,6 +124,33 @@ def amount_to_words(amount):
     return res + " Only"
 
 
+def extract_split_amounts(sale_obj):
+    notes = sale_obj.Notes or ''
+    c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', notes, re.IGNORECASE)
+    u_m = re.search(r'(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', notes, re.IGNORECASE)
+    c_val = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
+    u_val = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
+
+    if c_val <= Decimal('0.00') and u_val <= Decimal('0.00') and (sale_obj.PaymentMethod or '').upper() == 'SPLIT':
+        try:
+            from core.models import Payment
+            from django.db.models import Q
+            p_rec = Payment.objects.filter(
+                Q(Narration__icontains=sale_obj.SalesNo) | (Q(Narration__icontains=sale_obj.InvoiceNo) if sale_obj.InvoiceNo else Q())
+            ).first()
+            if p_rec:
+                for line in p_rec.lines.all():
+                    pm = (line.PaymentMode or '').upper()
+                    if 'CASH' in pm:
+                        c_val = Decimal(str(line.Amount or 0))
+                    elif 'BANK' in pm or 'UPI' in pm:
+                        u_val = Decimal(str(line.Amount or 0))
+        except Exception:
+            pass
+
+    return c_val, u_val
+
+
 def generate_tax_invoice_pdf(sale):
     """
     Generates a professional GST Tax Invoice PDF for a Sales model instance,
@@ -248,10 +275,9 @@ def generate_tax_invoice_pdf(sale):
         doc_title = "OFFICIAL RECEIPT"
         doc_no_label = "Receipt No:"
         if pm_upper == 'SPLIT':
-            c_m = re.search(r'Cash:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-            u_m = re.search(r'UPI:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-            c_str = f"Rs. {float(c_m.group(1).replace(',', '')):.2f}" if c_m else ''
-            u_str = f"Rs. {float(u_m.group(1).replace(',', '')):.2f}" if u_m else ''
+            c_split, u_split = extract_split_amounts(sale)
+            c_str = f"Rs. {c_split:.2f}"
+            u_str = f"Rs. {u_split:.2f}"
             payment_mode_display = f"<b>Payment Mode:</b> SPLIT (Cash: {c_str} | UPI: {u_str})<br/>"
         else:
             payment_mode_display = f"<b>Payment Mode:</b> {pm_upper}<br/>"
@@ -261,17 +287,13 @@ def generate_tax_invoice_pdf(sale):
         if is_credit:
             payment_mode_display = f"<b>Payment Mode:</b> <font color='#92400E'><b>CREDIT (Rs. 0.00 Paid)</b></font><br/>"
         elif pm_upper == 'SPLIT':
-            c_m = re.search(r'Cash:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-            u_m = re.search(r'UPI:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-            c_str = f"Rs. {float(c_m.group(1).replace(',', '')):.2f}" if c_m else ''
-            u_str = f"Rs. {float(u_m.group(1).replace(',', '')):.2f}" if u_m else ''
-            if c_str or u_str:
-                payment_mode_display = (
-                    f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
-                    f"&nbsp;&bull; Cash: {c_str} &nbsp;|&nbsp; UPI: {u_str}<br/>"
-                )
-            else:
-                payment_mode_display = f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
+            c_split, u_split = extract_split_amounts(sale)
+            c_str = f"Rs. {c_split:.2f}"
+            u_str = f"Rs. {u_split:.2f}"
+            payment_mode_display = (
+                f"<b>Payment Mode:</b> SPLIT (Cash + UPI)<br/>"
+                f"&nbsp;&bull; Cash: {c_str} &nbsp;|&nbsp; UPI: {u_str}<br/>"
+            )
         else:
             payment_mode_display = f"<b>Payment Mode:</b> {pm_upper}<br/>"
 
@@ -692,10 +714,7 @@ def generate_tax_invoice_pdf(sale):
         closing_balance = max(Decimal('0.00'), current_bill_amount - adv_adj - paid_amt)
 
     # Parse split amounts if payment mode is SPLIT
-    c_m = re.search(r'Cash:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-    u_m = re.search(r'UPI:\s*[Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '')
-    c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
-    u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
+    c_split, u_split = extract_split_amounts(sale)
     is_split = (sale.PaymentMethod or '').upper() == 'SPLIT' or (c_split > Decimal('0.00') and u_split > Decimal('0.00'))
 
     # Empty cylinders return narration
