@@ -2,7 +2,7 @@ import re
 import time
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
-from django.db import transaction, IntegrityError
+from django.db import models, transaction, IntegrityError
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.decorators import action
@@ -1927,7 +1927,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
         # Prefetch related sales and purchases for rich Tally-style particulars and shared invoice references
         sales_ids = [v.ReferenceId for v in [vl.Voucher for vl in vl_qs] if v and str(v.ReferenceTable or '').lower() == 'sales' and v.ReferenceId]
-        sales_map = {s.SalesId: s for s in Sales.objects.filter(models.Q(CustomerLedger=ledger) | models.Q(SalesId__in=sales_ids)).prefetch_related('lines__Product', 'lines__Unit')}
+        sales_map = {s.SalesId: s for s in Sales.objects.filter(Q(CustomerLedger=ledger) | Q(SalesId__in=sales_ids)).prefetch_related('lines__Product', 'lines__Unit')}
         purchases_map = {p.PurchaseId: p for p in Purchase.objects.filter(SupplierLedger=ledger).prefetch_related('lines__Product', 'lines__Unit')}
 
         # Pre-build mapping from bill reference (e.g. INV-87995, INV-80210) to exact Receipt Number (e.g. REC-007, REC-002)
