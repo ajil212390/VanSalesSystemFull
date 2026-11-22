@@ -40,6 +40,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notifications } from '@mantine/notifications';
 import { apiClient } from '../api/client';
+import { BurgundyPulseDots } from '../components/BurgundyPulseDots';
 import { DateInputDDMMYY, formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 // Clean, concise reference formatter e.g. SAL-20261111-0001 -> INV-0001, PAY-SAL-... -> PAY-0001
@@ -1113,14 +1114,14 @@ export const ReceivablesReportPage: React.FC = () => {
             <IconUsers size={20} color="#800020" stroke={1.75} />
           </Group>
           {isLoading ? (
-            <Skeleton height={28} width={80} radius="sm" my={4} />
+            <BurgundyPulseDots size={8} gap={6} />
           ) : (
             <Text fw={700} style={{ color: '#0f172a', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
               {debtorsList.length}
             </Text>
           )}
           {isLoading ? (
-            <Skeleton height={14} width={140} radius="sm" />
+            <Skeleton height={14} width={140} radius="sm" mt={4} />
           ) : (
             <Text size="xs" c="dimmed">
               Opening Bal: ₹{Math.abs(totalOpeningSum).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {totalOpeningSum >= 0 ? 'Dr' : 'Cr'}
@@ -1137,14 +1138,14 @@ export const ReceivablesReportPage: React.FC = () => {
             <IconFileInvoice size={20} color="#800020" stroke={1.75} />
           </Group>
           {isLoading ? (
-            <Skeleton height={28} width={140} radius="sm" my={4} />
+            <BurgundyPulseDots size={8} gap={6} />
           ) : (
             <Text fw={700} style={{ color: '#0f172a', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
               ₹{totalBilledSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           )}
           {isLoading ? (
-            <Skeleton height={14} width={120} radius="sm" />
+            <Skeleton height={14} width={120} radius="sm" mt={4} />
           ) : (
             <Text size="xs" c="dimmed">
               {sales.filter((s: any) => s.Status !== 'CANCELLED').length} delivery &amp; sales bills
@@ -1161,14 +1162,14 @@ export const ReceivablesReportPage: React.FC = () => {
             <IconCash size={20} color="#800020" stroke={1.75} />
           </Group>
           {isLoading ? (
-            <Skeleton height={28} width={140} radius="sm" my={4} />
+            <BurgundyPulseDots size={8} gap={6} />
           ) : (
             <Text fw={700} style={{ color: '#0f172a', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
               ₹{totalReceivedSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           )}
           {isLoading ? (
-            <Skeleton height={14} width={130} radius="sm" />
+            <Skeleton height={14} width={130} radius="sm" mt={4} />
           ) : (
             <Text size="xs" c="dimmed">
               Cleared cash &amp; bank receipts
@@ -1185,7 +1186,7 @@ export const ReceivablesReportPage: React.FC = () => {
             <IconCoins size={20} color="#800020" stroke={1.75} />
           </Group>
           {isLoading ? (
-            <Skeleton height={28} width={150} radius="sm" my={4} />
+            <BurgundyPulseDots size={8} gap={6} />
           ) : (
             <Text fw={700} style={{ color: '#800020', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>
               ₹{Math.abs(totalReceivableSum).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
@@ -1195,7 +1196,7 @@ export const ReceivablesReportPage: React.FC = () => {
             </Text>
           )}
           {isLoading ? (
-            <Skeleton height={14} width={160} radius="sm" />
+            <Skeleton height={14} width={160} radius="sm" mt={4} />
           ) : (
             <Text size="xs" c="dimmed">
               Current outstanding from customers

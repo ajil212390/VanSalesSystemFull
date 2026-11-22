@@ -10,7 +10,6 @@ import {
   Modal,
   TextInput,
   SegmentedControl,
-  Skeleton,
 } from '@mantine/core';
 import {
   IconReceipt,
@@ -29,6 +28,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
+import { BurgundyPulseDots } from '../components/BurgundyPulseDots';
 
 // ── Smooth Animated Count-Up for Numbers ──
 interface CountUpProps {
@@ -1004,7 +1004,7 @@ export const DashboardPage: React.FC = () => {
                 icon={<IconReceipt size={22} color='#800020'/>}
                 value={
                   isLoadingPurchasesPayables ? (
-                    <Skeleton height={28} width={130} radius="sm" />
+                    <BurgundyPulseDots />
                   ) : (
                     `₹${totalPurchase.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   )
@@ -1018,7 +1018,7 @@ export const DashboardPage: React.FC = () => {
                 icon={<IconCreditCard size={22} color='#800020' />}
                 value={
                   isLoadingPurchasesPayables ? (
-                    <Skeleton height={28} width={130} radius="sm" />
+                    <BurgundyPulseDots />
                   ) : (
                     `₹${totalSupplierPayments.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   )
@@ -1032,7 +1032,7 @@ export const DashboardPage: React.FC = () => {
                 icon={<IconWallet size={22} color='#800020' />}
                 value={
                   isLoadingPurchasesPayables ? (
-                    <Skeleton height={28} width={140} radius="sm" />
+                    <BurgundyPulseDots />
                   ) : (
                     <Text
                       fw={800}
@@ -1074,7 +1074,7 @@ export const DashboardPage: React.FC = () => {
                 icon={<IconFileInvoice size={22} color='#800020' />}
                 value={
                   isLoadingSalesReceivables ? (
-                    <Skeleton height={28} width={130} radius="sm" />
+                    <BurgundyPulseDots />
                   ) : (
                     `₹${totalSales.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   )
@@ -1088,7 +1088,7 @@ export const DashboardPage: React.FC = () => {
                 icon={<IconCash size={22} color='#800020' />}
                 value={
                   isLoadingSalesReceivables ? (
-                    <Skeleton height={28} width={130} radius="sm" />
+                    <BurgundyPulseDots />
                   ) : (
                     `₹${totalCustomerReceipts.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                   )
@@ -1102,7 +1102,7 @@ export const DashboardPage: React.FC = () => {
                 icon={<IconCoins size={22} color='#800020' />}
                 value={
                   isLoadingSalesReceivables ? (
-                    <Skeleton height={28} width={140} radius="sm" />
+                    <BurgundyPulseDots />
                   ) : (
                     <Text
                       fw={800}
