@@ -1017,7 +1017,7 @@ class PaymentSerializer(serializers.ModelSerializer):
         model = Payment
         fields = [
             'PaymentId', 'PartyLedgerId', 'party_name',
-            'Amount', 'Narration', 'PaymentNo', 'ReferenceNumber', 'Status',
+            'Amount', 'Narration', 'PaymentNo', 'ReferenceNumber', 'Status', 'DeliveryNoteId',
             'CreatedAt', 'UpdatedAt',
             'payment_date', 'primary_mode', 'voucher_type', 'voucher_no', 'against_bills', 'lines'
         ]

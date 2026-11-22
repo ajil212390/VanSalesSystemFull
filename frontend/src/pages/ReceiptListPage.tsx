@@ -16,7 +16,6 @@ import {
   Select,
   Box,
   Badge,
-  Tooltip,
 } from '@mantine/core';
 import {
   IconPlus,
@@ -25,7 +24,6 @@ import {
   IconTrash,
   IconPencil,
   IconArrowLeft,
-  IconCheck,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -253,30 +251,7 @@ export const ReceiptListPage: React.FC = () => {
     return result;
   }, [receipts, searchQuery, receiptNumMap, dateFilter, statusFilter, customStartDate, customEndDate, sortBy]);
 
-  // Approve Temporary Receipt Mutation
-  const approveMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiClient.post(`/payments/${id}/approve/`);
-      return res.data;
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
-      queryClient.invalidateQueries({ queryKey: ['sales'] });
-      notifications.show({
-        title: 'Receipt Approved',
-        message: data.message || 'Receipt approved and posted to General Ledger.',
-        color: 'teal',
-      });
-    },
-    onError: (err: any) => {
-      notifications.show({
-        title: 'Approval Failed',
-        message: err.response?.data?.detail || err.message || 'Could not approve receipt.',
-        color: 'red',
-      });
-    },
-  });
+
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -373,7 +348,7 @@ export const ReceiptListPage: React.FC = () => {
               onChange={(val) => setStatusFilter(val as any)}
               data={[
                 { label: `All Receipts (${receipts.length})`, value: 'all' },
-                { label: `Pending Verification (${pendingCount})`, value: 'pending' },
+                { label: `Pending Shift Settlement (${pendingCount})`, value: 'pending' },
                 { label: `Approved & Posted (${approvedCount})`, value: 'approved' },
               ]}
               styles={{
@@ -397,7 +372,7 @@ export const ReceiptListPage: React.FC = () => {
 
           {pendingCount > 0 && (
             <Badge color="yellow" variant="light" size="sm" radius="sm" style={{ border: '1px solid #fde68a', fontWeight: 600 }}>
-              {pendingCount} Temporary Receipt{pendingCount > 1 ? 's' : ''} awaiting accountant approval
+              {pendingCount} Temporary Receipt{pendingCount > 1 ? 's' : ''} (TREC) will be approved when driver shift is settled in End Allocation
             </Badge>
           )}
         </Group>
@@ -563,12 +538,12 @@ export const ReceiptListPage: React.FC = () => {
                                 {displayNo}
                               </Text>
                               {isPending ? (
-                                <Badge size="xs" color="yellow" variant="light" radius="xs" style={{ border: '1px solid #fde68a', fontWeight: 700 }}>
-                                  TREC Pending
+                                <Badge size="xs" color="yellow" variant="light" radius="xs" style={{ border: '1px solid #fde68a', fontWeight: 600 }}>
+                                  TREC Pending (Awaiting Shift Settlement)
                                 </Badge>
                               ) : (
                                 <Badge size="xs" color="teal" variant="light" radius="xs" style={{ border: '1px solid #a7f3d0', fontWeight: 700 }}>
-                                  Approved
+                                  Approved (REC)
                                 </Badge>
                               )}
                             </Group>
@@ -613,19 +588,6 @@ export const ReceiptListPage: React.FC = () => {
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>
                         <Group gap={6} justify="center" wrap="nowrap">
-                          {isPending && (
-                            <Tooltip label="Approve & Post to General Ledger" withArrow position="top">
-                              <ActionIcon
-                                variant="filled"
-                                color="teal"
-                                size="sm"
-                                loading={approveMutation.isPending && (approveMutation.variables as any) === item.PaymentId}
-                                onClick={() => approveMutation.mutate(item.PaymentId)}
-                              >
-                                <IconCheck size={15} />
-                              </ActionIcon>
-                            </Tooltip>
-                          )}
                           <ActionIcon
                             variant="subtle"
                             color="burgundy"

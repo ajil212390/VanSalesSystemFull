@@ -9365,6 +9365,101 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     affected_ledgers.add(travelling_ledger.LedgerId)
                     affected_ledgers.add(exp_cash_or_bank.LedgerId)
 
+            # 7. Approve and convert all temporary receipts (TREC) from this shift into official permanent receipts (REC)
+            shift_sale_nos = set()
+            shift_customer_ids = set()
+            for s in all_shift_sales:
+                if s.SalesNo:
+                    shift_sale_nos.add(str(s.SalesNo).strip().upper())
+                if s.InvoiceNo:
+                    shift_sale_nos.add(str(s.InvoiceNo).strip().upper())
+                if s.CustomerLedger_id:
+                    shift_customer_ids.add(s.CustomerLedger_id)
+
+            shift_alloc_pmt_ids = set()
+            if shift_sale_nos:
+                for bwa in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment']):
+                    b_ref = str(bwa.BillReference or '').strip().upper()
+                    if b_ref in shift_sale_nos:
+                        if bwa.ReferenceId:
+                            shift_alloc_pmt_ids.add(bwa.ReferenceId)
+                        if bwa.PaymentLine and bwa.PaymentLine.Payment_id:
+                            shift_alloc_pmt_ids.add(bwa.PaymentLine.Payment_id)
+
+            pending_pmts = Payment.objects.filter(Status='PENDING')
+            shift_pending_pmts = []
+            for pm in pending_pmts:
+                pm_dn_id = getattr(pm, 'DeliveryNoteId', None)
+                if pm_dn_id and pm_dn_id == dn.DeliveryNoteId:
+                    shift_pending_pmts.append(pm)
+                    continue
+
+                if pm.PaymentId in shift_alloc_pmt_ids:
+                    shift_pending_pmts.append(pm)
+                    continue
+
+                if pm.Narration:
+                    pm_narr = pm.Narration.upper()
+                    if any(ref in pm_narr for ref in shift_sale_nos):
+                        shift_pending_pmts.append(pm)
+                        continue
+
+                if pm.PartyLedger_id in shift_customer_ids:
+                    pm_dt = pm.CreatedAt
+                    is_in_window = True
+                    if dn.CreatedAt and pm_dt and pm_dt < dn.CreatedAt:
+                        is_in_window = False
+                    if next_dn and next_dn.CreatedAt and pm_dt and pm_dt > next_dn.CreatedAt:
+                        is_in_window = False
+                    if is_in_window:
+                        shift_pending_pmts.append(pm)
+
+            pv_helper = PaymentViewSet()
+            for pm in shift_pending_pmts:
+                if str(pm.Status).upper() == 'APPROVED':
+                    continue
+
+                rec_no = get_next_receipt_number()
+                pm.PaymentNo = rec_no
+                pm.Status = 'APPROVED'
+                update_fields = ['PaymentNo', 'Status', 'UpdatedAt']
+                if hasattr(pm, 'DeliveryNoteId') and not pm.DeliveryNoteId:
+                    pm.DeliveryNoteId = dn.DeliveryNoteId
+                    update_fields.append('DeliveryNoteId')
+                pm.save(update_fields=update_fields)
+
+                pv_lines = list(pm.lines.all())
+                pv_allocs = []
+                for ba in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=pm.PaymentId):
+                    pv_allocs.append((ba, ba.BillType, ba.BillReference, ba.AllocatedAmount))
+
+                g_name = (pm.PartyLedger.Group.GroupName or '').lower() if pm.PartyLedger and pm.PartyLedger.Group else ''
+                is_cust = (
+                    (pm.PartyLedger and pm.PartyLedger.Group_id == 21)
+                    or 'debtor' in g_name
+                    or 'customer' in g_name
+                    or any(b_t == 'SALES' for _, b_t, _, _ in pv_allocs)
+                )
+
+                vch_date = pm.CreatedAt.date() if pm.CreatedAt else shift_date
+                vch = pv_helper._post_voucher_for_payment(
+                    payment=pm,
+                    party=pm.PartyLedger,
+                    amount=pm.Amount,
+                    created_lines=pv_lines,
+                    alloc_instances=pv_allocs,
+                    company_id=company_id,
+                    custom_payment_date=vch_date,
+                    narration=pm.Narration,
+                    is_customer_receipt=is_cust,
+                )
+                if vch:
+                    for vl in vch.lines.all():
+                        if vl.Ledger_id:
+                            affected_ledgers.add(vl.Ledger_id)
+                if pm.PartyLedger_id:
+                    affected_ledgers.add(pm.PartyLedger_id)
+
             # Clean up any legacy shift-level bulk voucher to avoid double counting
             Voucher.objects.filter(VoucherNo=f"SHIFT-VCH-{dn.DeliveryNoteId}").delete()
 

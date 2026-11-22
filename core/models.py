@@ -681,6 +681,7 @@ class Payment(models.Model):
     PaymentNo = models.CharField(max_length=100, null=True, blank=True, db_column='PaymentNo')
     ReferenceNumber = models.CharField(max_length=100, null=True, blank=True, db_column='ReferenceNumber')
     Status = models.CharField(max_length=50, default='PENDING', db_column='Status')
+    DeliveryNoteId = models.BigIntegerField(null=True, blank=True, db_column='DeliveryNoteId')
     CreatedAt = models.DateTimeField(auto_now_add=True, db_column='CreatedAt')
     UpdatedAt = models.DateTimeField(auto_now=True, db_column='UpdatedAt')
 
