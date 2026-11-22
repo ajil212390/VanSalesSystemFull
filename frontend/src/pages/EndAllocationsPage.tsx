@@ -1362,6 +1362,17 @@ export const EndAllocationsPage: React.FC = () => {
                                     </Tooltip>
                                   )}
                                 </Group>
+                                {(sale as any).ReceiptNo && (
+                                  <Group gap={4} mt={4} wrap="nowrap" align="center">
+                                    <IconReceipt size={12} color={(sale as any).ReceiptStatus === 'APPROVED' ? '#047857' : '#d97706'} />
+                                    <Text size="11px" fw={700} c={(sale as any).ReceiptStatus === 'APPROVED' ? '#047857' : '#b45309'} ff="monospace">
+                                      {(sale as any).ReceiptNo}
+                                    </Text>
+                                    <Badge size="xs" variant="light" color={(sale as any).ReceiptStatus === 'APPROVED' ? 'teal' : 'yellow'} radius="xs" style={{ padding: '0 4px', height: 16, fontSize: 9.5 }}>
+                                      {(sale as any).ReceiptStatus === 'APPROVED' ? 'Approved' : 'Pending'}
+                                    </Badge>
+                                  </Group>
+                                )}
                               </Table.Td>
                               <Table.Td>
                                 <Text fw={600} size="xs" c="#334155" lineClamp={1}>
@@ -1369,14 +1380,33 @@ export const EndAllocationsPage: React.FC = () => {
                                 </Text>
                               </Table.Td>
                               <Table.Td>
-                                <Badge
-                                  size="xs"
-                                  variant="light"
-                                  color={isEmtrtn ? 'gray' : (sale.PaymentMethod?.toLowerCase() === 'cash' ? 'gray' : 'burgundy')}
-                                  styles={{ root: { fontWeight: 600 } }}
-                                >
-                                  {isEmtrtn ? 'N/A' : (sale.PaymentMethod || 'Cash')}
-                                </Badge>
+                                {sale.PaymentMethod?.toUpperCase() === 'SPLIT' ? (
+                                  <Stack gap={2}>
+                                    <Badge
+                                      size="xs"
+                                      variant="gradient"
+                                      gradient={{ from: 'teal', to: 'blue', deg: 60 }}
+                                      radius="xs"
+                                      styles={{ root: { fontWeight: 700, padding: '0 5px', height: 18, alignSelf: 'flex-start' } }}
+                                    >
+                                      SPLIT
+                                    </Badge>
+                                    {sale.Notes && (sale.Notes.includes('Cash:') || sale.Notes.includes('UPI:') || sale.Notes.includes('Bank:')) && (
+                                      <Text size="10px" c="#475569" style={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                                        {sale.Notes.replace(/^Payment:\s*SPLIT\s*\(/i, '').replace(/\)\s*\|\s*Customer.*$/i, '').trim()}
+                                      </Text>
+                                    )}
+                                  </Stack>
+                                ) : (
+                                  <Badge
+                                    size="xs"
+                                    variant="light"
+                                    color={isEmtrtn ? 'gray' : (sale.PaymentMethod?.toLowerCase() === 'cash' ? 'gray' : (sale.PaymentMethod?.toLowerCase() === 'credit' ? 'red' : 'blue'))}
+                                    styles={{ root: { fontWeight: 600 } }}
+                                  >
+                                    {isEmtrtn ? 'N/A' : (sale.PaymentMethod || 'Cash')}
+                                  </Badge>
+                                )}
                               </Table.Td>
                               <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
                                 {isRcpt ? (
@@ -1394,7 +1424,24 @@ export const EndAllocationsPage: React.FC = () => {
                                     <div style={{ fontSize: 10, color: '#94a3b8' }}>RETURN ONLY</div>
                                   </>
                                 ) : (
-                                  `₹${sale.GrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                  <>
+                                    <div>
+                                      ₹{Number(sale.GrandTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </div>
+                                    {Number(sale.PaidAmount || 0) > 0 && Number(sale.PaidAmount) !== Number(sale.GrandTotal) ? (
+                                      <div style={{ fontSize: 10.5, color: '#047857', fontWeight: 600 }}>
+                                        Collected: ₹{Number(sale.PaidAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      </div>
+                                    ) : Number(sale.PaidAmount || 0) > 0 ? (
+                                      <div style={{ fontSize: 10, color: '#047857', fontWeight: 600 }}>
+                                        PAID IN FULL
+                                      </div>
+                                    ) : (
+                                      <div style={{ fontSize: 10, color: '#dc2626', fontWeight: 600 }}>
+                                        UNPAID (CREDIT)
+                                      </div>
+                                    )}
+                                  </>
                                 )}
                               </Table.Td>
                               <Table.Td style={{ textAlign: 'center' }}>

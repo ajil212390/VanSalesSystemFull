@@ -8913,6 +8913,18 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     'Notes': eh.Notes or '',
                 } for eh in s.edit_history.all().order_by('-EditedAt')]
                 c_name = getattr(s, 'CustomerName', None) or (s.CustomerLedger.LedgerName if s.CustomerLedger else 'Customer')
+                pmt = Payment.objects.filter(
+                    Q(Narration__icontains=s.SalesNo) | (Q(Narration__icontains=s.InvoiceNo) if s.InvoiceNo else Q())
+                ).first()
+                r_no = None
+                r_status = None
+                if pmt:
+                    r_no = pmt.PaymentNo or pmt.ReferenceNumber or f"REC-{pmt.PaymentId:03d}"
+                    r_status = pmt.Status or 'APPROVED'
+                elif s.PaidAmount and s.PaidAmount > 0:
+                    r_no = 'TREC (Pending)'
+                    r_status = 'PENDING'
+
                 sales_data.append({
                     'SalesId': s.SalesId,
                     'InvoiceNo': s.InvoiceNo,
@@ -8921,6 +8933,8 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     'PaidAmount': float(s.PaidAmount or 0),
                     'PaymentMethod': s.PaymentMethod or 'Cash',
                     'Notes': s.Notes or '',
+                    'ReceiptNo': r_no,
+                    'ReceiptStatus': r_status,
                     'IsEdited': bool(getattr(s, 'IsEdited', False) or len(edits) > 0),
                     'is_edited': bool(getattr(s, 'IsEdited', False) or len(edits) > 0),
                     'EditReason': s.EditReason or '',
