@@ -620,7 +620,7 @@ export const SalesListPage: React.FC = () => {
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-              Collections
+              Collections (Includes Pending)
             </Text>
             <IconCash size={20} color="#800020" stroke={1.75} />
           </Group>
