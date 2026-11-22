@@ -3706,9 +3706,15 @@ def generate_ledger_statement_pdf(
         vtype_str = str(e.get('voucher_type') or e.get('type') or '')
         ref_raw = str(e.get('vch_no') or e.get('ref') or '—')
         if vtype_str.lower() == 'sales':
-            ref_str = f"INV-{ref_raw.replace('INV-', '').replace('SALE-', '')}"
+            ref_str = ref_raw if ref_raw.startswith('INV-') else f"INV-{ref_raw.replace('SALE-', '')}"
         elif vtype_str.lower() == 'receipt':
-            ref_str = f"REC-{ref_raw.replace('REC-', '').replace('INV-', '').replace('PAY-', '')}"
+            clean_rec = ref_raw.replace('REC-VCH-', 'REC-')
+            if clean_rec.startswith('REC-'):
+                ref_str = clean_rec
+            elif clean_rec != '—':
+                ref_str = f"REC-{clean_rec.replace('INV-', '').replace('PAY-', '')}"
+            else:
+                ref_str = '—'
         else:
             ref_str = ref_raw
         part_str = str(e.get('particulars') or '—')

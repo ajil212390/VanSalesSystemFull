@@ -569,7 +569,16 @@ export const ReceivablesReportPage: React.FC = () => {
       const counterPaidOnSale = Math.max(0, Number(s.PaidAmount || 0) - allocatedFromReceipt - adjFromAdvance);
 
       if (counterPaidOnSale > 0) {
-        const rcptRef = `REC-${rawRef.replace(/^INV-?/i, '')}`;
+        const linkedReceipt = custReceipts.find((r: any) => {
+          const against = r.against_bills || (r.lines || []).flatMap((l: any) => (l.allocations || []).map((a: any) => a.BillReference));
+          return against && against.some((b: string) => {
+            const bClean = String(b).trim().toUpperCase();
+            return bClean === sRef || (s.InvoiceNo && bClean === String(s.InvoiceNo).trim().toUpperCase());
+          });
+        });
+        const rcptRef = linkedReceipt
+          ? (linkedReceipt.voucher_no || `REC-${String(linkedReceipt.PaymentId).padStart(3, '0')}`)
+          : `REC-${String(s.SalesId).padStart(3, '0')}`;
         allTx.push({
           date: dt,
           ref: formatShortRef(rcptRef),
@@ -585,7 +594,7 @@ export const ReceivablesReportPage: React.FC = () => {
     // Receipts (Credit entries - customer payment cleared)
     custReceipts.forEach((r: any) => {
       const dt = String(r.payment_date || r.CreatedAt?.split('T')[0] || r.VoucherDate || '');
-      const rawRecRef = r.PaymentNo || `REC-${r.PaymentId}`;
+      const rawRecRef = r.voucher_no || r.PaymentNo || `REC-${String(r.PaymentId).padStart(3, '0')}`;
       const rCreated = r.CreatedAt ? new Date(r.CreatedAt).toISOString() : `${dt}T23:59:59.000Z`;
 
       let rParticulars = `Collection Receipt (${r.primary_mode || r.PaymentMode || 'CASH'})`;
