@@ -21,6 +21,7 @@ import {
   Checkbox,
   NumberInput,
   SegmentedControl,
+  Skeleton,
 } from '@mantine/core';
 import {
   IconArrowLeft,
@@ -196,6 +197,8 @@ export const ReceivablesReportPage: React.FC = () => {
 
   // Filter for Sundry Debtors (Customers) with Opening Balance included
   const debtorsList = useMemo(() => {
+    if (isLoading) return [];
+
     // Map customer collections and allocations from payments
     const receiptsMap = new Map<number, number>();
     const receiptAllocBySale = new Map<string | number, number>();
@@ -1109,12 +1112,20 @@ export const ReceivablesReportPage: React.FC = () => {
             </Text>
             <IconUsers size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-            {debtorsList.length}
-          </Text>
-          <Text size="xs" c="dimmed">
-            Opening Bal: ₹{Math.abs(totalOpeningSum).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {totalOpeningSum >= 0 ? 'Dr' : 'Cr'}
-          </Text>
+          {isLoading ? (
+            <Skeleton height={28} width={80} radius="sm" my={4} />
+          ) : (
+            <Text fw={700} style={{ color: '#0f172a', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+              {debtorsList.length}
+            </Text>
+          )}
+          {isLoading ? (
+            <Skeleton height={14} width={140} radius="sm" />
+          ) : (
+            <Text size="xs" c="dimmed">
+              Opening Bal: ₹{Math.abs(totalOpeningSum).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {totalOpeningSum >= 0 ? 'Dr' : 'Cr'}
+            </Text>
+          )}
         </Paper>
 
         {/* Card 2: Total Sales */}
@@ -1125,12 +1136,20 @@ export const ReceivablesReportPage: React.FC = () => {
             </Text>
             <IconFileInvoice size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-            ₹{totalBilledSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </Text>
-          <Text size="xs" c="dimmed">
-            {sales.filter((s: any) => s.Status !== 'CANCELLED').length} delivery &amp; sales bills
-          </Text>
+          {isLoading ? (
+            <Skeleton height={28} width={140} radius="sm" my={4} />
+          ) : (
+            <Text fw={700} style={{ color: '#0f172a', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+              ₹{totalBilledSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          )}
+          {isLoading ? (
+            <Skeleton height={14} width={120} radius="sm" />
+          ) : (
+            <Text size="xs" c="dimmed">
+              {sales.filter((s: any) => s.Status !== 'CANCELLED').length} delivery &amp; sales bills
+            </Text>
+          )}
         </Paper>
 
         {/* Card 3: Collections Received */}
@@ -1141,12 +1160,20 @@ export const ReceivablesReportPage: React.FC = () => {
             </Text>
             <IconCash size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
-            ₹{totalReceivedSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </Text>
-          <Text size="xs" c="dimmed">
-            Cleared cash &amp; bank receipts
-          </Text>
+          {isLoading ? (
+            <Skeleton height={28} width={140} radius="sm" my={4} />
+          ) : (
+            <Text fw={700} style={{ color: '#0f172a', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>
+              ₹{totalReceivedSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </Text>
+          )}
+          {isLoading ? (
+            <Skeleton height={14} width={130} radius="sm" />
+          ) : (
+            <Text size="xs" c="dimmed">
+              Cleared cash &amp; bank receipts
+            </Text>
+          )}
         </Paper>
 
         {/* Card 4: Net Balance Receivable */}
@@ -1157,15 +1184,23 @@ export const ReceivablesReportPage: React.FC = () => {
             </Text>
             <IconCoins size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#800020', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>
-            ₹{Math.abs(totalReceivableSum).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
-            <Text component="span" size="sm" fw={700} c="#800020">
-              {totalReceivableSum >= 0 ? 'Dr' : 'Cr'}
+          {isLoading ? (
+            <Skeleton height={28} width={150} radius="sm" my={4} />
+          ) : (
+            <Text fw={700} style={{ color: '#800020', fontSize: 26, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', marginBottom: 4 }}>
+              ₹{Math.abs(totalReceivableSum).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+              <Text component="span" size="sm" fw={700} c="#800020">
+                {totalReceivableSum >= 0 ? 'Dr' : 'Cr'}
+              </Text>
             </Text>
-          </Text>
-          <Text size="xs" c="dimmed">
-            Current outstanding from customers
-          </Text>
+          )}
+          {isLoading ? (
+            <Skeleton height={14} width={160} radius="sm" />
+          ) : (
+            <Text size="xs" c="dimmed">
+              Current outstanding from customers
+            </Text>
+          )}
         </Paper>
       </SimpleGrid>
 

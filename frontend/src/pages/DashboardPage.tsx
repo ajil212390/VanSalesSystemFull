@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   SegmentedControl,
+  Skeleton,
 } from '@mantine/core';
 import {
   IconReceipt,
@@ -271,7 +272,7 @@ export const DashboardPage: React.FC = () => {
   }, []);
 
   // 1. Fetch Purchases (Only for Admin & Accountant)
-  const { data: purchases = [] } = useQuery<any[]>({
+  const { data: purchases = [], isLoading: isLoadingPurchases } = useQuery<any[]>({
     queryKey: ['purchases'],
     queryFn: async () => {
       const res = await apiClient.get('/purchases/');
@@ -281,7 +282,7 @@ export const DashboardPage: React.FC = () => {
   });
 
   // 2. Fetch Payments & Receipts (Only for Admin & Accountant)
-  const { data: payments = [] } = useQuery<any[]>({
+  const { data: payments = [], isLoading: isLoadingPayments } = useQuery<any[]>({
     queryKey: ['payments'],
     queryFn: async () => {
       const res = await apiClient.get('/payments/');
@@ -291,7 +292,7 @@ export const DashboardPage: React.FC = () => {
   });
 
   // 3. Fetch Ledgers
-  const { data: ledgers = [] } = useQuery<any[]>({
+  const { data: ledgers = [], isLoading: isLoadingLedgers } = useQuery<any[]>({
     queryKey: ['ledgers'],
     queryFn: async () => {
       const res = await apiClient.get('/ledgers/');
@@ -300,7 +301,7 @@ export const DashboardPage: React.FC = () => {
   });
 
   // 4. Fetch Sales (Admin, Accountant & Manager)
-  const { data: sales = [] } = useQuery<any[]>({
+  const { data: sales = [], isLoading: isLoadingSales } = useQuery<any[]>({
     queryKey: ['sales'],
     queryFn: async () => {
       const res = await apiClient.get('/sales/');
@@ -308,6 +309,9 @@ export const DashboardPage: React.FC = () => {
     },
     enabled: true,
   });
+
+  const isLoadingPurchasesPayables = isLoadingPurchases || isLoadingPayments || isLoadingLedgers;
+  const isLoadingSalesReceivables = isLoadingSales || isLoadingPayments || isLoadingLedgers;
 
   // 5. Fetch Routes for Van Management (Only for Admin & Manager)
   const { data: routes = [] } = useQuery<any[]>({
@@ -998,7 +1002,13 @@ export const DashboardPage: React.FC = () => {
               <DashboardMetricCard
                 title="Total Purchase"
                 icon={<IconReceipt size={22} color='#800020'/>}
-                value={<CountUp value={totalPurchase} prefix="₹" decimals={2} />}
+                value={
+                  isLoadingPurchasesPayables ? (
+                    <Skeleton height={28} width={130} radius="sm" />
+                  ) : (
+                    `₹${totalPurchase.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  )
+                }
                 subtitle={`${filteredPurchases.length} Invoice${filteredPurchases.length !== 1 ? 's' : ''} (${dateRange.label})`}
                 onClick={() => navigate('/purchases')}
               />
@@ -1006,7 +1016,13 @@ export const DashboardPage: React.FC = () => {
               <DashboardMetricCard
                 title="Supplier Payments"
                 icon={<IconCreditCard size={22} color='#800020' />}
-                value={<CountUp value={totalSupplierPayments} prefix="₹" decimals={2} />}
+                value={
+                  isLoadingPurchasesPayables ? (
+                    <Skeleton height={28} width={130} radius="sm" />
+                  ) : (
+                    `₹${totalSupplierPayments.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  )
+                }
                 subtitle={`${filteredSupplierPayments.length} Voucher${filteredSupplierPayments.length !== 1 ? 's' : ''} (${dateRange.label})`}
                 onClick={() => navigate('/payments')}
               />
@@ -1015,21 +1031,25 @@ export const DashboardPage: React.FC = () => {
                 title="Payable"
                 icon={<IconWallet size={22} color='#800020' />}
                 value={
-                  <Text
-                    fw={800}
-                    style={{
-                      color: '#800020',
-                      fontSize: '28px',
-                      fontVariantNumeric: 'tabular-nums',
-                      letterSpacing: '-0.03em',
-                      lineHeight: 1.15,
-                    }}
-                  >
-                    <CountUp value={Math.abs(payableBalance)} prefix="₹" decimals={2} />{' '}
-                    <Text component="span" size="sm" c="#800020" fw={700}>
-                      {payableBalance >= 0 ? 'Cr' : 'Dr'}
+                  isLoadingPurchasesPayables ? (
+                    <Skeleton height={28} width={140} radius="sm" />
+                  ) : (
+                    <Text
+                      fw={800}
+                      style={{
+                        color: '#800020',
+                        fontSize: '28px',
+                        fontVariantNumeric: 'tabular-nums',
+                        letterSpacing: '-0.03em',
+                        lineHeight: 1.15,
+                      }}
+                    >
+                      ₹{Math.abs(payableBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                      <Text component="span" size="sm" c="#800020" fw={700}>
+                        {payableBalance >= 0 ? 'Cr' : 'Dr'}
+                      </Text>
                     </Text>
-                  </Text>
+                  )
                 }
                 subtitle="Outstanding supplier liability"
                 onClick={() => navigate('/payables')}
@@ -1052,7 +1072,13 @@ export const DashboardPage: React.FC = () => {
               <DashboardMetricCard
                 title="Sales"
                 icon={<IconFileInvoice size={22} color='#800020' />}
-                value={<CountUp value={totalSales} prefix="₹" decimals={2} />}
+                value={
+                  isLoadingSalesReceivables ? (
+                    <Skeleton height={28} width={130} radius="sm" />
+                  ) : (
+                    `₹${totalSales.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  )
+                }
                 subtitle={`${validSalesCount} Bill${validSalesCount !== 1 ? 's' : ''} (${dateRange.label})`}
                 onClick={() => navigate('/sales')}
               />
@@ -1060,7 +1086,13 @@ export const DashboardPage: React.FC = () => {
               <DashboardMetricCard
                 title="Collections"
                 icon={<IconCash size={22} color='#800020' />}
-                value={<CountUp value={totalCustomerReceipts} prefix="₹" decimals={2} />}
+                value={
+                  isLoadingSalesReceivables ? (
+                    <Skeleton height={28} width={130} radius="sm" />
+                  ) : (
+                    `₹${totalCustomerReceipts.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  )
+                }
                 subtitle={`${totalCollectionsCount} Collection${totalCollectionsCount !== 1 ? 's' : ''} (${dateRange.label})`}
                 onClick={() => navigate('/collections')}
               />
@@ -1069,21 +1101,25 @@ export const DashboardPage: React.FC = () => {
                 title="Receivable"
                 icon={<IconCoins size={22} color='#800020' />}
                 value={
-                  <Text
-                    fw={800}
-                    style={{
-                      color: '#800020',
-                      fontSize: '27px',
-                      fontVariantNumeric: 'tabular-nums',
-                      letterSpacing: '-0.025em',
-                      lineHeight: 1.2,
-                    }}
-                  >
-                    <CountUp value={Math.abs(receivableBalance)} prefix="₹" decimals={2} />{' '}
-                    <Text component="span" size="sm" c="#800020" fw={700}>
-                      {receivableBalance >= 0 ? 'Dr' : 'Cr'}
+                  isLoadingSalesReceivables ? (
+                    <Skeleton height={28} width={140} radius="sm" />
+                  ) : (
+                    <Text
+                      fw={800}
+                      style={{
+                        color: '#800020',
+                        fontSize: '27px',
+                        fontVariantNumeric: 'tabular-nums',
+                        letterSpacing: '-0.025em',
+                        lineHeight: 1.2,
+                      }}
+                    >
+                      ₹{Math.abs(receivableBalance).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                      <Text component="span" size="sm" c="#800020" fw={700}>
+                        {receivableBalance >= 0 ? 'Dr' : 'Cr'}
+                      </Text>
                     </Text>
-                  </Text>
+                  )
                 }
                 subtitle="Outstanding customer balance"
                 onClick={() => navigate('/receivables')}
