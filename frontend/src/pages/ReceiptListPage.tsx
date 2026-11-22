@@ -574,10 +574,43 @@ export const ReceiptListPage: React.FC = () => {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        {firstLine && firstLine.ledger_name ? (
-                          <Text size="sm" fw={500} c="#1e293b">
-                            {firstLine.ledger_name}
-                          </Text>
+                        {item.lines && item.lines.length > 1 ? (
+                          <Stack gap={2}>
+                            <Group gap={6} wrap="nowrap" align="center">
+                              <Badge
+                                size="xs"
+                                variant="gradient"
+                                gradient={{ from: 'teal', to: 'blue', deg: 60 }}
+                                radius="xs"
+                                style={{ fontWeight: 700, padding: '0 5px', height: 18, letterSpacing: '0.3px' }}
+                              >
+                                SPLIT
+                              </Badge>
+                              <Text size="xs" fw={700} c="#1e293b" style={{ whiteSpace: 'nowrap' }}>
+                                {item.lines.map((l) => l.ledger_name || l.PaymentMode).join(' + ')}
+                              </Text>
+                            </Group>
+                            <Text size="11px" c="#64748b" style={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                              {item.lines
+                                .map((l) => `${l.ledger_name || l.PaymentMode}: ₹${Number(l.Amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+                                .join(' • ')}
+                            </Text>
+                          </Stack>
+                        ) : firstLine && firstLine.ledger_name ? (
+                          <Group gap={6} wrap="nowrap" align="center">
+                            <Badge
+                              size="xs"
+                              variant="light"
+                              color={firstLine.PaymentMode === 'Bank' || (firstLine.ledger_name && !firstLine.ledger_name.toLowerCase().includes('cash')) ? 'blue' : 'gray'}
+                              radius="xs"
+                              style={{ fontWeight: 600, padding: '0 5px', height: 18 }}
+                            >
+                              {firstLine.PaymentMode || 'Cash'}
+                            </Badge>
+                            <Text size="sm" fw={600} c="#1e293b">
+                              {firstLine.ledger_name}
+                            </Text>
+                          </Group>
                         ) : (
                           <Text size="xs" c="#94a3b8">—</Text>
                         )}

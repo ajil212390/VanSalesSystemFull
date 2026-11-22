@@ -164,6 +164,68 @@ def ensure_payment_columns():
                 p.Status = 'APPROVED'
                 p.save(update_fields=['PaymentNo', 'Status'])
 
+        # Fix any historical split payments that ended up with only 1 line
+        split_sales = Sales.objects.filter(
+            Q(PaymentMethod__iexact='SPLIT') | Q(Notes__icontains='SPLIT') | Q(Notes__icontains='Cash:')
+        ).exclude(Status='CANCELLED')
+        for s in split_sales:
+            p_rec = Payment.objects.filter(
+                Q(Narration__icontains=s.SalesNo) | (Q(Narration__icontains=s.InvoiceNo) if s.InvoiceNo else Q())
+            ).first()
+            if p_rec and p_rec.lines.count() <= 1:
+                c_m = re.search(r'Cash[:\s\-\=]+[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
+                u_m = re.search(r'(?:UPI|Bank|Online)[:\s\-\=]+[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
+                c_val = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
+                u_val = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
+                if c_val <= 0 and u_val <= 0:
+                    c_val = (p_rec.Amount / Decimal('2.00')).quantize(Decimal('0.01'))
+                    u_val = p_rec.Amount - c_val
+                elif c_val > 0 and u_val <= 0 and p_rec.Amount > c_val:
+                    u_val = p_rec.Amount - c_val
+                elif u_val > 0 and c_val <= 0 and p_rec.Amount > u_val:
+                    c_val = p_rec.Amount - u_val
+
+                if c_val > 0 and u_val > 0:
+                    c_led = Ledger.objects.filter(LedgerId=24).first() or Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
+                    b_led = Ledger.objects.filter(LedgerId=56).first() or Ledger.objects.filter(Group__GroupName__icontains='Bank').first()
+                    if c_led and b_led:
+                        p_rec.lines.all().delete()
+                        BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=p_rec.PaymentId).delete()
+                        b_ref = s.InvoiceNo or s.SalesNo
+                        pl1 = PaymentLine.objects.create(
+                            Payment=p_rec, LineNo=1, PaymentMode='Cash',
+                            Ledger=c_led, Amount=c_val, Narration=f"Cash Split for {b_ref}"
+                        )
+                        BillwiseAllocation.objects.create(
+                            PaymentLine=pl1, ReferenceTable='Receipt', ReferenceId=p_rec.PaymentId,
+                            BillType='SALES', BillReference=b_ref, BillDate=s.SalesDate,
+                            AllocationType='Against Reference', AllocatedAmount=c_val, CompanyId=s.CompanyId or 1
+                        )
+                        pl2 = PaymentLine.objects.create(
+                            Payment=p_rec, LineNo=2, PaymentMode='Bank',
+                            Ledger=b_led, Amount=u_val, Narration=f"UPI Split for {b_ref}"
+                        )
+                        BillwiseAllocation.objects.create(
+                            PaymentLine=pl2, ReferenceTable='Receipt', ReferenceId=p_rec.PaymentId,
+                            BillType='SALES', BillReference=b_ref, BillDate=s.SalesDate,
+                            AllocationType='Against Reference', AllocatedAmount=u_val, CompanyId=s.CompanyId or 1
+                        )
+                        rc_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=p_rec.PaymentId).first()
+                        if rc_vch:
+                            rc_vch.lines.all().delete()
+                            VoucherLine.objects.create(
+                                Voucher=rc_vch, LineNo=1, Ledger=c_led,
+                                DebitAmount=c_val, CreditAmount=Decimal('0.00'), Narration="Cash Split Receipt"
+                            )
+                            VoucherLine.objects.create(
+                                Voucher=rc_vch, LineNo=2, Ledger=b_led,
+                                DebitAmount=u_val, CreditAmount=Decimal('0.00'), Narration="UPI Split Receipt"
+                            )
+                            VoucherLine.objects.create(
+                                Voucher=rc_vch, LineNo=3, Ledger=p_rec.PartyLedger,
+                                DebitAmount=Decimal('0.00'), CreditAmount=p_rec.Amount, Narration="Collection (SPLIT)"
+                            )
+
         _payment_columns_checked = True
     except Exception:
         pass
@@ -10046,6 +10108,16 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
             dt = timezone.make_aware(datetime.combine(sale_date, datetime.min.time())) if timezone.is_naive(datetime.combine(sale_date, datetime.min.time())) else datetime.combine(sale_date, datetime.min.time())
             Payment.objects.filter(pk=pay_rec.pk).update(CreatedAt=dt)
 
+        # Check existing lines before deleting to preserve split if already recorded
+        prev_c_split = Decimal('0.00')
+        prev_u_split = Decimal('0.00')
+        for ex_l in pay_rec.lines.all():
+            m_l = (ex_l.PaymentMode or '').upper()
+            if m_l == 'CASH':
+                prev_c_split += ex_l.Amount
+            elif m_l in ['BANK', 'UPI', 'ONLINE']:
+                prev_u_split += ex_l.Amount
+
         # Rebuild Payment Lines & Billwise Allocations cleanly
         BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=pay_rec.PaymentId).delete()
         pay_rec.lines.all().delete()
@@ -10056,12 +10128,18 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
         c_split = Decimal('0.00')
         u_split = Decimal('0.00')
         if pm == 'SPLIT' and (cash_led or bank_led):
-            c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
-            u_m = re.search(r'(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
+            c_m = re.search(r'Cash[:\s\-\=]+[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
+            u_m = re.search(r'(?:UPI|Bank|Online)[:\s\-\=]+[₹Rs\.]*\s*([\d,]+\.?\d*)', sale.Notes or '', re.IGNORECASE)
             c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
             u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
             if c_split <= Decimal('0.00') and u_split <= Decimal('0.00'):
-                c_split = cash_paid_spot
+                if prev_c_split > Decimal('0.00') or prev_u_split > Decimal('0.00'):
+                    c_split = prev_c_split
+                    u_split = prev_u_split
+                else:
+                    # Fallback 50/50 split so it never turns into 100% Cash
+                    c_split = (cash_paid_spot / Decimal('2.00')).quantize(Decimal('0.01'))
+                    u_split = cash_paid_spot - c_split
             elif c_split > Decimal('0.00') and u_split <= Decimal('0.00') and cash_paid_spot > c_split:
                 u_split = cash_paid_spot - c_split
             elif u_split > Decimal('0.00') and c_split <= Decimal('0.00') and cash_paid_spot > u_split:

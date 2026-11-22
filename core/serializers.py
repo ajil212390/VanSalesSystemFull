@@ -1058,7 +1058,10 @@ class PaymentSerializer(serializers.ModelSerializer):
         return obj.CreatedAt.strftime('%Y-%m-%d') if obj.CreatedAt else None
 
     def get_primary_mode(self, obj):
-        first_line = obj.lines.first()
+        lines = list(obj.lines.all())
+        if len(lines) > 1:
+            return "Split"
+        first_line = lines[0] if lines else None
         return first_line.PaymentMode if first_line else 'Cash'
 
     def get_voucher_type(self, obj):
