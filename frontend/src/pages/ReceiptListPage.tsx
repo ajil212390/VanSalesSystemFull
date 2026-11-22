@@ -12,7 +12,6 @@ import {
   TextInput,
   CloseButton,
   ActionIcon,
-  Badge,
   SegmentedControl,
   Select,
   Box } from '@mantine/core';
@@ -418,12 +417,11 @@ export const ReceiptListPage: React.FC = () => {
             <Table verticalSpacing="sm" horizontalSpacing="sm" highlightOnHover>
               <Table.Thead style={{ backgroundColor: '#fbf0f2' }}>
                 <Table.Tr>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 120, minWidth: 110 }}>Receipt No</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 160, minWidth: 140 }}>Against Invoice</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140, minWidth: 130 }}>Receipt No</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 110, minWidth: 100, whiteSpace: 'nowrap' }}>Date</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 190, minWidth: 160 }}>Party Name</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 110 }}>Account</Table.Th>
-                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 130 }}>Narration</Table.Th>
+                  <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, minWidth: 220 }}>Narration</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 130, minWidth: 110, textAlign: 'right' }}>Total (₹)</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 85, minWidth: 80, textAlign: 'center' }}>Actions</Table.Th>
                 </Table.Tr>
@@ -453,30 +451,6 @@ export const ReceiptListPage: React.FC = () => {
                           </div>
                         </Group>
                       </Table.Td>
-                      <Table.Td>
-                        {againstBills.length > 0 ? (
-                          <Group gap={4} wrap="wrap">
-                            {againstBills.map((b, bIdx) => {
-                              const isAdv = b.toLowerCase().includes('advance');
-                              return (
-                                <Badge
-                                  key={bIdx}
-                                  size="xs"
-                                  variant={isAdv ? 'outline' : 'light'}
-                                  color={isAdv ? 'blue' : 'burgundy'}
-                                  styles={{ root: { fontWeight: 600, textTransform: 'none', letterSpacing: '0.2px' } }}
-                                >
-                                  {isAdv ? 'Customer Advance' : b}
-                                </Badge>
-                              );
-                            })}
-                          </Group>
-                        ) : (
-                          <Badge size="xs" variant="outline" color="gray" styles={{ root: { fontWeight: 500, color: '#64748b' } }}>
-                            Direct Receipt
-                          </Badge>
-                        )}
-                      </Table.Td>
                       <Table.Td style={{ whiteSpace: 'nowrap', minWidth: 110, width: 120 }}>
                         <Text size="sm" c="#475569" style={{ whiteSpace: 'nowrap', wordBreak: 'keep-all', display: 'inline-block' }}>
                           {formatDateDDMMYY(dateStr)}
@@ -496,8 +470,8 @@ export const ReceiptListPage: React.FC = () => {
                           <Text size="xs" c="#94a3b8">—</Text>
                         )}
                       </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" c="#64748b" lineClamp={1}>
+                      <Table.Td style={{ minWidth: 220, maxWidth: 360 }}>
+                        <Text size="sm" c="#64748b" title={item.Narration || ''} style={{ wordBreak: 'break-word', lineHeight: 1.4 }}>
                           {item.Narration && !item.Narration.startsWith('Payment voucher #')
                             ? item.Narration
                             : '—'}
