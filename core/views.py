@@ -1926,29 +1926,19 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         bill_to_receipt_map[b_ref] = clean_r_no
                         bill_to_receipt_map[b_ref.replace('INV-', '').replace('SALE-', '')] = clean_r_no
             if pm.Narration:
-                import re
                 for m_ref in re.findall(r'(INV-?\d+|SALE-?\d+)', pm.Narration, re.IGNORECASE):
                     bill_to_receipt_map[m_ref.upper()] = clean_r_no
                     bill_to_receipt_map[m_ref.upper().replace('INV-', '').replace('SALE-', '')] = clean_r_no
 
-        try:
-            for bwa in BillwiseAllocation.objects.filter(BillReference__isnull=False):
+        # Also check direct BillwiseAllocation with ReferenceTable in ('Receipt', 'Payment') for this customer's payments
+        pmt_ids = [pm.PaymentId for pm in cust_pmts]
+        if pmt_ids:
+            for bwa in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId__in=pmt_ids):
                 b_ref = str(bwa.BillReference or '').strip().upper()
-                if not b_ref:
-                    continue
-                r_id = None
-                if bwa.PaymentLine_id:
-                    pl = PaymentLine.objects.filter(PaymentLineId=bwa.PaymentLine_id).values_list('PaymentId', flat=True).first()
-                    if pl:
-                        r_id = pl
-                if not r_id and bwa.ReferenceTable in ('Receipt', 'Payment') and bwa.ReferenceId:
-                    r_id = bwa.ReferenceId
-                if r_id:
-                    clean_r_no = payment_vch_map.get(r_id) or f"REC-{r_id:03d}"
+                if b_ref:
+                    clean_r_no = payment_vch_map.get(bwa.ReferenceId) or f"REC-{bwa.ReferenceId:03d}"
                     bill_to_receipt_map[b_ref] = clean_r_no
                     bill_to_receipt_map[b_ref.replace('INV-', '').replace('SALE-', '')] = clean_r_no
-        except Exception as e:
-            logger.warning(f"Error querying BillwiseAllocation for ledger statement: {e}")
 
         def get_receipt_no_for_sale(sale, fallback_ref):
             clean_s_ref = str(fallback_ref or '').strip().upper()

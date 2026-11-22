@@ -124,7 +124,7 @@ export const LedgerAnalysisPage: React.FC = () => {
   });
 
   // 4. Fetch Statement for Selected Ledger
-  const { data: statementData, isLoading: isLoadingStatement, refetch: refetchStatement } = useQuery<{
+  const { data: statementData, isLoading: isLoadingStatement, isError: isErrorStatement, refetch: refetchStatement } = useQuery<{
     ledger: any;
     entries: StatementEntry[];
   }>({
@@ -447,12 +447,22 @@ export const LedgerAnalysisPage: React.FC = () => {
   };
 
   // ── Render: Dedicated Statement View for a Selected Ledger ──
-  if (selectedLedgerId && statementData?.ledger) {
-    const l = statementData.ledger;
-    const isDrNormal = (l.group_nature || '').toLowerCase() === 'asset' || (l.group_nature || '').toLowerCase() === 'expense';
-    const closingSuffix = statementCalculations.closingBal >= 0 ? (isDrNormal ? 'Dr' : 'Cr') : (isDrNormal ? 'Cr' : 'Dr');
+  if (selectedLedgerId) {
+    const l = statementData?.ledger || ledgers.find((x) => x.LedgerId === selectedLedgerId);
+    if (!l && isLoadingStatement) {
+      return (
+        <Stack gap="md" style={{ width: '100%' }}>
+          <Center py={80}>
+            <Loader color="burgundy" size="md" />
+          </Center>
+        </Stack>
+      );
+    }
+    if (l) {
+      const isDrNormal = (l.group_nature || '').toLowerCase() === 'asset' || (l.group_nature || '').toLowerCase() === 'expense';
+      const closingSuffix = statementCalculations.closingBal >= 0 ? (isDrNormal ? 'Dr' : 'Cr') : (isDrNormal ? 'Cr' : 'Dr');
 
-    return (
+      return (
       <Stack gap="md" style={{ width: '100%' }}>
         {/* Navigation & Header */}
         <Box pt={4} pb={2}>
@@ -618,6 +628,15 @@ export const LedgerAnalysisPage: React.FC = () => {
             <Center py={60}>
               <Loader color="burgundy" size="md" />
             </Center>
+          ) : isErrorStatement ? (
+            <Center py={60}>
+              <Stack align="center" gap="xs">
+                <Text size="sm" c="red" fw={500}>Failed to load statement transactions.</Text>
+                <Button size="xs" variant="outline" color="burgundy" onClick={() => refetchStatement()}>
+                  Retry
+                </Button>
+              </Stack>
+            </Center>
           ) : statementCalculations.entries.length === 0 ? (
             <Center py={60}>
               <Text size="sm" c="dimmed">No transactions recorded for this ledger in the selected period.</Text>
@@ -726,6 +745,7 @@ export const LedgerAnalysisPage: React.FC = () => {
         </Paper>
       </Stack>
     );
+    }
   }
 
   // ── Render: Main Ledger Analysis List View ──
