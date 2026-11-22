@@ -2016,7 +2016,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
         vl_qs = VoucherLine.objects.filter(
             Ledger=ledger,
             Voucher__IsCancelled=False
-        ).select_related('Voucher').order_by('Voucher__VoucherDate', 'VoucherLineId')
+        ).select_related('Voucher').prefetch_related('Voucher__lines__Ledger').order_by('Voucher__VoucherDate', 'VoucherLineId')
 
         # Prefetch related sales and purchases for rich Tally-style particulars and shared invoice references
         sales_ids = [v.ReferenceId for v in [vl.Voucher for vl in vl_qs] if v and str(v.ReferenceTable or '').lower() == 'sales' and v.ReferenceId]
@@ -2027,6 +2027,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
         # matching what appears in the Receipts list (/receipts) where receipts are numbered sequentially REC-001, REC-002...
         bill_to_receipt_map = {}
         payment_vch_map = {}
+        payments_map = {}
         try:
             all_receipt_pmts = list(
                 Payment.objects
@@ -2034,11 +2035,12 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 .exclude(PartyLedger_id=31)
                 .exclude(PartyLedger__LedgerName__icontains='travelling')
                 .order_by('PaymentId')
-                .prefetch_related('lines__allocations')
+                .prefetch_related('lines__allocations', 'lines__Ledger')
             )
             for idx, pm in enumerate(all_receipt_pmts):
-                clean_r_no = getattr(pm, 'PaymentNo', None) or f"REC-{idx + 1:03d}"
+                clean_r_no = getattr(pm, 'PaymentNo', None) or (f"REC-{idx + 1:03d}" if getattr(pm, 'Status', '') == 'APPROVED' else getattr(pm, 'ReferenceNumber', None)) or f"REC-{idx + 1:03d}"
                 payment_vch_map[pm.PaymentId] = clean_r_no
+                payments_map[pm.PaymentId] = pm
 
                 for p_line in pm.lines.all():
                     for alloc in p_line.allocations.all():
@@ -2141,14 +2143,15 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     vtype = 'Receipt'
                     narr = vl.Narration or ''
                     # Handle split receipts: if an older voucher had a single combined split line, expand to 2 lines
-                    if (s.PaymentMethod or '').upper() == 'SPLIT' and ('SPLIT' in narr or narr.startswith('Payment Received')):
-                        c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
-                        u_m = re.search(r'(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
+                    if (s.PaymentMethod or '').upper() == 'SPLIT':
+                        c_m = re.search(r'Cash[:\s\-\=]+[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
+                        u_m = re.search(r'(?:UPI|Bank|Online)[:\s\-\=]+[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
                         c_split = Decimal(c_m.group(1).replace(',', '')) if c_m else Decimal('0.00')
                         u_split = Decimal(u_m.group(1).replace(',', '')) if u_m else Decimal('0.00')
                         paid_amt = Decimal(str(vl.CreditAmount))
                         if c_split <= Decimal('0.00') and u_split <= Decimal('0.00'):
-                            c_split = paid_amt
+                            c_split = (paid_amt / Decimal('2.00')).quantize(Decimal('0.01'))
+                            u_split = paid_amt - c_split
                         elif c_split > Decimal('0.00') and u_split <= Decimal('0.00') and paid_amt > c_split:
                             u_split = paid_amt - c_split
                         elif u_split > Decimal('0.00') and c_split <= Decimal('0.00') and paid_amt > u_split:
@@ -2159,8 +2162,15 @@ class LedgerViewSet(viewsets.ModelViewSet):
                             else:
                                 c_split = max(Decimal('0.00'), paid_amt - u_split)
 
-                        bank_label = 'PAYTM SBI' if ('paytm' in (s.Notes or '').lower() or 'sbi' in (s.Notes or '').lower()) else 'Bank / UPI'
+                        bank_label = 'SBI' if ('sbi' in (s.Notes or '').lower()) else ('PAYTM' if 'paytm' in (s.Notes or '').lower() else 'Bank / UPI')
+                        if s.RouteVehicleDriver and s.RouteVehicleDriver.PaymentGroup and s.RouteVehicleDriver.PaymentGroup.BankLedger:
+                            bank_label = s.RouteVehicleDriver.PaymentGroup.BankLedger.LedgerName
+
                         rcpt_no = get_receipt_no_for_sale(s, clean_ref)
+                        pay_match = Payment.objects.filter(Q(Narration__icontains=s.InvoiceNo) | Q(Narration__icontains=s.SalesNo)).first()
+                        if pay_match and pay_match.PaymentNo:
+                            rcpt_no = pay_match.PaymentNo
+
                         if c_split > 0:
                             entries.append({
                                 'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
@@ -2197,6 +2207,10 @@ class LedgerViewSet(viewsets.ModelViewSet):
                             part_narr = "By Bank / UPI" if ('UPI' in pm_str or 'BANK' in pm_str) else f"By {s.PaymentMethod}"
 
                         rcpt_no = get_receipt_no_for_sale(s, clean_ref)
+                        pay_match = Payment.objects.filter(Q(Narration__icontains=s.InvoiceNo) | Q(Narration__icontains=s.SalesNo)).first()
+                        if pay_match and pay_match.PaymentNo:
+                            rcpt_no = pay_match.PaymentNo
+
                         entries.append({
                             'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
                             'ref': rcpt_no,
@@ -2253,41 +2267,124 @@ class LedgerViewSet(viewsets.ModelViewSet):
                     })
 
             else:
-                counter_line = v.lines.exclude(Ledger=ledger).first()
-                counter_name = counter_line.Ledger.LedgerName if counter_line and counter_line.Ledger else ''
-                clean_vno = str(v.VoucherNo).replace('REC-', '').replace('SALE-', '').replace('VCH-', '')
+                counter_lines = [l for l in v.lines.all() if l.Ledger_id != ledger.LedgerId]
+                debit_lines = [l for l in counter_lines if (l.DebitAmount or 0) > 0]
+                clean_vno = str(v.VoucherNo).replace('SALE-', '').replace('VCH-', '')
 
                 if vl.CreditAmount > 0:
                     vtype_disp = 'Receipt'
-                    if 'cash' in counter_name.lower():
-                        part = 'By Cash'
-                    elif counter_name:
-                        part = f"By {counter_name}"
+                    pay_obj = payments_map.get(v.ReferenceId) if v.ReferenceTable == 'Payment' else None
+                    if not pay_obj and v.ReferenceTable == 'Payment':
+                        pay_obj = Payment.objects.filter(pk=v.ReferenceId).prefetch_related('lines__Ledger').first()
+
+                    # Determine clean sequential receipt number (e.g. REC-008)
+                    rcpt_no = None
+                    if pay_obj:
+                        rcpt_no = pay_obj.PaymentNo or (f"REC-{pay_obj.PaymentId:03d}" if pay_obj.Status == 'APPROVED' else pay_obj.ReferenceNumber)
+                    if not rcpt_no and v.ReferenceTable == 'Payment' and v.ReferenceId in payment_vch_map:
+                        rcpt_no = payment_vch_map[v.ReferenceId]
+                    if not rcpt_no:
+                        if str(v.VoucherNo).startswith('REC-') and not 'INV-' in str(v.VoucherNo):
+                            rcpt_no = str(v.VoucherNo)
+                        else:
+                            rcpt_no = get_receipt_no_for_sale(None, v.VoucherNo)
+
+                    clean_vno = rcpt_no or clean_vno
+
+                    # Check if this receipt is a SPLIT payment
+                    # Case A: Voucher lines has multiple debit legs (e.g. Dr Cash, Dr SBI, Cr Customer)
+                    if len(debit_lines) > 1:
+                        for dl in debit_lines:
+                            acc_name = dl.Ledger.LedgerName if dl.Ledger else 'Bank'
+                            part = 'By Cash' if 'cash' in acc_name.lower() else f"By {acc_name}"
+                            entries.append({
+                                'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                                'ref': clean_vno,
+                                'vch_no': clean_vno,
+                                'voucher_type': 'Receipt',
+                                'particulars': part,
+                                'item_name': '',
+                                'full_qty': None,
+                                'empty_qty': None,
+                                'debit': 0.0,
+                                'credit': float(dl.DebitAmount or 0),
+                            })
+                    # Case B: Payment object has multiple PaymentLine records (Cash + Bank)
+                    elif pay_obj and pay_obj.lines.count() > 1:
+                        for pl in pay_obj.lines.all():
+                            acc_name = pl.Ledger.LedgerName if pl.Ledger else ('Cash' if (pl.PaymentMode or '').upper() == 'CASH' else 'Bank')
+                            part = 'By Cash' if 'cash' in acc_name.lower() else f"By {acc_name}"
+                            entries.append({
+                                'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                                'ref': clean_vno,
+                                'vch_no': clean_vno,
+                                'voucher_type': 'Receipt',
+                                'particulars': part,
+                                'item_name': '',
+                                'full_qty': None,
+                                'empty_qty': None,
+                                'debit': 0.0,
+                                'credit': float(pl.Amount or 0),
+                            })
+                    # Case C: Single payment leg
                     else:
-                        part = 'By Bank / UPI'
-                    if v.ReferenceTable == 'Payment' and v.ReferenceId in payment_vch_map:
-                        clean_vno = payment_vch_map[v.ReferenceId]
-                    else:
-                        clean_vno = get_receipt_no_for_sale(None, v.VoucherNo)
+                        counter_line = debit_lines[0] if debit_lines else (counter_lines[0] if counter_lines else None)
+                        counter_name = counter_line.Ledger.LedgerName if counter_line and counter_line.Ledger else ''
+                        if not counter_name and pay_obj and pay_obj.lines.exists():
+                            pl0 = pay_obj.lines.first()
+                            counter_name = pl0.Ledger.LedgerName if pl0.Ledger else pl0.PaymentMode
+
+                        if 'cash' in counter_name.lower():
+                            part = 'By Cash'
+                        elif counter_name:
+                            part = f"By {counter_name}"
+                        else:
+                            part = 'By Bank / UPI'
+
+                        entries.append({
+                            'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                            'ref': clean_vno,
+                            'vch_no': clean_vno,
+                            'voucher_type': 'Receipt',
+                            'particulars': part,
+                            'item_name': '',
+                            'full_qty': None,
+                            'empty_qty': None,
+                            'debit': 0.0,
+                            'credit': float(vl.CreditAmount or 0),
+                        })
                 elif vl.DebitAmount > 0 and v.VoucherType == 'SALES':
                     vtype_disp = 'Sales'
                     part = 'To SALE'
+                    entries.append({
+                        'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                        'ref': v.VoucherNo,
+                        'vch_no': v.VoucherNo,
+                        'voucher_type': vtype_disp,
+                        'particulars': part,
+                        'item_name': '',
+                        'full_qty': None,
+                        'empty_qty': None,
+                        'debit': float(vl.DebitAmount or 0),
+                        'credit': 0.0,
+                    })
                 else:
+                    counter_line = counter_lines[0] if counter_lines else None
+                    counter_name = counter_line.Ledger.LedgerName if counter_line and counter_line.Ledger else ''
                     vtype_disp = v.VoucherType.title() if v.VoucherType else 'Journal'
                     part = vl.Narration or v.Narration or counter_name or v.VoucherType
-
-                entries.append({
-                    'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
-                    'ref': clean_vno if vtype_disp == 'Receipt' else v.VoucherNo,
-                    'vch_no': clean_vno,
-                    'voucher_type': vtype_disp,
-                    'particulars': part,
-                    'item_name': '',
-                    'full_qty': None,
-                    'empty_qty': None,
-                    'debit': float(vl.DebitAmount or 0),
-                    'credit': float(vl.CreditAmount or 0),
-                })
+                    entries.append({
+                        'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                        'ref': v.VoucherNo,
+                        'vch_no': v.VoucherNo,
+                        'voucher_type': vtype_disp,
+                        'particulars': part,
+                        'item_name': '',
+                        'full_qty': None,
+                        'empty_qty': None,
+                        'debit': float(vl.DebitAmount or 0),
+                        'credit': float(vl.CreditAmount or 0),
+                    })
 
         if not entries:
             purchases = Purchase.objects.filter(SupplierLedger=ledger).prefetch_related('lines__Product', 'lines__Unit').order_by('PurchaseDate', 'PurchaseId')

@@ -1157,14 +1157,43 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
         paid_amt = Decimal(str(s.PaidAmount or 0))
         if paid_amt > 0:
             pay_ref = format_short_ref(f"PAY-{s.InvoiceNo or s.SalesNo or s.SalesId}")
-            raw_entries.append({
-                'date': s_date,
-                'ref': pay_ref,
-                'type': f"Payment Received on Sale ({s.PaymentMethod or 'CASH'})",
-                'debit': Decimal('0.00'),
-                'credit': paid_amt,
-                'sort_key': f"{s_date}_1_paid_{s.SalesId}",
-            })
+            if (s.PaymentMethod or '').upper() == 'SPLIT':
+                c_split, u_split = extract_split_amounts(s)
+                if c_split <= Decimal('0.00') and u_split <= Decimal('0.00'):
+                    c_split = (paid_amt / Decimal('2.00')).quantize(Decimal('0.01'))
+                    u_split = paid_amt - c_split
+                elif c_split > Decimal('0.00') and u_split <= Decimal('0.00') and paid_amt > c_split:
+                    u_split = paid_amt - c_split
+                elif u_split > Decimal('0.00') and c_split <= Decimal('0.00') and paid_amt > u_split:
+                    c_split = paid_amt - u_split
+
+                if c_split > 0:
+                    raw_entries.append({
+                        'date': s_date,
+                        'ref': pay_ref,
+                        'type': "Payment Received on Sale (Cash)",
+                        'debit': Decimal('0.00'),
+                        'credit': c_split,
+                        'sort_key': f"{s_date}_1_paid_{s.SalesId}_1",
+                    })
+                if u_split > 0:
+                    raw_entries.append({
+                        'date': s_date,
+                        'ref': pay_ref,
+                        'type': "Payment Received on Sale (SBI / Bank)",
+                        'debit': Decimal('0.00'),
+                        'credit': u_split,
+                        'sort_key': f"{s_date}_1_paid_{s.SalesId}_2",
+                    })
+            else:
+                raw_entries.append({
+                    'date': s_date,
+                    'ref': pay_ref,
+                    'type': f"Payment Received on Sale ({s.PaymentMethod or 'CASH'})",
+                    'debit': Decimal('0.00'),
+                    'credit': paid_amt,
+                    'sort_key': f"{s_date}_1_paid_{s.SalesId}",
+                })
 
     # Receipts / Payments
     for r in receipts_qs:
@@ -1174,14 +1203,28 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
         else:
             r_date = str(getattr(r, 'PaymentDate', '') or getattr(r, 'VoucherDate', '') or '')
         r_ref = getattr(r, 'PaymentNo', '') or getattr(r, 'VoucherNo', '') or f"REC-{getattr(r, 'PaymentId', '')}"
-        raw_entries.append({
-            'date': r_date,
-            'ref': format_short_ref(r_ref),
-            'type': f"Collection Receipt ({getattr(r, 'PaymentMode', 'CASH') or 'CASH'})",
-            'debit': Decimal('0.00'),
-            'credit': amt,
-            'sort_key': f"{r_date}_2_{getattr(r, 'PaymentId', 0)}",
-        })
+        r_lines = list(r.lines.all()) if hasattr(r, 'lines') else []
+        if len(r_lines) > 1:
+            for l_idx, pl in enumerate(r_lines):
+                pl_amt = Decimal(str(pl.Amount or 0))
+                acc_name = pl.Ledger.LedgerName if pl.Ledger else (pl.PaymentMode or 'CASH')
+                raw_entries.append({
+                    'date': r_date,
+                    'ref': format_short_ref(r_ref),
+                    'type': f"Collection Receipt ({acc_name})",
+                    'debit': Decimal('0.00'),
+                    'credit': pl_amt,
+                    'sort_key': f"{r_date}_2_{getattr(r, 'PaymentId', 0)}_{l_idx}",
+                })
+        else:
+            raw_entries.append({
+                'date': r_date,
+                'ref': format_short_ref(r_ref),
+                'type': f"Collection Receipt ({getattr(r, 'PaymentMode', 'CASH') or 'CASH'})",
+                'debit': Decimal('0.00'),
+                'credit': amt,
+                'sort_key': f"{r_date}_2_{getattr(r, 'PaymentId', 0)}",
+            })
 
     raw_entries.sort(key=lambda x: x['sort_key'])
 
@@ -3728,6 +3771,8 @@ def generate_ledger_statement_pdf(
             ref_str = ref_raw if ref_raw.startswith('INV-') else f"INV-{ref_raw.replace('SALE-', '')}"
         elif vtype_str.lower() == 'receipt':
             clean_rec = ref_raw.replace('REC-VCH-', 'REC-')
+            if 'INV-' in clean_rec:
+                clean_rec = f"REC-{clean_rec.replace('REC-', '').replace('INV-', '')}"
             if clean_rec.startswith('REC-'):
                 ref_str = clean_rec
             elif clean_rec != '—':
