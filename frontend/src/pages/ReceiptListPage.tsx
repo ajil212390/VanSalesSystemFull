@@ -110,33 +110,36 @@ export const ReceiptListPage: React.FC = () => {
     );
 
     return allPayments.filter((p) => {
-      if (p.voucher_type === 'RECEIPT') return true;
-      if (p.voucher_type === 'PAYMENT') return false;
+      const vt = String(p.voucher_type || '').toUpperCase();
+      if (vt === 'RECEIPT') return true;
       if (customerLedgerIds.has(p.PartyLedgerId)) return true;
-      return false;
+      if (String(p.PaymentNo || '').toUpperCase().startsWith('REC-')) return true;
+      if (String(p.ReferenceNumber || '').toUpperCase().startsWith('TREC-')) return true;
+      if (vt === 'PAYMENT') return false;
+      return true;
     });
   }, [allPayments, ledgers]);
 
   // Counts for status tabs
   const pendingCount = useMemo(() => {
-    return receipts.filter((p) => String(p.Status).toUpperCase() === 'PENDING').length;
+    return receipts.filter((p) => String(p.Status || '').toUpperCase() === 'PENDING').length;
   }, [receipts]);
 
   const approvedCount = useMemo(() => {
-    return receipts.filter((p) => String(p.Status).toUpperCase() !== 'PENDING').length;
+    return receipts.filter((p) => String(p.Status || '').toUpperCase() !== 'PENDING').length;
   }, [receipts]);
 
   const receiptNumMap = useMemo(() => {
     const map = new Map<number, string>();
     const sortedApproved = [...receipts]
-      .filter((p) => String(p.Status).toUpperCase() !== 'PENDING')
+      .filter((p) => String(p.Status || '').toUpperCase() !== 'PENDING')
       .sort((a, b) => a.PaymentId - b.PaymentId);
     sortedApproved.forEach((p, idx) => {
       map.set(p.PaymentId, p.PaymentNo || `REC-${String(idx + 1).padStart(3, '0')}`);
     });
 
     const sortedPending = [...receipts]
-      .filter((p) => String(p.Status).toUpperCase() === 'PENDING')
+      .filter((p) => String(p.Status || '').toUpperCase() === 'PENDING')
       .sort((a, b) => a.PaymentId - b.PaymentId);
     sortedPending.forEach((p, idx) => {
       map.set(p.PaymentId, p.ReferenceNumber || `TREC-${String(idx + 1).padStart(3, '0')}`);
@@ -206,7 +209,7 @@ export const ReceiptListPage: React.FC = () => {
     const q = searchQuery.toLowerCase().trim();
     let result = receipts.filter((p) => {
       // 1. Status filter
-      const isPending = String(p.Status).toUpperCase() === 'PENDING';
+      const isPending = String(p.Status || '').toUpperCase() === 'PENDING';
       if (statusFilter === 'pending' && !isPending) return false;
       if (statusFilter === 'approved' && isPending) return false;
 

@@ -3735,6 +3735,27 @@ def get_next_temp_receipt_number():
     return f"TREC-{max_num + 1:03d}"
 
 
+_payment_columns_checked = False
+
+def ensure_payment_columns():
+    global _payment_columns_checked
+    if _payment_columns_checked:
+        return
+    try:
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "PaymentNo" varchar(100);
+                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "ReferenceNumber" varchar(100);
+                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "Status" varchar(50) DEFAULT 'APPROVED';
+                ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "DeliveryNoteId" bigint;
+                UPDATE "Payment" SET "Status" = 'APPROVED' WHERE "Status" IS NULL;
+            """)
+        _payment_columns_checked = True
+    except Exception:
+        pass
+
+
 class PaymentViewSet(viewsets.ModelViewSet):
     """
     CRUD for Payments with Bill-Wise Allocations & Double-Entry Accounting Vouchers.
@@ -3743,6 +3764,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        ensure_payment_columns()
         user = self.request.user
         company_id = getattr(user, 'CompanyId', 0)
         qs = (

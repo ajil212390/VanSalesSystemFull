@@ -1024,10 +1024,12 @@ class PaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ['PaymentId', 'CreatedAt', 'UpdatedAt']
 
     def get_voucher_no(self, obj):
-        if obj.PaymentNo:
-            return obj.PaymentNo
-        if obj.ReferenceNumber:
-            return obj.ReferenceNumber
+        p_no = getattr(obj, 'PaymentNo', None)
+        if p_no:
+            return p_no
+        ref_no = getattr(obj, 'ReferenceNumber', None)
+        if ref_no:
+            return ref_no
         vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=obj.PaymentId).first()
         if vch and vch.VoucherNo:
             return vch.VoucherNo.replace('REC-VCH-', 'REC-').replace('VCH-', '')
@@ -1062,7 +1064,7 @@ class PaymentSerializer(serializers.ModelSerializer):
     def get_voucher_type(self, obj):
         vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=obj.PaymentId).first()
         if vch and vch.VoucherType:
-            return vch.VoucherType
+            return str(vch.VoucherType).upper()
         if obj.PartyLedger and obj.PartyLedger.Group:
             g_name = (obj.PartyLedger.Group.GroupName or '').lower()
             if obj.PartyLedger.Group_id == 21 or 'debtor' in g_name or 'customer' in g_name:
