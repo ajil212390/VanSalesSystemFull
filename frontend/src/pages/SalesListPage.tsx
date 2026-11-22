@@ -1240,11 +1240,35 @@ export const SalesListPage: React.FC = () => {
                   Invoice Details — {viewingSale?.InvoiceNo || viewingSale?.SalesNo}
                 </Text>
                 {viewingSale?.IsApproved ? (
-                  <Badge size="xs" variant="filled" color="teal" radius="sm" style={{ fontWeight: 700 }}>
+                  <Badge
+                    size="xs"
+                    variant="outline"
+                    styles={{
+                      root: {
+                        fontWeight: 700,
+                        backgroundColor: '#fdf2f4',
+                        color: '#800020',
+                        border: '1px solid #f5c2cb',
+                        borderRadius: 4
+                      }
+                    }}
+                  >
                     APPROVED
                   </Badge>
                 ) : (
-                  <Badge size="xs" variant="outline" color="orange" radius="sm" style={{ fontWeight: 700, backgroundColor: '#fffbeb', borderColor: '#fde68a', color: '#b45309' }}>
+                  <Badge
+                    size="xs"
+                    variant="outline"
+                    styles={{
+                      root: {
+                        fontWeight: 700,
+                        backgroundColor: '#fffbeb',
+                        color: '#b45309',
+                        border: '1px solid #fde68a',
+                        borderRadius: 4
+                      }
+                    }}
+                  >
                     PENDING APPROVAL
                   </Badge>
                 )}
@@ -1326,21 +1350,19 @@ export const SalesListPage: React.FC = () => {
                   </Text>
                 </Group>
                 <Badge
-                  size="md"
-                  radius="sm"
-                  variant="light"
-                  color={
-                    (viewingSale.PaymentMethod || '').toUpperCase() === 'CASH'
-                      ? 'teal'
-                      : (viewingSale.PaymentMethod || '').toUpperCase() === 'CREDIT'
-                      ? 'yellow'
-                      : (viewingSale.PaymentMethod || '').toUpperCase() === 'SPLIT'
-                      ? 'indigo'
-                      : 'burgundy'
-                  }
-                  style={{ fontWeight: 800, textTransform: 'uppercase' }}
+                  size="sm"
+                  variant="outline"
+                  styles={{
+                    root: {
+                      fontWeight: 700,
+                      backgroundColor: (viewingSale.PaymentMethod || '').toUpperCase() === 'CREDIT' ? '#fdf2f4' : '#f8fafc',
+                      color: (viewingSale.PaymentMethod || '').toUpperCase() === 'CREDIT' ? '#800020' : '#334155',
+                      border: (viewingSale.PaymentMethod || '').toUpperCase() === 'CREDIT' ? '1px solid #f5c2cb' : '1px solid #cbd5e1',
+                      borderRadius: 4
+                    }
+                  }}
                 >
-                  {viewingSale.PaymentMethod || 'Cash'}
+                  {viewingSale.PaymentMethod || 'CASH'}
                 </Badge>
                 <Text size="11px" c="dimmed" mt={3}>
                   {(viewingSale.PaymentMethod || '').toUpperCase() === 'CREDIT' ? 'Payment on Credit' : 'Payment Received'}
@@ -1349,32 +1371,44 @@ export const SalesListPage: React.FC = () => {
             </SimpleGrid>
 
             {/* Line Items Table */}
-            <Box style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
-              <Group justify="space-between" align="center" px="md" py="xs" style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+            <Box style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+              <Group justify="space-between" align="center" px="md" py="xs" style={{ backgroundColor: '#fdf2f4', borderBottom: '1px solid #f5c2cb' }}>
                 <Group gap={6}>
-                  <IconPackage size={16} color="#64748b" />
-                  <Text size="xs" fw={700} c="#334155" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+                  <IconPackage size={16} color="#800020" />
+                  <Text size="xs" fw={700} style={{ color: '#800020', letterSpacing: '0.4px' }} tt="uppercase">
                     Line Items ({(viewingSale.lines || []).length})
                   </Text>
                 </Group>
                 {Number(viewingSale.TotalEmptyQty || 0) > 0 && (
-                  <Badge size="xs" color="cyan" variant="light" radius="sm" style={{ fontWeight: 700 }}>
+                  <Badge
+                    size="xs"
+                    variant="outline"
+                    styles={{
+                      root: {
+                        fontWeight: 700,
+                        backgroundColor: '#ffffff',
+                        color: '#64748b',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 4
+                      }
+                    }}
+                  >
                     {Number(viewingSale.TotalEmptyQty)} Empties Collected
                   </Badge>
                 )}
               </Group>
 
               <Table verticalSpacing="sm" highlightOnHover>
-                <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
+                <Table.Thead style={{ backgroundColor: '#fdf2f4', borderBottom: '1px solid #f5c2cb' }}>
                   <Table.Tr>
-                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px' }}>PRODUCT</Table.Th>
-                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>DELIVERED QTY</Table.Th>
+                    <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px' }}>PRODUCT</Table.Th>
+                    <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', textAlign: 'right' }}>DELIVERED QTY</Table.Th>
                     {viewingSale.lines?.some((l: any) => Number(l.EmptyQuantity || 0) > 0) && (
-                      <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>EMPTY RETURN</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', textAlign: 'right' }}>EMPTY RETURN</Table.Th>
                     )}
-                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>UNIT RATE</Table.Th>
-                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>GST %</Table.Th>
-                    <Table.Th style={{ fontSize: 11, color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textAlign: 'right' }}>LINE TOTAL</Table.Th>
+                    <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', textAlign: 'right' }}>UNIT RATE</Table.Th>
+                    <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', textAlign: 'right' }}>GST %</Table.Th>
+                    <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', textAlign: 'right' }}>LINE TOTAL</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -1386,15 +1420,37 @@ export const SalesListPage: React.FC = () => {
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Badge size="sm" variant="light" color="dark" radius="sm" style={{ fontWeight: 700 }}>
+                        <Badge
+                          size="xs"
+                          variant="outline"
+                          styles={{
+                            root: {
+                              fontWeight: 600,
+                              color: '#800020',
+                              borderColor: '#f5c2cb',
+                              backgroundColor: '#ffffff'
+                            }
+                          }}
+                        >
                           {ln.Quantity || ln.quantity} NOS
                         </Badge>
                       </Table.Td>
                       {viewingSale.lines?.some((l: any) => Number(l.EmptyQuantity || 0) > 0) && (
                         <Table.Td style={{ textAlign: 'right' }}>
                           {Number(ln.EmptyQuantity || 0) > 0 ? (
-                            <Badge size="sm" variant="light" color="cyan" radius="sm" style={{ fontWeight: 700 }}>
-                              {ln.EmptyQuantity} Ret
+                            <Badge
+                              size="xs"
+                              variant="outline"
+                              styles={{
+                                root: {
+                                  fontWeight: 600,
+                                  color: '#64748b',
+                                  borderColor: '#e2e8f0',
+                                  backgroundColor: '#ffffff'
+                                }
+                              }}
+                            >
+                              {ln.EmptyQuantity} RET
                             </Badge>
                           ) : (
                             <Text size="xs" c="dimmed">-</Text>
@@ -1424,7 +1480,7 @@ export const SalesListPage: React.FC = () => {
 
             {/* Notes / Empty Return Narration Callout */}
             {viewingSale.Notes && (
-              <Paper p="xs" radius="md" style={{ backgroundColor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
+              <Paper p="xs" radius="md" style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
                 <Group gap={6} align="flex-start" wrap="nowrap">
                   <IconFileText size={16} color="#64748b" style={{ flexShrink: 0, marginTop: 2 }} />
                   <div>
@@ -1440,7 +1496,7 @@ export const SalesListPage: React.FC = () => {
             )}
 
             {/* Financial Summary Card */}
-            <Paper p="md" radius="md" style={{ backgroundColor: '#fcfaf9', border: '1px solid #f2e2e4' }}>
+            <Paper p="md" radius="md" style={{ backgroundColor: '#ffffff', border: '1px solid #e2e8f0' }}>
               <Group justify="space-between" align="center" wrap="wrap" gap="md">
                 <Group gap="xl" wrap="wrap">
                   <div>
@@ -1472,7 +1528,7 @@ export const SalesListPage: React.FC = () => {
                     <Text size="11px" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.5px' }}>
                       Amount Paid
                     </Text>
-                    <Text size="md" fw={800} style={{ color: '#0f766e', lineHeight: 1.2 }}>
+                    <Text size="md" fw={800} style={{ color: '#0f172a', lineHeight: 1.2 }}>
                       ₹{Number(viewingSale.PaidAmount || 0).toFixed(2)}
                     </Text>
                   </div>
@@ -1491,7 +1547,7 @@ export const SalesListPage: React.FC = () => {
                       <Text size="11px" c="dimmed" fw={700} tt="uppercase" style={{ letterSpacing: '0.5px' }}>
                         Advance / Excess Paid
                       </Text>
-                      <Text size="md" fw={800} style={{ color: '#0f766e', lineHeight: 1.2 }}>
+                      <Text size="md" fw={800} style={{ color: '#800020', lineHeight: 1.2 }}>
                         ₹{(Number(viewingSale.PaidAmount || 0) - Number(viewingSale.GrandTotal || 0)).toFixed(2)} Cr
                       </Text>
                     </div>
@@ -1504,21 +1560,33 @@ export const SalesListPage: React.FC = () => {
               <>
                 <Divider />
                 <Group justify="space-between" align="center">
-                  <Text size="xs" fw={700} c="orange" tt="uppercase">
+                  <Text size="xs" fw={700} style={{ color: '#800020' }} tt="uppercase">
                     Edit Audit Log ({viewingSale.edit_history.length})
                   </Text>
-                  <Badge size="xs" color="orange" variant="light">
+                  <Badge
+                    size="xs"
+                    variant="outline"
+                    styles={{
+                      root: {
+                        fontWeight: 700,
+                        backgroundColor: '#fdf2f4',
+                        color: '#800020',
+                        border: '1px solid #f5c2cb',
+                        borderRadius: 4
+                      }
+                    }}
+                  >
                     Revised / Modified
                   </Badge>
                 </Group>
                 <Table verticalSpacing="xs" highlightOnHover withTableBorder>
-                  <Table.Thead style={{ backgroundColor: '#fff7ed' }}>
+                  <Table.Thead style={{ backgroundColor: '#fdf2f4' }}>
                     <Table.Tr>
-                      <Table.Th style={{ fontSize: 11 }}>TIMESTAMP</Table.Th>
-                      <Table.Th style={{ fontSize: 11 }}>EDITED BY</Table.Th>
-                      <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>AMOUNT CHANGE</Table.Th>
-                      <Table.Th style={{ fontSize: 11 }}>PAYMENT MODE</Table.Th>
-                      <Table.Th style={{ fontSize: 11 }}>REASON / NOTES</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800 }}>TIMESTAMP</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800 }}>EDITED BY</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, textAlign: 'right' }}>AMOUNT CHANGE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800 }}>PAYMENT MODE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800 }}>REASON / NOTES</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
