@@ -26,6 +26,7 @@ import {
   IconCalendar,
   IconBook2,
   IconFileText,
+  IconCash,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -90,6 +91,8 @@ export const LedgerAnalysisPage: React.FC = () => {
   const [datePreset, setDatePreset] = useState<string>('ALL');
   const [customFromDate, setCustomFromDate] = useState<string>('');
   const [customToDate, setCustomToDate] = useState<string>('');
+  const [paymentModeFilter, setPaymentModeFilter] = useState<string>('ALL');
+  const [stmtSortBy, setStmtSortBy] = useState<string>('date_asc');
   const [stmtSearch, setStmtSearch] = useState<string>('');
 
   // PDF Generation States
@@ -313,7 +316,7 @@ export const LedgerAnalysisPage: React.FC = () => {
     const effectiveOpening = isDrNormal ? (priorDr - priorCr) : (priorCr - priorDr);
     const finalEntries: StatementEntry[] = [];
 
-    if (fromDate || opBal > 0 || effectiveOpening !== 0) {
+    if (paymentModeFilter === 'ALL' && (fromDate || opBal > 0 || effectiveOpening !== 0)) {
       finalEntries.push({
         date: fromDate || '—',
         ref: 'OP-BAL',
@@ -324,9 +327,31 @@ export const LedgerAnalysisPage: React.FC = () => {
       });
     }
 
-    // Filter by text search
+    // Filter by Payment Mode and Text search
     const q = stmtSearch.toLowerCase().trim();
     periodEntries.forEach((tx) => {
+      // Payment Mode Filter
+      if (paymentModeFilter === 'CASH') {
+        const pLower = (tx.particulars || '').toLowerCase();
+        const vLower = (tx.voucher_type || '').toLowerCase();
+        if (!pLower.includes('cash') && !vLower.includes('cash')) {
+          return;
+        }
+      } else if (paymentModeFilter === 'BANK') {
+        const pLower = (tx.particulars || '').toLowerCase();
+        const isBank = (
+          pLower.includes('bank') ||
+          pLower.includes('sbi') ||
+          pLower.includes('paytm') ||
+          pLower.includes('upi') ||
+          pLower.includes('online') ||
+          pLower.includes('cheque')
+        );
+        if (!isBank) {
+          return;
+        }
+      }
+
       if (
         !q ||
         tx.ref.toLowerCase().includes(q) ||
@@ -336,6 +361,31 @@ export const LedgerAnalysisPage: React.FC = () => {
         finalEntries.push(tx);
       }
     });
+
+    // Apply Sorting
+    if (stmtSortBy === 'date_desc') {
+      finalEntries.sort((a, b) => {
+        if (a.ref === 'OP-BAL') return -1;
+        if (b.ref === 'OP-BAL') return 1;
+        return (b.date || '').localeCompare(a.date || '');
+      });
+    } else if (stmtSortBy === 'amount_desc') {
+      finalEntries.sort((a, b) => {
+        if (a.ref === 'OP-BAL') return -1;
+        if (b.ref === 'OP-BAL') return 1;
+        const valA = Math.max(Number(a.debit || 0), Number(a.credit || 0));
+        const valB = Math.max(Number(b.debit || 0), Number(b.credit || 0));
+        return valB - valA;
+      });
+    } else if (stmtSortBy === 'amount_asc') {
+      finalEntries.sort((a, b) => {
+        if (a.ref === 'OP-BAL') return -1;
+        if (b.ref === 'OP-BAL') return 1;
+        const valA = Math.max(Number(a.debit || 0), Number(a.credit || 0));
+        const valB = Math.max(Number(b.debit || 0), Number(b.credit || 0));
+        return valA - valB;
+      });
+    }
 
     // Compute running balance
     let runBal = 0;
@@ -363,7 +413,7 @@ export const LedgerAnalysisPage: React.FC = () => {
       totCredit: sumCredit,
       closingBal: runBal,
     };
-  }, [statementData, datePreset, customFromDate, customToDate, stmtSearch]);
+  }, [statementData, datePreset, customFromDate, customToDate, paymentModeFilter, stmtSortBy, stmtSearch]);
 
   // Official PDF Generation for the main Chart of Accounts / Ledger Report
   const handlePrintLedgerReport = async () => {
@@ -600,17 +650,47 @@ export const LedgerAnalysisPage: React.FC = () => {
                     value={customFromDate}
                     onChange={setCustomFromDate}
                     size="xs"
-                    style={{ width: 130 }}
+                    style={{ width: 125 }}
                   />
                   <DateInputDDMMYY
                     placeholder="To Date"
                     value={customToDate}
                     onChange={setCustomToDate}
                     size="xs"
-                    style={{ width: 130 }}
+                    style={{ width: 125 }}
                   />
                 </Group>
               )}
+
+              {/* Payment Mode Selector: All, Cash, Bank / UPI */}
+              <Select
+                size="xs"
+                radius="md"
+                leftSection={<IconCash size={14} color="#64748b" />}
+                value={paymentModeFilter}
+                onChange={(val) => setPaymentModeFilter(val || 'ALL')}
+                data={[
+                  { label: 'All Payment Modes', value: 'ALL' },
+                  { label: 'Cash Only', value: 'CASH' },
+                  { label: 'Bank / UPI', value: 'BANK' },
+                ]}
+                style={{ width: 165 }}
+              />
+
+              {/* Sort By Selector */}
+              <Select
+                size="xs"
+                radius="md"
+                value={stmtSortBy}
+                onChange={(val) => setStmtSortBy(val || 'date_asc')}
+                data={[
+                  { label: 'Date: Oldest First', value: 'date_asc' },
+                  { label: 'Date: Newest First', value: 'date_desc' },
+                  { label: 'Amount: High to Low', value: 'amount_desc' },
+                  { label: 'Amount: Low to High', value: 'amount_asc' },
+                ]}
+                style={{ width: 165 }}
+              />
             </Group>
 
             <TextInput
@@ -620,7 +700,7 @@ export const LedgerAnalysisPage: React.FC = () => {
               onChange={(e) => setStmtSearch(e.currentTarget.value)}
               size="xs"
               radius="md"
-              style={{ width: 260 }}
+              style={{ width: 230 }}
             />
           </Group>
 
