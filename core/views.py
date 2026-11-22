@@ -133,6 +133,24 @@ def ensure_payment_columns():
                 ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "DeliveryNoteId" bigint;
                 UPDATE "Payment" SET "Status" = 'APPROVED' WHERE "Status" IS NULL;
             """)
+
+        # Auto-assign sequential PaymentNo (REC-001, REC-002...) to existing payments that don't have one
+        existing_pmts = Payment.objects.filter(
+            route_expenses__isnull=True
+        ).exclude(
+            PartyLedger_id=31
+        ).exclude(
+            PartyLedger__LedgerName__icontains='travelling'
+        ).order_by('PaymentId')
+
+        c_seq = 1
+        for p in existing_pmts:
+            if not getattr(p, 'PaymentNo', None):
+                p.PaymentNo = f"REC-{c_seq:03d}"
+                p.Status = 'APPROVED'
+                p.save(update_fields=['PaymentNo', 'Status'])
+            c_seq += 1
+
         _payment_columns_checked = True
     except Exception:
         pass
@@ -1935,15 +1953,16 @@ class LedgerViewSet(viewsets.ModelViewSet):
         bill_to_receipt_map = {}
         payment_vch_map = {}
         try:
-            all_receipt_pmts = list(Payment.objects.all().order_by('PaymentId').prefetch_related('lines__allocations'))
+            all_receipt_pmts = list(
+                Payment.objects
+                .filter(route_expenses__isnull=True)
+                .exclude(PartyLedger_id=31)
+                .exclude(PartyLedger__LedgerName__icontains='travelling')
+                .order_by('PaymentId')
+                .prefetch_related('lines__allocations')
+            )
             for idx, pm in enumerate(all_receipt_pmts):
-                vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
-                if getattr(pm, 'PaymentNo', None):
-                    clean_r_no = str(pm.PaymentNo)
-                elif vch and vch.VoucherNo and not vch.VoucherNo.startswith('REC-VCH-'):
-                    clean_r_no = str(vch.VoucherNo)
-                else:
-                    clean_r_no = f"REC-{idx + 1:03d}"
+                clean_r_no = getattr(pm, 'PaymentNo', None) or f"REC-{idx + 1:03d}"
                 payment_vch_map[pm.PaymentId] = clean_r_no
 
                 for p_line in pm.lines.all():
@@ -1954,8 +1973,9 @@ class LedgerViewSet(viewsets.ModelViewSet):
                             bill_to_receipt_map[b_ref.replace('INV-', '').replace('SALE-', '')] = clean_r_no
                 if pm.Narration:
                     for m_ref in re.findall(r'(INV-?\d+|SALE-?\d+)', pm.Narration, re.IGNORECASE):
-                        bill_to_receipt_map[m_ref.upper()] = clean_r_no
-                        bill_to_receipt_map[m_ref.upper().replace('INV-', '').replace('SALE-', '')] = clean_r_no
+                        m_up = m_ref.upper()
+                        bill_to_receipt_map[m_up] = clean_r_no
+                        bill_to_receipt_map[m_up.replace('INV-', '').replace('SALE-', '')] = clean_r_no
 
             for bwa in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment']):
                 b_ref = str(bwa.BillReference or '').strip().upper()
@@ -1970,11 +1990,14 @@ class LedgerViewSet(viewsets.ModelViewSet):
             clean_s_ref = str(fallback_ref or '').strip().upper()
             inv_no = str(sale.InvoiceNo or '').strip().upper() if sale else ''
             sales_no = str(sale.SalesNo or '').strip().upper() if sale else ''
+            stripped_ref = re.sub(r'^(?:REC-VCH-|REC-|VCH-)', '', clean_s_ref)
 
             for key in [
                 clean_s_ref,
+                stripped_ref,
                 inv_no,
                 clean_s_ref.replace('INV-', '').replace('SALE-', ''),
+                stripped_ref.replace('INV-', '').replace('SALE-', ''),
                 inv_no.replace('INV-', '').replace('SALE-', ''),
                 sales_no,
             ]:
@@ -1985,9 +2008,12 @@ class LedgerViewSet(viewsets.ModelViewSet):
             if clean_digits and clean_digits in bill_to_receipt_map:
                 return bill_to_receipt_map[clean_digits]
 
+            if re.match(r'^REC-\d+$', clean_s_ref):
+                return clean_s_ref
+
             if clean_digits:
                 return f"REC-{clean_digits}"
-            return f"REC-{clean_s_ref}"
+            return f"REC-{stripped_ref or clean_s_ref}"
 
         entries = []
         for vl in vl_qs:
@@ -2164,7 +2190,10 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         part = f"By {counter_name}"
                     else:
                         part = 'By Bank / UPI'
-                    clean_vno = get_receipt_no_for_sale(None, v.VoucherNo)
+                    if v.ReferenceTable == 'Payment' and v.ReferenceId in payment_vch_map:
+                        clean_vno = payment_vch_map[v.ReferenceId]
+                    else:
+                        clean_vno = get_receipt_no_for_sale(None, v.VoucherNo)
                 elif vl.DebitAmount > 0 and v.VoucherType == 'SALES':
                     vtype_disp = 'Sales'
                     part = 'To SALE'
