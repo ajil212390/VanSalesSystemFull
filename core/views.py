@@ -9748,8 +9748,12 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     update_fields.append('DeliveryNoteId')
                 pm.save(update_fields=update_fields)
 
-                # Avoid duplicate vouchers if post_sale_voucher already created one
-                if not Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).exists():
+                # Ensure associated voucher reflects the permanent receipt number (REC-xxx)
+                existing_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
+                if existing_vch:
+                    existing_vch.VoucherNo = rec_no
+                    existing_vch.save(update_fields=['VoucherNo'])
+                else:
                     pv_lines = list(pm.lines.all())
                     pv_allocs = []
                     for ba in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=pm.PaymentId):
