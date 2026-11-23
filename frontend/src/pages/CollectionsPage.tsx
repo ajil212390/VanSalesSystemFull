@@ -206,7 +206,7 @@ export const CollectionsPage: React.FC = () => {
         source: 'SALE',
         isConnection,
         date: s.SalesDate ? String(s.SalesDate).slice(0, 10) : (s.CreatedAt ? String(s.CreatedAt).split('T')[0] : ''),
-        ref: sRef.startsWith('INV-') ? `PAY-${sRef}` : `PAY-${sRef}`,
+        ref: sRef,
         rawRef: sRef,
         partyName,
         partyMobile,
@@ -1070,7 +1070,7 @@ export const CollectionsPage: React.FC = () => {
                 <Table.Tr>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 105 }}>Date</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140 }}>
-                    {categoryFilter === 'CONNECTIONS' ? 'Connection #' : 'Ref / Bill #'}
+                    {categoryFilter === 'CONNECTIONS' ? 'Connection #' : 'Invoice #'}
                   </Table.Th>
                   {categoryFilter === 'CONNECTIONS' && (
                     <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13 }}>Package / Details</Table.Th>
@@ -1094,7 +1094,7 @@ export const CollectionsPage: React.FC = () => {
                       {formatDateDDMMYY(item.date)}
                     </Table.Td>
 
-                    {/* Reference # */}
+                    {/* Invoice # */}
                     <Table.Td>
                       <Text
                         size="xs"
@@ -1106,10 +1106,7 @@ export const CollectionsPage: React.FC = () => {
                         }}
                         onClick={() => setSelectedItem(item)}
                       >
-                        {item.ref}
-                      </Text>
-                      <Text size="11px" c="dimmed">
-                        Bill: {item.rawRef}
+                        {item.rawRef || item.ref}
                       </Text>
                     </Table.Td>
 
@@ -1267,7 +1264,7 @@ export const CollectionsPage: React.FC = () => {
           <Group gap="xs">
             <IconCash size={20} color="#800020" />
             <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
-              Collection Record &bull; {selectedItem?.ref}
+              Collection Record &bull; {selectedItem?.rawRef || selectedItem?.ref}
             </Text>
           </Group>
         }
@@ -1320,8 +1317,8 @@ export const CollectionsPage: React.FC = () => {
                 <Text size="xs" fw={700}>{selectedItem.routeName}</Text>
               </Paper>
               <Paper p="xs" radius="sm" withBorder>
-                <Text size="11px" c="dimmed">Original Bill Ref</Text>
-                <Text size="xs" fw={700}>{selectedItem.rawRef}</Text>
+                <Text size="11px" c="dimmed">Invoice #</Text>
+                <Text size="xs" fw={700}>{selectedItem.rawRef || selectedItem.ref}</Text>
               </Paper>
             </SimpleGrid>
 
