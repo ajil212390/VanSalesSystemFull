@@ -10071,6 +10071,37 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
         pg_bank_led or
         Ledger.objects.filter(LedgerId=56).first() or
         Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first() or
+        Ledger.objects.filter(Group__GroupName__icontains='Bank').first()
+    )
+
+    sales_led = (
+        Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Sales').first() or
+        Ledger.objects.filter(LedgerId=20).first() or
+        Ledger.objects.filter(Group__GroupName='Sales Accounts').first() or
+        Ledger.objects.filter(LedgerName__icontains='Sales').first() or
+        Ledger.objects.filter(Group__Nature='Income').first()
+    )
+
+    cgst_led = (
+        Ledger.objects.filter(LedgerId=22).first() or
+        Ledger.objects.filter(CompanyId=company_id, LedgerName__icontains='CGST Output').first() or
+        Ledger.objects.filter(LedgerName__icontains='CGST Output').first()
+    )
+    sgst_led = (
+        Ledger.objects.filter(LedgerId=23).first() or
+        Ledger.objects.filter(CompanyId=company_id, LedgerName__icontains='SGST Output').first() or
+        Ledger.objects.filter(LedgerName__icontains='SGST Output').first()
+    )
+    igst_led = (
+        Ledger.objects.filter(LedgerId=35).first() or
+        Ledger.objects.filter(CompanyId=company_id, LedgerName__icontains='IGST Output').first() or
+        Ledger.objects.filter(LedgerName__icontains='IGST Output').first()
+    )
+
+    cash_or_bank = bank_led if ('UPI' in pm or 'BANK' in pm or 'ONLINE' in pm or 'CARD' in pm) else (cash_led or bank_led)
+
+    tax = Decimal(str(sale.TaxAmount or 0))
+    subtotal = Decimal(str(sale.SubTotal or 0))
     if subtotal <= Decimal('0.00') and gross_bill > Decimal('0.00'):
         subtotal = max(Decimal('0.00'), gross_bill - tax)
 
