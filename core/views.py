@@ -7828,9 +7828,60 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 CompanyId=company_id
             )
 
-            # 3. Synchronize billwise allocation if customer payment
-            if sale.PaidAmount and sale.PaidAmount > 0 and sale.CustomerLedger:
-                sync_sales_billwise_allocation(sale, None)
+            # 3. Synchronize Payment records, Billwise Allocations & Vouchers
+            linked_pmt = Payment.objects.filter(
+                Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
+            ).first()
+
+            cash_led = (
+                Ledger.objects.filter(LedgerId=24).first() or
+                Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
+                Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
+            )
+            bank_led = (
+                Ledger.objects.filter(LedgerId=56).first() or
+                Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first() or
+                Ledger.objects.filter(Group__GroupName__icontains='Bank').first() or
+                cash_led
+            )
+
+            if sale.PaidAmount and sale.PaidAmount > Decimal('0.00'):
+                if linked_pmt:
+                    linked_pmt.Amount = sale.PaidAmount
+                    linked_pmt.lines.all().delete()
+                    pm_upper = (new_payment_method or sale.PaymentMethod or 'CASH').upper()
+                    if is_split and (cash_amount > 0 or upi_amount > 0):
+                        c_amt = cash_amount if cash_amount > 0 else (sale.PaidAmount - upi_amount)
+                        u_amt = upi_amount if upi_amount > 0 else (sale.PaidAmount - cash_amount)
+                        if c_amt > 0 and cash_led:
+                            PaymentLine.objects.create(Payment=linked_pmt, LineNo=1, PaymentMode='Cash', Ledger=cash_led, Amount=c_amt, Narration=linked_pmt.Narration)
+                        if u_amt > 0 and bank_led:
+                            PaymentLine.objects.create(Payment=linked_pmt, LineNo=2, PaymentMode='Bank', Ledger=bank_led, Amount=u_amt, Narration=linked_pmt.Narration)
+                    else:
+                        p_mode = 'Bank' if ('UPI' in pm_upper or 'BANK' in pm_upper or 'ONLINE' in pm_upper) else 'Cash'
+                        target_led = bank_led if p_mode == 'Bank' else cash_led
+                        PaymentLine.objects.create(Payment=linked_pmt, LineNo=1, PaymentMode=p_mode, Ledger=target_led or sale.CustomerLedger, Amount=sale.PaidAmount, Narration=linked_pmt.Narration)
+                    linked_pmt.save()
+                    allocate_receipt_to_pending_bills_or_advance(linked_pmt, company_id)
+
+                if sale.CustomerLedger:
+                    sync_sales_billwise_allocation(sale, None)
+            else:
+                # PaidAmount is 0 (Unpaid / Credit):
+                # Clean up any linked Payment, Receipt lines, and BillwiseAllocation so physical shift cash decreases to 0
+                if linked_pmt:
+                    BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=linked_pmt.PaymentId).delete()
+                    linked_pmt.lines.all().delete()
+                    Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=linked_pmt.PaymentId).delete()
+                    linked_pmt.delete()
+
+                BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+
+            if sale.IsApproved:
+                post_sale_voucher(sale, company_id=company_id, sync_balances=False)
+
+            # Synchronize customer and cash/bank ledger balances
+            sync_ledger_balances(sale.CustomerLedger_id, 24, 56)
 
         return Response({
             'success': True,
