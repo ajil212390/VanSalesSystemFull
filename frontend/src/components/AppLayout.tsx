@@ -188,7 +188,7 @@ export const AppLayout: React.FC = () => {
   const isMasterActive = masterItems.some((item: NavSubItem) =>
     location.pathname === item.path ||
     (item.path === '/connection-packages' && location.pathname.startsWith('/connection-packages'))
-  );
+  ) || location.pathname === '/price-update';
 
   useEffect(() => {
     if (isVanOpsActive) setVanOpsOpened(true);

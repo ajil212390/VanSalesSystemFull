@@ -49,6 +49,8 @@ interface CategoryOption {
   CategoryName: string;
 }
 
+const EMPTY_ARRAY: any[] = [];
+
 export const PriceUpdatePage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -68,27 +70,27 @@ export const PriceUpdatePage: React.FC = () => {
   const [custPricesDraft, setCustPricesDraft] = useState<Record<number, number | string>>({});
 
   // 1. Fetch Products
-  const { data: products = [], isLoading: isLoadingProducts } = useQuery<ProductItem[]>({
+  const { data: products = EMPTY_ARRAY, isLoading: isLoadingProducts } = useQuery<ProductItem[]>({
     queryKey: ['products'],
     queryFn: async () => {
       const res = await apiClient.get('/products/');
-      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+      return Array.isArray(res.data) ? res.data : (res.data.results || EMPTY_ARRAY);
     } });
 
   // 2. Fetch Categories
-  const { data: categories = [] } = useQuery<CategoryOption[]>({
+  const { data: categories = EMPTY_ARRAY } = useQuery<CategoryOption[]>({
     queryKey: ['categories'],
     queryFn: async () => {
       const res = await apiClient.get('/categories/');
-      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+      return Array.isArray(res.data) ? res.data : (res.data.results || EMPTY_ARRAY);
     } });
 
   // 3. Fetch Customers (Sundry Debtors)
-  const { data: ledgers = [] } = useQuery<any[]>({
+  const { data: ledgers = EMPTY_ARRAY } = useQuery<any[]>({
     queryKey: ['ledgers'],
     queryFn: async () => {
       const res = await apiClient.get('/ledgers/');
-      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+      return Array.isArray(res.data) ? res.data : (res.data.results || EMPTY_ARRAY);
     } });
 
   const customerOptions = useMemo(() => {
@@ -108,23 +110,26 @@ export const PriceUpdatePage: React.FC = () => {
   }, [ledgers, selectedCustomerId]);
 
   // 4. Fetch Customer-Specific Special Prices when customer is selected
-  const { data: customerSpecialPrices = [], isLoading: isLoadingCustPrices } = useQuery<any[]>({
+  const { data: customerSpecialPrices = EMPTY_ARRAY, isLoading: isLoadingCustPrices } = useQuery<any[]>({
     queryKey: ['customer-prices', selectedCustomerId],
     queryFn: async () => {
-      if (!selectedCustomerId) return [];
+      if (!selectedCustomerId) return EMPTY_ARRAY;
       const res = await apiClient.get(`/customer-prices/?customer=${selectedCustomerId}`);
-      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+      return Array.isArray(res.data) ? res.data : (res.data.results || EMPTY_ARRAY);
     },
     enabled: mode === 'customer' && !!selectedCustomerId });
 
   // Initialize standard prices draft when products load
   useEffect(() => {
-    if (products.length > 0 && Object.keys(newPrices).length === 0) {
-      const initial: Record<number, number | string> = {};
-      products.forEach((p) => {
-        initial[p.ProductId] = p.SalesPrice !== null && p.SalesPrice !== undefined ? p.SalesPrice : '';
+    if (products.length > 0) {
+      setNewPrices((prev) => {
+        if (Object.keys(prev).length > 0) return prev;
+        const initial: Record<number, number | string> = {};
+        products.forEach((p) => {
+          initial[p.ProductId] = p.SalesPrice !== null && p.SalesPrice !== undefined ? p.SalesPrice : '';
+        });
+        return initial;
       });
-      setNewPrices(initial);
     }
   }, [products]);
 
@@ -132,14 +137,16 @@ export const PriceUpdatePage: React.FC = () => {
   useEffect(() => {
     if (mode === 'customer' && selectedCustomerId) {
       const initial: Record<number, number | string> = {};
-      customerSpecialPrices.forEach((cp: any) => {
-        if (cp.SpecialPrice !== undefined && cp.SpecialPrice !== null) {
-          initial[Number(cp.Product)] = cp.SpecialPrice;
-        }
-      });
+      if (Array.isArray(customerSpecialPrices)) {
+        customerSpecialPrices.forEach((cp: any) => {
+          if (cp.SpecialPrice !== undefined && cp.SpecialPrice !== null) {
+            initial[Number(cp.Product)] = cp.SpecialPrice;
+          }
+        });
+      }
       setCustPricesDraft(initial);
     } else {
-      setCustPricesDraft({});
+      setCustPricesDraft((prev) => (Object.keys(prev).length === 0 ? prev : {}));
     }
   }, [mode, selectedCustomerId, customerSpecialPrices]);
 
