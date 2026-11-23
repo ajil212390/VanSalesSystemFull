@@ -10,6 +10,7 @@ import '../widgets/app_theme.dart';
 import '../widgets/smooth_transitions.dart';
 import 'home_shell.dart';
 import 'profile_screen.dart';
+import 'orders_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -855,79 +856,97 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Row(
                         children: [
                           Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: _innerBoxBg,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(Icons.money_rounded, size: 13, color: _textPrimary),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'CASH',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: const Color(0xFF64748B),
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const OrdersScreen(initialFilterIndex: 1)),
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: _innerBoxBg,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(Icons.money_rounded, size: 13, color: _textPrimary),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'CASH',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF64748B),
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    '\u20B9${state.cashIncome.toStringAsFixed(0)}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w700,
-                                      color: _textPrimary,
+                                      ],
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '\u20B9${state.cashIncome.toStringAsFixed(0)}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                        color: _textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: _innerBoxBg,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.account_balance_rounded, size: 13, color: Color(0xFF0284C7)),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        'BANK',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.w800,
-                                          color: const Color(0xFF64748B),
+                            child: InkWell(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const OrdersScreen(initialFilterIndex: 2)),
+                                );
+                              },
+                              borderRadius: BorderRadius.circular(10),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                decoration: BoxDecoration(
+                                  color: _innerBoxBg,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: _isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0)),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.account_balance_rounded, size: 13, color: Color(0xFF0284C7)),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'BANK',
+                                          style: GoogleFonts.inter(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: const Color(0xFF64748B),
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    '\u20B9${state.bankIncome.toStringAsFixed(0)}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w700,
-                                      color: _textPrimary,
+                                      ],
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      '\u20B9${state.bankIncome.toStringAsFixed(0)}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w700,
+                                        color: _textPrimary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -1718,13 +1737,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         : () async {
                             final amt = double.tryParse(amountController.text.trim()) ?? order.amount;
                             setDialogState(() => isSaving = true);
-                            final ok = await state.updateOrderAmount(order.ticketId, amt, newPaymentMethod: selectedMethod);
+                            final double effectiveAmt = selectedMethod.toLowerCase() == 'credit' ? 0.0 : amt;
+                            final ok = await state.updateOrderAmount(order.ticketId, effectiveAmt, newPaymentMethod: selectedMethod);
                             await InvoiceHelper.invalidateCachedPdf(order.ticketId);
                             onUpdated();
                             if (ctx.mounted) Navigator.pop(ctx);
                             if (context.mounted) {
                               if (ok) {
-                                AppToast.success(context, 'Invoice updated & PDF regenerated: ₹${amt.toStringAsFixed(0)} ($selectedMethod)');
+                                AppToast.success(context, 'Invoice updated & PDF regenerated: ₹${effectiveAmt.toStringAsFixed(0)} ($selectedMethod)');
                               } else {
                                 AppToast.error(context, 'Failed to update invoice on server');
                               }
@@ -2011,45 +2031,54 @@ class _HomeScreenState extends State<HomeScreen> {
                                       children: [
                                         // Cash in Hand
                                         Expanded(
-                                          child: Row(
-                                            children: [
-                                              Container(
-                                                padding: const EdgeInsets.all(4),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xFFFDF2F4),
-                                                  borderRadius: BorderRadius.circular(6),
+                                          child: InkWell(
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(builder: (_) => const OrdersScreen(initialFilterIndex: 1)),
+                                              );
+                                            },
+                                            borderRadius: BorderRadius.circular(6),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.all(4),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFFDF2F4),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.payments_rounded,
+                                                    size: 13,
+                                                    color: Color(0xFF800020),
+                                                  ),
                                                 ),
-                                                child: const Icon(
-                                                  Icons.payments_rounded,
-                                                  size: 13,
-                                                  color: Color(0xFF800020),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      'CASH IN HAND',
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 9,
-                                                        fontWeight: FontWeight.w700,
-                                                        color: const Color(0xFF64748B),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        'CASH IN HAND',
+                                                        style: GoogleFonts.inter(
+                                                          fontSize: 9,
+                                                          fontWeight: FontWeight.w700,
+                                                          color: const Color(0xFF64748B),
+                                                        ),
                                                       ),
-                                                    ),
-                                                    Text(
-                                                      '\u20B9${state.cashBalance.toStringAsFixed(0)}',
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 13,
-                                                        fontWeight: FontWeight.w800,
-                                                        color: const Color(0xFF800020),
+                                                      Text(
+                                                        '\u20B9${state.cashBalance.toStringAsFixed(0)}',
+                                                        style: GoogleFonts.inter(
+                                                          fontSize: 13,
+                                                          fontWeight: FontWeight.w800,
+                                                          color: const Color(0xFF800020),
+                                                        ),
                                                       ),
-                                                    ),
-                                                  ],
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
                                         ),
                                         Container(width: 1, height: 24, color: const Color(0xFFE2E8F0)),
@@ -2057,45 +2086,54 @@ class _HomeScreenState extends State<HomeScreen> {
 
                                         // Bank / UPI Net
                                         Expanded(
-                                          child: Row(
-                                            children: [
-                                              Container(
-                                                padding: const EdgeInsets.all(4),
-                                                decoration: BoxDecoration(
-                                                  color: const Color(0xFFF1F5F9),
-                                                  borderRadius: BorderRadius.circular(6),
+                                          child: InkWell(
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(builder: (_) => const OrdersScreen(initialFilterIndex: 2)),
+                                              );
+                                            },
+                                            borderRadius: BorderRadius.circular(6),
+                                            child: Row(
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.all(4),
+                                                  decoration: BoxDecoration(
+                                                    color: const Color(0xFFF1F5F9),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.account_balance_rounded,
+                                                    size: 13,
+                                                    color: Color(0xFF0F172A),
+                                                  ),
                                                 ),
-                                                child: const Icon(
-                                                  Icons.account_balance_rounded,
-                                                  size: 13,
-                                                  color: Color(0xFF0F172A),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 6),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      'BANK / UPI',
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 9,
-                                                        fontWeight: FontWeight.w700,
-                                                        color: const Color(0xFF64748B),
+                                                const SizedBox(width: 6),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        'BANK / UPI',
+                                                        style: GoogleFonts.inter(
+                                                          fontSize: 9,
+                                                          fontWeight: FontWeight.w700,
+                                                          color: const Color(0xFF64748B),
+                                                        ),
                                                       ),
-                                                    ),
-                                                    Text(
-                                                      '\u20B9${state.bankBalance.toStringAsFixed(0)}',
-                                                      style: GoogleFonts.inter(
-                                                        fontSize: 13,
-                                                        fontWeight: FontWeight.w800,
-                                                        color: const Color(0xFF0F172A),
+                                                      Text(
+                                                        '\u20B9${state.bankBalance.toStringAsFixed(0)}',
+                                                        style: GoogleFonts.inter(
+                                                          fontSize: 13,
+                                                          fontWeight: FontWeight.w800,
+                                                          color: const Color(0xFF0F172A),
+                                                        ),
                                                       ),
-                                                    ),
-                                                  ],
+                                                    ],
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ],

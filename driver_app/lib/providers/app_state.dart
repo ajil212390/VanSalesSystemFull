@@ -1279,6 +1279,23 @@ class AppState extends ChangeNotifier {
     final totalDeliv = updatedItems.fold<int>(0, (sum, it) => sum + it.deliveryQty);
     final totalEmpty = updatedItems.fold<int>(0, (sum, it) => sum + it.emptyReturnQty);
 
+    double? finalCashAmt = cashAmount;
+    double? finalUpiAmt = upiAmount;
+    final pmLower = newPaymentMethod.toLowerCase();
+    if (pmLower == 'cash') {
+      finalCashAmt = newAmount;
+      finalUpiAmt = 0.0;
+    } else if (pmLower.contains('upi') || pmLower.contains('bank') || pmLower.contains('online')) {
+      finalCashAmt = 0.0;
+      finalUpiAmt = newAmount;
+    } else if (pmLower == 'credit') {
+      finalCashAmt = 0.0;
+      finalUpiAmt = 0.0;
+    } else if (pmLower == 'split') {
+      finalCashAmt = cashAmount ?? (newAmount / 2);
+      finalUpiAmt = upiAmount ?? (newAmount - finalCashAmt);
+    }
+
     orders[index] = DeliveryOrder(
       ticketId: oldOrder.ticketId,
       salesId: oldOrder.salesId,
@@ -1289,8 +1306,8 @@ class AppState extends ChangeNotifier {
       amount: newAmount,
       billTotal: oldOrder.billTotal,
       paymentMethod: newPaymentMethod,
-      cashAmount: cashAmount ?? oldOrder.cashAmount,
-      upiAmount: upiAmount ?? oldOrder.upiAmount,
+      cashAmount: finalCashAmt,
+      upiAmount: finalUpiAmt,
       time: oldOrder.time,
       status: oldOrder.status,
       stopNumber: oldOrder.stopNumber,
@@ -1314,8 +1331,8 @@ class AppState extends ChangeNotifier {
         salesId: oldOrder.salesId,
         amountCollected: newAmount,
         paymentMethod: newPaymentMethod,
-        cashAmount: cashAmount ?? oldOrder.cashAmount,
-        upiAmount: upiAmount ?? oldOrder.upiAmount,
+        cashAmount: finalCashAmt,
+        upiAmount: finalUpiAmt,
         items: backendItems,
       );
       return res['success'] == true;
@@ -1330,6 +1347,24 @@ class AppState extends ChangeNotifier {
     if (index == -1) return false;
 
     final oldOrder = orders[index];
+    final pm = newPaymentMethod ?? oldOrder.paymentMethod;
+    final pmLower = pm.toLowerCase();
+    double? finalCashAmt = cashAmount;
+    double? finalUpiAmt = upiAmount;
+    if (pmLower == 'cash') {
+      finalCashAmt = newAmount;
+      finalUpiAmt = 0.0;
+    } else if (pmLower.contains('upi') || pmLower.contains('bank') || pmLower.contains('online')) {
+      finalCashAmt = 0.0;
+      finalUpiAmt = newAmount;
+    } else if (pmLower == 'credit') {
+      finalCashAmt = 0.0;
+      finalUpiAmt = 0.0;
+    } else if (pmLower == 'split') {
+      finalCashAmt = cashAmount ?? (newAmount / 2);
+      finalUpiAmt = upiAmount ?? (newAmount - finalCashAmt);
+    }
+
     orders[index] = DeliveryOrder(
       ticketId: oldOrder.ticketId,
       salesId: oldOrder.salesId,
@@ -1339,9 +1374,9 @@ class AppState extends ChangeNotifier {
       totalEmpties: oldOrder.totalEmpties,
       amount: newAmount,
       billTotal: oldOrder.billTotal,
-      paymentMethod: newPaymentMethod ?? oldOrder.paymentMethod,
-      cashAmount: cashAmount ?? oldOrder.cashAmount,
-      upiAmount: upiAmount ?? oldOrder.upiAmount,
+      paymentMethod: pm,
+      cashAmount: finalCashAmt,
+      upiAmount: finalUpiAmt,
       time: oldOrder.time,
       status: oldOrder.status,
       stopNumber: oldOrder.stopNumber,
@@ -1354,9 +1389,9 @@ class AppState extends ChangeNotifier {
         ticketId: ticketId,
         salesId: oldOrder.salesId,
         amountCollected: newAmount,
-        paymentMethod: newPaymentMethod,
-        cashAmount: cashAmount ?? oldOrder.cashAmount,
-        upiAmount: upiAmount ?? oldOrder.upiAmount,
+        paymentMethod: pm,
+        cashAmount: finalCashAmt,
+        upiAmount: finalUpiAmt,
       );
       return res['success'] == true;
     } catch (e) {

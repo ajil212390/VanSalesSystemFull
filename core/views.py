@@ -7695,8 +7695,101 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 or Sales.objects.filter(InvoiceNo__in=candidates).first()
             )
 
-        if not sale:
-            return Response({'success': False, 'message': 'Sale record not found.'}, status=status.HTTP_404_NOT_FOUND)
+        # Check if the record is a standalone Payment receipt (e.g. TREC-xxx or RCPT-xxx)
+        pmt = None
+        if not sale and ticket_id:
+            clean_ticket = str(ticket_id).strip()
+            pmt = (
+                Payment.objects.filter(ReferenceNumber=clean_ticket).first()
+                or Payment.objects.filter(PaymentNo=clean_ticket).first()
+            )
+            if not pmt and clean_ticket.startswith('TREC-'):
+                try:
+                    p_id = int(clean_ticket.replace('TREC-', ''))
+                    pmt = Payment.objects.filter(PaymentId=p_id).first()
+                except Exception:
+                    pass
+            if not pmt and clean_ticket.startswith('RCPT-'):
+                pmt = Payment.objects.filter(Narration__icontains=clean_ticket).first()
+
+        if not sale and not pmt:
+            return Response({'success': False, 'message': 'Sale or Receipt record not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        cash_led = (
+            Ledger.objects.filter(LedgerId=24).first() or
+            Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
+            Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
+        )
+        bank_led = (
+            Ledger.objects.filter(LedgerId=56).first() or
+            Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first() or
+            Ledger.objects.filter(Group__GroupName__icontains='Bank').first() or
+            cash_led
+        )
+
+        # Handle updating standalone Payment receipt directly
+        if pmt and not sale:
+            if str(pmt.Status).upper() in ['SETTLED', 'APPROVED']:
+                return Response({'success': False, 'message': 'Cannot edit an already settled/approved receipt.'}, status=status.HTTP_400_BAD_REQUEST)
+            with transaction.atomic():
+                pm_upper = (new_payment_method or 'CASH').upper()
+                is_split = pm_upper == 'SPLIT'
+                if is_split and (cash_amount > 0 or upi_amount > 0):
+                    pmt.Amount = cash_amount + upi_amount
+                else:
+                    pmt.Amount = collected_amount
+
+                pmt.lines.all().delete()
+                safe_sync_sequence('PaymentLine', 'PaymentLineId')
+                if is_split and (cash_amount > 0 or upi_amount > 0):
+                    c_amt = cash_amount if cash_amount > 0 else (pmt.Amount - upi_amount)
+                    u_amt = upi_amount if upi_amount > 0 else (pmt.Amount - cash_amount)
+                    if c_amt > 0 and cash_led:
+                        PaymentLine.objects.create(Payment=pmt, LineNo=1, PaymentMode='Cash', Ledger=cash_led, Amount=c_amt, Narration=pmt.Narration)
+                    if u_amt > 0 and bank_led:
+                        PaymentLine.objects.create(Payment=pmt, LineNo=2, PaymentMode='Bank', Ledger=bank_led, Amount=u_amt, Narration=pmt.Narration)
+                else:
+                    p_mode = 'Bank' if ('UPI' in pm_upper or 'BANK' in pm_upper or 'ONLINE' in pm_upper) else 'Cash'
+                    target_led = bank_led if p_mode == 'Bank' else cash_led
+                    PaymentLine.objects.create(Payment=pmt, LineNo=1, PaymentMode=p_mode, Ledger=target_led or pmt.PartyLedger, Amount=pmt.Amount, Narration=pmt.Narration)
+
+                pmt.save()
+                allocate_receipt_to_pending_bills_or_advance(pmt, company_id)
+
+                existing_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pmt.PaymentId).first()
+                if existing_vch:
+                    existing_vch.lines.all().delete()
+                    for idx, pline in enumerate(pmt.lines.all(), 1):
+                        VoucherLine.objects.create(
+                            Voucher=existing_vch, LineNo=idx, Ledger_id=pline.Ledger_id,
+                            DebitAmount=pline.Amount, CreditAmount=Decimal('0.00'), Narration=f"{pline.PaymentMode} Receipt"
+                        )
+                    if pmt.PartyLedger:
+                        VoucherLine.objects.create(
+                            Voucher=existing_vch, LineNo=pmt.lines.count() + 1,
+                            Ledger=pmt.PartyLedger, DebitAmount=Decimal('0.00'),
+                            CreditAmount=pmt.Amount, Narration="Collection receipt"
+                        )
+
+                affected_ledgers = {24, 56}
+                if pmt.PartyLedger_id:
+                    affected_ledgers.add(pmt.PartyLedger_id)
+                sync_ledger_balances(*affected_ledgers)
+
+            return Response({
+                'success': True,
+                'message': f'Receipt {ticket_id} successfully updated.',
+                'data': {
+                    'salesId': None,
+                    'ticketId': ticket_id,
+                    'amount': float(pmt.Amount),
+                    'grandTotal': float(pmt.Amount),
+                    'paidAmount': float(pmt.Amount),
+                    'paymentMethod': new_payment_method or 'Cash',
+                    'totalCylinders': 0,
+                    'totalEmpties': 0,
+                }
+            })
 
         if sale.Status in ['SETTLED', 'APPROVED']:
             return Response({'success': False, 'message': 'Cannot edit an already settled/approved sale.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -7890,36 +7983,77 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
             ).first()
 
-            cash_led = (
-                Ledger.objects.filter(LedgerId=24).first() or
-                Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
-                Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
-            )
-            bank_led = (
-                Ledger.objects.filter(LedgerId=56).first() or
-                Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first() or
-                Ledger.objects.filter(Group__GroupName__icontains='Bank').first() or
-                cash_led
-            )
+            if not linked_pmt:
+                bill_refs = [sale.SalesNo]
+                if sale.InvoiceNo:
+                    bill_refs.append(sale.InvoiceNo)
+                bwa = BillwiseAllocation.objects.filter(
+                    ReferenceTable__in=['Receipt', 'Payment'],
+                    BillReference__in=bill_refs
+                ).first()
+                if bwa and bwa.ReferenceId:
+                    linked_pmt = Payment.objects.filter(PaymentId=bwa.ReferenceId).first()
 
             if sale.PaidAmount and sale.PaidAmount > Decimal('0.00'):
-                if linked_pmt:
+                safe_sync_sequence('Payment', 'PaymentId')
+                safe_sync_sequence('PaymentLine', 'PaymentLineId')
+                safe_sync_sequence('BillwiseAllocation', 'BillwiseAllocationId')
+                bill_ref = sale.InvoiceNo or sale.SalesNo
+                driver_n = sale.DriverName or ''
+                route_n = sale.RouteName or ''
+                pay_narr = f"Sales Receipt for {bill_ref} | Driver: {driver_n} | Route: {route_n}"
+
+                if not linked_pmt:
+                    trec_no = get_next_temp_receipt_number()
+                    linked_pmt = Payment.objects.create(
+                        PartyLedger=sale.CustomerLedger,
+                        Amount=sale.PaidAmount,
+                        Narration=pay_narr,
+                        PaymentNo=None,
+                        ReferenceNumber=trec_no,
+                        Status='PENDING',
+                        DeliveryNoteId=sale.RouteTripId,
+                    )
+                else:
                     linked_pmt.Amount = sale.PaidAmount
-                    linked_pmt.lines.all().delete()
-                    pm_upper = (new_payment_method or sale.PaymentMethod or 'CASH').upper()
-                    if is_split and (cash_amount > 0 or upi_amount > 0):
-                        c_amt = cash_amount if cash_amount > 0 else (sale.PaidAmount - upi_amount)
-                        u_amt = upi_amount if upi_amount > 0 else (sale.PaidAmount - cash_amount)
-                        if c_amt > 0 and cash_led:
-                            PaymentLine.objects.create(Payment=linked_pmt, LineNo=1, PaymentMode='Cash', Ledger=cash_led, Amount=c_amt, Narration=linked_pmt.Narration)
-                        if u_amt > 0 and bank_led:
-                            PaymentLine.objects.create(Payment=linked_pmt, LineNo=2, PaymentMode='Bank', Ledger=bank_led, Amount=u_amt, Narration=linked_pmt.Narration)
-                    else:
-                        p_mode = 'Bank' if ('UPI' in pm_upper or 'BANK' in pm_upper or 'ONLINE' in pm_upper) else 'Cash'
-                        target_led = bank_led if p_mode == 'Bank' else cash_led
-                        PaymentLine.objects.create(Payment=linked_pmt, LineNo=1, PaymentMode=p_mode, Ledger=target_led or sale.CustomerLedger, Amount=sale.PaidAmount, Narration=linked_pmt.Narration)
-                    linked_pmt.save()
-                    allocate_receipt_to_pending_bills_or_advance(linked_pmt, company_id)
+                    linked_pmt.Narration = pay_narr
+                    linked_pmt.PartyLedger = sale.CustomerLedger
+                    if sale.RouteTripId and not linked_pmt.DeliveryNoteId:
+                        linked_pmt.DeliveryNoteId = sale.RouteTripId
+
+                linked_pmt.lines.all().delete()
+                pm_upper = (new_payment_method or sale.PaymentMethod or 'CASH').upper()
+                if is_split and (cash_amount > 0 or upi_amount > 0):
+                    c_amt = cash_amount if cash_amount > 0 else (sale.PaidAmount - upi_amount)
+                    u_amt = upi_amount if upi_amount > 0 else (sale.PaidAmount - cash_amount)
+                    if (c_amt + u_amt) != sale.PaidAmount:
+                        c_amt = min(sale.PaidAmount, c_amt)
+                        u_amt = max(Decimal('0.00'), sale.PaidAmount - c_amt)
+                    if c_amt > 0 and cash_led:
+                        PaymentLine.objects.create(Payment=linked_pmt, LineNo=1, PaymentMode='Cash', Ledger=cash_led, Amount=c_amt, Narration=linked_pmt.Narration)
+                    if u_amt > 0 and bank_led:
+                        PaymentLine.objects.create(Payment=linked_pmt, LineNo=2, PaymentMode='Bank', Ledger=bank_led, Amount=u_amt, Narration=linked_pmt.Narration)
+                else:
+                    p_mode = 'Bank' if ('UPI' in pm_upper or 'BANK' in pm_upper or 'ONLINE' in pm_upper) else 'Cash'
+                    target_led = bank_led if p_mode == 'Bank' else cash_led
+                    PaymentLine.objects.create(Payment=linked_pmt, LineNo=1, PaymentMode=p_mode, Ledger=target_led or sale.CustomerLedger, Amount=sale.PaidAmount, Narration=linked_pmt.Narration)
+                linked_pmt.save()
+                allocate_receipt_to_pending_bills_or_advance(linked_pmt, company_id)
+
+                existing_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=linked_pmt.PaymentId).first()
+                if existing_vch:
+                    existing_vch.lines.all().delete()
+                    for idx, pline in enumerate(linked_pmt.lines.all(), 1):
+                        VoucherLine.objects.create(
+                            Voucher=existing_vch, LineNo=idx, Ledger_id=pline.Ledger_id,
+                            DebitAmount=pline.Amount, CreditAmount=Decimal('0.00'), Narration=f"{pline.PaymentMode} Receipt for {bill_ref}"
+                        )
+                    if sale.CustomerLedger:
+                        VoucherLine.objects.create(
+                            Voucher=existing_vch, LineNo=linked_pmt.lines.count() + 1,
+                            Ledger=sale.CustomerLedger, DebitAmount=Decimal('0.00'),
+                            CreditAmount=sale.PaidAmount, Narration=f"Collection for {bill_ref}"
+                        )
 
                 if sale.CustomerLedger:
                     sync_sales_billwise_allocation(sale, None)

@@ -6,14 +6,15 @@ import '../services/invoice_helper.dart';
 import '../widgets/app_toast.dart';
 
 class OrdersScreen extends StatefulWidget {
-  const OrdersScreen({super.key});
+  final int initialFilterIndex;
+  const OrdersScreen({super.key, this.initialFilterIndex = 0});
 
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
 }
 
 class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver {
-  int _activeFilterIndex = 0; // 0: All, 1: Cash, 2: UPI / Bank
+  late int _activeFilterIndex;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -22,6 +23,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
+    _activeFilterIndex = widget.initialFilterIndex;
     WidgetsBinding.instance.addObserver(this);
     _searchFocusNode.addListener(() {
       if (mounted) setState(() {});
@@ -55,10 +57,13 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
     final state = AppStateProvider.of(context);
 
     // Filter by payment method (Cash, UPI / Bank)
-    final cashOrders = state.orders.where((o) => o.paymentMethod.toLowerCase() == 'cash').toList();
+    final cashOrders = state.orders.where((o) {
+      final m = o.paymentMethod.toLowerCase();
+      return m == 'cash' || (m == 'split' && (o.cashAmount ?? 0) > 0);
+    }).toList();
     final upiOrders = state.orders.where((o) {
       final m = o.paymentMethod.toLowerCase();
-      return m.contains('upi') || m.contains('bank') || m.contains('online');
+      return m.contains('upi') || m.contains('bank') || m.contains('online') || (m == 'split' && (o.upiAmount ?? 0) > 0);
     }).toList();
 
     List<DeliveryOrder> displayOrders;
@@ -1540,12 +1545,12 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         ),
                         const SizedBox(height: 10),
                         Row(
-                          children: ['Cash', 'UPI', 'Split'].map((m) {
+                          children: ['Cash', 'UPI', 'Split', 'Credit'].map((m) {
                             final isSel = selectedMethod.toLowerCase() == m.toLowerCase();
                             final label = m == 'UPI' ? 'UPI' : m;
                             return Expanded(
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                                padding: const EdgeInsets.symmetric(horizontal: 2.0),
                                 child: InkWell(
                                   onTap: () {
                                     setModalState(() {
@@ -1559,6 +1564,10 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                           splitUpiController.text = (computedTotal - half).toStringAsFixed(0);
                                         }
                                         amountController.text = computedTotal.toStringAsFixed(0);
+                                      } else if (m == 'Credit') {
+                                        amountController.text = '0';
+                                        splitCashController.clear();
+                                        splitUpiController.clear();
                                       } else {
                                         if (amountController.text == '0' || amountController.text.isEmpty) {
                                           amountController.text = computedTotal.toStringAsFixed(0);
@@ -1581,7 +1590,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                       child: Text(
                                         label,
                                         style: GoogleFonts.inter(
-                                          fontSize: 12.5,
+                                          fontSize: 12.0,
                                           fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
                                           color: isSel ? Colors.white : const Color(0xFF475569),
                                         ),
@@ -1703,7 +1712,8 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                               ? null
                               : () async {
                                   final activeDeliveryItems = itemsList.where((it) => it.deliveryQty > 0 || it.emptyReturnQty > 0).toList();
-                                  if (activeDeliveryItems.isEmpty) {
+                                  final isPureReceipt = order.items.isEmpty || order.ticketId.startsWith('RCPT-') || order.ticketId.startsWith('TREC-');
+                                  if (!isPureReceipt && activeDeliveryItems.isEmpty) {
                                     AppToast.warning(context, 'At least 1 cylinder must be delivered or returned.');
                                     return;
                                   }
@@ -1712,7 +1722,11 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                   double? cashAmt;
                                   double? upiAmt;
 
-                                  if (selectedMethod.toLowerCase() == 'split') {
+                                  if (selectedMethod.toLowerCase() == 'credit') {
+                                    parsedAmt = 0;
+                                    cashAmt = 0;
+                                    upiAmt = 0;
+                                  } else if (selectedMethod.toLowerCase() == 'split') {
                                     cashAmt = double.tryParse(splitCashController.text.trim()) ?? 0;
                                     upiAmt = double.tryParse(splitUpiController.text.trim()) ?? 0;
                                     parsedAmt = cashAmt + upiAmt;
