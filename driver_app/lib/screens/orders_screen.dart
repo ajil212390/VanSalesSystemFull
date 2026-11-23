@@ -591,32 +591,29 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 2),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                order.ticketId,
+                        Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: order.ticketId,
                                 style: GoogleFonts.jetBrainsMono(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w700,
                                   color: const Color(0xFF64748B),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '• ${order.time}',
-                              style: GoogleFonts.inter(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w500,
-                                color: const Color(0xFF94A3B8),
+                              TextSpan(
+                                text: ' • ${order.time}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: const Color(0xFF94A3B8),
+                                ),
                               ),
-                              maxLines: 1,
-                            ),
-                          ],
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ],
                     ),

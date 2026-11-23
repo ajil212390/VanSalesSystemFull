@@ -245,7 +245,7 @@ export const EndAllocationsPage: React.FC = () => {
   // Delete / Revoke Shift End Mutation (Restores shift to active state for driver to edit)
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      const res = await apiClient.delete(`/end-route-drivers/${id}/`);
+      const res = await apiClient.delete(`/end-route-drivers/${id}/?revert_only=true`);
       return res.data;
     },
     onSuccess: () => {

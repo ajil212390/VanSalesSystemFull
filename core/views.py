@@ -9544,10 +9544,7 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 rvd_id = dn.RouteVehicleDriver_id
                 dn_created_at = dn.CreatedAt
                 dn_delivery_date = dn.DeliveryDate
-                permanent_delete = (
-                    request.query_params.get('permanent') != 'false' and
-                    request.query_params.get('revert_only') != 'true'
-                )
+                permanent_delete = request.query_params.get('permanent') == 'true'
 
                 # 1. Reverse and remove end-shift / settlement stock unload movements
                 StockMovement.objects.filter(
@@ -9561,6 +9558,26 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     CompanyId=company_id,
                     TransactionNo=f"ERD-{dn_id}"
                 ).delete()
+
+                # Clean up any cross-depot transfer documents created during this shift's settlement
+                cross_rns = ReceiptNote.objects.filter(
+                    CompanyId=company_id,
+                    Remarks__icontains=f"Shift DN ID: {dn_id}"
+                )
+                for crn in cross_rns:
+                    StockMovement.objects.filter(ReferenceId=crn.ReceiptNoteId, TransactionType__in=['RECEIPT_NOTE', 'TRANSFER_IN']).delete()
+                    crn.lines.all().delete()
+                cross_rns.delete()
+
+                cross_tdns = DeliveryNote.objects.filter(
+                    CompanyId=company_id,
+                    DeliveryNoteNo__startswith='TDN-',
+                    Remarks__icontains=f"Shift DN ID: {dn_id}"
+                )
+                for ctdn in cross_tdns:
+                    StockMovement.objects.filter(ReferenceId=ctdn.DeliveryNoteId, TransactionType__in=['DELIVERY_NOTE', 'TRANSFER_OUT']).delete()
+                    ctdn.lines.all().delete()
+                cross_tdns.delete()
 
                 # 2. Revert Sales status
                 next_dn = DeliveryNote.objects.filter(
@@ -9632,7 +9649,26 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     dn.delete()
                 else:
                     # Restore shift to active in-progress status (LOADED) and sales to LIVE
-                    sales_qs.update(Status='LIVE', ApprovedBy=None, ApprovedAt=None)
+                    sales_qs.update(Status='LIVE', ApprovedBy=None, ApprovedAt=None, IsApproved=False)
+
+                    # Revert temporary route receipts / payments back to PENDING
+                    shift_pmts = Payment.objects.filter(
+                        CompanyId=company_id,
+                        DeliveryNoteId=dn_id
+                    )
+                    for sp in shift_pmts:
+                        if sp.PartyLedger:
+                            affected_ledgers.add(sp.PartyLedger.LedgerId)
+                        for spl in sp.lines.all():
+                            if spl.Ledger:
+                                affected_ledgers.add(spl.Ledger.LedgerId)
+                        pmt_vchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=sp.PaymentId)
+                        for pv in pmt_vchs:
+                            pv.lines.all().delete()
+                        pmt_vchs.delete()
+                        sp.Status = 'PENDING'
+                        sp.save(update_fields=['Status'])
+
                     dn.Status = 'LOADED'
                     dn.save(update_fields=['Status'])
 
