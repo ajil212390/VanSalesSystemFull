@@ -711,8 +711,18 @@ class AppState extends ChangeNotifier {
                   status: s['status'] ?? 'Delivered',
                 ));
               }
+
+              // Preserve any locally recorded order that backend hasn't synced yet
+              final backendTicketIds = newOrders.map((o) => o.ticketId).toSet();
+              final localOnly = orders.where((o) => !backendTicketIds.contains(o.ticketId)).toList();
+
               orders.clear();
               orders.addAll(newOrders);
+
+              for (final loc in localOnly.reversed) {
+                orders.insert(0, loc);
+              }
+              notifyListeners();
             } catch (e) {
               debugPrint('Failed to load driver sales: $e');
             }

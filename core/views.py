@@ -4114,7 +4114,7 @@ def allocate_receipt_to_pending_bills_or_advance(payment, company_id=1):
                     ReferenceId=payment.PaymentId,
                     BillType='ADVANCE',
                     BillReference='ADVANCE',
-                    BillDate=payment.PaymentDate or (payment.CreatedAt.date() if payment.CreatedAt else date.today()),
+                    BillDate=getattr(payment, 'PaymentDate', None) or (payment.CreatedAt.date() if payment.CreatedAt else date.today()),
                     AllocationType='Advance',
                     AllocatedAmount=unallocated,
                     CompanyId=company_id
@@ -7152,17 +7152,17 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'allocation_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         company_id = getattr(request.user, 'CompanyId', 1) or 1
+        alloc = RouteVehicleDriver.objects.filter(RouteVehicleDriverId=allocation_id).select_related('Route', 'Vehicle', 'Driver').first()
 
         # Check active Delivery Note for this shift
         active_dn = DeliveryNote.objects.filter(
-            CompanyId=company_id,
             RouteVehicleDriver_id=allocation_id
         ).exclude(
             Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
         ).order_by('-DeliveryNoteId').first()
 
         # If shift has been settled & approved, clear van sales data to zero awaiting next allocation
-        if not active_dn or active_dn.Status in ['COMPLETED', 'SETTLED']:
+        if active_dn and active_dn.Status in ['COMPLETED', 'SETTLED']:
             return Response([])
 
         # Active or Pending Approval shift: Query first-class Sales records created strictly during this shift
@@ -7239,13 +7239,23 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'status': sale.Status
                 })
 
-        # Also include any standalone shift payments/receipts recorded for this delivery note
-        if active_dn:
-            existing_tickets = {str(r.get('ticketId') or '') for r in results}
-            shift_payments = Payment.objects.filter(
-                Q(DeliveryNoteId=active_dn.DeliveryNoteId) |
-                (Q(DeliveryNoteId__isnull=True) & Q(CreatedAt__gte=active_dn.CreatedAt if active_dn.CreatedAt else active_dn.DeliveryDate))
-            ).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
+        # Also include any standalone shift payments/receipts recorded for this delivery note or driver
+        existing_tickets = {str(r.get('ticketId') or '') for r in results}
+        dn_id = active_dn.DeliveryNoteId if active_dn else None
+        driver_name = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
+
+        pmt_q = Q()
+        if dn_id:
+            pmt_q |= Q(DeliveryNoteId=dn_id)
+        if driver_name:
+            pmt_q |= (Q(Narration__icontains=driver_name) & Q(CreatedAt__date=date.today()))
+        if active_dn and active_dn.CreatedAt:
+            pmt_q |= Q(CreatedAt__gte=active_dn.CreatedAt)
+        elif not active_dn:
+            pmt_q |= Q(CreatedAt__date=date.today())
+
+        if pmt_q:
+            shift_payments = Payment.objects.filter(pmt_q).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
 
             for pmt in shift_payments:
                 t_id = pmt.ReferenceNumber or pmt.PaymentNo or f"TREC-{pmt.PaymentId}"
