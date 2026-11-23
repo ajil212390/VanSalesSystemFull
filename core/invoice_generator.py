@@ -4177,13 +4177,13 @@ def generate_ledger_statement_pdf(
     sm_table = Table(sm_rows, colWidths=[175, 65, 65])
     sm_table.setStyle(TableStyle(sm_styles))
 
-    # Right T-Balance Account Summary (Clean aligned text without table/row borders or background boxes)
+    # Right T-Balance Account Summary Container Card
     th_r_l = ParagraphStyle('ThRL', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=0)
     th_r_r = ParagraphStyle('ThRR', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=2)
     td_r_l = ParagraphStyle('TdRL', fontName=FONT_NAME, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=0)
     td_r_lb = ParagraphStyle('TdRLb', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=0)
     td_r_r = ParagraphStyle('TdRR', fontName=FONT_NAME, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=2)
-    td_r_rb = ParagraphStyle('TdRRb', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=2)
+    td_r_rb = ParagraphStyle('TdRRb', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=2)
 
     op_is_dr = (effective_op >= 0 if is_dr_normal else effective_op < 0)
     op_dr = abs(effective_op) if op_is_dr else Decimal('0.00')
@@ -4232,14 +4232,17 @@ def generate_ledger_statement_pdf(
     ]
 
     r_style = [
+        ('BOX', (0, 0), (-1, -1), 0.75, PRIMARY_COLOR),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FDF2F4')),
+        ('BACKGROUND', (0, 1), (-1, 3), colors.HexColor('#FFFFFF')),
+        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#FFF8F9')),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-        ('LINEBELOW', (0, 0), (-1, 0), 0.75, PRIMARY_COLOR),
-        ('LINEABOVE', (0, 4), (-1, 4), 0.75, DARK_COLOR),
-        ('LINEBELOW', (0, 4), (-1, 4), 1.25, DARK_COLOR),
+        ('TOPPADDING', (0, 0), (-1, -1), 3.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#E2E8F0')),
+        ('LINEABOVE', (0, 4), (-1, 4), 0.5, PRIMARY_COLOR),
     ]
 
     r_table = Table(r_rows, colWidths=[110, 65, 65])
