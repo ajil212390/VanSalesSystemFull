@@ -3621,7 +3621,7 @@ def generate_ledger_statement_pdf(
         leftMargin=25,
         rightMargin=25,
         topMargin=25,
-        bottomMargin=28
+        bottomMargin=82
     )
 
     company = None
@@ -4273,7 +4273,13 @@ def generate_ledger_statement_pdf(
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))
 
-    # 4. FOOTER NOTE & SIGNATURE
+    # Report Summary sits directly below the main transaction table
+    story.append(Spacer(1, 6))
+    story.append(rep_hdr_table)
+    story.append(HRFlowable(width="100%", thickness=1, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=5))
+    story.append(summary_grid)
+
+    # 4. FIXED LAST-PAGE FOOTER (Important Note & Authorized Signatory)
     footer_data = [
         [
             Paragraph(
@@ -4295,19 +4301,23 @@ def generate_ledger_statement_pdf(
         ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
     ]))
 
-    # Keep all closing elements together on the final page so they never orphan or split
-    closing_elements = [
-        rep_hdr_table,
-        HRFlowable(width="100%", thickness=1, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=5),
-        summary_grid,
-        Spacer(1, 12),
-        footer_table
-    ]
-    story.append(KeepTogether(closing_elements))
+    # StatementNumberedCanvas fixes the signatory & note to the bottom footer on the last page
+    def make_statement_canvas(ftr_table):
+        class StatementNumberedCanvas(NumberedCanvas):
+            def draw_page_decorations(self, page_count):
+                super().draw_page_decorations(page_count)
+                if self._pageNumber == page_count and ftr_table:
+                    self.saveState()
+                    ftr_table.wrapOn(self, 545, 60)
+                    ftr_table.drawOn(self, 25, 26)
+                    self.restoreState()
+        return StatementNumberedCanvas
 
-    doc.build(story, canvasmaker=NumberedCanvas)
+    doc.build(story, canvasmaker=make_statement_canvas(footer_table))
     return buf.getvalue()
 
 
