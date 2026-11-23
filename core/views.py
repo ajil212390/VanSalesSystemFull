@@ -7246,15 +7246,12 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             if active_dn:
                 existing_tickets = {str(r.get('ticketId') or '') for r in results}
                 shift_payments = Payment.objects.filter(
-                    CompanyId=company_id,
-                    VoucherType='RECEIPT',
                     DeliveryNoteId=active_dn.DeliveryNoteId
-                ).select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
+                ).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
 
                 for pmt in shift_payments:
-                    p_no = pmt.PaymentNo or f"RCPT-{pmt.PaymentId}"
-                    ref_no = pmt.ReferenceNo or ''
-                    if p_no in existing_tickets or (ref_no and ref_no in existing_tickets):
+                    t_id = pmt.ReferenceNumber or pmt.PaymentNo or f"TREC-{pmt.PaymentId}"
+                    if t_id in existing_tickets or (pmt.PaymentNo and pmt.PaymentNo in existing_tickets):
                         continue
                     c_amt = 0.0
                     u_amt = 0.0
@@ -7265,10 +7262,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                         else:
                             c_amt += float(pl.Amount or 0)
                     tot_amt = float(pmt.Amount or (c_amt + u_amt))
-                    p_time_str = pmt.CreatedAt.strftime("%I:%M %p") if pmt.CreatedAt else (pmt.PaymentDate.strftime("%d-%b") if pmt.PaymentDate else "")
+                    p_time_str = pmt.CreatedAt.strftime("%I:%M %p") if pmt.CreatedAt else ""
                     results.append({
                         'salesId': None,
-                        'ticketId': pmt.PaymentNo or f"RCPT-{pmt.PaymentId}",
+                        'ticketId': t_id,
                         'customer': {
                             'name': pmt.PartyLedger.LedgerName if pmt.PartyLedger else 'Direct Customer',
                             'ledgerId': pmt.PartyLedger_id,
@@ -11572,6 +11569,51 @@ class SalesViewSet(viewsets.ModelViewSet):
                         RouteVehicleDriver_id=sm.RouteVehicleDriverId,
                         SalesDate=sm.TransactionDate
                     ).order_by('-SalesId').first()
+
+            if not sale:
+                pmt = Payment.objects.filter(
+                    Q(ReferenceNumber=cleaned_ticket) | Q(PaymentNo=cleaned_ticket)
+                ).first()
+                if not pmt and any(k in cleaned_ticket for k in ['TREC-', 'RCPT-', 'REC-']):
+                    try:
+                        num_match = re.search(r'\d+', cleaned_ticket)
+                        if num_match:
+                            p_id = int(num_match.group(0))
+                            pmt = Payment.objects.filter(PaymentId=p_id).first()
+                    except Exception:
+                        pass
+
+                if pmt:
+                    class ReceiptSaleAdapter:
+                        def __init__(self, p):
+                            self.SalesId = p.PaymentId
+                            self.SalesNo = p.ReferenceNumber or p.PaymentNo or f"TREC-{p.PaymentId}"
+                            self.InvoiceNo = self.SalesNo
+                            self.SalesDate = p.CreatedAt.date() if p.CreatedAt else date.today()
+                            self.CompanyId = getattr(p.PartyLedger, 'CompanyId', 1) if p.PartyLedger else 1
+                            self.CustomerLedger = p.PartyLedger
+                            self.CustomerPhone = (p.PartyLedger.MobileNumber or p.PartyLedger.PhoneNumber or '') if p.PartyLedger else ''
+                            self.TotalDeliveredQty = 0
+                            self.TotalEmptyQty = 0
+                            self.GrandTotal = p.Amount
+                            self.PaidAmount = p.Amount
+                            lines_list = list(p.lines.all())
+                            c_amt = sum(pl.Amount for pl in lines_list if 'CASH' in (pl.PaymentMode or '').upper())
+                            u_amt = sum(pl.Amount for pl in lines_list if any(x in (pl.PaymentMode or '').upper() for x in ['UPI', 'BANK', 'ONLINE']))
+                            if c_amt > 0 and u_amt > 0:
+                                self.PaymentMethod = 'SPLIT'
+                                self.Notes = f"Split: Cash: {c_amt}, UPI: {u_amt}"
+                            elif u_amt > 0:
+                                self.PaymentMethod = 'UPI'
+                                self.Notes = p.Narration or ''
+                            else:
+                                self.PaymentMethod = 'Cash'
+                                self.Notes = p.Narration or ''
+                            self.lines = SalesLine.objects.none()
+                            self.IsApproved = p.Status == 'APPROVED'
+                            self.Status = p.Status
+
+                    sale = ReceiptSaleAdapter(pmt)
 
         if not sale:
             return Response({'detail': f'Sale invoice not found for reference "{ticket_id or sales_id}".'}, status=status.HTTP_404_NOT_FOUND)

@@ -265,7 +265,7 @@ def generate_tax_invoice_pdf(sale):
 
     s_no = str(sale.SalesNo or sale.InvoiceNo or '')
     is_empty_return = s_no.startswith('EMTRTN-') or (int(sale.TotalDeliveredQty or 0) == 0 and int(sale.TotalEmptyQty or 0) > 0 and Decimal(str(sale.GrandTotal or 0)) <= Decimal('0.00') and Decimal(str(sale.PaidAmount or 0)) <= Decimal('0.00'))
-    is_money_receipt = s_no.startswith('RCPT-') or (int(sale.TotalDeliveredQty or 0) == 0 and int(sale.TotalEmptyQty or 0) > 0 and Decimal(str(sale.PaidAmount or 0)) > Decimal('0.00'))
+    is_money_receipt = s_no.startswith('RCPT-') or s_no.startswith('TREC-') or s_no.startswith('REC-') or (int(sale.TotalDeliveredQty or 0) == 0 and Decimal(str(sale.PaidAmount or 0)) > Decimal('0.00'))
 
     if is_empty_return:
         doc_title = "EMPTY RETURN VOUCHER"
