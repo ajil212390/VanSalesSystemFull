@@ -1033,7 +1033,11 @@ class PaymentSerializer(serializers.ModelSerializer):
             return ref_no
         vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=obj.PaymentId).first()
         if vch and vch.VoucherNo:
-            return vch.VoucherNo.replace('REC-VCH-', 'REC-').replace('VCH-', '')
+            return vch.VoucherNo.replace('REC-VCH-', 'REC-').replace('PAY-VCH-', 'PAY-').replace('VCH-', '')
+        if obj.PartyLedger and obj.PartyLedger.Group:
+            g_name = (obj.PartyLedger.Group.GroupName or '').lower()
+            if obj.PartyLedger.Group_id == 24 or 'creditor' in g_name or 'supplier' in g_name:
+                return f"PAY-{obj.PaymentId:03d}"
         return f"REC-{obj.PaymentId:03d}"
 
     def get_against_bills(self, obj):
@@ -1066,13 +1070,28 @@ class PaymentSerializer(serializers.ModelSerializer):
         return first_line.PaymentMode if first_line else 'Cash'
 
     def get_voucher_type(self, obj):
+        # 1. Creditors / Suppliers are ALWAYS 'PAYMENT'
+        if obj.PartyLedger and obj.PartyLedger.Group:
+            g_name = (obj.PartyLedger.Group.GroupName or '').lower()
+            if obj.PartyLedger.Group_id == 24 or 'creditor' in g_name or 'supplier' in g_name:
+                return 'PAYMENT'
+            if obj.PartyLedger.Group_id == 21 or 'debtor' in g_name or 'customer' in g_name:
+                return 'RECEIPT'
+        # 2. Check associated voucher
         vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=obj.PaymentId).first()
         if vch and vch.VoucherType:
             return str(vch.VoucherType).upper()
-        if obj.PartyLedger and obj.PartyLedger.Group:
-            g_name = (obj.PartyLedger.Group.GroupName or '').lower()
-            if obj.PartyLedger.Group_id == 21 or 'debtor' in g_name or 'customer' in g_name:
-                return 'RECEIPT'
+        # 3. Check PaymentNo
+        p_no = str(getattr(obj, 'PaymentNo', '') or '').upper()
+        if p_no.startswith('PAY-'):
+            return 'PAYMENT'
+        if p_no.startswith('REC-'):
+            return 'RECEIPT'
+        # 4. Check ReferenceNumber
+        r_no = str(getattr(obj, 'ReferenceNumber', '') or '').upper()
+        if r_no.startswith('TREC-'):
+            return 'RECEIPT'
+        # 5. Narration check
         if obj.Narration and ('receipt' in obj.Narration.lower() or 'collection' in obj.Narration.lower()):
             return 'RECEIPT'
         return 'PAYMENT'

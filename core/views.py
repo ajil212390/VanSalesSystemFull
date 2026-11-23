@@ -162,14 +162,26 @@ def ensure_payment_columns():
         from core.models import Ledger
         supplier_ledger_ids = set(
             Ledger.objects.filter(
-                Q(Group_id=22) | Q(Group__GroupName__icontains='creditor') | Q(Group__GroupName__icontains='supplier')
+                Q(Group_id=24) | Q(Group__GroupName__icontains='creditor') | Q(Group__GroupName__icontains='supplier')
             ).values_list('LedgerId', flat=True)
         )
         if supplier_ledger_ids:
-            Payment.objects.filter(
-                PartyLedger_id__in=supplier_ledger_ids,
-                PaymentNo__startswith='REC-'
-            ).update(PaymentNo=None)
+            # Fix any supplier payments that mistakenly got REC- numbers
+            corrupted_supplier_pmts = Payment.objects.filter(
+                PartyLedger_id__in=supplier_ledger_ids
+            ).filter(
+                Q(PaymentNo__startswith='REC-') | Q(PaymentNo__isnull=True) | Q(PaymentNo='')
+            )
+            for sp in corrupted_supplier_pmts:
+                sp.PaymentNo = f"PAY-{sp.PaymentId:03d}"
+                sp.Status = 'APPROVED'
+                sp.save(update_fields=['PaymentNo', 'Status'])
+                vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=sp.PaymentId).first()
+                if vch:
+                    vch.VoucherType = 'PAYMENT'
+                    if not vch.VoucherNo or vch.VoucherNo.startswith('REC-'):
+                        vch.VoucherNo = f"PAY-VCH-{sp.PaymentId}"
+                    vch.save(update_fields=['VoucherType', 'VoucherNo'])
 
         # Auto-assign sequential PaymentNo (REC-001, REC-002...) ONLY to customer receipts that lack a PaymentNo
         existing_pmts = Payment.objects.filter(
@@ -3254,6 +3266,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
     """
     serializer_class = PurchaseSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = None
 
     def get_queryset(self):
         user = self.request.user
@@ -4086,6 +4099,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     """
     serializer_class = PaymentSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = None
 
     def get_queryset(self):
         ensure_payment_columns()

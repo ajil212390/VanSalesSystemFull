@@ -72,16 +72,57 @@ export const PaymentListPage: React.FC = () => {
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     } });
 
+  const { data: ledgers = [] } = useQuery<any[]>({
+    queryKey: ['ledgers'],
+    queryFn: async () => {
+      const res = await apiClient.get('/ledgers/');
+      return Array.isArray(res.data) ? res.data : res.data.results || [];
+    },
+  });
+
+  const customerLedgerIds = useMemo(() => {
+    return new Set(
+      ledgers
+        .filter((l: any) => {
+          const gName = (l.group_name || l.GroupName || '').toLowerCase();
+          const gid = Number(l.GroupId ?? l.Group ?? 0);
+          return gid === 21 || gName.includes('debtor') || gName.includes('customer');
+        })
+        .map((l: any) => l.LedgerId)
+    );
+  }, [ledgers]);
+
+  const supplierLedgerIds = useMemo(() => {
+    return new Set(
+      ledgers
+        .filter((l: any) => {
+          const gName = (l.group_name || l.GroupName || '').toLowerCase();
+          const gid = Number(l.GroupId ?? l.Group ?? 0);
+          return gid === 24 || gName.includes('creditor') || gName.includes('supplier');
+        })
+        .map((l: any) => l.LedgerId)
+    );
+  }, [ledgers]);
+
+  const isPaymentItem = (p: PaymentItem) => {
+    const pid = Number(p.PartyLedgerId);
+    if (supplierLedgerIds.has(pid)) return true;
+    if (p.voucher_type === 'PAYMENT') return true;
+    if (p.voucher_type === 'RECEIPT') return false;
+    if (customerLedgerIds.has(pid)) return false;
+    return true;
+  };
+
   const paymentNumMap = useMemo(() => {
     const map = new Map<number, string>();
     const sorted = [...payments]
-      .filter((p) => p.voucher_type !== 'RECEIPT')
+      .filter(isPaymentItem)
       .sort((a, b) => a.PaymentId - b.PaymentId);
     sorted.forEach((p, idx) => {
       map.set(p.PaymentId, String(idx + 1).padStart(3, '0'));
     });
     return map;
-  }, [payments]);
+  }, [payments, supplierLedgerIds, customerLedgerIds]);
 
   const isDateInFilter = (dateStr?: string) => {
     if (!dateStr || dateFilter === 'all') return true;
@@ -119,7 +160,7 @@ export const PaymentListPage: React.FC = () => {
   };
 
   const filteredPayments = useMemo(() => {
-    const paymentsOnly = payments.filter((p) => p.voucher_type !== 'RECEIPT');
+    const paymentsOnly = payments.filter(isPaymentItem);
     const q = searchQuery.toLowerCase().trim();
     let result = paymentsOnly.filter((p) => {
       // 1. Date filter
@@ -158,7 +199,7 @@ export const PaymentListPage: React.FC = () => {
     });
 
     return result;
-  }, [payments, searchQuery, paymentNumMap, dateFilter, customStartDate, customEndDate, sortBy]);
+  }, [payments, searchQuery, paymentNumMap, dateFilter, customStartDate, customEndDate, sortBy, supplierLedgerIds, customerLedgerIds]);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {

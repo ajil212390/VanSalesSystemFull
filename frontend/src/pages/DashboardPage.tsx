@@ -418,25 +418,41 @@ export const DashboardPage: React.FC = () => {
     );
   }, [ledgers]);
 
+  const supplierLedgerIds = useMemo(() => {
+    return new Set(
+      ledgers
+        .filter((l: any) => {
+          const gName = (l.group_name || l.GroupName || '').toLowerCase();
+          const gid = Number(l.GroupId ?? l.Group ?? 0);
+          return gid === 24 || gName.includes('creditor') || gName.includes('supplier');
+        })
+        .map((l: any) => l.LedgerId)
+    );
+  }, [ledgers]);
+
   // Supplier Payments vs Customer Receipts
   const supplierPayments = useMemo(() => {
     return payments.filter((p: any) => {
+      const pid = Number(p.PartyLedgerId);
+      if (supplierLedgerIds.has(pid)) return true;
       if (p.voucher_type === 'PAYMENT') return true;
       if (p.voucher_type === 'RECEIPT') return false;
-      if (customerLedgerIds.has(p.PartyLedgerId)) return false;
+      if (customerLedgerIds.has(pid)) return false;
       return true;
     });
-  }, [payments, customerLedgerIds]);
+  }, [payments, customerLedgerIds, supplierLedgerIds]);
 
   const customerReceipts = useMemo(() => {
     return payments.filter((p: any) => {
+      const pid = Number(p.PartyLedgerId);
+      if (supplierLedgerIds.has(pid)) return false;
       if (p.voucher_type === 'PAYMENT') return false;
       // In Future Gas, only approved customer receipts count towards official accounts & dashboard
       const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
       if (!isApproved) return false;
-      return customerLedgerIds.has(Number(p.PartyLedgerId));
+      return customerLedgerIds.has(pid);
     });
-  }, [payments, customerLedgerIds]);
+  }, [payments, customerLedgerIds, supplierLedgerIds]);
 
   // ── Workable Date Range Calculation ──
   const dateRange = useMemo(() => {
