@@ -66,6 +66,7 @@ interface StatementEntry {
   item_name?: string;
   full_qty?: number | string | null;
   empty_qty?: number | string | null;
+  is_cylinder?: boolean;
   debit: number;
   credit: number;
   runningBalance?: number;
@@ -253,7 +254,7 @@ export const LedgerAnalysisPage: React.FC = () => {
   // Compute Statement Running Balances and Filters
   const statementCalculations = useMemo(() => {
     if (!statementData || !statementData.ledger) {
-      return { entries: [], effectiveOpening: 0, totDebit: 0, totCredit: 0, closingBal: 0 };
+      return { entries: [], effectiveOpening: 0, totDebit: 0, totCredit: 0, totFullQty: 0, totEmptyQty: 0, closingBal: 0 };
     }
 
     const l = statementData.ledger;
@@ -380,11 +381,36 @@ export const LedgerAnalysisPage: React.FC = () => {
       tx.runningBalance = runBal;
     });
 
+    let totFullQty = 0;
+    let totEmptyQty = 0;
+    finalEntries.forEach((tx) => {
+      if (tx.ref !== 'OP-BAL') {
+        const isCyl = tx.is_cylinder !== undefined ? tx.is_cylinder : (
+          tx.item_name ? (
+            /04KG|12KG|17KG|19KG|CYLINDER|LPG|KG/i.test(tx.item_name) &&
+            !/REGULAT|PIPE|STOVE|BURNER|HOSE|SERVICE|OTHER/i.test(tx.item_name)
+          ) : false
+        );
+        if (isCyl) {
+          if (tx.full_qty !== undefined && tx.full_qty !== null && tx.full_qty !== '' && tx.full_qty !== '—') {
+            const f = Number(tx.full_qty);
+            if (!isNaN(f)) totFullQty += f;
+          }
+          if (tx.empty_qty !== undefined && tx.empty_qty !== null && tx.empty_qty !== '' && tx.empty_qty !== '—') {
+            const e = Number(tx.empty_qty);
+            if (!isNaN(e)) totEmptyQty += e;
+          }
+        }
+      }
+    });
+
     return {
       entries: finalEntries,
       effectiveOpening,
       totDebit: sumDebit,
       totCredit: sumCredit,
+      totFullQty,
+      totEmptyQty,
       closingBal: runBal,
     };
   }, [statementData, datePreset, customFromDate, customToDate, paymentModeFilter, stmtSearch]);
@@ -444,6 +470,8 @@ export const LedgerAnalysisPage: React.FC = () => {
           effectiveOpening: statementCalculations.effectiveOpening,
           totDebit: statementCalculations.totDebit,
           totCredit: statementCalculations.totCredit,
+          totFullQty: statementCalculations.totFullQty,
+          totEmptyQty: statementCalculations.totEmptyQty,
           closingBal: statementCalculations.closingBal,
         },
         entries: statementCalculations.entries,
@@ -766,14 +794,29 @@ export const LedgerAnalysisPage: React.FC = () => {
                 </Table.Tbody>
                 <Table.Tfoot style={{ backgroundColor: '#f8fafc', borderTop: '2px solid #e2e8f0' }}>
                   <Table.Tr>
-                    <Table.Td colSpan={7} style={{ fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
-                      PERIOD TOTALS &amp; CLOSING BALANCE
+                    <Table.Td colSpan={3} style={{ fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
+                      PERIOD TOTALS
                     </Table.Td>
+                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
+                      {statementCalculations.totFullQty > 0 ? statementCalculations.totFullQty : '—'}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'center', fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
+                      {statementCalculations.totEmptyQty > 0 ? statementCalculations.totEmptyQty : '—'}
+                    </Table.Td>
+                    <Table.Td colSpan={2} />
                     <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                       ₹{statementCalculations.totDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                       ₹{statementCalculations.totCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </Table.Td>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 12, color: '#94a3b8' }}>
+                      —
+                    </Table.Td>
+                  </Table.Tr>
+                  <Table.Tr style={{ backgroundColor: '#f1f5f9', borderTop: '1px solid #e2e8f0' }}>
+                    <Table.Td colSpan={9} style={{ fontWeight: 700, fontSize: 12, color: '#0f172a' }}>
+                      CLOSING BALANCE
                     </Table.Td>
                     <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 12.5, color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
                       ₹{Math.abs(statementCalculations.closingBal).toLocaleString('en-IN', { minimumFractionDigits: 2 })} <Text component="span" size="11px" fw={700} c="dimmed">{closingSuffix}</Text>

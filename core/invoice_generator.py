@@ -3804,6 +3804,48 @@ def generate_ledger_statement_pdf(
         tot_credit = calc_tot_cr
         closing_bal = calc_run_bal
 
+    # Calculate cylinder-only filled and empty totals for PERIOD TOTALS
+    tot_full_qty = 0
+    tot_empty_qty = 0
+
+    if summary_stats and isinstance(summary_stats, dict):
+        if 'totFullQty' in summary_stats and summary_stats.get('totFullQty') is not None:
+            try:
+                tot_full_qty = int(summary_stats['totFullQty'])
+            except Exception:
+                pass
+        if 'totEmptyQty' in summary_stats and summary_stats.get('totEmptyQty') is not None:
+            try:
+                tot_empty_qty = int(summary_stats['totEmptyQty'])
+            except Exception:
+                pass
+
+    def _is_cyl_row(e):
+        if e.get('is_cylinder') is not None:
+            return bool(e.get('is_cylinder'))
+        item_raw = str(e.get('item_name') or '').upper()
+        if not item_raw or item_raw == '—':
+            return False
+        if any(x in item_raw for x in ['REGULAT', 'PIPE', 'STOVE', 'BURNER', 'HOSE', 'SERVICE', 'OTHER']):
+            return False
+        return any(k in item_raw for k in ['04KG', '12KG', '17KG', '19KG', '47.5KG', '5KG', 'CYLINDER', 'LPG', 'KG'])
+
+    if tot_full_qty == 0 and tot_empty_qty == 0:
+        for e in raw_entries:
+            if str(e.get('ref') or '') != 'OP-BAL' and _is_cyl_row(e):
+                fq = e.get('full_qty')
+                eq = e.get('empty_qty')
+                if fq is not None and str(fq) != '' and str(fq) != '—':
+                    try:
+                        tot_full_qty += int(float(str(fq)))
+                    except Exception:
+                        pass
+                if eq is not None and str(eq) != '' and str(eq) != '—':
+                    try:
+                        tot_empty_qty += int(float(str(eq)))
+                    except Exception:
+                        pass
+
     final_close_sfx = 'Dr' if closing_bal >= 0 else 'Cr'
     if not is_dr_normal:
         final_close_sfx = 'Cr' if closing_bal >= 0 else 'Dr'
@@ -3922,13 +3964,16 @@ def generate_ledger_statement_pdf(
             Paragraph(bal_str, td_right_bold),
         ])
 
+    full_tot_str = f"<b>{tot_full_qty}</b>" if tot_full_qty > 0 else ""
+    empty_tot_str = f"<b>{tot_empty_qty}</b>" if tot_empty_qty > 0 else ""
+
     # Summary Row 1: Period Turnover Totals
     table_rows.append([
         Paragraph("<b>PERIOD TOTALS</b>", td_left_bold),
         Paragraph("", td_left),
         Paragraph("", td_left),
-        Paragraph("", td_center),
-        Paragraph("", td_center),
+        Paragraph(full_tot_str, td_center),
+        Paragraph(empty_tot_str, td_center),
         Paragraph("", td_left),
         Paragraph("", td_left),
         Paragraph(f"<b>Rs. {tot_debit:,.2f}</b>", td_right_bold),
@@ -3964,12 +4009,13 @@ def generate_ledger_statement_pdf(
         ('LEFTPADDING', (0, 0), (-1, -1), 3),
         ('RIGHTPADDING', (0, 0), (-1, -1), 3),
         ('GRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
-        # Period Totals Row Styling
-        ('SPAN', (0, n_rows - 2), (6, n_rows - 2)),
+        # Period Totals Row Styling: span cols 0..2 for label, leave col 3 (FULL QTY) and col 4 (EMPTY QTY) open, span cols 5..6
+        ('SPAN', (0, n_rows - 2), (2, n_rows - 2)),
+        ('SPAN', (5, n_rows - 2), (6, n_rows - 2)),
         ('BACKGROUND', (0, n_rows - 2), (-1, n_rows - 2), colors.HexColor('#F1F5F9')),
         ('LINEABOVE', (0, n_rows - 2), (-1, n_rows - 2), 1, PRIMARY_COLOR),
-        # Closing Balance Row Styling
-        ('SPAN', (0, n_rows - 1), (6, n_rows - 1)),
+        # Closing Balance Row Styling: span cols 0..8 for label, leave col 9 (BALANCE) open
+        ('SPAN', (0, n_rows - 1), (8, n_rows - 1)),
         ('BACKGROUND', (0, n_rows - 1), (-1, n_rows - 1), LIGHT_BG),
         ('LINEBELOW', (0, n_rows - 1), (-1, n_rows - 1), 1.5, PRIMARY_COLOR),
     ]

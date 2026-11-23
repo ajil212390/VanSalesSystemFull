@@ -2087,7 +2087,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
 
         # Prefetch related sales and purchases for rich Tally-style particulars and shared invoice references
         sales_ids = [v.ReferenceId for v in [vl.Voucher for vl in vl_qs] if v and str(v.ReferenceTable or '').lower() == 'sales' and v.ReferenceId]
-        sales_map = {s.SalesId: s for s in Sales.objects.filter(Q(CustomerLedger=ledger) | Q(SalesId__in=sales_ids)).prefetch_related('lines__Product', 'lines__Unit')}
+        sales_map = {s.SalesId: s for s in Sales.objects.filter(Q(CustomerLedger=ledger) | Q(SalesId__in=sales_ids)).prefetch_related('lines__Product__Category', 'lines__Unit')}
         purchases_map = {p.PurchaseId: p for p in Purchase.objects.filter(SupplierLedger=ledger).prefetch_related('lines__Product', 'lines__Unit')}
 
         # Pre-build mapping from bill reference (e.g. INV-87995, INV-80210) to exact Receipt Number (e.g. REC-007, REC-002)
@@ -2184,28 +2184,72 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         p_name = line.ProductName or 'Item'
                         return p_name.replace('LPG ', '').replace(' GAS CYLINDER', '').replace(' CYLINDER', '').strip()
 
-                    if len(s_lines) == 1:
-                        l0 = s_lines[0]
-                        item_name = _get_line_disp(l0)
-                        full_qty = int(l0.Quantity) if l0.Quantity == int(l0.Quantity) else float(l0.Quantity)
-                        empty_qty = int(l0.EmptyQuantity) if l0.EmptyQuantity == int(l0.EmptyQuantity) else float(l0.EmptyQuantity)
-                    elif len(s_lines) > 1:
-                        item_name = ", ".join(_get_line_disp(l) for l in s_lines)
-                        full_qty = sum(int(l.Quantity) if l.Quantity == int(l.Quantity) else float(l.Quantity) for l in s_lines)
-                        empty_qty = sum(int(l.EmptyQuantity) if l.EmptyQuantity == int(l.EmptyQuantity) else float(l.EmptyQuantity) for l in s_lines)
+                    def _is_cyl(line):
+                        prod = line.Product
+                        cat_n = ''
+                        if prod and getattr(prod, 'Category', None):
+                            cat_n = (getattr(prod.Category, 'CategoryName', '') or '').upper()
+                            if getattr(prod.Category, 'ParentCategory', None):
+                                cat_n += f" {getattr(prod.Category, 'ParentCategory', '')}".upper()
+                        pn = ((getattr(prod, 'ProductName', '') if prod else '') or line.ProductName or '').upper()
+                        if 'CYLINDER' in cat_n or 'CYLINDER' in pn:
+                            return True
+                        if any(k in pn for k in ['04KG', '12KG', '17KG', '19KG', '47.5KG', '5KG', '14.2KG']):
+                            return True
+                        if 'LPG' in pn and ('KG' in pn or 'GAS' in pn):
+                            return True
+                        return False
 
-                    entries.append({
-                        'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
-                        'ref': ref_no,
-                        'vch_no': ref_no,
-                        'voucher_type': 'Sales',
-                        'particulars': particulars,
-                        'item_name': item_name,
-                        'full_qty': full_qty if full_qty else None,
-                        'empty_qty': empty_qty if empty_qty else None,
-                        'debit': float(vl.DebitAmount or 0),
-                        'credit': 0.0,
-                    })
+                    if s_lines:
+                        # Separate cylinder lines from non-cylinder lines so totals never mix
+                        tot_lines_amount = sum(Decimal(str(l.Total or 0)) for l in s_lines)
+                        for idx, l in enumerate(s_lines):
+                            is_cylinder = _is_cyl(l)
+                            l_disp = _get_line_disp(l)
+                            if is_cylinder:
+                                l_full = int(l.Quantity) if l.Quantity == int(l.Quantity) else float(l.Quantity)
+                                l_empty = int(l.EmptyQuantity) if l.EmptyQuantity == int(l.EmptyQuantity) else float(l.EmptyQuantity)
+                            else:
+                                l_full = None
+                                l_empty = None
+
+                            if len(s_lines) == 1:
+                                l_debit = float(vl.DebitAmount or 0)
+                            elif tot_lines_amount > 0 and idx == len(s_lines) - 1:
+                                already_allocated = sum(round(float(s_lines[i].Total or 0) / float(tot_lines_amount) * float(vl.DebitAmount), 2) for i in range(len(s_lines) - 1))
+                                l_debit = round(float(vl.DebitAmount) - already_allocated, 2)
+                            elif tot_lines_amount > 0:
+                                l_debit = round(float(l.Total or 0) / float(tot_lines_amount) * float(vl.DebitAmount), 2)
+                            else:
+                                l_debit = round(float(vl.DebitAmount) / len(s_lines), 2)
+
+                            entries.append({
+                                'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                                'ref': ref_no,
+                                'vch_no': ref_no,
+                                'voucher_type': 'Sales',
+                                'particulars': particulars,
+                                'item_name': l_disp,
+                                'full_qty': l_full if (l_full is not None and l_full > 0) else None,
+                                'empty_qty': l_empty if (l_empty is not None and l_empty > 0) else None,
+                                'is_cylinder': is_cylinder,
+                                'debit': l_debit,
+                                'credit': 0.0,
+                            })
+                    else:
+                        entries.append({
+                            'date': v.VoucherDate.strftime('%Y-%m-%d') if v.VoucherDate else '',
+                            'ref': ref_no,
+                            'vch_no': ref_no,
+                            'voucher_type': 'Sales',
+                            'particulars': particulars,
+                            'item_name': '',
+                            'full_qty': None,
+                            'empty_qty': None,
+                            'is_cylinder': False,
+                            'debit': float(vl.DebitAmount or 0),
+                            'credit': 0.0,
+                        })
                 elif vl.CreditAmount > 0:
                     vtype = 'Receipt'
                     narr = vl.Narration or ''
