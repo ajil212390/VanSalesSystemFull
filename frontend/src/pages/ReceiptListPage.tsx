@@ -26,7 +26,6 @@ import {
   IconPencil,
   IconArrowLeft,
   IconLock,
-  IconCheck,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -77,7 +76,6 @@ export const ReceiptListPage: React.FC = () => {
   // Filters State
   type DateFilterType = 'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
   const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved'>('all');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [sortBy, setSortBy] = useState<string>('date_desc');
@@ -131,15 +129,6 @@ export const ReceiptListPage: React.FC = () => {
       return false;
     });
   }, [allPayments, ledgers]);
-
-  // Counts for status tabs
-  const pendingCount = useMemo(() => {
-    return receipts.filter((p) => String(p.Status || '').toUpperCase() === 'PENDING').length;
-  }, [receipts]);
-
-  const approvedCount = useMemo(() => {
-    return receipts.filter((p) => String(p.Status || '').toUpperCase() !== 'PENDING').length;
-  }, [receipts]);
 
   const receiptNumMap = useMemo(() => {
     const map = new Map<number, string>();
@@ -221,16 +210,11 @@ export const ReceiptListPage: React.FC = () => {
   const filteredReceipts = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     let result = receipts.filter((p) => {
-      // 1. Status filter
-      const isPending = String(p.Status || '').toUpperCase() === 'PENDING';
-      if (statusFilter === 'pending' && !isPending) return false;
-      if (statusFilter === 'approved' && isPending) return false;
-
-      // 2. Date filter
+      // 1. Date filter
       const itemDate = p.payment_date || (p.CreatedAt ? p.CreatedAt.slice(0, 10) : '');
       if (!isDateInFilter(itemDate)) return false;
 
-      // 3. Search query
+      // 2. Search query
       if (!q) return true;
       const againstStr = getAgainstBills(p).join(' ').toLowerCase();
       const displayNo = (receiptNumMap.get(p.PaymentId) || p.PaymentNo || p.ReferenceNumber || String(p.PaymentId)).toLowerCase();
@@ -265,7 +249,7 @@ export const ReceiptListPage: React.FC = () => {
     });
 
     return result;
-  }, [receipts, searchQuery, receiptNumMap, dateFilter, statusFilter, customStartDate, customEndDate, sortBy]);
+  }, [receipts, searchQuery, receiptNumMap, dateFilter, customStartDate, customEndDate, sortBy]);
 
 
 
@@ -290,30 +274,6 @@ export const ReceiptListPage: React.FC = () => {
         msg = err.message;
       }
       notifications.show({ title: 'Error', message: msg, color: 'red' });
-    },
-  });
-
-  const approveMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiClient.post(`/payments/${id}/approve/`);
-      return res.data;
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
-      queryClient.invalidateQueries({ queryKey: ['end-route-drivers'] });
-      notifications.show({
-        title: 'Receipt Approved',
-        message: data?.message || 'Receipt approved and posted to General Ledger.',
-        color: 'teal',
-      });
-    },
-    onError: (err: any) => {
-      notifications.show({
-        title: 'Approval Failed',
-        message: err.response?.data?.detail || err.message || 'Could not approve receipt.',
-        color: 'red',
-      });
     },
   });
 
@@ -363,69 +323,6 @@ export const ReceiptListPage: React.FC = () => {
           </Button>
         </Group>
       </Group>
-
-      {/* Status Segmented Control & Summary Banner */}
-      <Paper
-        p="xs"
-        radius="md"
-        withBorder
-        style={{
-          backgroundColor: '#ffffff',
-          borderColor: '#e2e8f0',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-        }}
-      >
-        <Group justify="space-between" align="center" wrap="wrap" gap="sm">
-          <Group gap="xs" align="center">
-            <Text size="xs" fw={700} c="#475569" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-              Receipt Status:
-            </Text>
-            <SegmentedControl
-              size="xs"
-              radius="xl"
-              color="burgundy"
-              value={statusFilter}
-              onChange={(val) => setStatusFilter(val as any)}
-              data={[
-                { label: `All Receipts (${receipts.length})`, value: 'all' },
-                { label: `Pending Shift Settlement (${pendingCount})`, value: 'pending' },
-                { label: `Approved & Posted (${approvedCount})`, value: 'approved' },
-              ]}
-              styles={{
-                root: {
-                  backgroundColor: '#f1f5f9',
-                  border: '1px solid #e2e8f0',
-                  padding: 3,
-                },
-                indicator: {
-                  backgroundColor: '#800020',
-                  boxShadow: '0 2px 4px rgba(128, 0, 32, 0.25)',
-                },
-                label: {
-                  fontSize: 12,
-                  fontWeight: 600,
-                  padding: '5px 14px',
-                },
-              }}
-            />
-          </Group>
-
-          {pendingCount > 0 && (
-            <Badge
-              size="sm"
-              radius="sm"
-              style={{
-                backgroundColor: '#f8fafc',
-                color: '#475569',
-                border: '1px solid #e2e8f0',
-                fontWeight: 600,
-              }}
-            >
-              {pendingCount} Temporary Receipt{pendingCount > 1 ? 's' : ''} (TREC) will be approved when driver shift is settled in End Allocation
-            </Badge>
-          )}
-        </Group>
-      </Paper>
 
       {/* Date Filter & Sort Card */}
       <Paper
@@ -668,19 +565,6 @@ export const ReceiptListPage: React.FC = () => {
 
                           return (
                             <Group gap={6} justify="center" wrap="nowrap">
-                              {!isApproved && (
-                                <Tooltip label="Approve & Post to Ledger" withArrow position="top">
-                                  <ActionIcon
-                                    variant="subtle"
-                                    color="teal"
-                                    size="sm"
-                                    loading={approveMutation.isPending && (approveMutation.variables as any) === item.PaymentId}
-                                    onClick={() => approveMutation.mutate(item.PaymentId)}
-                                  >
-                                    <IconCheck size={16} />
-                                  </ActionIcon>
-                                </Tooltip>
-                              )}
                               <ActionIcon
                                 variant="subtle"
                                 color="burgundy"
