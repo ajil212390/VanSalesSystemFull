@@ -368,7 +368,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Mode Selector Pill: [ 🚚 Cylinder Delivery ]  [ 💵 Cash Collection Only ]
+                    // Mode Selector Pill: [  Cylinder Delivery ]  [  Cash Collection Only ]
                     _buildDeliveryOrCollectionToggle(state),
                     const SizedBox(height: 14),
 

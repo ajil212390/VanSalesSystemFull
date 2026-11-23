@@ -4181,12 +4181,12 @@ def generate_ledger_statement_pdf(
     sm_table.setStyle(TableStyle(sm_styles))
 
     # Right T-Balance Account Summary Container Card (Exact matching style & color as top card)
-    th_r_l = ParagraphStyle('ThRL', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=0)
-    th_r_r = ParagraphStyle('ThRR', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)
-    td_r_l = ParagraphStyle('TdRL', fontName=FONT_NAME, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=0)
-    td_r_lb = ParagraphStyle('TdRLb', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=0)
-    td_r_r = ParagraphStyle('TdRR', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)
-    td_r_rb = ParagraphStyle('TdRRb', fontName=FONT_BOLD, fontSize=8.5, leading=10.5, textColor=PRIMARY_COLOR, alignment=2)
+    th_r_l = ParagraphStyle('ThRL', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=PRIMARY_COLOR, alignment=0)
+    th_r_r = ParagraphStyle('ThRR', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=PRIMARY_COLOR, alignment=2)
+    td_r_l = ParagraphStyle('TdRL', fontName=FONT_NAME, fontSize=8, leading=10.5, textColor=DARK_COLOR, alignment=0)
+    td_r_lb = ParagraphStyle('TdRLb', fontName=FONT_BOLD, fontSize=8, leading=10.5, textColor=DARK_COLOR, alignment=0)
+    td_r_r = ParagraphStyle('TdRR', fontName=FONT_BOLD, fontSize=8.5, leading=11, textColor=DARK_COLOR, alignment=2)
+    td_r_rb = ParagraphStyle('TdRRb', fontName=FONT_BOLD, fontSize=9.5, leading=12, textColor=PRIMARY_COLOR, alignment=2)
 
     op_is_dr = (effective_op >= 0 if is_dr_normal else effective_op < 0)
     op_dr = abs(effective_op) if op_is_dr else Decimal('0.00')
@@ -4214,21 +4214,21 @@ def generate_ledger_statement_pdf(
         ],
         [
             Paragraph("Opening Balance", td_r_lb),
-            Paragraph(f"{op_dr:,.2f}" if (op_dr > 0 or (op_dr == 0 and op_is_dr)) else "", td_r_r),
-            Paragraph(f"{op_cr:,.2f}" if (op_cr > 0 or (op_cr == 0 and not op_is_dr)) else "", td_r_r),
+            Paragraph(f"<b>{op_dr:,.2f}</b>" if (op_dr > 0 or (op_dr == 0 and op_is_dr)) else "", td_r_r),
+            Paragraph(f"<b>{op_cr:,.2f}</b>" if (op_cr > 0 or (op_cr == 0 and not op_is_dr)) else "", td_r_r),
         ],
         [
-            Paragraph("", td_r_l),
-            Paragraph(f"{tx_dr:,.2f}" if tx_dr > 0 else "", td_r_r),
-            Paragraph(f"{tx_cr:,.2f}" if tx_cr > 0 else "", td_r_r),
+            Paragraph("Period Transactions", td_r_lb),
+            Paragraph(f"<b>{tx_dr:,.2f}</b>" if tx_dr > 0 else "", td_r_r),
+            Paragraph(f"<b>{tx_cr:,.2f}</b>" if tx_cr > 0 else "", td_r_r),
         ],
         [
             Paragraph("Closing Balance", td_r_lb),
-            Paragraph(f"{close_dr:,.2f}" if close_dr > 0 else "", td_r_r),
-            Paragraph(f"{close_cr:,.2f}" if close_cr > 0 else "", td_r_r),
+            Paragraph(f"<b>{close_dr:,.2f}</b>" if close_dr > 0 else "", td_r_r),
+            Paragraph(f"<b>{close_cr:,.2f}</b>" if close_cr > 0 else "", td_r_r),
         ],
         [
-            Paragraph("", td_r_l),
+            Paragraph("<b>Total</b>", td_r_lb),
             Paragraph(f"<b>{final_balanced_sum:,.2f}</b>", td_r_rb),
             Paragraph(f"<b>{final_balanced_sum:,.2f}</b>", td_r_rb),
         ],

@@ -548,7 +548,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
             },
             borderRadius: BorderRadius.circular(14),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -592,23 +592,29 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         ),
                         const SizedBox(height: 2),
                         Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              order.ticketId,
-                              style: GoogleFonts.jetBrainsMono(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF64748B),
+                            Flexible(
+                              child: Text(
+                                order.ticketId,
+                                style: GoogleFonts.jetBrainsMono(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF64748B),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const SizedBox(width: 5),
+                            const SizedBox(width: 4),
                             Text(
                               '• ${order.time}',
                               style: GoogleFonts.inter(
-                                fontSize: 11,
+                                fontSize: 10.5,
                                 fontWeight: FontWeight.w500,
                                 color: const Color(0xFF94A3B8),
                               ),
+                              maxLines: 1,
                             ),
                           ],
                         ),
@@ -616,7 +622,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                     ),
                   ),
 
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
 
                   // Total Amount & Payment Badge
                   Column(
@@ -624,7 +630,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        isEmptyOnly ? '₹0' : '₹${order.amount.toStringAsFixed(0)}',
+                        (order.amount > 0 || !isEmptyOnly) ? '₹${order.amount.toStringAsFixed(0)}' : '₹0',
                         style: GoogleFonts.inter(
                           fontSize: 15.5,
                           fontWeight: FontWeight.w900,
@@ -650,9 +656,11 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                           ),
                         ),
                         child: Text(
-                          isEmptyOnly
-                              ? 'EMPTY RETURN'
-                              : (isCredit ? 'CREDIT' : (isCash ? 'CASH' : 'UPI / BANK')),
+                          order.totalCylinders == 0 && order.totalEmpties == 0
+                              ? (isCash ? 'CASH RECEIPT' : (isCredit ? 'CREDIT' : 'UPI RECEIPT'))
+                              : (isEmptyOnly
+                                  ? 'EMPTY RETURN'
+                                  : (isCredit ? 'CREDIT' : (isCash ? 'CASH' : 'UPI / BANK'))),
                           style: GoogleFonts.inter(
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
@@ -667,7 +675,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                     ],
                   ),
 
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 6),
 
                   // Big Arrow at right end of the line
                   AnimatedRotation(

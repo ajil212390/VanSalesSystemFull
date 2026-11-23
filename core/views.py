@@ -4001,6 +4001,124 @@ class PurchaseViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'detail': f'Error generating supplier statement PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+def allocate_receipt_to_pending_bills_or_advance(payment, company_id=1):
+    """
+    Allocates a customer receipt (Payment) against the customer's unpaid sales invoices (FIFO).
+    If no pending sales invoices exist, or if the receipt amount exceeds pending invoices,
+    the unallocated balance is allocated as ADVANCE.
+    Cleans up any bogus allocations pointing to non-invoice references like 'RCPT-' or 'EMTRTN-'.
+    """
+    if not payment or not payment.PartyLedger:
+        return
+
+    customer = payment.PartyLedger
+    total_pmt_amt = Decimal(str(payment.Amount or 0))
+    if total_pmt_amt <= Decimal('0.00'):
+        return
+
+    company_id = company_id or getattr(customer, 'CompanyId', 1) or 1
+
+    # 1. Clean up bogus self-allocations where BillReference starts with 'RCPT-' or 'EMTRTN-'
+    BillwiseAllocation.objects.filter(
+        ReferenceTable__in=['Receipt', 'Payment'],
+        ReferenceId=payment.PaymentId,
+        BillReference__iregex=r'^(RCPT|EMTRTN)-'
+    ).delete()
+
+    first_line = payment.lines.first()
+    if not first_line:
+        safe_sync_sequence('PaymentLine', 'PaymentLineId')
+        cash_led = (
+            Ledger.objects.filter(LedgerId=24).first() or
+            Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
+            Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
+        )
+        first_line = PaymentLine.objects.create(
+            Payment=payment, LineNo=1, PaymentMode='Cash',
+            Ledger=cash_led or customer, Amount=total_pmt_amt, Narration=payment.Narration or 'Receipt'
+        )
+
+    # 2. Check existing genuine sales invoice allocations for this payment
+    existing_allocs = BillwiseAllocation.objects.filter(
+        ReferenceTable__in=['Receipt', 'Payment'],
+        ReferenceId=payment.PaymentId
+    )
+    already_allocated = sum(
+        Decimal(str(a.AllocatedAmount or 0))
+        for a in existing_allocs
+        if a.BillType == 'SALES' and not str(a.BillReference).startswith('RCPT-') and not str(a.BillReference).startswith('EMTRTN-')
+    )
+    unallocated = total_pmt_amt - already_allocated
+
+    if unallocated <= Decimal('0.00'):
+        return
+
+    safe_sync_sequence('BillwiseAllocation', 'BillwiseAllocationId')
+
+    # 3. Find customer's pending unpaid sales invoices in FIFO order (oldest SalesDate first)
+    pending_sales = Sales.objects.filter(
+        CompanyId=company_id,
+        CustomerLedger=customer,
+        Status__in=['LIVE', 'PENDING', 'APPROVED', 'COMPLETED']
+    ).exclude(SalesNo__startswith='RCPT-').exclude(SalesNo__startswith='EMTRTN-').order_by('SalesDate', 'SalesId')
+
+    for s in pending_sales:
+        grand = Decimal(str(s.GrandTotal or 0))
+        if grand <= Decimal('0.00'):
+            continue
+
+        # Calculate how much is already paid / allocated against this sale
+        all_allocs = BillwiseAllocation.objects.filter(
+            CompanyId=company_id,
+            BillType='SALES',
+            BillReference__in=[s.SalesNo, s.InvoiceNo]
+        ).exclude(ReferenceId=payment.PaymentId).aggregate(tot=Sum('AllocatedAmount'))
+        other_allocated = all_allocs['tot'] or Decimal('0.00')
+
+        unpaid_on_sale = max(Decimal('0.00'), grand - other_allocated)
+        if unpaid_on_sale > Decimal('0.00'):
+            alloc_here = min(unallocated, unpaid_on_sale)
+            BillwiseAllocation.objects.create(
+                PaymentLine=first_line,
+                ReferenceTable='Receipt',
+                ReferenceId=payment.PaymentId,
+                BillType='SALES',
+                BillReference=s.InvoiceNo or s.SalesNo,
+                BillDate=s.SalesDate,
+                AllocationType='Against Reference',
+                AllocatedAmount=alloc_here,
+                CompanyId=company_id
+            )
+            s.PaidAmount = min(grand, (s.PaidAmount or Decimal('0.00')) + alloc_here)
+            s.save(update_fields=['PaidAmount'])
+            unallocated -= alloc_here
+            if unallocated <= Decimal('0.00'):
+                break
+
+    # 4. If any balance remains after allocating to all pending bills (or if no pending bills exist), allocate as ADVANCE
+    if unallocated > Decimal('0.00'):
+        adv_alloc = BillwiseAllocation.objects.filter(
+            ReferenceTable__in=['Receipt', 'Payment'],
+            ReferenceId=payment.PaymentId,
+            BillType='ADVANCE'
+        ).first()
+        if adv_alloc:
+            adv_alloc.AllocatedAmount = (adv_alloc.AllocatedAmount or Decimal('0.00')) + unallocated
+            adv_alloc.save(update_fields=['AllocatedAmount'])
+        else:
+            BillwiseAllocation.objects.create(
+                PaymentLine=first_line,
+                ReferenceTable='Receipt',
+                ReferenceId=payment.PaymentId,
+                BillType='ADVANCE',
+                BillReference='ADVANCE',
+                BillDate=payment.PaymentDate or (payment.CreatedAt.date() if payment.CreatedAt else date.today()),
+                AllocationType='Advance',
+                AllocatedAmount=unallocated,
+                CompanyId=company_id
+            )
+
+
 def sync_sales_billwise_allocation(sale, voucher_line=None):
     """
     Synchronizes BillwiseAllocation records for a sales transaction.
@@ -5153,6 +5271,21 @@ class PaymentViewSet(viewsets.ModelViewSet):
             instance = self.get_object()
         except Exception:
             return Response({'detail': 'Payment/Receipt voucher not found or already deleted.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Protect approved receipts and receipts tied to active driver shift delivery notes or invoice allocations
+        if (instance.Status or '').upper() == 'APPROVED':
+            return Response({'detail': 'Cannot delete an approved receipt. Voiding or deletion is locked to preserve double-entry accounting integrity.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if instance.DeliveryNoteId and instance.DeliveryNoteId > 0:
+            return Response({'detail': 'Cannot delete receipt connected to an active driver shift delivery note.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        has_allocations = any(
+            (alloc.BillType == 'SALES' or alloc.Sales_id is not None)
+            for line in instance.lines.all()
+            for alloc in line.allocations.all()
+        )
+        if has_allocations:
+            return Response({'detail': 'Cannot delete receipt connected to sales invoice allocations.'}, status=status.HTTP_400_BAD_REQUEST)
 
         company_id = getattr(request.user, 'CompanyId', 1) or (instance.PartyLedger.CompanyId if instance.PartyLedger else 1) or 1
 
@@ -6602,28 +6735,77 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         customer = Ledger.objects.filter(LedgerId=customer_ledger_id).first() if customer_ledger_id else None
         customer_name = customer.LedgerName if customer else str(data.get('customer_name', 'Direct Customer'))
 
-        # Generate unique ticket ID based on transaction type (EMTRTN, RCPT, or INV)
-        today_str = date.today().strftime('%y%m%d')
+        # If transaction is purely a money collection on route (no cylinder delivery and no empty return):
+        # Record purely as a Temporary Route Receipt (Payment), not a Sales invoice!
+        if is_money_only:
+            with transaction.atomic():
+                safe_sync_sequence('Payment', 'PaymentId')
+                safe_sync_sequence('PaymentLine', 'PaymentLineId')
+                trec_no = get_next_temp_receipt_number()
+                driver_n = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
+                route_n = alloc.Route.RouteName if (alloc and alloc.Route) else ''
+                pay_narr = f"Van Collection Receipt | Driver: {driver_n} | Route: {route_n}"
 
-        if is_empties_only:
-            if total_collected <= Decimal('0.00'):
-                prefix = 'EMTRTN'
-                payment_method = 'N/A'
-            else:
-                prefix = 'RCPT'
-        elif is_money_only:
-            prefix = 'RCPT'
-        else:
-            prefix = 'INV'
+                cash_led = (
+                    Ledger.objects.filter(LedgerId=24).first() or
+                    Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
+                    Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
+                )
+                bank_led = (
+                    Ledger.objects.filter(LedgerId=56).first() or
+                    Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first() or
+                    Ledger.objects.filter(Group__GroupName__icontains='Bank').first() or
+                    cash_led
+                )
+
+                temp_pmt = Payment.objects.create(
+                    PartyLedger=customer,
+                    Amount=total_collected,
+                    Narration=pay_narr,
+                    PaymentNo=None,
+                    ReferenceNumber=trec_no,
+                    Status='PENDING',
+                    DeliveryNoteId=latest_dn.DeliveryNoteId if latest_dn else None,
+                )
+
+                pm_upper = (payment_method or 'CASH').upper()
+                if pm_upper == 'SPLIT' and (cash_amount > 0 or upi_amount > 0):
+                    c_amt = cash_amount if cash_amount > 0 else (total_collected - upi_amount)
+                    u_amt = upi_amount if upi_amount > 0 else (total_collected - cash_amount)
+                    if (c_amt + u_amt) != total_collected:
+                        c_amt = min(total_collected, c_amt)
+                        u_amt = max(Decimal('0.00'), total_collected - c_amt)
+                    if c_amt > 0 and cash_led:
+                        PaymentLine.objects.create(Payment=temp_pmt, LineNo=1, PaymentMode='Cash', Ledger=cash_led, Amount=c_amt, Narration=pay_narr)
+                    if u_amt > 0 and bank_led:
+                        PaymentLine.objects.create(Payment=temp_pmt, LineNo=2, PaymentMode='Bank', Ledger=bank_led, Amount=u_amt, Narration=pay_narr)
+                else:
+                    p_mode = 'Bank' if ('UPI' in pm_upper or 'BANK' in pm_upper or 'ONLINE' in pm_upper) else 'Cash'
+                    target_led = bank_led if p_mode == 'Bank' else cash_led
+                    PaymentLine.objects.create(Payment=temp_pmt, LineNo=1, PaymentMode=p_mode, Ledger=target_led or customer, Amount=total_collected, Narration=pay_narr)
+
+                allocate_receipt_to_pending_bills_or_advance(temp_pmt, company_id)
+
+            now_time = datetime.now().strftime("%I:%M %p")
+            return Response({
+                'success': True,
+                'ticket_id': trec_no,
+                'sales_id': None,
+                'time': now_time,
+                'amount': float(total_collected),
+                'customer_name': customer_name,
+            })
+
+        # Generate unique ticket ID based on transaction type (EMTRTN or INV)
+        today_str = date.today().strftime('%y%m%d')
+        prefix = 'EMTRTN' if is_empties_only else 'INV'
 
         raw_ticket = data.get('ticket_id')
         if raw_ticket:
             if str(raw_ticket).startswith('DT-') or str(raw_ticket).startswith('BT-'):
                 raw_ticket = f"{prefix}-" + str(raw_ticket)[3:]
-            elif is_empties_only and total_collected <= Decimal('0.00') and not str(raw_ticket).startswith('EMTRTN-'):
+            elif is_empties_only and not str(raw_ticket).startswith('EMTRTN-'):
                 raw_ticket = f"EMTRTN-{str(raw_ticket).split('-', 1)[-1]}"
-            elif (is_empties_only or is_money_only) and total_collected > Decimal('0.00') and not str(raw_ticket).startswith('RCPT-'):
-                raw_ticket = f"RCPT-{str(raw_ticket).split('-', 1)[-1]}"
 
         ticket_id = raw_ticket or f"{prefix}-{today_str}-{Sales.objects.filter(CompanyId=company_id, SalesNo__startswith=f'{prefix}-{today_str}').count() + 1:03d}"
         if Sales.objects.filter(CompanyId=company_id, SalesNo=ticket_id).exists():
@@ -6721,23 +6903,9 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             is_split = (payment_method or '').strip().upper() == 'SPLIT'
 
             if is_empties_only:
-                if total_collected <= Decimal('0.00'):
-                    paid_amount = Decimal('0.00')
-                    payment_method = 'N/A'
-                    sale_notes = f"Empty Return Voucher | Customer: {customer_name}"
-                elif is_split:
-                    paid_amount = (cash_amount + upi_amount) if (cash_amount + upi_amount) > Decimal('0.00') else total_collected
-                    sale_notes = f"Customer Receipt: SPLIT (Cash: ₹{cash_amount:,.2f}, UPI: ₹{upi_amount:,.2f}) | Customer: {customer_name}"
-                else:
-                    paid_amount = total_collected
-                    sale_notes = f"Customer Receipt: {payment_method} | Customer: {customer_name}"
-            elif is_money_only:
-                if is_split:
-                    paid_amount = (cash_amount + upi_amount) if (cash_amount + upi_amount) > Decimal('0.00') else total_collected
-                    sale_notes = f"Cash Collection: SPLIT (Cash: ₹{cash_amount:,.2f}, UPI: ₹{upi_amount:,.2f}) | Customer: {customer_name}"
-                else:
-                    paid_amount = total_collected
-                    sale_notes = f"Cash Collection: {payment_method} | Customer: {customer_name}"
+                paid_amount = Decimal('0.00')
+                payment_method = 'N/A'
+                sale_notes = f"Empty Return Voucher | Customer: {customer_name}"
             elif is_credit:
                 paid_amount = Decimal('0.00')
                 sale_notes = f"Payment: CREDIT | Customer: {customer_name}"
@@ -6835,8 +7003,59 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             sale.Status = 'LIVE'
             sale.save(update_fields=['Status'])
 
-            # Wire billwise allocation for customer payment & generate Temporary Route Receipt (TREC)
-            if sale.PaidAmount and sale.PaidAmount > 0 and customer:
+            # If money was collected during empty return (customer paying old dues/receipt):
+            if is_empties_only and total_collected > Decimal('0.00') and customer:
+                try:
+                    safe_sync_sequence('Payment', 'PaymentId')
+                    safe_sync_sequence('PaymentLine', 'PaymentLineId')
+                    trec_no = get_next_temp_receipt_number()
+                    driver_n = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
+                    route_n = alloc.Route.RouteName if (alloc and alloc.Route) else ''
+                    pay_narr = f"Van Collection Receipt | Driver: {driver_n} | Route: {route_n}"
+
+                    cash_led = (
+                        Ledger.objects.filter(LedgerId=24).first() or
+                        Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
+                        Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
+                    )
+                    bank_led = (
+                        Ledger.objects.filter(LedgerId=56).first() or
+                        Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Bank').first() or
+                        Ledger.objects.filter(Group__GroupName__icontains='Bank').first() or
+                        cash_led
+                    )
+
+                    temp_pmt = Payment.objects.create(
+                        PartyLedger=customer,
+                        Amount=total_collected,
+                        Narration=pay_narr,
+                        PaymentNo=None,
+                        ReferenceNumber=trec_no,
+                        Status='PENDING',
+                        DeliveryNoteId=latest_dn.DeliveryNoteId if latest_dn else None,
+                    )
+
+                    pm_upper = (payment_method or 'CASH').upper()
+                    if pm_upper == 'SPLIT' and (cash_amount > 0 or upi_amount > 0):
+                        c_amt = cash_amount if cash_amount > 0 else (total_collected - upi_amount)
+                        u_amt = upi_amount if upi_amount > 0 else (total_collected - cash_amount)
+                        if (c_amt + u_amt) != total_collected:
+                            c_amt = min(total_collected, c_amt)
+                            u_amt = max(Decimal('0.00'), total_collected - c_amt)
+                        if c_amt > 0 and cash_led:
+                            PaymentLine.objects.create(Payment=temp_pmt, LineNo=1, PaymentMode='Cash', Ledger=cash_led, Amount=c_amt, Narration=pay_narr)
+                        if u_amt > 0 and bank_led:
+                            PaymentLine.objects.create(Payment=temp_pmt, LineNo=2, PaymentMode='Bank', Ledger=bank_led, Amount=u_amt, Narration=pay_narr)
+                    else:
+                        p_mode = 'Bank' if ('UPI' in pm_upper or 'BANK' in pm_upper or 'ONLINE' in pm_upper) else 'Cash'
+                        target_led = bank_led if p_mode == 'Bank' else cash_led
+                        PaymentLine.objects.create(Payment=temp_pmt, LineNo=1, PaymentMode=p_mode, Ledger=target_led or customer, Amount=total_collected, Narration=pay_narr)
+
+                    allocate_receipt_to_pending_bills_or_advance(temp_pmt, company_id)
+                except Exception:
+                    pass
+            # Regular sales payment against invoice:
+            elif not is_empties_only and sale.PaidAmount and sale.PaidAmount > 0 and customer:
                 sync_sales_billwise_allocation(sale, None)
 
                 try:
@@ -7029,6 +7248,52 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'time': time_str,
                     'status': sale.Status
                 })
+
+            # Also include any standalone shift payments/receipts recorded for this delivery note
+            if active_dn:
+                existing_tickets = {str(r.get('ticketId') or '') for r in results}
+                shift_payments = Payment.objects.filter(
+                    CompanyId=company_id,
+                    VoucherType='RECEIPT',
+                    DeliveryNoteId=active_dn.DeliveryNoteId
+                ).select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
+
+                for pmt in shift_payments:
+                    p_no = pmt.PaymentNo or f"RCPT-{pmt.PaymentId}"
+                    ref_no = pmt.ReferenceNo or ''
+                    if p_no in existing_tickets or (ref_no and ref_no in existing_tickets):
+                        continue
+                    c_amt = 0.0
+                    u_amt = 0.0
+                    for pl in pmt.lines.all():
+                        pm_mode = (pl.PaymentMode or '').upper()
+                        if 'UPI' in pm_mode or 'BANK' in pm_mode or 'ONLINE' in pm_mode:
+                            u_amt += float(pl.Amount or 0)
+                        else:
+                            c_amt += float(pl.Amount or 0)
+                    tot_amt = float(pmt.Amount or (c_amt + u_amt))
+                    p_time_str = pmt.CreatedAt.strftime("%I:%M %p") if pmt.CreatedAt else (pmt.PaymentDate.strftime("%d-%b") if pmt.PaymentDate else "")
+                    results.append({
+                        'salesId': None,
+                        'ticketId': pmt.PaymentNo or f"RCPT-{pmt.PaymentId}",
+                        'customer': {
+                            'name': pmt.PartyLedger.LedgerName if pmt.PartyLedger else 'Direct Customer',
+                            'ledgerId': pmt.PartyLedger_id,
+                            'phone': (pmt.PartyLedger.MobileNumber or pmt.PartyLedger.PhoneNumber or '') if pmt.PartyLedger else '',
+                        },
+                        'items': [],
+                        'totalCylinders': 0,
+                        'totalEmpties': 0,
+                        'amount': tot_amt,
+                        'paidAmount': tot_amt,
+                        'grandTotal': tot_amt,
+                        'paymentMethod': 'Split' if (c_amt > 0 and u_amt > 0) else ('UPI' if u_amt > 0 else 'Cash'),
+                        'cashAmount': c_amt,
+                        'upiAmount': u_amt,
+                        'time': p_time_str,
+                        'status': pmt.Status
+                    })
+
             return Response(results)
 
         # Fallback to StockMovement for any historical entries
@@ -9892,6 +10157,9 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     update_fields.append('DeliveryNoteId')
                 pm.save(update_fields=update_fields)
 
+                # Allocate receipt against pending sales bills or as customer advance
+                allocate_receipt_to_pending_bills_or_advance(pm, company_id)
+
                 # Ensure associated voucher reflects the permanent receipt number (REC-xxx)
                 existing_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
                 if existing_vch:
@@ -10551,6 +10819,11 @@ class SalesViewSet(viewsets.ModelViewSet):
             'RouteVehicleDriver__PaymentGroup',
             'CustomerLedger', 'ApprovedBy'
         ).prefetch_related('lines__Product', 'lines__Unit', 'edit_history').order_by('-SalesDate', '-SalesId')
+
+        # Exclude pure collection receipts (RCPT-), which belong strictly in Receipts (Payment) register
+        include_receipts = self.request.query_params.get('include_receipts') == 'true'
+        if not include_receipts:
+            qs = qs.exclude(SalesNo__startswith='RCPT-')
 
         pg_id = self.request.query_params.get('payment_group_id')
         if pg_id:

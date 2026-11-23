@@ -432,6 +432,11 @@ export const SalesListPage: React.FC = () => {
   // Filtered Sales
   const filteredSales = useMemo(() => {
     const baseList = sales.filter((s: any) => {
+      // Exclude pure collection receipts (RCPT-), which belong strictly in Receipts page
+      const sNoRaw = String(s.SalesNo || '');
+      const invNoRaw = String(s.InvoiceNo || '');
+      if (sNoRaw.startsWith('RCPT-') || invNoRaw.startsWith('RCPT-')) return false;
+
       // 1. Date filter
       if (!isDateInFilter(s.SalesDate)) return false;
 
@@ -1207,11 +1212,11 @@ export const SalesListPage: React.FC = () => {
                           </>
                         ) : isEmtrtn ? (
                           <>
-                            <Text size="sm" fw={700} style={{ color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
-                              ₹0.00
+                            <Text size="sm" fw={700} style={{ color: Number(sale.PaidAmount || 0) > 0 ? '#047857' : '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{Number(sale.PaidAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </Text>
-                            <Text size="10px" c="dimmed">
-                              EMPTY RETURN
+                            <Text size="10px" c={Number(sale.PaidAmount || 0) > 0 ? '#047857' : 'dimmed'} fw={Number(sale.PaidAmount || 0) > 0 ? 700 : 400}>
+                              {Number(sale.PaidAmount || 0) > 0 ? 'COLLECTED' : 'EMPTY RETURN'}
                             </Text>
                           </>
                         ) : (
@@ -1232,8 +1237,8 @@ export const SalesListPage: React.FC = () => {
                       <Table.Td style={{ textAlign: 'right' }}>
                         {isEmtrtn ? (
                           <>
-                            <Text size="sm" fw={700} style={{ color: '#64748b', fontVariantNumeric: 'tabular-nums' }}>
-                              ₹0.00
+                            <Text size="sm" fw={700} style={{ color: Number(sale.GrandTotal || sale.PaidAmount || 0) > 0 ? '#0f172a' : '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                              ₹{Number(sale.GrandTotal || sale.PaidAmount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </Text>
                             <Text size="10px" c="dimmed">
                               EMPTY RETURN

@@ -1500,8 +1500,8 @@ class AppState extends ChangeNotifier {
         final pm = o.paymentMethod.toLowerCase();
         if (pm == 'split') {
           return sum + (o.cashAmount ?? 0.0);
-        } else if (pm == 'cash') {
-          return sum + o.amount;
+        } else if (pm == 'cash' || (o.cashAmount != null && o.cashAmount! > 0) || (pm != 'credit' && !pm.contains('upi') && !pm.contains('bank') && o.amount > 0)) {
+          return sum + (o.cashAmount != null && o.cashAmount! > 0 ? o.cashAmount! : o.amount);
         }
         return sum;
       });
@@ -1511,8 +1511,8 @@ class AppState extends ChangeNotifier {
         final pm = o.paymentMethod.toLowerCase();
         if (pm == 'split') {
           return sum + (o.upiAmount ?? 0.0);
-        } else if (pm.contains('upi') || pm.contains('bank')) {
-          return sum + o.amount;
+        } else if (pm.contains('upi') || pm.contains('bank') || pm.contains('online') || (o.upiAmount != null && o.upiAmount! > 0)) {
+          return sum + (o.upiAmount != null && o.upiAmount! > 0 ? o.upiAmount! : o.amount);
         }
         return sum;
       });

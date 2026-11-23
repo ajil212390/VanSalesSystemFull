@@ -16,6 +16,7 @@ import {
   Select,
   Box,
   Badge,
+  Tooltip,
 } from '@mantine/core';
 import {
   IconPlus,
@@ -24,6 +25,7 @@ import {
   IconTrash,
   IconPencil,
   IconArrowLeft,
+  IconLock,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -158,25 +160,26 @@ export const ReceiptListPage: React.FC = () => {
   }, [receipts]);
 
   const getAgainstBills = (item: any): string[] => {
+    let rawBills: string[] = [];
     if (Array.isArray(item.against_bills) && item.against_bills.length > 0) {
-      return item.against_bills;
-    }
-    const bills: string[] = [];
-    (item.lines || []).forEach((line: any) => {
-      (line.allocations || []).forEach((alloc: any) => {
-        const ref = alloc.BillReference ? String(alloc.BillReference).trim() : '';
-        if (ref && !bills.includes(ref)) {
-          bills.push(ref);
-        }
+      rawBills = item.against_bills;
+    } else {
+      (item.lines || []).forEach((line: any) => {
+        (line.allocations || []).forEach((alloc: any) => {
+          const ref = alloc.BillReference ? String(alloc.BillReference).trim() : '';
+          if (ref && !rawBills.includes(ref)) {
+            rawBills.push(ref);
+          }
+        });
       });
-    });
-    if (bills.length === 0 && item.Narration) {
-      const match = item.Narration.match(/(INV-?\d+|SALE-?\d+)/i);
-      if (match && !bills.includes(match[1].toUpperCase())) {
-        bills.push(match[1].toUpperCase());
+      if (rawBills.length === 0 && item.Narration) {
+        const match = item.Narration.match(/(INV-?\d+|SALE-?\d+)/i);
+        if (match && !rawBills.includes(match[1].toUpperCase())) {
+          rawBills.push(match[1].toUpperCase());
+        }
       }
     }
-    return bills;
+    return rawBills.filter((b) => !b.startsWith('RCPT-') && !b.startsWith('EMTRTN-') && b.toUpperCase() !== 'ADVANCE');
   };
 
   const isDateInFilter = (dateStr?: string) => {
@@ -624,29 +627,53 @@ export const ReceiptListPage: React.FC = () => {
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'center' }}>
-                        <Group gap={6} justify="center" wrap="nowrap">
-                          <ActionIcon
-                            variant="subtle"
-                            color="burgundy"
-                            size="sm"
-                            title="Edit"
-                            onClick={() => navigate(`/receipts/${item.PaymentId}/edit`)}
-                          >
-                            <IconPencil size={16} />
-                          </ActionIcon>
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            size="sm"
-                            title="Delete"
-                            onClick={() => {
-                              setDeleteTarget(item);
-                              setDeleteModalOpened(true);
-                            }}
-                          >
-                            <IconTrash size={16} />
-                          </ActionIcon>
-                        </Group>
+                        {(() => {
+                          const isApproved = String(item.Status || '').toUpperCase() === 'APPROVED';
+                          const hasBills = Array.isArray(item.against_bills) && item.against_bills.length > 0;
+                          const isLocked = isApproved || hasBills;
+
+                          return (
+                            <Group gap={6} justify="center" wrap="nowrap">
+                              <ActionIcon
+                                variant="subtle"
+                                color="burgundy"
+                                size="sm"
+                                title="Edit"
+                                onClick={() => navigate(`/receipts/${item.PaymentId}/edit`)}
+                              >
+                                <IconPencil size={16} />
+                              </ActionIcon>
+                              {isLocked ? (
+                                <Tooltip label="Receipt is approved or linked to bills. Deletion locked for double-entry integrity." withArrow position="top">
+                                  <span>
+                                    <ActionIcon
+                                      variant="subtle"
+                                      color="gray"
+                                      size="sm"
+                                      disabled
+                                      style={{ cursor: 'not-allowed', opacity: 0.4 }}
+                                    >
+                                      <IconLock size={16} />
+                                    </ActionIcon>
+                                  </span>
+                                </Tooltip>
+                              ) : (
+                                <ActionIcon
+                                  variant="subtle"
+                                  color="red"
+                                  size="sm"
+                                  title="Delete"
+                                  onClick={() => {
+                                    setDeleteTarget(item);
+                                    setDeleteModalOpened(true);
+                                  }}
+                                >
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              )}
+                            </Group>
+                          );
+                        })()}
                       </Table.Td>
                     </Table.Tr>
                   );
