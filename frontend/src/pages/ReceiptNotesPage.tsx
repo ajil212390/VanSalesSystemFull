@@ -136,7 +136,7 @@ export const ReceiptNotesPage: React.FC = () => {
   type ReceiptMode = 'SUPPLIER_REFILL' | 'VAN_TO_GODOWN';
   const [createMode, setCreateMode] = useState<ReceiptMode>('SUPPLIER_REFILL');
   const [createSourceType, setCreateSourceType] = useState<'VAN' | 'GODOWN'>('GODOWN');
-  const [createSourceId, setCreateSourceId] = useState<string | null>('1');
+  const [createSourceId, setCreateSourceId] = useState<string | null>(null);
   const [createDestType, setCreateDestType] = useState<'GODOWN' | 'SUPPLIER'>('SUPPLIER');
   const [createDestId, setCreateDestId] = useState<string | null>(null);
 
@@ -262,11 +262,10 @@ export const ReceiptNotesPage: React.FC = () => {
   const handleOpenCreateModal = () => {
     setCreateMode('SUPPLIER_REFILL');
     setCreateSourceType('GODOWN');
-    setCreateSourceId('1');
+    setCreateSourceId(null);
     setCreateAllocation(null);
     setCreateDestType('SUPPLIER');
-    const firstSup = supplierOptions[0]?.value || null;
-    setCreateDestId(firstSup);
+    setCreateDestId(null);
     setCreateDate(new Date().toISOString().split('T')[0]);
     setCreateRemarks('');
     setCreateLines([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
@@ -278,18 +277,16 @@ export const ReceiptNotesPage: React.FC = () => {
     setCreateMode(m);
     if (m === 'SUPPLIER_REFILL') {
       setCreateSourceType('GODOWN');
-      setCreateSourceId('1');
+      setCreateSourceId(null);
       setCreateAllocation(null);
       setCreateDestType('SUPPLIER');
-      const firstSup = supplierOptions[0]?.value || null;
-      setCreateDestId(firstSup);
+      setCreateDestId(null);
     } else {
       setCreateSourceType('VAN');
-      const firstAlloc = allocationOptions[0]?.value || null;
-      setCreateSourceId(firstAlloc);
-      setCreateAllocation(firstAlloc);
+      setCreateSourceId(null);
+      setCreateAllocation(null);
       setCreateDestType('GODOWN');
-      setCreateDestId('1');
+      setCreateDestId(null);
     }
   };
 
@@ -382,6 +379,12 @@ export const ReceiptNotesPage: React.FC = () => {
     mutationFn: async (autoSettle: boolean) => {
       if (createMode === 'VAN_TO_GODOWN' && !createSourceId) {
         throw new Error('Please select an active vehicle / route allocation.');
+      }
+      if (createMode === 'VAN_TO_GODOWN' && !createDestId) {
+        throw new Error('Please select a receiving godown.');
+      }
+      if (createMode === 'SUPPLIER_REFILL' && !createSourceId) {
+        throw new Error('Please select a dispatching godown.');
       }
       if (createMode === 'SUPPLIER_REFILL' && !createDestId) {
         throw new Error('Please select a supplier.');
@@ -678,6 +681,7 @@ export const ReceiptNotesPage: React.FC = () => {
                     value={createSourceId}
                     onChange={(val) => setCreateSourceId(val)}
                     searchable
+                    clearable
                     comboboxProps={{ withinPortal: true, zIndex: 1000 }}
                     required
                   />
@@ -700,11 +704,12 @@ export const ReceiptNotesPage: React.FC = () => {
                 ) : (
                   <Select
                     label="Receiving Godown"
-                    placeholder="Receiving Godown"
+                    placeholder="Select Receiving Godown"
                     data={godownOptions}
                     value={createDestId}
                     onChange={(val) => setCreateDestId(val)}
                     searchable
+                    clearable
                     comboboxProps={{ withinPortal: true, zIndex: 1000 }}
                     required
                   />
