@@ -1548,106 +1548,122 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: const Color(0xFFE2E8F0),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
       ),
-      padding: const EdgeInsets.all(3),
+      padding: const EdgeInsets.all(4),
       child: Row(
         children: [
           Expanded(
             child: InkWell(
               onTap: () {
-                setState(() {
-                  _isCollectionOnly = false;
-                });
+                if (_isCollectionOnly) {
+                  setState(() {
+                    _isCollectionOnly = false;
+                    if (state.paymentMethod.isEmpty || state.paymentMethod.toUpperCase() == 'N/A') {
+                      state.setPaymentMethod('Cash');
+                    }
+                  });
+                }
               },
               borderRadius: BorderRadius.circular(10),
+              splashColor: const Color(0xFF800020).withValues(alpha: 0.08),
+              highlightColor: Colors.transparent,
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 9),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOutCubic,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: !_isCollectionOnly ? Colors.white : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
+                  border: !_isCollectionOnly
+                      ? Border.all(color: const Color(0xFF800020).withValues(alpha: 0.15), width: 1)
+                      : Border.all(color: Colors.transparent, width: 1),
                   boxShadow: !_isCollectionOnly
                       ? [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 4,
+                            color: const Color(0xFF800020).withValues(alpha: 0.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 2,
                             offset: const Offset(0, 1),
                           ),
                         ]
                       : null,
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.local_shipping_rounded,
-                      size: 16,
-                      color: !_isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Cylinder Delivery',
-                      style: GoogleFonts.inter(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: !_isCollectionOnly ? const Color(0xFF0F172A) : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  'Cylinder Delivery',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: !_isCollectionOnly ? FontWeight.w800 : FontWeight.w600,
+                    color: !_isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
+                    letterSpacing: 0.1,
+                  ),
                 ),
               ),
             ),
           ),
+          const SizedBox(width: 4),
           Expanded(
             child: InkWell(
               onTap: () {
-                setState(() {
-                  _isCollectionOnly = true;
-                  // Clear cylinder selections to prevent accidental inventory deduction
-                  for (final item in state.deliveryItems) {
-                    item.deliveryQty = 0;
-                    item.emptyReturnQty = 0;
-                  }
-                  state.otherDeliveryQty.clear();
-                });
+                if (!_isCollectionOnly) {
+                  setState(() {
+                    _isCollectionOnly = true;
+                    // Clear cylinder delivery and return selections to ensure pure money collection
+                    for (final item in state.deliveryItems) {
+                      item.deliveryQty = 0;
+                      item.emptyReturnQty = 0;
+                    }
+                    state.otherDeliveryQty.clear();
+                    if (state.paymentMethod.isEmpty || state.paymentMethod.toUpperCase() == 'N/A') {
+                      state.setPaymentMethod('Cash');
+                    }
+                  });
+                }
               },
               borderRadius: BorderRadius.circular(10),
+              splashColor: const Color(0xFF800020).withValues(alpha: 0.08),
+              highlightColor: Colors.transparent,
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 9),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeInOutCubic,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: _isCollectionOnly ? Colors.white : Colors.transparent,
                   borderRadius: BorderRadius.circular(10),
+                  border: _isCollectionOnly
+                      ? Border.all(color: const Color(0xFF800020).withValues(alpha: 0.15), width: 1)
+                      : Border.all(color: Colors.transparent, width: 1),
                   boxShadow: _isCollectionOnly
                       ? [
                           BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.06),
-                            blurRadius: 4,
+                            color: const Color(0xFF800020).withValues(alpha: 0.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 2,
                             offset: const Offset(0, 1),
                           ),
                         ]
                       : null,
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.payments_rounded,
-                      size: 16,
-                      color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Cash Collection Only',
-                      style: GoogleFonts.inter(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  'Cash Collection Only',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: _isCollectionOnly ? FontWeight.w800 : FontWeight.w600,
+                    color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
+                    letterSpacing: 0.1,
+                  ),
                 ),
               ),
             ),
