@@ -4043,20 +4043,22 @@ def generate_ledger_statement_pdf(
 
     def _get_cyl_display_label(raw_name):
         clean = raw_name.replace('LPG ', '').replace(' GAS CYLINDER', '').replace(' CYLINDER', '').strip()
-        if '04' in clean or '4KG' in clean:
-            return '04KG GAS CYLINDER'
+        if '04' in clean or '4KG' in clean or clean == '4':
+            return '04KG'
         elif '12' in clean:
-            return '12KG GAS CYLINDER'
+            return '12KG'
         elif '17' in clean:
-            return '17KG GAS CYLINDER'
+            return '17KG'
         elif '19' in clean:
-            return '19KG GAS CYLINDER'
+            return '19KG'
         elif '47.5' in clean:
-            return '47.5KG GAS CYLINDER'
-        elif '5KG' in clean:
-            return '5KG GAS CYLINDER'
+            return '47.5KG'
+        elif '5KG' in clean or clean == '5':
+            return '5KG'
+        elif '14.2' in clean:
+            return '14.2KG'
         elif clean:
-            return f"{clean} CYLINDER"
+            return clean
         return 'CYLINDER'
 
     for e in raw_entries:
@@ -4174,7 +4176,7 @@ def generate_ledger_statement_pdf(
             ])
             sm_styles.append(('SPAN', (1, row_idx), (2, row_idx)))
 
-    sm_table = Table(sm_rows, colWidths=[175, 65, 65])
+    sm_table = Table(sm_rows, colWidths=[135, 70, 70])
     sm_table.setStyle(TableStyle(sm_styles))
 
     # Right T-Balance Account Summary Container Card
@@ -4245,7 +4247,7 @@ def generate_ledger_statement_pdf(
         ('LINEABOVE', (0, 4), (-1, 4), 0.5, PRIMARY_COLOR),
     ]
 
-    r_table = Table(r_rows, colWidths=[110, 65, 65])
+    r_table = Table(r_rows, colWidths=[130, 70, 70])
     r_table.setStyle(TableStyle(r_style))
 
     # Section Banner Header
@@ -4268,7 +4270,7 @@ def generate_ledger_statement_pdf(
     story.append(rep_hdr_table)
     story.append(HRFlowable(width="100%", thickness=1, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=5))
 
-    summary_grid = Table([[sm_table, r_table]], colWidths=[305, 240])
+    summary_grid = Table([[sm_table, r_table]], colWidths=[275, 270])
     summary_grid.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
