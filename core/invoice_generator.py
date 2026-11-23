@@ -4093,10 +4093,10 @@ def generate_ledger_statement_pdf(
 
     th_sm_l = ParagraphStyle('ThSmL', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=colors.white, alignment=0)
     th_sm_c = ParagraphStyle('ThSmC', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=colors.white, alignment=1)
-    td_sm_l = ParagraphStyle('TdSmL', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=0)
-    td_sm_lb = ParagraphStyle('TdSmLb', fontName=FONT_BOLD, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=0)
-    td_sm_c = ParagraphStyle('TdSmC', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=1)
-    td_sm_cb = ParagraphStyle('TdSmCb', fontName=FONT_BOLD, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=1)
+    td_sm_l = ParagraphStyle('TdSmL', fontName=FONT_NAME, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=0)
+    td_sm_lb = ParagraphStyle('TdSmLb', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=0)
+    td_sm_c = ParagraphStyle('TdSmC', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=1)
+    td_sm_cb = ParagraphStyle('TdSmCb', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=1)
     sm_subhdr = ParagraphStyle('SmSubH', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=PRIMARY_COLOR, alignment=0)
 
     sm_rows = [
@@ -4181,12 +4181,12 @@ def generate_ledger_statement_pdf(
     sm_table.setStyle(TableStyle(sm_styles))
 
     # Right T-Balance Account Summary Container Card (Exact matching style & color as top card)
-    th_r_l = ParagraphStyle('ThRL', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=0)
-    th_r_r = ParagraphStyle('ThRR', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=2)
-    td_r_l = ParagraphStyle('TdRL', fontName=FONT_NAME, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=0)
-    td_r_lb = ParagraphStyle('TdRLb', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=0)
-    td_r_r = ParagraphStyle('TdRR', fontName=FONT_NAME, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=2)
-    td_r_rb = ParagraphStyle('TdRRb', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=2)
+    th_r_l = ParagraphStyle('ThRL', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=0)
+    th_r_r = ParagraphStyle('ThRR', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)
+    td_r_l = ParagraphStyle('TdRL', fontName=FONT_NAME, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=0)
+    td_r_lb = ParagraphStyle('TdRLb', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=0)
+    td_r_r = ParagraphStyle('TdRR', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=DARK_COLOR, alignment=2)
+    td_r_rb = ParagraphStyle('TdRRb', fontName=FONT_BOLD, fontSize=8.5, leading=10.5, textColor=PRIMARY_COLOR, alignment=2)
 
     op_is_dr = (effective_op >= 0 if is_dr_normal else effective_op < 0)
     op_dr = abs(effective_op) if op_is_dr else Decimal('0.00')
