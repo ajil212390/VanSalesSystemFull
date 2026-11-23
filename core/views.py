@@ -5950,30 +5950,54 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
             for g in godowns_list_qs:
                 g_rvd = g.RouteVehicleDriver_id
-                g_in = all_movements.filter(
+                
+                # Inward (Full)
+                g_in_full = all_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN', 'GODOWN_TRANSFER_IN', 'VAN_UNLOAD_FULL']) |
                     Q(TransactionType='DELIVERY_NOTE', InQty__gt=0)
                 ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
-                g_out = all_movements.filter(
+
+                # Outward (Full)
+                g_out_full = all_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE', 'GODOWN_TRANSFER_OUT']) |
                     Q(TransactionType='DELIVERY_NOTE', OutQty__gt=0)
                 ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
-                g_qty_val = max(Decimal('0.00'), g_in - g_out)
+
+                # Specifically Dispatched to Vans / Routes (Delivery Notes Out)
+                g_dispatched_full = all_movements.filter(
+                    Product=p,
+                    RouteVehicleDriverId=g_rvd,
+                    TransactionType='DELIVERY_NOTE',
+                    OutQty__gt=0
+                ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
+
+                g_qty_val = max(Decimal('0.00'), g_in_full - g_out_full)
                 p_godown_filled += g_qty_val
 
-                # Empty
+                # Empty Inward
                 g_emp_in = all_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['GODOWN_RETURN_EMPTY', 'VAN_UNLOAD_EMPTY', 'RECEIPT_NOTE_EMPTY_RETURN', 'VAN_EMPTY_RETURN', 'OPENING_EMPTY', 'ADJUSTMENT_EMPTY_IN', 'GODOWN_TRANSFER_EMPTY_IN']) |
                     Q(TransactionType='DELIVERY_NOTE_EMPTY', InQty__gt=0)
                 ).aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+
+                # Empty Outward
                 g_emp_out = all_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN', 'ADJUSTMENT_EMPTY_OUT', 'GODOWN_TRANSFER_EMPTY_OUT']) |
                     Q(TransactionType='DELIVERY_NOTE_EMPTY', OutQty__gt=0)
                 ).aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+
+                # Empty Dispatched
+                g_dispatched_emp = all_movements.filter(
+                    Product=p,
+                    RouteVehicleDriverId=g_rvd,
+                    TransactionType='DELIVERY_NOTE_EMPTY',
+                    OutQty__gt=0
+                ).aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+
                 g_empty_bal_val = max(Decimal('0.00'), g_emp_in - g_emp_out) if is_cylinder else Decimal('0.00')
                 p_godown_empty += g_empty_bal_val
 
@@ -5983,6 +6007,12 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'GodownCode': g.GodownCode,
                     'Location': g.Location or '',
                     'IsCentral': g.IsCentral,
+                    'InwardFilledQty': float(g_in_full),
+                    'InwardEmptyQty': float(g_emp_in if is_cylinder else Decimal('0.00')),
+                    'OutwardFilledQty': float(g_out_full),
+                    'OutwardEmptyQty': float(g_emp_out if is_cylinder else Decimal('0.00')),
+                    'DispatchedFilledQty': float(g_dispatched_full),
+                    'DispatchedEmptyQty': float(g_dispatched_emp if is_cylinder else Decimal('0.00')),
                     'FilledQty': float(g_qty_val),
                     'EmptyQty': float(g_empty_bal_val),
                     'TotalQty': float(g_qty_val + g_empty_bal_val),
