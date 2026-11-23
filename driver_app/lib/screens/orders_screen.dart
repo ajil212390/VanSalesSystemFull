@@ -725,6 +725,33 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Cylinder Details Summary Badges (Shown only inside the dropdown)
+                  if (order.totalCylinders == 0 && !hasEmpties) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFDCFCE7)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.receipt_long_rounded, size: 12.5, color: Color(0xFF16A34A)),
+                          const SizedBox(width: 5),
+                          Text(
+                            'Payment Collection • ₹${order.amount.toStringAsFixed(0)}',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF15803D),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+
                   if (order.totalCylinders > 0 || hasEmpties) ...[
                     Row(
                       children: [

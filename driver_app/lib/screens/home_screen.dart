@@ -2172,7 +2172,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                                       overflow: TextOverflow.ellipsis,
                                                     ),
                                                     Text(
-                                                      '${ord.ticketId} • ${ord.totalCylinders} Delivered, ${ord.totalEmpties} Empty',
+                                                      ord.totalCylinders == 0 && ord.totalEmpties == 0
+                                                          ? '${ord.ticketId} • Route Collection Receipt'
+                                                          : '${ord.ticketId} • ${ord.totalCylinders} Delivered, ${ord.totalEmpties} Empty',
                                                       style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w500, color: const Color(0xFF64748B)),
                                                     ),
                                                   ],

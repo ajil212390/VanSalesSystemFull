@@ -26,6 +26,7 @@ import {
   IconPencil,
   IconArrowLeft,
   IconLock,
+  IconCheck,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -289,6 +290,30 @@ export const ReceiptListPage: React.FC = () => {
         msg = err.message;
       }
       notifications.show({ title: 'Error', message: msg, color: 'red' });
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiClient.post(`/payments/${id}/approve/`);
+      return res.data;
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
+      queryClient.invalidateQueries({ queryKey: ['end-route-drivers'] });
+      notifications.show({
+        title: 'Receipt Approved',
+        message: data?.message || 'Receipt approved and posted to General Ledger.',
+        color: 'teal',
+      });
+    },
+    onError: (err: any) => {
+      notifications.show({
+        title: 'Approval Failed',
+        message: err.response?.data?.detail || err.message || 'Could not approve receipt.',
+        color: 'red',
+      });
     },
   });
 
@@ -634,6 +659,19 @@ export const ReceiptListPage: React.FC = () => {
 
                           return (
                             <Group gap={6} justify="center" wrap="nowrap">
+                              {!isApproved && (
+                                <Tooltip label="Approve & Post to Ledger" withArrow position="top">
+                                  <ActionIcon
+                                    variant="subtle"
+                                    color="teal"
+                                    size="sm"
+                                    loading={approveMutation.isPending && (approveMutation.variables as any) === item.PaymentId}
+                                    onClick={() => approveMutation.mutate(item.PaymentId)}
+                                  >
+                                    <IconCheck size={16} />
+                                  </ActionIcon>
+                                </Tooltip>
+                              )}
                               <ActionIcon
                                 variant="subtle"
                                 color="burgundy"

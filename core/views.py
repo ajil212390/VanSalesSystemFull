@@ -7181,11 +7181,8 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
         sales_qs = sales_qs.select_related('CustomerLedger').prefetch_related('lines__Product').order_by('-SalesId')
 
-        if not sales_qs.exists():
-            return Response([])
-
+        results = []
         if sales_qs.exists():
-            results = []
             for sale in sales_qs:
                 items_data = []
                 for line in sale.lines.all():
@@ -7242,49 +7239,50 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'status': sale.Status
                 })
 
-            # Also include any standalone shift payments/receipts recorded for this delivery note
-            if active_dn:
-                existing_tickets = {str(r.get('ticketId') or '') for r in results}
-                shift_payments = Payment.objects.filter(
-                    DeliveryNoteId=active_dn.DeliveryNoteId
-                ).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
+        # Also include any standalone shift payments/receipts recorded for this delivery note
+        if active_dn:
+            existing_tickets = {str(r.get('ticketId') or '') for r in results}
+            shift_payments = Payment.objects.filter(
+                Q(DeliveryNoteId=active_dn.DeliveryNoteId) |
+                (Q(DeliveryNoteId__isnull=True) & Q(CreatedAt__gte=active_dn.CreatedAt if active_dn.CreatedAt else active_dn.DeliveryDate))
+            ).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
 
-                for pmt in shift_payments:
-                    t_id = pmt.ReferenceNumber or pmt.PaymentNo or f"TREC-{pmt.PaymentId}"
-                    if t_id in existing_tickets or (pmt.PaymentNo and pmt.PaymentNo in existing_tickets):
-                        continue
-                    c_amt = 0.0
-                    u_amt = 0.0
-                    for pl in pmt.lines.all():
-                        pm_mode = (pl.PaymentMode or '').upper()
-                        if 'UPI' in pm_mode or 'BANK' in pm_mode or 'ONLINE' in pm_mode:
-                            u_amt += float(pl.Amount or 0)
-                        else:
-                            c_amt += float(pl.Amount or 0)
-                    tot_amt = float(pmt.Amount or (c_amt + u_amt))
-                    p_time_str = pmt.CreatedAt.strftime("%I:%M %p") if pmt.CreatedAt else ""
-                    results.append({
-                        'salesId': None,
-                        'ticketId': t_id,
-                        'customer': {
-                            'name': pmt.PartyLedger.LedgerName if pmt.PartyLedger else 'Direct Customer',
-                            'ledgerId': pmt.PartyLedger_id,
-                            'phone': (pmt.PartyLedger.MobileNumber or pmt.PartyLedger.PhoneNumber or '') if pmt.PartyLedger else '',
-                        },
-                        'items': [],
-                        'totalCylinders': 0,
-                        'totalEmpties': 0,
-                        'amount': tot_amt,
-                        'paidAmount': tot_amt,
-                        'grandTotal': tot_amt,
-                        'paymentMethod': 'Split' if (c_amt > 0 and u_amt > 0) else ('UPI' if u_amt > 0 else 'Cash'),
-                        'cashAmount': c_amt,
-                        'upiAmount': u_amt,
-                        'time': p_time_str,
-                        'status': pmt.Status
-                    })
+            for pmt in shift_payments:
+                t_id = pmt.ReferenceNumber or pmt.PaymentNo or f"TREC-{pmt.PaymentId}"
+                if t_id in existing_tickets or (pmt.PaymentNo and pmt.PaymentNo in existing_tickets):
+                    continue
+                c_amt = 0.0
+                u_amt = 0.0
+                for pl in pmt.lines.all():
+                    pm_mode = (pl.PaymentMode or '').upper()
+                    if 'UPI' in pm_mode or 'BANK' in pm_mode or 'ONLINE' in pm_mode:
+                        u_amt += float(pl.Amount or 0)
+                    else:
+                        c_amt += float(pl.Amount or 0)
+                tot_amt = float(pmt.Amount or (c_amt + u_amt))
+                p_time_str = pmt.CreatedAt.strftime("%I:%M %p") if pmt.CreatedAt else ""
+                results.append({
+                    'salesId': None,
+                    'ticketId': t_id,
+                    'customer': {
+                        'name': pmt.PartyLedger.LedgerName if pmt.PartyLedger else 'Direct Customer',
+                        'ledgerId': pmt.PartyLedger_id,
+                        'phone': (pmt.PartyLedger.MobileNumber or pmt.PartyLedger.PhoneNumber or '') if pmt.PartyLedger else '',
+                    },
+                    'items': [],
+                    'totalCylinders': 0,
+                    'totalEmpties': 0,
+                    'amount': tot_amt,
+                    'paidAmount': tot_amt,
+                    'grandTotal': tot_amt,
+                    'paymentMethod': 'Split' if (c_amt > 0 and u_amt > 0) else ('UPI' if u_amt > 0 else 'Cash'),
+                    'cashAmount': c_amt,
+                    'upiAmount': u_amt,
+                    'time': p_time_str,
+                    'status': pmt.Status
+                })
 
-            return Response(results)
+        return Response(results)
 
         # Fallback to StockMovement for any historical entries
         movements = StockMovement.objects.filter(
@@ -9305,9 +9303,27 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 c_coll += c_val
                 b_coll += u_val
 
+            # Also include standalone route collection receipts for this shift
+            shift_standalone_pmts = list(
+                Payment.objects.filter(
+                    DeliveryNoteId=dn.DeliveryNoteId
+                ).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
+            )
+            for sp in shift_standalone_pmts:
+                sp_c = 0.0
+                sp_u = 0.0
+                for spl in sp.lines.all():
+                    sp_pm = (spl.PaymentMode or '').upper()
+                    if 'UPI' in sp_pm or 'BANK' in sp_pm or 'ONLINE' in sp_pm:
+                        sp_u += float(spl.Amount or 0)
+                    else:
+                        sp_c += float(spl.Amount or 0)
+                c_coll += sp_c
+                b_coll += sp_u
+
             cash_amt = c_coll
             bank_amt = b_coll
-            gross_amt = float(sales_qs.aggregate(s=Sum('PaidAmount'))['s'] or (cash_amt + bank_amt))
+            gross_amt = float(sales_qs.aggregate(s=Sum('PaidAmount'))['s'] or 0) + sum(float(sp.Amount or 0) for sp in shift_standalone_pmts)
 
             # Driver trip expenses for this shift
             trip_expenses = float(trip_expenses_qs.aggregate(s=Sum('Amount'))['s'] or 0)
@@ -9492,6 +9508,40 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     'delivered_qty': float(s.TotalDeliveredQty or 0),
                     'empty_returned': float(s.TotalEmptyQty or 0),
                     'edit_history': edits,
+                })
+
+            for sp in shift_standalone_pmts:
+                sp_ref = sp.ReferenceNumber or sp.PaymentNo or f"TREC-{sp.PaymentId}"
+                sp_c = 0.0
+                sp_u = 0.0
+                for spl in sp.lines.all():
+                    sp_pm = (spl.PaymentMode or '').upper()
+                    if 'UPI' in sp_pm or 'BANK' in sp_pm or 'ONLINE' in sp_pm:
+                        sp_u += float(spl.Amount or 0)
+                    else:
+                        sp_c += float(spl.Amount or 0)
+                sp_total = float(sp.Amount or (sp_c + sp_u))
+                c_name = sp.PartyLedger.LedgerName if sp.PartyLedger else 'Direct Customer'
+                sales_data.append({
+                    'SalesId': None,
+                    'InvoiceNo': sp_ref,
+                    'CustomerName': c_name,
+                    'GrandTotal': sp_total,
+                    'PaidAmount': sp_total,
+                    'PaymentMethod': 'Split' if (sp_c > 0 and sp_u > 0) else ('UPI' if sp_u > 0 else 'Cash'),
+                    'Notes': sp.Narration or 'Route Collection Receipt',
+                    'ReceiptNo': sp_ref,
+                    'ReceiptStatus': sp.Status or 'PENDING',
+                    'IsEdited': False,
+                    'is_edited': False,
+                    'EditReason': '',
+                    'EditedBy': '',
+                    'EditedAt': None,
+                    'TotalDeliveredQty': 0,
+                    'TotalEmptyQty': 0,
+                    'delivered_qty': 0,
+                    'empty_returned': 0,
+                    'edit_history': [],
                 })
 
             items.append({
