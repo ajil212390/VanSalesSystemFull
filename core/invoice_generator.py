@@ -3850,15 +3850,16 @@ def generate_ledger_statement_pdf(
     if not is_dr_normal:
         final_close_sfx = 'Cr' if closing_bal >= 0 else 'Dr'
 
+    close_top_style = ParagraphStyle('CloseTopStyle', fontName=FONT_BOLD, fontSize=9.5, leading=13, textColor=DARK_COLOR)
     kpi_box_content = [
         Paragraph("<b>ACCOUNT SUMMARY &amp; BALANCE:</b>", meta_bold),
         Paragraph(f"Opening Balance: <b>Rs. {abs(effective_op):,.2f} {op_suffix}</b>", meta_style),
         Paragraph(f"Total Debits: <b>Rs. {tot_debit:,.2f}</b>", meta_style),
         Paragraph(f"Total Credits: <b>Rs. {tot_credit:,.2f}</b>", meta_style),
-        Spacer(1, 2),
+        Spacer(1, 3),
         Paragraph(
-            f"Closing Balance: <font size=10 color='#800020'><b>Rs. {abs(closing_bal):,.2f} {final_close_sfx}</b></font>",
-            meta_bold
+            f"Closing Balance: <font color='#800020'><b>Rs. {abs(closing_bal):,.2f} {final_close_sfx}</b></font>",
+            close_top_style
         ),
     ]
 
@@ -3868,8 +3869,8 @@ def generate_ledger_statement_pdf(
         ('BOX', (1, 0), (1, 0), 0.5, PRIMARY_COLOR),
         ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
         ('BACKGROUND', (1, 0), (1, 0), CARD_BG),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
         ('LEFTPADDING', (0, 0), (-1, -1), 7),
         ('RIGHTPADDING', (0, 0), (-1, -1), 7),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -4176,10 +4177,10 @@ def generate_ledger_statement_pdf(
             ])
             sm_styles.append(('SPAN', (1, row_idx), (2, row_idx)))
 
-    sm_table = Table(sm_rows, colWidths=[135, 70, 70])
+    sm_table = Table(sm_rows, colWidths=[85, 50, 50])
     sm_table.setStyle(TableStyle(sm_styles))
 
-    # Right T-Balance Account Summary Container Card
+    # Right T-Balance Account Summary Container Card (Exact matching style & color as top card)
     th_r_l = ParagraphStyle('ThRL', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=0)
     th_r_r = ParagraphStyle('ThRR', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=2)
     td_r_l = ParagraphStyle('TdRL', fontName=FONT_NAME, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=0)
@@ -4234,20 +4235,18 @@ def generate_ledger_statement_pdf(
     ]
 
     r_style = [
-        ('BOX', (0, 0), (-1, -1), 0.75, PRIMARY_COLOR),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FDF2F4')),
-        ('BACKGROUND', (0, 1), (-1, 3), colors.HexColor('#FFFFFF')),
-        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#FFF8F9')),
+        ('BOX', (0, 0), (-1, -1), 0.5, PRIMARY_COLOR),
+        ('BACKGROUND', (0, 0), (-1, -1), CARD_BG),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), 3.5),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
         ('LEFTPADDING', (0, 0), (-1, -1), 6),
         ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-        ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#E2E8F0')),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.5, PRIMARY_COLOR),
         ('LINEABOVE', (0, 4), (-1, 4), 0.5, PRIMARY_COLOR),
     ]
 
-    r_table = Table(r_rows, colWidths=[130, 70, 70])
+    r_table = Table(r_rows, colWidths=[110, 55, 55])
     r_table.setStyle(TableStyle(r_style))
 
     # Section Banner Header
@@ -4270,7 +4269,7 @@ def generate_ledger_statement_pdf(
     story.append(rep_hdr_table)
     story.append(HRFlowable(width="100%", thickness=1, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=5))
 
-    summary_grid = Table([[sm_table, r_table]], colWidths=[275, 270])
+    summary_grid = Table([[sm_table, '', r_table]], colWidths=[185, 140, 220])
     summary_grid.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
