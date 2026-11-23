@@ -491,8 +491,8 @@ export const DashboardPage: React.FC = () => {
     return sales.filter((s: any) => {
       if (s.Status === 'CANCELLED') return false;
       // Van route sales are provisional until driver ends allocation and admin approves.
-      // Unapproved sales (IsApproved === false and Status !== 'COMPLETED') must NOT count in official Sales & Collections
-      const isApproved = s.IsApproved === true || s.is_approved === true || s.Status === 'COMPLETED';
+      // Only strictly approved sales (IsApproved === true) count towards official Dashboard Sales, Collections & Receivables
+      const isApproved = Boolean(s.IsApproved || s.is_approved);
       if (!isApproved) return false;
 
       if (!dateRange.start || !dateRange.end) return true;

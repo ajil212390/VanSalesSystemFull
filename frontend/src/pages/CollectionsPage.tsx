@@ -130,7 +130,7 @@ export const CollectionsPage: React.FC = () => {
     sales.forEach((s: any) => {
       if (s.Status === 'CANCELLED') return;
       // In Future Gas workflow, unapproved van sales are provisional until driver ends allocation and admin approves
-      const isApproved = s.IsApproved === true || s.is_approved === true || s.Status === 'COMPLETED';
+      const isApproved = Boolean(s.IsApproved || s.is_approved);
       if (!isApproved) return;
 
       const rawPaid = Number(s.PaidAmount || 0);
@@ -437,16 +437,20 @@ export const CollectionsPage: React.FC = () => {
         const cVal = Number(raw.cash_amount ?? 0);
         const uVal = Number(raw.upi_amount ?? raw.bank_amount ?? 0);
         if (cVal > 0 || uVal > 0) {
-          cashAmt += cVal;
-          digitalAmt += uVal;
+          const splitTot = cVal + uVal;
+          const scale = splitTot > 0 ? amt / splitTot : 1;
+          cashAmt += cVal * scale;
+          digitalAmt += uVal * scale;
         } else {
           const notes = String(c.notes || '');
           const cM = /Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
           const uM = /UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
           const cashSplit = cM ? Number(cM[1].replace(/,/g, '')) : amt / 2;
           const upiSplit = uM ? Number(uM[1].replace(/,/g, '')) : amt - cashSplit;
-          cashAmt += cashSplit;
-          digitalAmt += upiSplit;
+          const splitTot = cashSplit + upiSplit;
+          const scale = splitTot > 0 ? amt / splitTot : 1;
+          cashAmt += cashSplit * scale;
+          digitalAmt += upiSplit * scale;
         }
       } else if (pMode.includes('CASH')) {
         cashAmt += amt;
@@ -723,7 +727,13 @@ export const CollectionsPage: React.FC = () => {
                 </Text>
               </Group>
               <Text size="xs" c="dimmed" mt={2}>
-                {((stats.cashAmt / (stats.totAmt || 1)) * 100).toFixed(0)}% Cash &bull; {((stats.digitalAmt / (stats.totAmt || 1)) * 100).toFixed(0)}% UPI
+                {stats.totAmt > 0
+                  ? (() => {
+                      const cPct = Math.round((stats.cashAmt / stats.totAmt) * 100);
+                      const uPct = 100 - cPct;
+                      return `${cPct}% Cash • ${uPct}% UPI`;
+                    })()
+                  : '0% Cash • 0% UPI'}
               </Text>
             </div>
             <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
