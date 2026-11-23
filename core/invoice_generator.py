@@ -4177,36 +4177,98 @@ def generate_ledger_statement_pdf(
     sm_table = Table(sm_rows, colWidths=[175, 65, 65])
     sm_table.setStyle(TableStyle(sm_styles))
 
-    gen_time_str = datetime.now().strftime('%d-%b-%Y %I:%M %p')
-    audit_card_content = [
-        Paragraph("<b>ACCOUNT SUMMARY &amp; AUDIT</b>", ParagraphStyle('AudT', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR)),
-        Spacer(1, 2),
-        Paragraph(f"Period: <b>{html.escape(period_text)}</b>", ParagraphStyle('AudMeta', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR)),
-        Paragraph(f"Generated: <b>{gen_time_str}</b>", ParagraphStyle('AudMeta2', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR)),
-        Spacer(1, 3),
-        HRFlowable(width="100%", thickness=0.5, color=PRIMARY_COLOR, spaceBefore=1, spaceAfter=3),
-        Paragraph(f"Opening Balance: <b>Rs. {abs(effective_op):,.2f} {op_suffix}</b>", ParagraphStyle('AudRow1', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
-        Paragraph(f"Total Debits (Billed): <b>Rs. {tot_debit:,.2f}</b>", ParagraphStyle('AudRow2', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
-        Paragraph(f"Total Credits (Paid): <b>Rs. {tot_credit:,.2f}</b>", ParagraphStyle('AudRow3', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
-        Spacer(1, 2),
-        HRFlowable(width="100%", thickness=0.5, color=PRIMARY_COLOR, spaceBefore=1, spaceAfter=3),
-        Paragraph(
-            f"Closing Balance: <font color='#800020'><b>Rs. {abs(closing_bal):,.2f} {final_close_sfx}</b></font>",
-            ParagraphStyle('AudClose', fontName=FONT_BOLD, fontSize=8, leading=10.5, textColor=PRIMARY_COLOR)
-        ),
+    # Right T-Balance Account Summary Table (Matches double-entry balancing)
+    th_sm_r = ParagraphStyle('ThSmR', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=colors.white, alignment=2)
+    td_sm_r = ParagraphStyle('TdSmR', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=2)
+    td_sm_rb = ParagraphStyle('TdSmRb', fontName=FONT_BOLD, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=2)
+
+    op_is_dr = (effective_op >= 0 if is_dr_normal else effective_op < 0)
+    op_dr = abs(effective_op) if op_is_dr else Decimal('0.00')
+    op_cr = abs(effective_op) if not op_is_dr else Decimal('0.00')
+    tx_dr = tot_debit
+    tx_cr = tot_credit
+
+    tot_dr_side = op_dr + tx_dr
+    tot_cr_side = op_cr + tx_cr
+
+    if tot_dr_side >= tot_cr_side:
+        close_dr = Decimal('0.00')
+        close_cr = tot_dr_side - tot_cr_side
+        final_balanced_sum = tot_dr_side
+    else:
+        close_dr = tot_cr_side - tot_dr_side
+        close_cr = Decimal('0.00')
+        final_balanced_sum = tot_cr_side
+
+    r_rows = [
+        [
+            Paragraph("<b>PARTICULARS</b>", th_sm_l),
+            Paragraph("<b>DEBIT</b>", th_sm_r),
+            Paragraph("<b>CREDIT</b>", th_sm_r),
+        ],
+        [
+            Paragraph("Opening Balance", td_sm_lb),
+            Paragraph(f"{op_dr:,.2f}" if (op_dr > 0 or (op_dr == 0 and op_is_dr)) else "", td_sm_r),
+            Paragraph(f"{op_cr:,.2f}" if (op_cr > 0 or (op_cr == 0 and not op_is_dr)) else "", td_sm_r),
+        ],
+        [
+            Paragraph("", td_sm_l),
+            Paragraph(f"{tx_dr:,.2f}" if tx_dr > 0 else "", td_sm_r),
+            Paragraph(f"{tx_cr:,.2f}" if tx_cr > 0 else "", td_sm_r),
+        ],
+        [
+            Paragraph("Closing Balance", td_sm_lb),
+            Paragraph(f"{close_dr:,.2f}" if close_dr > 0 else "", td_sm_r),
+            Paragraph(f"{close_cr:,.2f}" if close_cr > 0 else "", td_sm_r),
+        ],
+        [
+            Paragraph("", td_sm_l),
+            Paragraph(f"<b>{final_balanced_sum:,.2f}</b>", td_sm_rb),
+            Paragraph(f"<b>{final_balanced_sum:,.2f}</b>", td_sm_rb),
+        ],
     ]
 
-    summary_grid = Table([[sm_table, audit_card_content]], colWidths=[310, 235])
+    r_style = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('GRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 2.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F1F5F9')),
+        ('LINEABOVE', (0, 4), (-1, 4), 1, PRIMARY_COLOR),
+        ('LINEBELOW', (0, 4), (-1, 4), 1.5, PRIMARY_COLOR),
+    ]
+
+    r_table = Table(r_rows, colWidths=[110, 65, 65])
+    r_table.setStyle(TableStyle(r_style))
+
+    # Section Banner Header
+    gen_time_str = datetime.now().strftime('%d-%b-%Y %I:%M %p')
+    rep_title = ParagraphStyle('RepT', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=0)
+    rep_meta = ParagraphStyle('RepM', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=2)
+    rep_hdr_table = Table([
+        [
+            Paragraph("<b>REPORT SUMMARY</b>", rep_title),
+            Paragraph(f"Period: <b>{html.escape(period_text)}</b> &nbsp;|&nbsp; Generated: <b>{gen_time_str}</b>", rep_meta)
+        ]
+    ], colWidths=[180, 365])
+    rep_hdr_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+    ]))
+
+    story.append(rep_hdr_table)
+    story.append(HRFlowable(width="100%", thickness=1, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=5))
+
+    summary_grid = Table([[sm_table, r_table]], colWidths=[305, 240])
     summary_grid.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('BOX', (1, 0), (1, 0), 0.5, PRIMARY_COLOR),
-        ('BACKGROUND', (1, 0), (1, 0), colors.HexColor('#FFF8F9')),
-        ('TOPPADDING', (1, 0), (1, 0), 5),
-        ('BOTTOMPADDING', (1, 0), (1, 0), 5),
-        ('LEFTPADDING', (1, 0), (1, 0), 7),
-        ('RIGHTPADDING', (1, 0), (1, 0), 7),
     ]))
 
     story.append(summary_grid)
