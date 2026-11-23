@@ -1183,8 +1183,8 @@ export const StockAnalysisPage: React.FC = () => {
             </Group>
           </Group>
 
-          <Table.ScrollContainer minWidth={850}>
-            <Table highlightOnHover verticalSpacing="sm" horizontalSpacing="md">
+          <Table.ScrollContainer minWidth={680}>
+            <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="xs">
               <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
                 {isVehicle ? (
                   <Table.Tr>
@@ -1209,40 +1209,40 @@ export const StockAnalysisPage: React.FC = () => {
                   </Table.Tr>
                 ) : (
                   <>
-                    <Table.Tr style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', width: 80, verticalAlign: 'middle' }}>
+                    <Table.Tr style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', width: 60, verticalAlign: 'middle', padding: '6px 8px' }}>
                         CODE
                       </Table.Th>
-                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', minWidth: 150, verticalAlign: 'middle' }}>
+                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', minWidth: 140, verticalAlign: 'middle', padding: '6px 8px' }}>
                         PRODUCT
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#2b8a3e', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', backgroundColor: '#f4fbf6', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0' }}>
-                        INWARD (വന്നത്)
+                      <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
+                        INWARD
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#c92a2a', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', backgroundColor: '#fff5f5', borderRight: '1px solid #e2e8f0' }}>
-                        OUTWARD / DISPATCHED
+                      <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
+                        OUTWARD
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#d9480f', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', backgroundColor: '#fff9db', borderRight: '1px solid #e2e8f0' }}>
-                        ON VANS (വണ്ടിയിലുള്ളത്)
+                      <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
+                        ON VANS
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#1864ab', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', backgroundColor: '#e7f5ff', borderRight: '1px solid #e2e8f0' }}>
-                        SOLD (വിറ്റത്)
+                      <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
+                        SOLD
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#800020', fontWeight: 800, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center', backgroundColor: '#fdf2f4' }}>
-                        GODOWN STOCK (തറയിലുള്ളത്)
+                      <Table.Th colSpan={2} style={{ color: '#0f172a', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', padding: '6px 4px' }}>
+                        CLOSING STOCK
                       </Table.Th>
                     </Table.Tr>
                     <Table.Tr>
-                      <Table.Th style={{ color: '#2b8a3e', fontWeight: 600, fontSize: 10.5, textAlign: 'right', width: 65, backgroundColor: '#f4fbf6', borderLeft: '1px solid #e2e8f0' }}>FILLED</Table.Th>
-                      <Table.Th style={{ color: '#2b8a3e', fontWeight: 600, fontSize: 10.5, textAlign: 'right', width: 65, backgroundColor: '#f4fbf6', borderRight: '1px solid #e2e8f0' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#c92a2a', fontWeight: 600, fontSize: 10.5, textAlign: 'right', width: 65, backgroundColor: '#fff5f5' }}>FILLED</Table.Th>
-                      <Table.Th style={{ color: '#c92a2a', fontWeight: 600, fontSize: 10.5, textAlign: 'right', width: 65, backgroundColor: '#fff5f5', borderRight: '1px solid #e2e8f0' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#d9480f', fontWeight: 600, fontSize: 10.5, textAlign: 'right', width: 65, backgroundColor: '#fff9db' }}>FILLED</Table.Th>
-                      <Table.Th style={{ color: '#d9480f', fontWeight: 600, fontSize: 10.5, textAlign: 'right', width: 65, backgroundColor: '#fff9db', borderRight: '1px solid #e2e8f0' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#1864ab', fontWeight: 600, fontSize: 10.5, textAlign: 'right', width: 65, backgroundColor: '#e7f5ff' }}>FILLED</Table.Th>
-                      <Table.Th style={{ color: '#1864ab', fontWeight: 600, fontSize: 10.5, textAlign: 'right', width: 65, backgroundColor: '#e7f5ff', borderRight: '1px solid #e2e8f0' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 10.5, textAlign: 'right', width: 75, backgroundColor: '#fdf2f4' }}>FILLED</Table.Th>
-                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 10.5, textAlign: 'right', width: 75, backgroundColor: '#fdf2f4' }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderLeft: '1px solid #e2e8f0', padding: '4px 6px' }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderRight: '1px solid #e2e8f0', padding: '4px 6px' }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, padding: '4px 6px' }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderRight: '1px solid #e2e8f0', padding: '4px 6px' }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, padding: '4px 6px' }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderRight: '1px solid #e2e8f0', padding: '4px 6px' }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, padding: '4px 6px' }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderRight: '1px solid #e2e8f0', padding: '4px 6px' }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 10, textAlign: 'right', width: 55, padding: '4px 6px' }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 10, textAlign: 'right', width: 55, padding: '4px 6px' }}>EMPTY</Table.Th>
                     </Table.Tr>
                   </>
                 )}
@@ -1301,52 +1301,52 @@ export const StockAnalysisPage: React.FC = () => {
                       const floorEmpty = p.EmptyQty ?? 0;
 
                       return (
-                        <Table.Tr key={p.ProductId} style={{ height: 44 }}>
-                          <Table.Td>
-                            <Text style={{ fontSize: 12.5 }} c="#64748b" ff="monospace" fw={700}>
+                        <Table.Tr key={p.ProductId} style={{ height: 38 }}>
+                          <Table.Td style={{ padding: '6px 8px' }}>
+                            <Text style={{ fontSize: 12 }} c="#64748b" ff="monospace" fw={700}>
                               {p.ProductCode || '—'}
                             </Text>
                           </Table.Td>
-                          <Table.Td>
+                          <Table.Td style={{ padding: '6px 8px' }}>
                             <Group gap={8} wrap="nowrap" align="center">
-                              <Text fw={700} style={{ color: '#0f172a', fontSize: 13.5 }}>
+                              <Text fw={600} style={{ color: '#0f172a', fontSize: 12.5 }}>
                                 {p.ProductName}
                               </Text>
                             </Group>
                           </Table.Td>
                           {/* INWARD */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13, color: '#2b8a3e', fontVariantNumeric: 'tabular-nums', borderLeft: '1px solid #f1f5f9' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', borderLeft: '1px solid #f1f5f9', padding: '6px 6px' }}>
                             {inFilled}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13, color: isCyl ? '#2b8a3e' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 6px' }}>
                             {isCyl ? inEmpty : '—'}
                           </Table.Td>
                           {/* OUTWARD / DISPATCHED */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13, color: '#c92a2a', fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
                             {dispFilled}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13, color: isCyl ? '#c92a2a' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 6px' }}>
                             {isCyl ? dispEmpty : '—'}
                           </Table.Td>
                           {/* ON VANS */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: '#d9480f', fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
                             {onVanFilled}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 600, fontSize: 13, color: isCyl ? '#d9480f' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 6px' }}>
                             {isCyl ? onVanEmpty : '—'}
                           </Table.Td>
                           {/* SOLD */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13, color: '#1864ab', fontVariantNumeric: 'tabular-nums' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
                             {soldFilled}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13, color: isCyl ? '#1864ab' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 6px' }}>
                             {isCyl ? soldEmpty : '—'}
                           </Table.Td>
                           {/* GODOWN STOCK (FLOOR) */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13.5, color: '#800020', fontVariantNumeric: 'tabular-nums', backgroundColor: '#fdf2f4' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
                             {floorFilled}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 13.5, color: isCyl ? '#800020' : '#94a3b8', fontVariantNumeric: 'tabular-nums', backgroundColor: '#fdf2f4' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: isCyl ? '#0f172a' : '#94a3b8', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
                             {isCyl ? floorEmpty : '—'}
                           </Table.Td>
                         </Table.Tr>
@@ -1389,39 +1389,39 @@ export const StockAnalysisPage: React.FC = () => {
                   </Table.Tr>
                 ) : (
                   <Table.Tr>
-                    <Table.Td colSpan={2} style={{ padding: '10px 16px' }}>
-                      <Text fw={800} style={{ color: '#800020', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <Table.Td colSpan={2} style={{ padding: '8px 8px' }}>
+                      <Text fw={700} style={{ color: '#0f172a', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         Total
                       </Text>
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#2b8a3e', fontVariantNumeric: 'tabular-nums', borderLeft: '1px solid #e2e8f0' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderLeft: '1px solid #e2e8f0', padding: '8px 6px' }}>
                       {godownTotals.inwardFilled}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#2b8a3e', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 6px' }}>
                       {godownTotals.inwardEmpty}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#c92a2a', fontVariantNumeric: 'tabular-nums' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
                       {godownTotals.dispatchedFilled}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#c92a2a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 6px' }}>
                       {godownTotals.dispatchedEmpty}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#d9480f', fontVariantNumeric: 'tabular-nums' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
                       {godownTotals.onVanFilled}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#d9480f', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 6px' }}>
                       {godownTotals.onVanEmpty}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#1864ab', fontVariantNumeric: 'tabular-nums' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
                       {godownTotals.soldFilled}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#1864ab', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 6px' }}>
                       {godownTotals.soldEmpty}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', backgroundColor: '#fdf2f4' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
                       {godownTotals.godownFilled}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#800020', fontVariantNumeric: 'tabular-nums', backgroundColor: '#fdf2f4' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
                       {godownTotals.godownEmpty}
                     </Table.Td>
                   </Table.Tr>
