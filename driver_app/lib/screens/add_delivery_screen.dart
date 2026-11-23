@@ -372,20 +372,28 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                     _buildDeliveryOrCollectionToggle(state),
                     const SizedBox(height: 14),
 
-                    // 2. Unified Cylinder Section OR Collection Notice Card
-                    if (!_isCollectionOnly) ...[
-                      _buildUnifiedCylinderTableCard(state),
-
-                      // 2.1 Other Products Section
-                      if (state.otherProducts.any((p) => p.balanceStock > 0)) ...[
-                        const SizedBox(height: 14),
-                        _buildOtherProductsCard(state),
-                      ],
-                      const SizedBox(height: 14),
-                    ] else ...[
-                      _buildCollectionOnlyNoticeCard(state),
-                      const SizedBox(height: 14),
-                    ],
+                    // 2. Unified Cylinder Section OR Collection Notice Card (Smooth Animated Transition)
+                    AnimatedCrossFade(
+                      duration: const Duration(milliseconds: 280),
+                      firstCurve: Curves.easeOutCubic,
+                      secondCurve: Curves.easeOutCubic,
+                      sizeCurve: Curves.easeInOutCubic,
+                      crossFadeState: !_isCollectionOnly
+                          ? CrossFadeState.showFirst
+                          : CrossFadeState.showSecond,
+                      firstChild: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildUnifiedCylinderTableCard(state),
+                          if (state.otherProducts.any((p) => p.balanceStock > 0)) ...[
+                            const SizedBox(height: 14),
+                            _buildOtherProductsCard(state),
+                          ],
+                        ],
+                      ),
+                      secondChild: _buildCollectionOnlyNoticeCard(state),
+                    ),
+                    const SizedBox(height: 14),
 
                     // 3. Payment Method Section
                     _buildPaymentMethodSection(state),
@@ -1547,128 +1555,166 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   Widget _buildDeliveryOrCollectionToggle(AppState state) {
     return Container(
       width: double.infinity,
+      height: 48,
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
+        color: const Color(0xFFE2E8F0).withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        border: Border.all(color: const Color(0xFFCBD5E1).withValues(alpha: 0.8), width: 1),
       ),
       padding: const EdgeInsets.all(4),
-      child: Row(
-        children: [
-          Expanded(
-            child: InkWell(
-              onTap: () {
-                if (_isCollectionOnly) {
-                  setState(() {
-                    _isCollectionOnly = false;
-                    if (state.paymentMethod.isEmpty || state.paymentMethod.toUpperCase() == 'N/A') {
-                      state.setPaymentMethod('Cash');
-                    }
-                  });
-                }
-              },
-              borderRadius: BorderRadius.circular(10),
-              splashColor: const Color(0xFF800020).withValues(alpha: 0.08),
-              highlightColor: Colors.transparent,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOutCubic,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: !_isCollectionOnly ? Colors.white : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                  border: !_isCollectionOnly
-                      ? Border.all(color: const Color(0xFF800020).withValues(alpha: 0.15), width: 1)
-                      : Border.all(color: Colors.transparent, width: 1),
-                  boxShadow: !_isCollectionOnly
-                      ? [
-                          BoxShadow(
-                            color: const Color(0xFF800020).withValues(alpha: 0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 2,
-                            offset: const Offset(0, 1),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Text(
-                  'Cylinder Delivery',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: !_isCollectionOnly ? FontWeight.w800 : FontWeight.w600,
-                    color: !_isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
-                    letterSpacing: 0.1,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tabWidth = (constraints.maxWidth - 2) / 2;
+          return Stack(
+            children: [
+              // Smooth sliding indicator pill
+              AnimatedAlign(
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                alignment: _isCollectionOnly ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  width: tabWidth,
+                  height: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: const Color(0xFF800020).withValues(alpha: 0.18),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                      BoxShadow(
+                        color: const Color(0xFF800020).withValues(alpha: 0.06),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: InkWell(
-              onTap: () {
-                if (!_isCollectionOnly) {
-                  setState(() {
-                    _isCollectionOnly = true;
-                    // Clear cylinder delivery and return selections to ensure pure money collection
-                    for (final item in state.deliveryItems) {
-                      item.deliveryQty = 0;
-                      item.emptyReturnQty = 0;
-                    }
-                    state.otherDeliveryQty.clear();
-                    if (state.paymentMethod.isEmpty || state.paymentMethod.toUpperCase() == 'N/A') {
-                      state.setPaymentMethod('Cash');
-                    }
-                  });
-                }
-              },
-              borderRadius: BorderRadius.circular(10),
-              splashColor: const Color(0xFF800020).withValues(alpha: 0.08),
-              highlightColor: Colors.transparent,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeInOutCubic,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: _isCollectionOnly ? Colors.white : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                  border: _isCollectionOnly
-                      ? Border.all(color: const Color(0xFF800020).withValues(alpha: 0.15), width: 1)
-                      : Border.all(color: Colors.transparent, width: 1),
-                  boxShadow: _isCollectionOnly
-                      ? [
-                          BoxShadow(
-                            color: const Color(0xFF800020).withValues(alpha: 0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
+
+              // Interactive Labels with tactile Haptic Feedback
+              Row(
+                children: [
+                  // Tab 1: Cylinder Delivery
+                  Expanded(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          if (_isCollectionOnly) {
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _isCollectionOnly = false;
+                              if (state.paymentMethod.isEmpty || state.paymentMethod.toUpperCase() == 'N/A') {
+                                state.setPaymentMethod('Cash');
+                              }
+                            });
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        splashColor: const Color(0xFF800020).withValues(alpha: 0.08),
+                        highlightColor: Colors.transparent,
+                        child: Center(
+                          child: AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOut,
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              fontWeight: !_isCollectionOnly ? FontWeight.w800 : FontWeight.w600,
+                              color: !_isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
+                              letterSpacing: -0.1,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                AnimatedScale(
+                                  duration: const Duration(milliseconds: 220),
+                                  curve: Curves.easeOutBack,
+                                  scale: !_isCollectionOnly ? 1.05 : 0.95,
+                                  child: Icon(
+                                    Icons.propane_tank_rounded,
+                                    size: 16,
+                                    color: !_isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text('Cylinder Delivery'),
+                              ],
+                            ),
                           ),
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 2,
-                            offset: const Offset(0, 1),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: Text(
-                  'Cash Collection Only',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: _isCollectionOnly ? FontWeight.w800 : FontWeight.w600,
-                    color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
-                    letterSpacing: 0.1,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+
+                  // Tab 2: Cash Collection Only
+                  Expanded(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          if (!_isCollectionOnly) {
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _isCollectionOnly = true;
+                              // Clear cylinder delivery and return selections to ensure pure money collection
+                              for (final item in state.deliveryItems) {
+                                item.deliveryQty = 0;
+                                item.emptyReturnQty = 0;
+                              }
+                              state.otherDeliveryQty.clear();
+                              if (state.paymentMethod.isEmpty || state.paymentMethod.toUpperCase() == 'N/A') {
+                                state.setPaymentMethod('Cash');
+                              }
+                            });
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        splashColor: const Color(0xFF800020).withValues(alpha: 0.08),
+                        highlightColor: Colors.transparent,
+                        child: Center(
+                          child: AnimatedDefaultTextStyle(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOut,
+                            style: GoogleFonts.inter(
+                              fontSize: 12.5,
+                              fontWeight: _isCollectionOnly ? FontWeight.w800 : FontWeight.w600,
+                              color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
+                              letterSpacing: -0.1,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                AnimatedScale(
+                                  duration: const Duration(milliseconds: 220),
+                                  curve: Curves.easeOutBack,
+                                  scale: _isCollectionOnly ? 1.05 : 0.95,
+                                  child: Icon(
+                                    Icons.payments_rounded,
+                                    size: 16,
+                                    color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text('Cash Collection Only'),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
