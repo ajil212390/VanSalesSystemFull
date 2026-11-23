@@ -431,6 +431,9 @@ export const DashboardPage: React.FC = () => {
   const customerReceipts = useMemo(() => {
     return payments.filter((p: any) => {
       if (p.voucher_type === 'PAYMENT') return false;
+      // In Future Gas, only approved customer receipts count towards official accounts & dashboard
+      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      if (!isApproved) return false;
       return customerLedgerIds.has(Number(p.PartyLedgerId));
     });
   }, [payments, customerLedgerIds]);
@@ -576,52 +579,67 @@ export const DashboardPage: React.FC = () => {
     return filteredSales.length;
   }, [filteredSales]);
 
-  // Collections = Payment receipts + cash/UPI payments collected directly on sales in this period
-  // Map receipt allocations strictly by BillReference (InvoiceNo / SalesNo) to prevent double counting
-  const receiptAllocBySale = useMemo(() => {
-    const map = new Map<string, number>();
-    filteredCustomerReceipts.forEach((p: any) => {
-      (p.lines || []).forEach((l: any) => {
-        (l.allocations || []).forEach((a: any) => {
-          const amt = Number(a.AllocatedAmount || 0);
-          if (amt > 0 && a.BillReference) {
-            const bRef = String(a.BillReference).trim().toUpperCase();
-            if (bRef && bRef !== 'CUSTOMER ADVANCE' && bRef !== 'ADVANCE') {
-              map.set(bRef, (map.get(bRef) || 0) + amt);
-            }
-          }
-        });
-      });
-    });
-    return map;
-  }, [filteredCustomerReceipts]);
-
-  // Actual cash/UPI collected directly on sales (excluding advance adjustments and receipt allocations)
-  const netSalesPaid = useMemo(() => {
+  // 1. Direct collections received on approved sales (refills & packages)
+  const salesCollections = useMemo(() => {
     return filteredSales.reduce((sum: number, s: any) => {
       const rawPaid = Number(s.PaidAmount || 0);
       if (rawPaid <= 0) return sum;
-
       const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
       const cashPaidOnSale = Math.max(0, rawPaid - advAdj);
-
-      const invRef = s.InvoiceNo ? String(s.InvoiceNo).trim().toUpperCase() : '';
-      const salRef = s.SalesNo ? String(s.SalesNo).trim().toUpperCase() : '';
-
-      const allocFromReceipt = Math.max(
-        invRef ? (receiptAllocBySale.get(invRef) || 0) : 0,
-        salRef ? (receiptAllocBySale.get(salRef) || 0) : 0
-      );
-
-      const netSaleCash = Math.max(0, cashPaidOnSale - allocFromReceipt);
-      return sum + netSaleCash;
+      return sum + cashPaidOnSale;
     }, 0);
-  }, [filteredSales, receiptAllocBySale]);
+  }, [filteredSales]);
 
-  const totalCustomerReceipts = useMemo(() => {
-    const totalReceipts = filteredCustomerReceipts.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
-    return totalReceipts + netSalesPaid;
-  }, [filteredCustomerReceipts, netSalesPaid]);
+  // Set of all sales references (both InvoiceNo and SalesNo) to prevent double counting
+  const salesRefUpperSet = useMemo(() => {
+    const set = new Set<string>();
+    filteredSales.forEach((s: any) => {
+      if (s.InvoiceNo) set.add(String(s.InvoiceNo).trim().toUpperCase());
+      if (s.SalesNo) set.add(String(s.SalesNo).trim().toUpperCase());
+    });
+    return set;
+  }, [filteredSales]);
+
+  // 2. Standalone Customer Receipts from Payment table (e.g. On-Account collections, office receipts)
+  // Exclude payments that were auto-generated from or allocated to sales to guarantee zero double counting
+  const standaloneCustomerReceipts = useMemo(() => {
+    return filteredCustomerReceipts.filter((p: any) => {
+      // Must be approved receipt
+      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      if (!isApproved) return false;
+
+      // If associated with a van route delivery shift, it was generated for route sales
+      if (p.DeliveryNoteId) return false;
+
+      // If narration indicates it's an invoice or van collection receipt
+      const narr = String(p.Narration || '').toLowerCase();
+      if (narr.includes('sales receipt') || narr.includes('van collection') || narr.includes('receipt for sales')) {
+        return false;
+      }
+
+      // If linked against sales bills
+      const againstBills = Array.isArray(p.against_bills) ? p.against_bills : [];
+      if (againstBills.some((b: string) => salesRefUpperSet.has(String(b).trim().toUpperCase()))) {
+        return false;
+      }
+
+      // If lines have billwise allocation to any known sales bill
+      const hasSaleAllocation = (p.lines || []).some((l: any) =>
+        (l.allocations || []).some((a: any) => {
+          if (!a.BillReference) return false;
+          const ref = String(a.BillReference).trim().toUpperCase();
+          return salesRefUpperSet.has(ref) || ref.startsWith('INV-') || ref.startsWith('SALE-');
+        })
+      );
+      if (hasSaleAllocation) return false;
+
+      return true;
+    });
+  }, [filteredCustomerReceipts, salesRefUpperSet]);
+
+  const standaloneReceiptsTotal = useMemo(() => {
+    return standaloneCustomerReceipts.reduce((sum: number, p: any) => sum + Number(p.Amount || 0), 0);
+  }, [standaloneCustomerReceipts]);
 
   // Direct collections received on sales invoices (Cash, UPI, etc.)
   const salesWithPaidCount = useMemo(() => {
@@ -632,20 +650,14 @@ export const DashboardPage: React.FC = () => {
     }).length;
   }, [filteredSales]);
 
+  // Total Customer Collections = Collections on Sales + Standalone Receipts (Guaranteed Zero Double Counting)
+  const totalCustomerReceipts = useMemo(() => {
+    return salesCollections + standaloneReceiptsTotal;
+  }, [salesCollections, standaloneReceiptsTotal]);
+
   const totalCollectionsCount = useMemo(() => {
-    const receiptCount = filteredCustomerReceipts.length;
-    const unallocatedPaidSales = filteredSales.filter((s: any) => {
-      const rawPaid = Number(s.PaidAmount || 0);
-      const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
-      const cashPaidOnSale = Math.max(0, rawPaid - advAdj);
-      if (cashPaidOnSale <= 0) return false;
-      const invRef = s.InvoiceNo ? String(s.InvoiceNo).trim().toUpperCase() : '';
-      const salRef = s.SalesNo ? String(s.SalesNo).trim().toUpperCase() : '';
-      const hasReceipt = (invRef && receiptAllocBySale.has(invRef)) || (salRef && receiptAllocBySale.has(salRef));
-      return !hasReceipt;
-    }).length;
-    return Math.max(salesWithPaidCount, receiptCount + unallocatedPaidSales);
-  }, [filteredCustomerReceipts, filteredSales, receiptAllocBySale, salesWithPaidCount]);
+    return salesWithPaidCount + standaloneCustomerReceipts.length;
+  }, [salesWithPaidCount, standaloneCustomerReceipts]);
 
   const receivableBalance = totalCustomerOpeningReceivable + totalSales - totalCustomerReceipts;
 
