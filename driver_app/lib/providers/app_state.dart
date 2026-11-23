@@ -859,8 +859,9 @@ class AppState extends ChangeNotifier {
 
   bool get canSubmitDelivery {
     final isEmptiesOnly = totalCylinders == 0 && totalOtherDeliveryCount == 0 && totalEmpties > 0;
+    final isMoneyOnly = totalCylinders == 0 && totalOtherDeliveryCount == 0 && totalEmpties == 0 && collectedAmount > 0;
     return selectedCustomer != null &&
-        (totalCylinders > 0 || totalOtherDeliveryCount > 0 || totalEmpties > 0) &&
+        (totalCylinders > 0 || totalOtherDeliveryCount > 0 || totalEmpties > 0 || isMoneyOnly) &&
         (paymentMethod.isNotEmpty || (isEmptiesOnly && collectedAmount <= 0));
   }
 
@@ -868,12 +869,16 @@ class AppState extends ChangeNotifier {
     final now = DateTime.now();
     final randomSuffix = (10000 + (now.microsecondsSinceEpoch % 90000)).toString();
     final isEmptiesOnly = totalCylinders == 0 && totalOtherDeliveryCount == 0 && totalEmpties > 0;
+    final isMoneyOnly = totalCylinders == 0 && totalOtherDeliveryCount == 0 && totalEmpties == 0 && collectedAmount > 0;
     if (isEmptiesOnly) {
       if (collectedAmount <= 0) {
         return 'EMTRTN-$randomSuffix';
       } else {
         return 'RCPT-$randomSuffix';
       }
+    }
+    if (isMoneyOnly) {
+      return 'RCPT-$randomSuffix';
     }
     return 'INV-$randomSuffix';
   }

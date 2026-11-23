@@ -19,6 +19,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   final _splitUpiController = TextEditingController();
   final _searchController = TextEditingController();
   String _searchQuery = '';
+  bool _isCollectionOnly = false;
 
   @override
   void initState() {
@@ -50,11 +51,30 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     }
 
     final isEmptiesOnly = state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties > 0;
+    final isMoneyOnly = _isCollectionOnly || (state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties == 0);
     final isSplit = state.paymentMethod.toLowerCase() == 'split';
     final textTrim = _amountController.text.trim();
     final enteredAmount = double.tryParse(textTrim.replaceAll(',', '')) ?? 0;
 
-    if (isEmptiesOnly && (textTrim.isEmpty || textTrim == '0' || textTrim == '0.0' || enteredAmount <= 0)) {
+    if (isMoneyOnly) {
+      if (isSplit) {
+        final cashVal = double.tryParse(_splitCashController.text.replaceAll(',', '').trim()) ?? 0;
+        final upiVal = double.tryParse(_splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
+        final splitSum = cashVal + upiVal;
+        if (splitSum <= 0) {
+          AppToast.warning(context, 'Please enter collection amount.');
+          return;
+        }
+        state.setSplitAmounts(cashVal, upiVal);
+        state.setCollectedAmount(splitSum);
+      } else {
+        if (enteredAmount <= 0) {
+          AppToast.warning(context, 'Please enter collection amount.');
+          return;
+        }
+        state.setCollectedAmount(enteredAmount);
+      }
+    } else if (isEmptiesOnly && (textTrim.isEmpty || textTrim == '0' || textTrim == '0.0' || enteredAmount <= 0)) {
       state.setPaymentMethod('N/A');
       state.setCollectedAmount(0.0);
     } else if (isSplit) {
@@ -123,11 +143,12 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final enteredAmount = isSplit
         ? splitSum
         : (double.tryParse(_amountController.text.replaceAll(',', '').trim()) ?? 0);
+    final isMoneyOnly = _isCollectionOnly || (state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties == 0 && enteredAmount > 0);
     final effectiveAmount = enteredAmount > 0
         ? enteredAmount
         : (_amountController.text.trim() == '0'
             ? 0.0
-            : (state.collectedAmount > 0 ? state.collectedAmount : (isEmptiesOnly ? 0.0 : state.totalBillAmount)));
+            : (state.collectedAmount > 0 ? state.collectedAmount : (isEmptiesOnly ? 0.0 : (isMoneyOnly ? 0.0 : state.totalBillAmount))));
 
     final hasItems = state.totalCylinders > 0 || state.totalOtherDeliveryCount > 0 || state.totalEmpties > 0;
     final hasValidAmount = _amountController.text.trim() == '0' || effectiveAmount >= 0;
@@ -135,15 +156,15 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final canSubmit = !state.isShiftLocked &&
         state.endShiftStatus.toUpperCase() == 'ACTIVE' &&
         state.selectedCustomer != null &&
-        hasItems &&
+        (hasItems || (isMoneyOnly && effectiveAmount > 0)) &&
         (isEmptiesOnly
             ? (enteredAmount <= 0 || state.paymentMethod.isNotEmpty)
             : state.paymentMethod.isNotEmpty);
 
-    // Calculate completion progress (1: Customer, 2: Cylinders/Products, 3: Payment & Amount)
+    // Calculate completion progress (1: Customer, 2: Cylinders/Collection, 3: Payment & Amount)
     int completedStepCount = 0;
     if (state.selectedCustomer != null) completedStepCount++;
-    if (hasItems) completedStepCount++;
+    if (hasItems || (isMoneyOnly && effectiveAmount > 0)) completedStepCount++;
     if (isEmptiesOnly || state.paymentMethod.isNotEmpty) completedStepCount++;
     final double completionProgress = completedStepCount / 3.0;
 
@@ -347,16 +368,24 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // 2. Unified Cylinder to Deliver & Return Empty Section (Single Table)
-                    _buildUnifiedCylinderTableCard(state),
-
-                    // 2.1 Other Products Section
-                    if (state.otherProducts.any((p) => p.balanceStock > 0)) ...[
-                      const SizedBox(height: 14),
-                      _buildOtherProductsCard(state),
-                    ],
-
+                    // Mode Selector Pill: [ 🚚 Cylinder Delivery ]  [ 💵 Cash Collection Only ]
+                    _buildDeliveryOrCollectionToggle(state),
                     const SizedBox(height: 14),
+
+                    // 2. Unified Cylinder Section OR Collection Notice Card
+                    if (!_isCollectionOnly) ...[
+                      _buildUnifiedCylinderTableCard(state),
+
+                      // 2.1 Other Products Section
+                      if (state.otherProducts.any((p) => p.balanceStock > 0)) ...[
+                        const SizedBox(height: 14),
+                        _buildOtherProductsCard(state),
+                      ],
+                      const SizedBox(height: 14),
+                    ] else ...[
+                      _buildCollectionOnlyNoticeCard(state),
+                      const SizedBox(height: 14),
+                    ],
 
                     // 3. Payment Method Section
                     _buildPaymentMethodSection(state),
@@ -365,12 +394,20 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
 
                     // 4. Redesigned Bill Amount Collection Card (Hidden for Split)
                     if (!isSplit) ...[
-                      _buildRedesignedBillAmountCard(state),
+                      _buildRedesignedBillAmountCard(state, isMoneyOnly: isMoneyOnly),
                       const SizedBox(height: 14),
                     ],
 
                     // 5. Inline Submit Button (directly under Bill Amount / Payment Section)
-                    _buildInlineSubmitButton(context, state, canSubmit, hasValidAmount, effectiveAmount, hasItems),
+                    _buildInlineSubmitButton(
+                      context,
+                      state,
+                      canSubmit,
+                      hasValidAmount,
+                      effectiveAmount,
+                      hasItems,
+                      isMoneyOnly: isMoneyOnly,
+                    ),
                   ],
                 ),
               ),
@@ -1506,14 +1543,237 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     );
   }
 
+  // ================= MODE TOGGLE & COLLECTION CARD =================
+  Widget _buildDeliveryOrCollectionToggle(AppState state) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE2E8F0),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.all(3),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _isCollectionOnly = false;
+                });
+              },
+              borderRadius: BorderRadius.circular(10),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: !_isCollectionOnly ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: !_isCollectionOnly
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.local_shipping_rounded,
+                      size: 16,
+                      color: !_isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Cylinder Delivery',
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: !_isCollectionOnly ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _isCollectionOnly = true;
+                  // Clear cylinder selections to prevent accidental inventory deduction
+                  for (final item in state.deliveryItems) {
+                    item.deliveryQty = 0;
+                    item.emptyReturnQty = 0;
+                  }
+                  state.otherDeliveryQty.clear();
+                });
+              },
+              borderRadius: BorderRadius.circular(10),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: _isCollectionOnly ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: _isCollectionOnly
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.payments_rounded,
+                      size: 16,
+                      color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Cash Collection Only',
+                      style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCollectionOnlyNoticeCard(AppState state) {
+    final cust = state.selectedCustomer;
+    final double outst = cust?.outstanding ?? 0.0;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8F9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFF800020).withValues(alpha: 0.2), width: 1.2),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF800020).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.receipt_long_rounded, size: 20, color: Color(0xFF800020)),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cash Collection (No Cylinders)',
+                      style: GoogleFonts.inter(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF800020),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Direct payment collection without cylinder delivery. Issues an Official Payment Receipt.',
+                      style: GoogleFonts.inter(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (outst > 0) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Customer Outstanding:',
+                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
+                      ),
+                      Text(
+                        '\u20B9${outst.toStringAsFixed(2)}',
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                      ),
+                    ],
+                  ),
+                  InkWell(
+                    onTap: () {
+                      _amountController.text = outst.toStringAsFixed(0);
+                      state.setCollectedAmount(outst);
+                      setState(() {});
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF800020).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFF800020).withValues(alpha: 0.2)),
+                      ),
+                      child: Text(
+                        'Pay Full Due',
+                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w700, color: const Color(0xFF800020)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   // ================= 4. REDESIGNED BILL AMOUNT CARD =================
-  Widget _buildRedesignedBillAmountCard(AppState state) {
+  Widget _buildRedesignedBillAmountCard(AppState state, {bool isMoneyOnly = false}) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        border: Border.all(
+          color: isMoneyOnly ? const Color(0xFF800020).withValues(alpha: 0.3) : const Color(0xFFE2E8F0),
+          width: isMoneyOnly ? 1.5 : 1.2,
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -1523,14 +1783,18 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             // Header Row
             Row(
               children: [
-                const Icon(Icons.currency_rupee_rounded, size: 16, color: Color(0xFF0F172A)),
+                Icon(
+                  Icons.currency_rupee_rounded,
+                  size: 16,
+                  color: isMoneyOnly ? const Color(0xFF800020) : const Color(0xFF0F172A),
+                ),
                 const SizedBox(width: 6),
                 Text(
-                  'PAID AMOUNT',
+                  isMoneyOnly ? 'COLLECTION AMOUNT (RECEIVED)' : 'PAID AMOUNT',
                   style: GoogleFonts.inter(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF0F172A),
+                    color: isMoneyOnly ? const Color(0xFF800020) : const Color(0xFF0F172A),
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -1546,14 +1810,14 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   style: GoogleFonts.inter(
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
-                    color: const Color(0xFF0F172A),
+                    color: isMoneyOnly ? const Color(0xFF800020) : const Color(0xFF0F172A),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: TextField(
                     controller: _amountController,
-                    keyboardType: TextInputType.number,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     style: GoogleFonts.inter(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
@@ -1596,8 +1860,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     bool canSubmit,
     bool hasValidAmount,
     double effectiveAmount,
-    bool hasItems,
-  ) {
+    bool hasItems, {
+    bool isMoneyOnly = false,
+  }) {
     String buttonLabel;
     final isEmptiesOnly = state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties > 0;
     final textTrim = _amountController.text.trim();
@@ -1608,15 +1873,19 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     if (!canSubmit) {
       if (state.selectedCustomer == null) {
         buttonLabel = 'SELECT CUSTOMER FIRST';
-      } else if (!hasItems) {
-        buttonLabel = 'SELECT CYLINDERS TO DELIVER OR RETURN';
+      } else if (isMoneyOnly && effectiveAmount <= 0) {
+        buttonLabel = 'ENTER COLLECTION AMOUNT';
+      } else if (!hasItems && !isMoneyOnly) {
+        buttonLabel = 'SELECT CYLINDERS OR ENTER COLLECTION';
       } else if (!isEmptiesOnly && state.paymentMethod.isEmpty) {
         buttonLabel = 'SELECT PAYMENT METHOD';
       } else if (isEmptiesOnly && enteredAmount > 0 && state.paymentMethod.isEmpty) {
         buttonLabel = 'SELECT PAYMENT METHOD';
       } else {
-        buttonLabel = 'COMPLETE DELIVERY';
+        buttonLabel = isMoneyOnly ? 'COLLECT CASH & ISSUE RECEIPT' : 'COMPLETE DELIVERY';
       }
+    } else if (isMoneyOnly) {
+      buttonLabel = 'COLLECT CASH & ISSUE RECEIPT (₹${effectiveAmount.toStringAsFixed(0)})';
     } else if (isEmptiesOnly) {
       if (enteredAmount > 0) {
         buttonLabel = 'RECEIVE PAYMENT & EMPTIES (₹${enteredAmount.toStringAsFixed(0)})';
@@ -1654,7 +1923,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
               if (canSubmit) {
                 if (isEmptiesOnly && enteredAmount <= 0) {
                   _showZeroPaymentConfirmationDialog(context, state);
-                } else if (!isEmptiesOnly && isZeroPayment) {
+                } else if (!isEmptiesOnly && !isMoneyOnly && isZeroPayment) {
                   _showZeroPaymentConfirmationDialog(context, state);
                 } else {
                   _submitDelivery(state);
@@ -1663,8 +1932,10 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 String msg = 'Please fill all required fields';
                 if (state.selectedCustomer == null) {
                   msg = 'Please select a customer first';
-                } else if (!hasItems) {
-                  msg = 'Please select at least 1 cylinder to deliver or return';
+                } else if (isMoneyOnly && effectiveAmount <= 0) {
+                  msg = 'Please enter collection amount received';
+                } else if (!hasItems && !isMoneyOnly) {
+                  msg = 'Please select cylinders or enter collection amount';
                 } else if (!isEmptiesOnly && state.paymentMethod.isEmpty) {
                   msg = 'Please select payment method (Cash, Bank, or Split)';
                 } else if (isEmptiesOnly && enteredAmount > 0 && state.paymentMethod.isEmpty) {

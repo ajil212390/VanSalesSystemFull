@@ -648,7 +648,7 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
           const SizedBox(height: 10),
 
           Text(
-            isEmptyOnly ? 'Empty Cylinder Return Slip' : 'Delivery Completed',
+            isEmptyOnly ? 'Empty Cylinder Return Slip' : (ticketId.startsWith('RCPT-') ? 'Collection Received' : 'Delivery Completed'),
             style: GoogleFonts.inter(
               fontSize: 20,
               fontWeight: FontWeight.w900,
@@ -663,7 +663,7 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
             children: [
               if (ticketId.isNotEmpty)
                 Text(
-                  'Invoice #$ticketId',
+                  ticketId.startsWith('RCPT-') ? 'Receipt #$ticketId' : (ticketId.startsWith('EMTRTN-') ? 'Return #$ticketId' : 'Invoice #$ticketId'),
                   style: GoogleFonts.jetBrainsMono(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -836,7 +836,55 @@ class _SuccessScreenState extends State<SuccessScreen> with TickerProviderStateM
           const SizedBox(height: 10),
 
           // 3. CYLINDERS DELIVERED & RETURNED SECTION (Detailed Delivery Breakdown)
-          Container(
+          if (ticketId.startsWith('RCPT-') && totalDelivered == 0 && totalEmpties == 0)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0), width: 1.1),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF800020).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.receipt_long_rounded, color: Color(0xFF800020), size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Payment on Account (Official Receipt)',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Direct cash collection recorded without cylinder movements.',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(

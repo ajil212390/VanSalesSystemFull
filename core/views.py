@@ -6555,11 +6555,16 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         amount_collected = Decimal(str(data.get('amount_collected') or 0))
         cash_amount = Decimal(str(data.get('cash_amount') or 0))
         upi_amount = Decimal(str(data.get('upi_amount') or 0))
+        total_collected = (cash_amount + upi_amount) if (cash_amount + upi_amount) > Decimal('0.00') else amount_collected
+        total_deliv_check = sum(Decimal(str(item.get('qty') or item.get('quantity') or item.get('deliveryQty') or 0)) for item in items)
+        total_empty_check = sum(Decimal(str(item.get('empty_qty') or item.get('emptyReturnQty') or item.get('empty_quantity') or 0)) for item in items)
+        is_empties_only = (total_deliv_check == 0 and total_empty_check > 0)
+        is_money_only = (not items or (total_deliv_check == 0 and total_empty_check == 0)) and total_collected > Decimal('0.00')
 
         if not allocation_id:
             return Response({'success': False, 'message': 'allocation_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        if not items:
-            return Response({'success': False, 'message': 'At least one item required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not items and not is_money_only:
+            return Response({'success': False, 'message': 'At least one item or payment collection amount required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         company_id = getattr(request.user, 'CompanyId', 1) or 1
         alloc = RouteVehicleDriver.objects.filter(RouteVehicleDriverId=allocation_id).select_related('Route', 'Vehicle', 'Driver').first()
@@ -6585,10 +6590,6 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
         # Generate unique ticket ID based on transaction type (EMTRTN, RCPT, or INV)
         today_str = date.today().strftime('%y%m%d')
-        total_deliv_check = sum(Decimal(str(item.get('qty') or item.get('quantity') or item.get('deliveryQty') or 0)) for item in items)
-        total_empty_check = sum(Decimal(str(item.get('empty_qty') or item.get('emptyReturnQty') or item.get('empty_quantity') or 0)) for item in items)
-        is_empties_only = (total_deliv_check == 0 and total_empty_check > 0)
-        total_collected = (cash_amount + upi_amount) if (cash_amount + upi_amount) > Decimal('0.00') else amount_collected
 
         if is_empties_only:
             if total_collected <= Decimal('0.00'):
@@ -6596,6 +6597,8 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 payment_method = 'N/A'
             else:
                 prefix = 'RCPT'
+        elif is_money_only:
+            prefix = 'RCPT'
         else:
             prefix = 'INV'
 
@@ -6605,7 +6608,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 raw_ticket = f"{prefix}-" + str(raw_ticket)[3:]
             elif is_empties_only and total_collected <= Decimal('0.00') and not str(raw_ticket).startswith('EMTRTN-'):
                 raw_ticket = f"EMTRTN-{str(raw_ticket).split('-', 1)[-1]}"
-            elif is_empties_only and total_collected > Decimal('0.00') and not str(raw_ticket).startswith('RCPT-'):
+            elif (is_empties_only or is_money_only) and total_collected > Decimal('0.00') and not str(raw_ticket).startswith('RCPT-'):
                 raw_ticket = f"RCPT-{str(raw_ticket).split('-', 1)[-1]}"
 
         ticket_id = raw_ticket or f"{prefix}-{today_str}-{Sales.objects.filter(CompanyId=company_id, SalesNo__startswith=f'{prefix}-{today_str}').count() + 1:03d}"
@@ -6714,6 +6717,13 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 else:
                     paid_amount = total_collected
                     sale_notes = f"Customer Receipt: {payment_method} | Customer: {customer_name}"
+            elif is_money_only:
+                if is_split:
+                    paid_amount = (cash_amount + upi_amount) if (cash_amount + upi_amount) > Decimal('0.00') else total_collected
+                    sale_notes = f"Cash Collection: SPLIT (Cash: ₹{cash_amount:,.2f}, UPI: ₹{upi_amount:,.2f}) | Customer: {customer_name}"
+                else:
+                    paid_amount = total_collected
+                    sale_notes = f"Cash Collection: {payment_method} | Customer: {customer_name}"
             elif is_credit:
                 paid_amount = Decimal('0.00')
                 sale_notes = f"Payment: CREDIT | Customer: {customer_name}"
