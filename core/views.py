@@ -4008,115 +4008,119 @@ def allocate_receipt_to_pending_bills_or_advance(payment, company_id=1):
     the unallocated balance is allocated as ADVANCE.
     Cleans up any bogus allocations pointing to non-invoice references like 'RCPT-' or 'EMTRTN-'.
     """
-    if not payment or not payment.PartyLedger:
-        return
+    try:
+        if not payment or not payment.PartyLedger:
+            return
 
-    customer = payment.PartyLedger
-    total_pmt_amt = Decimal(str(payment.Amount or 0))
-    if total_pmt_amt <= Decimal('0.00'):
-        return
+        customer = payment.PartyLedger
+        total_pmt_amt = Decimal(str(payment.Amount or 0))
+        if total_pmt_amt <= Decimal('0.00'):
+            return
 
-    company_id = company_id or getattr(customer, 'CompanyId', 1) or 1
+        company_id = company_id or getattr(customer, 'CompanyId', 1) or 1
 
-    # 1. Clean up bogus self-allocations where BillReference starts with 'RCPT-' or 'EMTRTN-'
-    BillwiseAllocation.objects.filter(
-        ReferenceTable__in=['Receipt', 'Payment'],
-        ReferenceId=payment.PaymentId,
-        BillReference__iregex=r'^(RCPT|EMTRTN)-'
-    ).delete()
-
-    first_line = payment.lines.first()
-    if not first_line:
-        safe_sync_sequence('PaymentLine', 'PaymentLineId')
-        cash_led = (
-            Ledger.objects.filter(LedgerId=24).first() or
-            Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
-            Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
-        )
-        first_line = PaymentLine.objects.create(
-            Payment=payment, LineNo=1, PaymentMode='Cash',
-            Ledger=cash_led or customer, Amount=total_pmt_amt, Narration=payment.Narration or 'Receipt'
-        )
-
-    # 2. Check existing genuine sales invoice allocations for this payment
-    existing_allocs = BillwiseAllocation.objects.filter(
-        ReferenceTable__in=['Receipt', 'Payment'],
-        ReferenceId=payment.PaymentId
-    )
-    already_allocated = sum(
-        Decimal(str(a.AllocatedAmount or 0))
-        for a in existing_allocs
-        if a.BillType == 'SALES' and not str(a.BillReference).startswith('RCPT-') and not str(a.BillReference).startswith('EMTRTN-')
-    )
-    unallocated = total_pmt_amt - already_allocated
-
-    if unallocated <= Decimal('0.00'):
-        return
-
-    safe_sync_sequence('BillwiseAllocation', 'BillwiseAllocationId')
-
-    # 3. Find customer's pending unpaid sales invoices in FIFO order (oldest SalesDate first)
-    pending_sales = Sales.objects.filter(
-        CompanyId=company_id,
-        CustomerLedger=customer,
-        Status__in=['LIVE', 'PENDING', 'APPROVED', 'COMPLETED']
-    ).exclude(SalesNo__startswith='RCPT-').exclude(SalesNo__startswith='EMTRTN-').order_by('SalesDate', 'SalesId')
-
-    for s in pending_sales:
-        grand = Decimal(str(s.GrandTotal or 0))
-        if grand <= Decimal('0.00'):
-            continue
-
-        # Calculate how much is already paid / allocated against this sale
-        all_allocs = BillwiseAllocation.objects.filter(
-            CompanyId=company_id,
-            BillType='SALES',
-            BillReference__in=[s.SalesNo, s.InvoiceNo]
-        ).exclude(ReferenceId=payment.PaymentId).aggregate(tot=Sum('AllocatedAmount'))
-        other_allocated = all_allocs['tot'] or Decimal('0.00')
-
-        unpaid_on_sale = max(Decimal('0.00'), grand - other_allocated)
-        if unpaid_on_sale > Decimal('0.00'):
-            alloc_here = min(unallocated, unpaid_on_sale)
-            BillwiseAllocation.objects.create(
-                PaymentLine=first_line,
-                ReferenceTable='Receipt',
-                ReferenceId=payment.PaymentId,
-                BillType='SALES',
-                BillReference=s.InvoiceNo or s.SalesNo,
-                BillDate=s.SalesDate,
-                AllocationType='Against Reference',
-                AllocatedAmount=alloc_here,
-                CompanyId=company_id
-            )
-            s.PaidAmount = min(grand, (s.PaidAmount or Decimal('0.00')) + alloc_here)
-            s.save(update_fields=['PaidAmount'])
-            unallocated -= alloc_here
-            if unallocated <= Decimal('0.00'):
-                break
-
-    # 4. If any balance remains after allocating to all pending bills (or if no pending bills exist), allocate as ADVANCE
-    if unallocated > Decimal('0.00'):
-        adv_alloc = BillwiseAllocation.objects.filter(
+        # 1. Clean up bogus self-allocations where BillReference starts with 'RCPT-' or 'EMTRTN-'
+        BillwiseAllocation.objects.filter(
             ReferenceTable__in=['Receipt', 'Payment'],
-            ReferenceId=payment.PaymentId,
-            BillType='ADVANCE'
-        ).first()
-        if adv_alloc:
-            adv_alloc.AllocatedAmount = (adv_alloc.AllocatedAmount or Decimal('0.00')) + unallocated
-            adv_alloc.save(update_fields=['AllocatedAmount'])
-        else:
-            BillwiseAllocation.objects.create(
-                PaymentLine=first_line,
-                ReferenceTable='Receipt',
-                ReferenceId=payment.PaymentId,
-                BillType='ADVANCE',
-                BillReference='ADVANCE',
-                BillDate=payment.PaymentDate or (payment.CreatedAt.date() if payment.CreatedAt else date.today()),
-                AllocationType='Advance',
-                AllocatedAmount=unallocated,
-                CompanyId=company_id
+            ReferenceId=payment.PaymentId
+        ).filter(
+            Q(BillReference__istartswith='RCPT-') | Q(BillReference__istartswith='EMTRTN-')
+        ).delete()
+
+        first_line = payment.lines.first()
+        if not first_line:
+            safe_sync_sequence('PaymentLine', 'PaymentLineId')
+            cash_led = (
+                Ledger.objects.filter(LedgerId=24).first() or
+                Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='Cash').first() or
+                Ledger.objects.filter(Group__GroupName__icontains='Cash').first()
             )
+            first_line = PaymentLine.objects.create(
+                Payment=payment, LineNo=1, PaymentMode='Cash',
+                Ledger=cash_led or customer, Amount=total_pmt_amt, Narration=payment.Narration or 'Receipt'
+            )
+
+        # 2. Check existing genuine sales invoice allocations for this payment
+        existing_allocs = BillwiseAllocation.objects.filter(
+            ReferenceTable__in=['Receipt', 'Payment'],
+            ReferenceId=payment.PaymentId
+        )
+        already_allocated = sum(
+            Decimal(str(a.AllocatedAmount or 0))
+            for a in existing_allocs
+            if a.BillType == 'SALES' and not str(a.BillReference).startswith('RCPT-') and not str(a.BillReference).startswith('EMTRTN-')
+        )
+        unallocated = total_pmt_amt - already_allocated
+
+        if unallocated <= Decimal('0.00'):
+            return
+
+        safe_sync_sequence('BillwiseAllocation', 'BillwiseAllocationId')
+
+        # 3. Find customer's pending unpaid sales invoices in FIFO order (oldest SalesDate first)
+        pending_sales = Sales.objects.filter(
+            CompanyId=company_id,
+            CustomerLedger=customer,
+            Status__in=['LIVE', 'PENDING', 'APPROVED', 'COMPLETED']
+        ).exclude(SalesNo__startswith='RCPT-').exclude(SalesNo__startswith='EMTRTN-').order_by('SalesDate', 'SalesId')
+
+        for s in pending_sales:
+            grand = Decimal(str(s.GrandTotal or 0))
+            if grand <= Decimal('0.00'):
+                continue
+
+            # Calculate how much is already paid / allocated against this sale
+            all_allocs = BillwiseAllocation.objects.filter(
+                CompanyId=company_id,
+                BillType='SALES',
+                BillReference__in=[s.SalesNo, s.InvoiceNo]
+            ).exclude(ReferenceId=payment.PaymentId).aggregate(tot=Sum('AllocatedAmount'))
+            other_allocated = all_allocs['tot'] or Decimal('0.00')
+
+            unpaid_on_sale = max(Decimal('0.00'), grand - other_allocated)
+            if unpaid_on_sale > Decimal('0.00'):
+                alloc_here = min(unallocated, unpaid_on_sale)
+                BillwiseAllocation.objects.create(
+                    PaymentLine=first_line,
+                    ReferenceTable='Receipt',
+                    ReferenceId=payment.PaymentId,
+                    BillType='SALES',
+                    BillReference=s.InvoiceNo or s.SalesNo,
+                    BillDate=s.SalesDate,
+                    AllocationType='Against Reference',
+                    AllocatedAmount=alloc_here,
+                    CompanyId=company_id
+                )
+                s.PaidAmount = min(grand, (s.PaidAmount or Decimal('0.00')) + alloc_here)
+                s.save(update_fields=['PaidAmount'])
+                unallocated -= alloc_here
+                if unallocated <= Decimal('0.00'):
+                    break
+
+        # 4. If any balance remains after allocating to all pending bills (or if no pending bills exist), allocate as ADVANCE
+        if unallocated > Decimal('0.00'):
+            adv_alloc = BillwiseAllocation.objects.filter(
+                ReferenceTable__in=['Receipt', 'Payment'],
+                ReferenceId=payment.PaymentId,
+                BillType='ADVANCE'
+            ).first()
+            if adv_alloc:
+                adv_alloc.AllocatedAmount = (adv_alloc.AllocatedAmount or Decimal('0.00')) + unallocated
+                adv_alloc.save(update_fields=['AllocatedAmount'])
+            else:
+                BillwiseAllocation.objects.create(
+                    PaymentLine=first_line,
+                    ReferenceTable='Receipt',
+                    ReferenceId=payment.PaymentId,
+                    BillType='ADVANCE',
+                    BillReference='ADVANCE',
+                    BillDate=payment.PaymentDate or (payment.CreatedAt.date() if payment.CreatedAt else date.today()),
+                    AllocationType='Advance',
+                    AllocatedAmount=unallocated,
+                    CompanyId=company_id
+                )
+    except Exception as e:
+        logger.exception("Error allocating receipt to pending bills or advance for payment %s: %s", getattr(payment, 'PaymentId', None), e)
 
 
 def sync_sales_billwise_allocation(sale, voucher_line=None):
@@ -4558,18 +4562,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
             if advance_amt > Decimal('0.00'):
                 if not CustomerAdvance.objects.filter(Payment=payment).exists():
-                    try:
-                        from django.db import connection
-                        with connection.cursor() as cursor:
-                            cursor.execute('SELECT COALESCE(MAX("AdvanceId"), 0) FROM "CustomerAdvance"')
-                            m = cursor.fetchone()[0]
-                            if m > 0:
-                                cursor.execute(f'SELECT setval(\'"CustomerAdvance_AdvanceId_seq"\', {m}, true);')
-                            else:
-                                cursor.execute('SELECT setval(\'"CustomerAdvance_AdvanceId_seq"\', 1, false);')
-                    except Exception:
-                        pass
-
+                    safe_sync_sequence('CustomerAdvance', 'AdvanceId')
                     CustomerAdvance.objects.create(
                         CompanyId=company_id,
                         CustomerLedger=party,
@@ -9758,6 +9751,7 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
 
                 is_cross_depot = bool(default_target_godown and source_godown and default_target_godown.GodownId != source_godown.GodownId)
                 cross_depot_items = []
+                safe_sync_sequence('StockMovement', 'StockMovementId')
 
                 for p_id in allocated_prod_ids:
                     if not p_id:
@@ -10143,60 +10137,70 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     shift_pending_pmts.append(pm)
                     continue
 
+            safe_sync_sequence('Payment', 'PaymentId')
+            safe_sync_sequence('PaymentLine', 'PaymentLineId')
+            safe_sync_sequence('Voucher', 'VoucherId')
+            safe_sync_sequence('VoucherLine', 'VoucherLineId')
+            safe_sync_sequence('BillwiseAllocation', 'BillwiseAllocationId')
+            safe_sync_sequence('CustomerAdvance', 'AdvanceId')
+
             pv_helper = PaymentViewSet()
             for pm in shift_pending_pmts:
-                if str(pm.Status).upper() == 'APPROVED':
-                    continue
+                try:
+                    if str(pm.Status).upper() == 'APPROVED':
+                        continue
 
-                rec_no = pm.PaymentNo if (pm.PaymentNo and str(pm.PaymentNo).startswith('REC-')) else get_next_receipt_number()
-                pm.PaymentNo = rec_no
-                pm.Status = 'APPROVED'
-                update_fields = ['PaymentNo', 'Status', 'UpdatedAt']
-                if hasattr(pm, 'DeliveryNoteId') and not pm.DeliveryNoteId:
-                    pm.DeliveryNoteId = dn.DeliveryNoteId
-                    update_fields.append('DeliveryNoteId')
-                pm.save(update_fields=update_fields)
+                    rec_no = pm.PaymentNo if (pm.PaymentNo and str(pm.PaymentNo).startswith('REC-')) else get_next_receipt_number()
+                    pm.PaymentNo = rec_no
+                    pm.Status = 'APPROVED'
+                    update_fields = ['PaymentNo', 'Status', 'UpdatedAt']
+                    if hasattr(pm, 'DeliveryNoteId') and not pm.DeliveryNoteId:
+                        pm.DeliveryNoteId = dn.DeliveryNoteId
+                        update_fields.append('DeliveryNoteId')
+                    pm.save(update_fields=update_fields)
 
-                # Allocate receipt against pending sales bills or as customer advance
-                allocate_receipt_to_pending_bills_or_advance(pm, company_id)
+                    # Allocate receipt against pending sales bills or as customer advance
+                    allocate_receipt_to_pending_bills_or_advance(pm, company_id)
 
-                # Ensure associated voucher reflects the permanent receipt number (REC-xxx)
-                existing_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
-                if existing_vch:
-                    existing_vch.VoucherNo = rec_no
-                    existing_vch.save(update_fields=['VoucherNo'])
-                else:
-                    pv_lines = list(pm.lines.all())
-                    pv_allocs = []
-                    for ba in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=pm.PaymentId):
-                        pv_allocs.append((ba, ba.BillType, ba.BillReference, ba.AllocatedAmount))
+                    # Ensure associated voucher reflects the permanent receipt number (REC-xxx)
+                    existing_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
+                    if existing_vch:
+                        existing_vch.VoucherNo = rec_no
+                        existing_vch.save(update_fields=['VoucherNo'])
+                    else:
+                        pv_lines = list(pm.lines.all())
+                        pv_allocs = []
+                        for ba in BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=pm.PaymentId):
+                            pv_allocs.append((ba, ba.BillType, ba.BillReference, ba.AllocatedAmount))
 
-                    g_name = (pm.PartyLedger.Group.GroupName or '').lower() if pm.PartyLedger and pm.PartyLedger.Group else ''
-                    is_cust = (
-                        (pm.PartyLedger and pm.PartyLedger.Group_id == 21)
-                        or 'debtor' in g_name
-                        or 'customer' in g_name
-                        or any(b_t == 'SALES' for _, b_t, _, _ in pv_allocs)
-                    )
+                        g_name = (pm.PartyLedger.Group.GroupName or '').lower() if pm.PartyLedger and pm.PartyLedger.Group else ''
+                        is_cust = (
+                            (pm.PartyLedger and pm.PartyLedger.Group_id == 21)
+                            or 'debtor' in g_name
+                            or 'customer' in g_name
+                            or any(b_t == 'SALES' for _, b_t, _, _ in pv_allocs)
+                        )
 
-                    vch_date = pm.CreatedAt.date() if pm.CreatedAt else shift_date
-                    vch = pv_helper._post_voucher_for_payment(
-                        payment=pm,
-                        party=pm.PartyLedger,
-                        amount=pm.Amount,
-                        created_lines=pv_lines,
-                        alloc_instances=pv_allocs,
-                        company_id=company_id,
-                        custom_payment_date=vch_date,
-                        narration=pm.Narration,
-                        is_customer_receipt=is_cust,
-                    )
-                    if vch:
-                        for vl in vch.lines.all():
-                            if vl.Ledger_id:
-                                affected_ledgers.add(vl.Ledger_id)
-                if pm.PartyLedger_id:
-                    affected_ledgers.add(pm.PartyLedger_id)
+                        vch_date = pm.CreatedAt.date() if pm.CreatedAt else shift_date
+                        vch = pv_helper._post_voucher_for_payment(
+                            payment=pm,
+                            party=pm.PartyLedger,
+                            amount=pm.Amount,
+                            created_lines=pv_lines,
+                            alloc_instances=pv_allocs,
+                            company_id=company_id,
+                            custom_payment_date=vch_date,
+                            narration=pm.Narration,
+                            is_customer_receipt=is_cust,
+                        )
+                        if vch:
+                            for vl in vch.lines.all():
+                                if vl.Ledger_id:
+                                    affected_ledgers.add(vl.Ledger_id)
+                    if pm.PartyLedger_id:
+                        affected_ledgers.add(pm.PartyLedger_id)
+                except Exception as pm_err:
+                    logger.exception(f"Error approving shift pending payment {getattr(pm, 'PaymentId', None)}: {pm_err}")
 
             # Clean up any legacy shift-level bulk voucher to avoid double counting
             Voucher.objects.filter(VoucherNo=f"SHIFT-VCH-{dn.DeliveryNoteId}").delete()

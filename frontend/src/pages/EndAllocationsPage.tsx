@@ -365,7 +365,21 @@ export const EndAllocationsPage: React.FC = () => {
         );
       })
       .sort((a, b) => {
+        const getTimestamp = (item: EndRouteDriverItem) => {
+          if (item.CreatedAt) {
+            const t = new Date(item.CreatedAt).getTime();
+            if (!isNaN(t) && t > 0) return t;
+          }
+          if (item.ShiftDate) {
+            const t = new Date(item.ShiftDate).getTime();
+            if (!isNaN(t) && t > 0) return t;
+          }
+          return 0;
+        };
+
         if (sortBy === 'oldest') {
+          const diff = getTimestamp(a) - getTimestamp(b);
+          if (diff !== 0) return diff;
           return (a.EndRouteDriverId || 0) - (b.EndRouteDriverId || 0);
         }
         if (sortBy === 'route_asc') {
@@ -374,6 +388,8 @@ export const EndAllocationsPage: React.FC = () => {
         if (sortBy === 'driver_asc') {
           return (a.driver_name || '').localeCompare(b.driver_name || '');
         }
+        const diff = getTimestamp(b) - getTimestamp(a);
+        if (diff !== 0) return diff;
         return (b.EndRouteDriverId || 0) - (a.EndRouteDriverId || 0);
       });
   }, [endRouteDrivers, statusFilter, dateFilter, customStartDate, customEndDate, sortBy, searchQuery]);
@@ -1363,14 +1379,11 @@ export const EndAllocationsPage: React.FC = () => {
                                   )}
                                 </Group>
                                 {(sale as any).ReceiptNo && (
-                                  <Group gap={4} mt={4} wrap="nowrap" align="center">
+                                  <Group gap={4} mt={3} wrap="nowrap" align="center">
                                     <IconReceipt size={12} color={(sale as any).ReceiptStatus === 'APPROVED' ? '#047857' : '#d97706'} />
-                                    <Text size="11px" fw={700} c={(sale as any).ReceiptStatus === 'APPROVED' ? '#047857' : '#b45309'} ff="monospace">
-                                      {(sale as any).ReceiptNo}
+                                    <Text size="11px" fw={600} c={(sale as any).ReceiptStatus === 'APPROVED' ? '#047857' : '#b45309'} ff="monospace">
+                                      {(sale as any).ReceiptNo.replace(/\s*\(Pending\)/i, '')} • {(sale as any).ReceiptStatus === 'APPROVED' ? 'Approved' : 'Pending'}
                                     </Text>
-                                    <Badge size="xs" variant="light" color={(sale as any).ReceiptStatus === 'APPROVED' ? 'teal' : 'yellow'} radius="xs" style={{ padding: '0 4px', height: 16, fontSize: 9.5 }}>
-                                      {(sale as any).ReceiptStatus === 'APPROVED' ? 'Approved' : 'Pending'}
-                                    </Badge>
                                   </Group>
                                 )}
                               </Table.Td>
@@ -1685,13 +1698,35 @@ export const EndAllocationsPage: React.FC = () => {
                 } }}
             />
 
+            <Select
+              size="xs"
+              radius="xl"
+              value={sortBy}
+              onChange={(val) => setSortBy(val || 'newest')}
+              data={[
+                { value: 'newest', label: 'Newest First' },
+                { value: 'oldest', label: 'Oldest First' },
+                { value: 'route_asc', label: 'Route (A - Z)' },
+                { value: 'driver_asc', label: 'Driver (A - Z)' },
+              ]}
+              style={{ width: 140 }}
+              styles={{
+                input: {
+                  backgroundColor: '#f1f5f9',
+                  border: '1px solid #e2e8f0',
+                  fontWeight: 600,
+                  fontSize: 12,
+                },
+              }}
+            />
+
             <TextInput
               placeholder="Search driver, vehicle, route..."
               leftSection={<IconSearch size={14} color="#94a3b8" />}
               size="xs"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.currentTarget.value)}
-              style={{ width: 250 }}
+              style={{ width: 230 }}
             />
           </Group>
         </Group>
