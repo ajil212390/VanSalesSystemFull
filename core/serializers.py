@@ -1346,8 +1346,12 @@ class SaleEditHistorySerializer(serializers.ModelSerializer):
         model = SaleEditHistory
         fields = [
             'EditId', 'Sales', 'SalesId', 'EditedBy', 'EditedAt',
-            'OldGrandTotal', 'NewGrandTotal', 'OldPaymentMethod',
-            'NewPaymentMethod', 'Notes', 'CompanyId'
+            'OldGrandTotal', 'NewGrandTotal',
+            'OldPaidAmount', 'NewPaidAmount',
+            'OldDeliveredQty', 'NewDeliveredQty',
+            'OldEmptyQty', 'NewEmptyQty',
+            'OldPaymentMethod', 'NewPaymentMethod',
+            'Notes', 'CompanyId'
         ]
 
 
