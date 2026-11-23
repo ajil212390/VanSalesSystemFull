@@ -4027,6 +4027,189 @@ def generate_ledger_statement_pdf(
 
     stmt_table.setStyle(TableStyle(t_style))
     story.append(stmt_table)
+
+    # 1. Note immediately below the main transaction table
+    story.append(Spacer(1, 3))
+    story.append(Paragraph(
+        "<font size=6.5 color='#64748B'><b>* Note:</b> The <b>FULL QTY</b> and <b>EMPTY QTY</b> totals above reflect cylinder quantities only. Non-cylinder products are excluded from the cylinder total counts.</font>",
+        td_left
+    ))
+    story.append(Spacer(1, 8))
+
+    # 2. Product & Cylinder Delivery Summary (Left) + Account Financial Audit Card (Right)
+    from collections import defaultdict
+    cyl_summary = defaultdict(lambda: {'full': 0, 'empty': 0})
+    other_summary = defaultdict(int)
+
+    def _get_cyl_display_label(raw_name):
+        clean = raw_name.replace('LPG ', '').replace(' GAS CYLINDER', '').replace(' CYLINDER', '').strip()
+        if '04' in clean or '4KG' in clean:
+            return '04KG GAS CYLINDER'
+        elif '12' in clean:
+            return '12KG GAS CYLINDER'
+        elif '17' in clean:
+            return '17KG GAS CYLINDER'
+        elif '19' in clean:
+            return '19KG GAS CYLINDER'
+        elif '47.5' in clean:
+            return '47.5KG GAS CYLINDER'
+        elif '5KG' in clean:
+            return '5KG GAS CYLINDER'
+        elif clean:
+            return f"{clean} CYLINDER"
+        return 'CYLINDER'
+
+    for e in raw_entries:
+        if str(e.get('ref') or '') == 'OP-BAL':
+            continue
+        v_type = str(e.get('voucher_type') or e.get('type') or '').lower()
+        if v_type != 'sales' and v_type != 'sale':
+            continue
+
+        is_cyl = _is_cyl_row(e)
+        raw_name = str(e.get('item_name') or '').strip()
+        if not raw_name or raw_name == '—':
+            continue
+
+        if is_cyl:
+            ckey = _get_cyl_display_label(raw_name)
+            fq = e.get('full_qty')
+            eq = e.get('empty_qty')
+            f_val = int(float(str(fq))) if fq is not None and str(fq) != '' and str(fq) != '—' else 0
+            e_val = int(float(str(eq))) if eq is not None and str(eq) != '' and str(eq) != '—' else 0
+            if f_val > 0 or e_val > 0:
+                cyl_summary[ckey]['full'] += f_val
+                cyl_summary[ckey]['empty'] += e_val
+        else:
+            q_val = e.get('qty') or e.get('full_qty') or 1
+            try:
+                q_num = int(float(str(q_val)))
+            except Exception:
+                q_num = 1
+            other_summary[raw_name] += q_num
+
+    th_sm_l = ParagraphStyle('ThSmL', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=colors.white, alignment=0)
+    th_sm_c = ParagraphStyle('ThSmC', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=colors.white, alignment=1)
+    td_sm_l = ParagraphStyle('TdSmL', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=0)
+    td_sm_lb = ParagraphStyle('TdSmLb', fontName=FONT_BOLD, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=0)
+    td_sm_c = ParagraphStyle('TdSmC', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=1)
+    td_sm_cb = ParagraphStyle('TdSmCb', fontName=FONT_BOLD, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=1)
+    sm_subhdr = ParagraphStyle('SmSubH', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=PRIMARY_COLOR, alignment=0)
+
+    sm_rows = [
+        [
+            Paragraph("<b>PRODUCT</b>", th_sm_l),
+            Paragraph("<b>FILLED QTY</b>", th_sm_c),
+            Paragraph("<b>EMPTY QTY</b>", th_sm_c),
+        ],
+        [
+            Paragraph("<b>CYLINDERS</b>", sm_subhdr),
+            Paragraph("", sm_subhdr),
+            Paragraph("", sm_subhdr),
+        ]
+    ]
+    sm_styles = [
+        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
+        ('GRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 2.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('SPAN', (0, 1), (2, 1)),
+        ('BACKGROUND', (0, 1), (2, 1), colors.HexColor('#FDF2F4')),
+    ]
+
+    tot_sm_full = 0
+    tot_sm_empty = 0
+
+    sorted_cyl_keys = sorted(cyl_summary.keys(), key=lambda x: (int(re.search(r'\d+', x).group()) if re.search(r'\d+', x) else 999, x))
+    for c_key in sorted_cyl_keys:
+        c_vals = cyl_summary[c_key]
+        f_q = c_vals['full']
+        e_q = c_vals['empty']
+        tot_sm_full += f_q
+        tot_sm_empty += e_q
+        sm_rows.append([
+            Paragraph(html.escape(c_key), td_sm_lb),
+            Paragraph(str(f_q), td_sm_c),
+            Paragraph(str(e_q), td_sm_c),
+        ])
+
+    if not sorted_cyl_keys:
+        sm_rows.append([
+            Paragraph("No cylinder deliveries in period", td_sm_l),
+            Paragraph("0", td_sm_c),
+            Paragraph("0", td_sm_c),
+        ])
+
+    cyl_tot_row_idx = len(sm_rows)
+    sm_rows.append([
+        Paragraph("<b>TOTAL CYLINDERS</b>", td_sm_lb),
+        Paragraph(f"<b>{tot_sm_full}</b>", td_sm_cb),
+        Paragraph(f"<b>{tot_sm_empty}</b>", td_sm_cb),
+    ])
+    sm_styles.extend([
+        ('BACKGROUND', (0, cyl_tot_row_idx), (-1, cyl_tot_row_idx), colors.HexColor('#F1F5F9')),
+        ('LINEABOVE', (0, cyl_tot_row_idx), (-1, cyl_tot_row_idx), 1, PRIMARY_COLOR),
+    ])
+
+    if other_summary:
+        oth_hdr_idx = len(sm_rows)
+        sm_rows.append([
+            Paragraph("<b>OTHER PRODUCTS</b>", sm_subhdr),
+            Paragraph("", sm_subhdr),
+            Paragraph("", sm_subhdr),
+        ])
+        sm_styles.extend([
+            ('SPAN', (0, oth_hdr_idx), (2, oth_hdr_idx)),
+            ('BACKGROUND', (0, oth_hdr_idx), (2, oth_hdr_idx), colors.HexColor('#FDF2F4')),
+        ])
+        for p_name, p_qty in sorted(other_summary.items()):
+            row_idx = len(sm_rows)
+            sm_rows.append([
+                Paragraph(html.escape(p_name), td_sm_l),
+                Paragraph(f"<b>{p_qty} Nos</b>", td_sm_cb),
+                Paragraph("", td_sm_c),
+            ])
+            sm_styles.append(('SPAN', (1, row_idx), (2, row_idx)))
+
+    sm_table = Table(sm_rows, colWidths=[175, 65, 65])
+    sm_table.setStyle(TableStyle(sm_styles))
+
+    gen_time_str = datetime.now().strftime('%d-%b-%Y %I:%M %p')
+    audit_card_content = [
+        Paragraph("<b>ACCOUNT SUMMARY &amp; AUDIT</b>", ParagraphStyle('AudT', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR)),
+        Spacer(1, 2),
+        Paragraph(f"Period: <b>{html.escape(period_text)}</b>", ParagraphStyle('AudMeta', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR)),
+        Paragraph(f"Generated: <b>{gen_time_str}</b>", ParagraphStyle('AudMeta2', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR)),
+        Spacer(1, 3),
+        HRFlowable(width="100%", thickness=0.5, color=PRIMARY_COLOR, spaceBefore=1, spaceAfter=3),
+        Paragraph(f"Opening Balance: <b>Rs. {abs(effective_op):,.2f} {op_suffix}</b>", ParagraphStyle('AudRow1', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph(f"Total Debits (Billed): <b>Rs. {tot_debit:,.2f}</b>", ParagraphStyle('AudRow2', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Paragraph(f"Total Credits (Paid): <b>Rs. {tot_credit:,.2f}</b>", ParagraphStyle('AudRow3', fontName=FONT_NAME, fontSize=7, leading=9.5, textColor=DARK_COLOR)),
+        Spacer(1, 2),
+        HRFlowable(width="100%", thickness=0.5, color=PRIMARY_COLOR, spaceBefore=1, spaceAfter=3),
+        Paragraph(
+            f"Closing Balance: <font color='#800020'><b>Rs. {abs(closing_bal):,.2f} {final_close_sfx}</b></font>",
+            ParagraphStyle('AudClose', fontName=FONT_BOLD, fontSize=8, leading=10.5, textColor=PRIMARY_COLOR)
+        ),
+    ]
+
+    summary_grid = Table([[sm_table, audit_card_content]], colWidths=[310, 235])
+    summary_grid.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('BOX', (1, 0), (1, 0), 0.5, PRIMARY_COLOR),
+        ('BACKGROUND', (1, 0), (1, 0), colors.HexColor('#FFF8F9')),
+        ('TOPPADDING', (1, 0), (1, 0), 5),
+        ('BOTTOMPADDING', (1, 0), (1, 0), 5),
+        ('LEFTPADDING', (1, 0), (1, 0), 7),
+        ('RIGHTPADDING', (1, 0), (1, 0), 7),
+    ]))
+
+    story.append(summary_grid)
     story.append(Spacer(1, 10))
 
     # 4. FOOTER NOTE & SIGNATURE

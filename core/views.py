@@ -2232,6 +2232,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
                                 'item_name': l_disp,
                                 'full_qty': l_full if (l_full is not None and l_full > 0) else None,
                                 'empty_qty': l_empty if (l_empty is not None and l_empty > 0) else None,
+                                'qty': int(l.Quantity) if l.Quantity == int(l.Quantity) else float(l.Quantity),
                                 'is_cylinder': is_cylinder,
                                 'debit': l_debit,
                                 'credit': 0.0,
