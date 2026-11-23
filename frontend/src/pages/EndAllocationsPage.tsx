@@ -324,34 +324,41 @@ export const EndAllocationsPage: React.FC = () => {
         color: 'red' });
     } });
 
-  // Counts & Summaries
+  // Data filtered strictly by Date (connected to the date filter toggle)
+  const dateFilteredData = useMemo(() => {
+    return endRouteDrivers.filter((item) => isDateInFilter(item.ShiftDate || item.CreatedAt));
+  }, [endRouteDrivers, dateFilter, customStartDate, customEndDate]);
+
+  // Counts & Summaries dynamically connected to date range
   const pendingCount = useMemo(
-    () => endRouteDrivers.filter((i) => i.Status?.toUpperCase() === 'PENDING').length,
-    [endRouteDrivers]
+    () => dateFilteredData.filter((i) => i.Status?.toUpperCase() === 'PENDING').length,
+    [dateFilteredData]
   );
   const settledCount = useMemo(
-    () => endRouteDrivers.filter((i) => i.Status?.toUpperCase() === 'SETTLED').length,
-    [endRouteDrivers]
+    () => dateFilteredData.filter((i) => i.Status?.toUpperCase() === 'SETTLED').length,
+    [dateFilteredData]
   );
 
   const totalFilled = useMemo(
-    () => endRouteDrivers.reduce((sum, item) => sum + (item.total_filled || 0), 0),
-    [endRouteDrivers]
+    () => dateFilteredData.reduce((sum, item) => sum + (item.total_filled || 0), 0),
+    [dateFilteredData]
   );
   const totalEmpty = useMemo(
-    () => endRouteDrivers.reduce((sum, item) => sum + (item.total_empty || 0), 0),
-    [endRouteDrivers]
+    () => dateFilteredData.reduce((sum, item) => sum + (item.total_empty || 0), 0),
+    [dateFilteredData]
+  );
+  const totalRouteCollections = useMemo(
+    () => dateFilteredData.reduce((acc, item) => acc + parseSettlementAmounts(item).total, 0),
+    [dateFilteredData]
   );
 
   // Filtered List with Date Range, Status & Sorting
   const filteredData = useMemo(() => {
-    return endRouteDrivers
+    return dateFilteredData
       .filter((item) => {
         const s = item.Status?.toUpperCase() || '';
         if (statusFilter === 'pending' && s !== 'PENDING') return false;
         if (statusFilter === 'settled' && s !== 'SETTLED') return false;
-
-        if (!isDateInFilter(item.ShiftDate || item.CreatedAt)) return false;
 
         if (!searchQuery.trim()) return true;
         const q = searchQuery.toLowerCase();
@@ -392,7 +399,7 @@ export const EndAllocationsPage: React.FC = () => {
         if (diff !== 0) return diff;
         return (b.EndRouteDriverId || 0) - (a.EndRouteDriverId || 0);
       });
-  }, [endRouteDrivers, statusFilter, dateFilter, customStartDate, customEndDate, sortBy, searchQuery]);
+  }, [dateFilteredData, statusFilter, sortBy, searchQuery]);
 
   // Helper to extract amounts from backend API attributes or fallback remarks
   const parseSettlementAmounts = (item: EndRouteDriverItem | null) => {
@@ -824,9 +831,7 @@ export const EndAllocationsPage: React.FC = () => {
             </Group>
             <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
               ₹
-              {endRouteDrivers
-                .reduce((acc, item) => acc + parseSettlementAmounts(item).total, 0)
-                .toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {totalRouteCollections.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
           </div>
           <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
@@ -1664,7 +1669,7 @@ export const EndAllocationsPage: React.FC = () => {
                         display: 'inline-block',
                         transition: 'color 150ms ease' }}
                     >
-                      All ({endRouteDrivers.length})
+                      All ({dateFilteredData.length})
                     </span>
                   ),
                   value: 'all' },
