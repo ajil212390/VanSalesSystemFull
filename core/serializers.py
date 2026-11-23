@@ -1341,14 +1341,51 @@ class SalesLineSerializer(serializers.ModelSerializer):
 
 class SaleEditHistorySerializer(serializers.ModelSerializer):
     SalesId = serializers.IntegerField(source='Sales_id', read_only=True)
+    split_cash = serializers.SerializerMethodField()
+    split_bank = serializers.SerializerMethodField()
 
     class Meta:
         model = SaleEditHistory
         fields = [
             'EditId', 'Sales', 'SalesId', 'EditedBy', 'EditedAt',
             'OldGrandTotal', 'NewGrandTotal', 'OldPaymentMethod',
-            'NewPaymentMethod', 'Notes', 'CompanyId'
+            'NewPaymentMethod', 'Notes', 'CompanyId',
+            'split_cash', 'split_bank'
         ]
+
+    def get_split_cash(self, obj):
+        notes = obj.Notes or ''
+        m = re.search(r'(?:Cash|Csh)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)', notes, re.I)
+        if m:
+            try:
+                return float(m.group(1).replace(',', ''))
+            except (ValueError, TypeError):
+                pass
+        if getattr(obj, 'Sales', None) and getattr(obj.Sales, 'Notes', None):
+            m2 = re.search(r'(?:Cash|Csh)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)', obj.Sales.Notes, re.I)
+            if m2:
+                try:
+                    return float(m2.group(1).replace(',', ''))
+                except (ValueError, TypeError):
+                    pass
+        return None
+
+    def get_split_bank(self, obj):
+        notes = obj.Notes or ''
+        m = re.search(r'(?:Bank|UPI|Online)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)', notes, re.I)
+        if m:
+            try:
+                return float(m.group(1).replace(',', ''))
+            except (ValueError, TypeError):
+                pass
+        if getattr(obj, 'Sales', None) and getattr(obj.Sales, 'Notes', None):
+            m2 = re.search(r'(?:Bank|UPI|Online)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)', obj.Sales.Notes, re.I)
+            if m2:
+                try:
+                    return float(m2.group(1).replace(',', ''))
+                except (ValueError, TypeError):
+                    pass
+        return None
 
 
 class SalesSerializer(serializers.ModelSerializer):

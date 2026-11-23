@@ -115,11 +115,15 @@ const formatSaleEditHistory = (histories: any[] = [], currentGrandTotal?: number
   return parsed.map((item, idx) => {
     const rawNote = item.notes || '';
     const mPaid = rawNote.match(/(?:Paid|Collected)\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
-    const mCash = rawNote.match(/Cash\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
-    const mUpi = rawNote.match(/(?:UPI|Bank)\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+    const mCash = rawNote.match(/(?:Cash|Csh)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+    const mUpi = rawNote.match(/(?:UPI|Bank|Online)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
 
-    const splitCash = mCash ? parseFloat(mCash[1].replace(/,/g, '')) : undefined;
-    const splitBank = mUpi ? parseFloat(mUpi[1].replace(/,/g, '')) : undefined;
+    let splitCash = mCash ? parseFloat(mCash[1].replace(/,/g, '')) : undefined;
+    let splitBank = mUpi ? parseFloat(mUpi[1].replace(/,/g, '')) : undefined;
+
+    // Check backend serialized split fields
+    if (splitCash === undefined && item.raw?.split_cash != null) splitCash = Number(item.raw.split_cash);
+    if (splitBank === undefined && item.raw?.split_bank != null) splitBank = Number(item.raw.split_bank);
 
     let parsedPaid: number | undefined = undefined;
     if (mPaid) {
@@ -153,17 +157,61 @@ const formatSaleEditHistory = (histories: any[] = [], currentGrandTotal?: number
       balanceDue = billAmount - paidAmount;
     }
 
-    // Payment Mode: detect from -> to
-    const toPaymentMethod = item.newPaymentMethod || 'Cash';
-    let fromPaymentMethod = item.oldPaymentMethod;
-    if (!fromPaymentMethod || fromPaymentMethod.trim() === '' || fromPaymentMethod.toUpperCase() === toPaymentMethod.toUpperCase()) {
-      if (toPaymentMethod.toUpperCase() === 'SPLIT') {
-        fromPaymentMethod = 'Cash';
+    // Payment Mode: clean format and detect from -> to
+    const normalizePm = (pm?: string) => {
+      if (!pm) return '';
+      const upper = pm.trim().toUpperCase();
+      if (upper === 'UPI' || upper === 'BANK' || upper === 'ONLINE') return 'Bank';
+      if (upper === 'CASH') return 'Cash';
+      if (upper === 'CREDIT') return 'Credit';
+      if (upper === 'SPLIT') return 'Split';
+      return pm.trim();
+    };
+
+    const toPaymentMethod = normalizePm(item.newPaymentMethod) || 'Cash';
+    let fromPaymentMethod = normalizePm(item.oldPaymentMethod);
+    const isSplitMode = toPaymentMethod.toUpperCase() === 'SPLIT' || (item.newPaymentMethod || '').toUpperCase() === 'SPLIT' || (saleObj?.PaymentMethod || '').toUpperCase() === 'SPLIT';
+
+    if (!fromPaymentMethod || fromPaymentMethod.toUpperCase() === toPaymentMethod.toUpperCase()) {
+      if (isSplitMode) {
+        const rawCombined = `${rawNote} ${item.raw?.Notes || ''} ${saleObj?.Notes || ''}`.toLowerCase();
+        if (rawCombined.includes('from bank') || rawCombined.includes('bank to split') || rawCombined.includes('upi to split')) {
+          fromPaymentMethod = 'Bank';
+        } else {
+          fromPaymentMethod = 'Cash';
+        }
       } else {
         fromPaymentMethod = toPaymentMethod;
       }
     }
     const paymentModeChanged = fromPaymentMethod.toUpperCase() !== toPaymentMethod.toUpperCase();
+
+    // If split mode, ensure splitCash and splitBank are resolved from saleObj or notes
+    if (isSplitMode) {
+      if (splitCash === undefined && saleObj?.cash_amount != null && Number(saleObj.cash_amount) > 0) {
+        splitCash = Number(saleObj.cash_amount);
+      }
+      if (splitBank === undefined && (saleObj?.upi_amount != null || saleObj?.bank_amount != null)) {
+        const b = Number(saleObj?.upi_amount || saleObj?.bank_amount || 0);
+        if (b > 0) splitBank = b;
+      }
+
+      const saleNote = saleObj?.Notes || saleObj?.Narration || '';
+      const sc = saleNote.match(/(?:Cash|Csh)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+      const sb = saleNote.match(/(?:UPI|Bank|Online)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+      if (splitCash === undefined && sc) splitCash = parseFloat(sc[1].replace(/,/g, ''));
+      if (splitBank === undefined && sb) splitBank = parseFloat(sb[1].replace(/,/g, ''));
+
+      // If still missing, divide paidAmount 50/50 fallback
+      if (splitCash === undefined && splitBank === undefined && paidAmount > 0) {
+        splitCash = Math.round((paidAmount / 2) * 100) / 100;
+        splitBank = Math.round((paidAmount - splitCash) * 100) / 100;
+      } else if (splitCash !== undefined && splitBank === undefined && paidAmount >= splitCash) {
+        splitBank = Math.round((paidAmount - splitCash) * 100) / 100;
+      } else if (splitBank !== undefined && splitCash === undefined && paidAmount >= splitBank) {
+        splitCash = Math.round((paidAmount - splitBank) * 100) / 100;
+      }
+    }
 
     // Cylinders: check if quantities changed
     const totalDeliv = saleObj?.TotalDeliveredQty ?? 0;
@@ -181,28 +229,35 @@ const formatSaleEditHistory = (histories: any[] = [], currentGrandTotal?: number
     let actionTitle = 'Invoice Updated';
     let actionSummary = '';
 
+    const splitDetailStr = (isSplitMode && (splitCash !== undefined || splitBank !== undefined))
+      ? ` (Cash: ₹${(splitCash || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}, Bank: ₹${(splitBank || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })})`
+      : '';
+
     if (paidAmountChanged && paidAmount > 0) {
       if (excessAdvance > 0) {
         actionType = 'PAYMENT_COLLECTION';
-        actionTitle = 'Payment & Advance Collected';
-        actionSummary = `Payment collected: ₹${oldPaidAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })} ➔ ₹${paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })}. Excess ₹${excessAdvance.toLocaleString('en-IN', { minimumFractionDigits: 0 })} recorded as Advance.`;
+        actionTitle = paymentModeChanged ? 'Payment Mode & Advance Updated' : 'Payment & Advance Collected';
+        const modeDesc = paymentModeChanged ? ` via ${fromPaymentMethod} ➔ Split${splitDetailStr}` : (splitDetailStr ? ` via Split${splitDetailStr}` : '');
+        actionSummary = `Payment collected: ₹${oldPaidAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })} ➔ ₹${paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })}${modeDesc}. Excess ₹${excessAdvance.toLocaleString('en-IN', { minimumFractionDigits: 0 })} recorded as Advance.`;
       } else if (balanceDue > 0) {
         actionType = 'PAYMENT_COLLECTION';
-        actionTitle = 'Partial Payment Collected';
-        actionSummary = `Payment collected: ₹${paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })} against bill of ₹${billAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })}. Balance ₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 0 })} pending.`;
+        actionTitle = paymentModeChanged ? 'Payment Mode & Partial Paid' : 'Partial Payment Collected';
+        const modeDesc = paymentModeChanged ? ` via ${fromPaymentMethod} ➔ Split${splitDetailStr}` : (splitDetailStr ? ` via Split${splitDetailStr}` : '');
+        actionSummary = `Payment collected: ₹${paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })}${modeDesc} against bill of ₹${billAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })}. Balance ₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 0 })} pending.`;
       } else {
         actionType = 'PAYMENT_COLLECTION';
-        actionTitle = 'Full Payment Collected';
-        actionSummary = `Payment collected: ₹${paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })} (Full Bill).`;
+        actionTitle = paymentModeChanged ? 'Payment Mode Updated' : 'Full Payment Collected';
+        const modeDesc = paymentModeChanged ? ` via ${fromPaymentMethod} ➔ Split${splitDetailStr}` : (splitDetailStr ? ` via Split${splitDetailStr}` : '');
+        actionSummary = `Payment collected: ₹${paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 0 })}${modeDesc} (Full Bill).`;
       }
+    } else if (paymentModeChanged) {
+      actionType = 'PAYMENT_MODE_CHANGED';
+      actionTitle = 'Payment Mode Changed';
+      actionSummary = `Payment mode changed from ${fromPaymentMethod} ➔ ${toPaymentMethod}${splitDetailStr}.`;
     } else if (amountChanged) {
       actionType = 'BILL_REVISED';
       actionTitle = 'Bill Amount Revised';
       actionSummary = `Bill total revised from ₹${item.oldTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} to ₹${item.newTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.`;
-    } else if (paymentModeChanged) {
-      actionType = 'PAYMENT_MODE_CHANGED';
-      actionTitle = 'Payment Mode Changed';
-      actionSummary = `Payment mode changed from ${fromPaymentMethod} to ${toPaymentMethod}.`;
     } else {
       actionSummary = item.notes || 'Invoice details updated by driver.';
     }
@@ -1931,16 +1986,36 @@ export const SalesListPage: React.FC = () => {
           <Stack gap="md">
             {/* Summary Information Card */}
             {(() => {
-              const histories = formatSaleEditHistory(historySale.edit_history, historySale.GrandTotal);
+              const histories = formatSaleEditHistory(historySale.edit_history, historySale.GrandTotal, historySale);
               const latestHist = histories.length > 0 ? histories[histories.length - 1] : null;
               const displayPaid = latestHist?.paidAmount ?? Number(historySale.PaidAmount ?? historySale.GrandTotal ?? 0);
               const grandTot = Number(historySale.GrandTotal ?? 0);
               const excessAdv = displayPaid > grandTot ? (displayPaid - grandTot) : 0;
               const pendingBal = grandTot > displayPaid ? (grandTot - displayPaid) : 0;
 
+              const isSplit = (historySale.PaymentMethod || '').toUpperCase() === 'SPLIT';
+              let topCash = historySale.cash_amount;
+              let topBank = historySale.upi_amount ?? historySale.bank_amount;
+              if (isSplit && (topCash === undefined || topBank === undefined)) {
+                if (latestHist?.splitCash !== undefined || latestHist?.splitBank !== undefined) {
+                  topCash = latestHist.splitCash;
+                  topBank = latestHist.splitBank;
+                } else {
+                  const note = historySale.Notes || historySale.Narration || historySale.EditReason || '';
+                  const sc = note.match(/(?:Cash|Csh)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+                  const sb = note.match(/(?:UPI|Bank|Online)\s*[:\s=]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+                  if (sc) topCash = parseFloat(sc[1].replace(/,/g, ''));
+                  if (sb) topBank = parseFloat(sb[1].replace(/,/g, ''));
+                  if (topCash === undefined && topBank === undefined && displayPaid > 0) {
+                    topCash = Math.round((displayPaid / 2) * 100) / 100;
+                    topBank = Math.round((displayPaid - topCash) * 100) / 100;
+                  }
+                }
+              }
+
               return (
                 <Box p="md" style={{ backgroundColor: '#fdf2f4', borderRadius: 10, border: '1px solid #f5c2cb' }}>
-                  <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+                  <SimpleGrid cols={{ base: 2, sm: 5 }} spacing="sm">
                     <div>
                       <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         CUSTOMER
@@ -1990,6 +2065,19 @@ export const SalesListPage: React.FC = () => {
                         <Badge size="xs" variant="outline" style={{ color: '#b91c1c', borderColor: '#fca5a5', backgroundColor: '#ffffff', marginTop: 2, fontSize: 9 }}>
                           ₹{pendingBal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Due
                         </Badge>
+                      )}
+                    </div>
+                    <div>
+                      <Text size="10px" fw={700} c="#64748b" style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        PAYMENT MODE
+                      </Text>
+                      <Badge size="xs" variant="outline" style={{ color: '#800020', borderColor: '#f5c2cb', backgroundColor: '#ffffff', fontWeight: 800 }}>
+                        {(historySale.PaymentMethod || 'CASH').toUpperCase()}
+                      </Badge>
+                      {isSplit && (topCash !== undefined || topBank !== undefined) && (
+                        <Text size="10px" fw={700} c="#9a3412" mt={2} style={{ lineHeight: 1.2 }}>
+                          Cash: ₹{(topCash || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })} &bull; Bank: ₹{(topBank || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}
+                        </Text>
                       )}
                     </div>
                   </SimpleGrid>
@@ -2052,25 +2140,52 @@ export const SalesListPage: React.FC = () => {
                         <Table.Td style={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                           {eh.paymentModeChanged ? (
                             <div>
-                              <Group gap={4} wrap="nowrap">
+                              <Group gap={4} wrap="nowrap" mb={3}>
                                 <Text size="xs" c="dimmed" td="line-through">{eh.fromPaymentMethod}</Text>
                                 <IconArrowRight size={11} color="#800020" />
                                 <Badge size="xs" variant="outline" style={{ color: '#800020', borderColor: '#f5c2cb', backgroundColor: '#fdf2f4', fontWeight: 800 }}>
-                                  {eh.toPaymentMethod}
+                                  {eh.toPaymentMethod.toUpperCase()}
                                 </Badge>
                               </Group>
-                              {(eh.splitCash !== undefined || eh.splitBank !== undefined) && (
-                                <Text size="10px" c="#64748b" mt={2}>
-                                  Cash: ₹{eh.splitCash?.toLocaleString('en-IN', { minimumFractionDigits: 0 }) || 0} &bull; Bank: ₹{eh.splitBank?.toLocaleString('en-IN', { minimumFractionDigits: 0 }) || 0}
-                                </Text>
+                              {eh.toPaymentMethod.toUpperCase() === 'SPLIT' && (eh.splitCash !== undefined || eh.splitBank !== undefined) && (
+                                <Box
+                                  p="2px 6px"
+                                  style={{
+                                    backgroundColor: '#fff7ed',
+                                    borderRadius: 4,
+                                    border: '1px solid #fed7aa',
+                                    display: 'inline-block'
+                                  }}
+                                >
+                                  <Text size="10px" fw={700} style={{ color: '#9a3412', lineHeight: 1.2 }}>
+                                    Cash: ₹{eh.splitCash?.toLocaleString('en-IN', { minimumFractionDigits: 0 }) || 0} &bull; Bank: ₹{eh.splitBank?.toLocaleString('en-IN', { minimumFractionDigits: 0 }) || 0}
+                                  </Text>
+                                </Box>
                               )}
                             </div>
                           ) : (
                             <div>
                               <Badge size="xs" variant="outline" style={{ color: '#334155', borderColor: '#cbd5e1', backgroundColor: '#f8fafc', fontWeight: 600 }}>
-                                {eh.toPaymentMethod}
+                                {eh.toPaymentMethod.toUpperCase()}
                               </Badge>
-                              <Text size="10px" c="dimmed" mt={1}>Mode Unchanged</Text>
+                              {eh.toPaymentMethod.toUpperCase() === 'SPLIT' && (eh.splitCash !== undefined || eh.splitBank !== undefined) ? (
+                                <Box
+                                  p="2px 6px"
+                                  mt={3}
+                                  style={{
+                                    backgroundColor: '#fff7ed',
+                                    borderRadius: 4,
+                                    border: '1px solid #fed7aa',
+                                    display: 'inline-block'
+                                  }}
+                                >
+                                  <Text size="10px" fw={700} style={{ color: '#9a3412', lineHeight: 1.2 }}>
+                                    Cash: ₹{eh.splitCash?.toLocaleString('en-IN', { minimumFractionDigits: 0 }) || 0} &bull; Bank: ₹{eh.splitBank?.toLocaleString('en-IN', { minimumFractionDigits: 0 }) || 0}
+                                  </Text>
+                                </Box>
+                              ) : (
+                                <Text size="10px" c="dimmed" mt={1}>Mode Unchanged</Text>
+                              )}
                             </div>
                           )}
                         </Table.Td>

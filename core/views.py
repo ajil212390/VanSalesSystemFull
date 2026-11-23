@@ -7452,19 +7452,26 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             if is_credit:
                 sale.PaidAmount = Decimal('0.00')
                 sale.Notes = f"Payment: CREDIT | Customer: {cust_label}"
+                split_breakdown = ""
             elif is_split:
                 split_sum = cash_amount + upi_amount
                 effective_split = split_sum if split_sum > Decimal('0.00') else collected_amount
+                if cash_amount == Decimal('0.00') and upi_amount == Decimal('0.00') and effective_split > Decimal('0.00'):
+                    cash_amount = (effective_split / Decimal('2.00')).quantize(Decimal('0.01'))
+                    upi_amount = effective_split - cash_amount
                 sale.PaidAmount = effective_split
                 sale.Notes = f"Payment: SPLIT (Cash: ₹{cash_amount:,.2f}, UPI: ₹{upi_amount:,.2f}) | Customer: {cust_label}"
+                split_breakdown = f" (Cash: ₹{cash_amount:,.2f}, Bank: ₹{upi_amount:,.2f})"
             else:
                 sale.PaidAmount = collected_amount
                 sale.Notes = f"Payment: {new_payment_method or sale.PaymentMethod} | Customer: {cust_label}"
+                split_breakdown = ""
 
             sale.IsEdited = True
             sale.EditedBy = editor_name
             sale.EditedAt = timezone.now()
-            sale.EditReason = data.get('reason') or data.get('edit_reason') or f"Amount modified: Paid ₹{sale.PaidAmount}, Bill Total ₹{sale.GrandTotal}"
+            default_reason = f"Amount modified: Paid ₹{sale.PaidAmount}{split_breakdown}, Bill Total ₹{sale.GrandTotal}"
+            sale.EditReason = data.get('reason') or data.get('edit_reason') or default_reason
             sale.save()
 
             SaleEditHistory.objects.create(
