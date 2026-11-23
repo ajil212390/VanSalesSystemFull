@@ -612,17 +612,6 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                             ),
                           ],
                         ),
-                        if (order.pendingBalance > 0.01 && !isEmptyOnly) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            'Pending: ₹${order.pendingBalance.toStringAsFixed(0)}',
-                            style: GoogleFonts.inter(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFB45309),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),

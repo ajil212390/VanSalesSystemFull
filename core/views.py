@@ -1971,8 +1971,25 @@ class LedgerViewSet(viewsets.ModelViewSet):
         if route_id:
             debtor_ledgers = debtor_ledgers.filter(Route_id=route_id)
 
+        adv_map = {
+            row['CustomerLedger']: float(row['tot_adv'] or 0)
+            for row in CustomerAdvance.objects.filter(
+                CompanyId=company_id,
+                Status__in=['ACTIVE', 'PARTIALLY_UTILIZED'],
+                RemainingAmount__gt=0
+            ).values('CustomerLedger').annotate(tot_adv=Sum('RemainingAmount'))
+        }
+
         data = []
         for l in debtor_ledgers:
+            adv_rem = adv_map.get(l.LedgerId, 0.0)
+            cur_bal = float(l.CurrentBalance or 0)
+            # If customer has active advance, net position accounts for advance credit
+            if adv_rem > 0:
+                effective_balance = cur_bal - adv_rem
+            else:
+                effective_balance = cur_bal
+
             data.append({
                 'LedgerId': l.LedgerId,
                 'LedgerName': l.LedgerName,
@@ -1985,8 +2002,9 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 'MobileNumber': getattr(l, 'MobileNumber', '') or '',
                 'PhoneNumber': getattr(l, 'PhoneNumber', '') or '',
                 'AddressLine1': getattr(l, 'AddressLine1', '') or '',
-                'CurrentBalance': float(l.CurrentBalance or 0),
-                'BalanceType': 'DR' if (l.CurrentBalance or 0) > 0 else ('CR' if (l.CurrentBalance or 0) < 0 else '')
+                'CurrentBalance': effective_balance,
+                'AdvanceBalance': adv_rem,
+                'BalanceType': 'DR' if effective_balance > 0 else ('CR' if effective_balance < 0 else '')
             })
         return Response(data)
 

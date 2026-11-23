@@ -522,16 +522,16 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFDF2F4),
+                          color: c.outstanding > 0 ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFF5C2CB)),
+                          border: Border.all(color: c.outstanding > 0 ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC)),
                         ),
                         child: Text(
-                          '\u20B9${c.outstanding.abs().toStringAsFixed(0)} ${c.outstanding > 0 ? "Dr" : "Cr"}',
+                          c.outstanding > 0 ? 'Due: ₹${c.outstanding.abs().toStringAsFixed(0)}' : 'Adv: ₹${c.outstanding.abs().toStringAsFixed(0)}',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFF800020),
+                            color: c.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
                           ),
                         ),
                       ),
@@ -2760,12 +2760,20 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
                                     ),
                                   ),
                                   if (c.outstanding != 0)
-                                    Text(
-                                      '₹${c.outstanding.toStringAsFixed(0)}',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: c.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: c.outstanding > 0 ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: c.outstanding > 0 ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC)),
+                                      ),
+                                      child: Text(
+                                        c.outstanding > 0 ? 'Due ₹${c.outstanding.abs().toStringAsFixed(0)}' : 'Adv ₹${c.outstanding.abs().toStringAsFixed(0)}',
+                                        style: GoogleFonts.inter(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: c.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                                        ),
                                       ),
                                     ),
                                 ],

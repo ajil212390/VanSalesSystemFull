@@ -1019,6 +1019,7 @@ class AppState extends ChangeNotifier {
           }
           lastSyncTime = DateTime.now();
           notifyListeners();
+          fetchCustomers();
         }
       } catch (e) {
         debugPrint('Live backend sale sync error: $e');
