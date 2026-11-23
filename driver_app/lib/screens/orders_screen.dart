@@ -1104,8 +1104,8 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
       selectedMethod = 'UPI';
     } else if (mLow == 'split') {
       selectedMethod = 'Split';
-    } else if (mLow == 'credit') {
-      selectedMethod = 'Credit';
+    } else {
+      selectedMethod = 'Cash';
     }
 
     final amountController = TextEditingController(text: order.amount.toStringAsFixed(0));
@@ -1508,7 +1508,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         ),
                         const SizedBox(height: 10),
                         Row(
-                          children: ['Cash', 'UPI', 'Split', 'Credit'].map((m) {
+                          children: ['Cash', 'UPI', 'Split'].map((m) {
                             final isSel = selectedMethod.toLowerCase() == m.toLowerCase();
                             final label = m == 'UPI' ? 'UPI' : m;
                             return Expanded(
@@ -1518,9 +1518,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                   onTap: () {
                                     setModalState(() {
                                       selectedMethod = m;
-                                      if (m == 'Credit') {
-                                        amountController.text = '0';
-                                      } else if (m == 'Split') {
+                                      if (m == 'Split') {
                                         final half = (computedTotal / 2).roundToDouble();
                                         if (splitCashController.text.isEmpty) {
                                           splitCashController.text = half.toStringAsFixed(0);
@@ -1642,31 +1640,6 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                             ),
                           ),
                         ],
-
-                        // Credit Notice
-                        if (selectedMethod.toLowerCase() == 'credit') ...[
-                          const SizedBox(height: 10),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF2F2),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFFECACA)),
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.info_outline_rounded, size: 14, color: Color(0xFF800020)),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    'Credit Delivery: ₹0 collected. Total ₹${computedTotal.toStringAsFixed(0)} will be added to customer pending balance.',
-                                    style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF800020), fontWeight: FontWeight.w600),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -1707,11 +1680,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                   double? cashAmt;
                                   double? upiAmt;
 
-                                  if (selectedMethod.toLowerCase() == 'credit') {
-                                    parsedAmt = 0;
-                                    cashAmt = 0;
-                                    upiAmt = 0;
-                                  } else if (selectedMethod.toLowerCase() == 'split') {
+                                  if (selectedMethod.toLowerCase() == 'split') {
                                     cashAmt = double.tryParse(splitCashController.text.trim()) ?? 0;
                                     upiAmt = double.tryParse(splitUpiController.text.trim()) ?? 0;
                                     parsedAmt = cashAmt + upiAmt;

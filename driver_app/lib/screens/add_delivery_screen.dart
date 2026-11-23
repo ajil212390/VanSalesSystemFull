@@ -522,16 +522,16 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: c.outstanding > 0 ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                          color: c.outstanding > 0 ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: c.outstanding > 0 ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC)),
+                          border: Border.all(color: c.outstanding > 0 ? const Color(0xFFF5C2CB) : const Color(0xFFCBD5E1)),
                         ),
                         child: Text(
                           c.outstanding > 0 ? 'Due: ₹${c.outstanding.abs().toStringAsFixed(0)}' : 'Adv: ₹${c.outstanding.abs().toStringAsFixed(0)}',
                           style: GoogleFonts.inter(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: c.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                            color: c.outstanding > 0 ? const Color(0xFF800020) : const Color(0xFF475569),
                           ),
                         ),
                       ),
@@ -2038,7 +2038,7 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedCustomer = widget.parentState.selectedCustomer;
+    _selectedCustomer = null;
     _fetchPackages();
   }
 
@@ -2625,21 +2625,21 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                        color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC),
+                          color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFF5C2CB) : const Color(0xFFCBD5E1),
                         ),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            _selectedCustomer!.outstanding > 0 ? 'Due' : 'Credit',
+                            _selectedCustomer!.outstanding > 0 ? 'Due' : 'Advance',
                             style: GoogleFonts.inter(
                               fontSize: 9.5,
                               fontWeight: FontWeight.w600,
-                              color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                              color: _selectedCustomer!.outstanding > 0 ? const Color(0xFF800020) : const Color(0xFF475569),
                             ),
                           ),
                           Text(
@@ -2647,7 +2647,7 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
                             style: GoogleFonts.inter(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w800,
-                              color: _selectedCustomer!.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                              color: _selectedCustomer!.outstanding > 0 ? const Color(0xFF800020) : const Color(0xFF0F172A),
                             ),
                           ),
                         ],
@@ -2763,16 +2763,16 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: c.outstanding > 0 ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                                        color: c.outstanding > 0 ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
                                         borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: c.outstanding > 0 ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC)),
+                                        border: Border.all(color: c.outstanding > 0 ? const Color(0xFFF5C2CB) : const Color(0xFFCBD5E1)),
                                       ),
                                       child: Text(
                                         c.outstanding > 0 ? 'Due ₹${c.outstanding.abs().toStringAsFixed(0)}' : 'Adv ₹${c.outstanding.abs().toStringAsFixed(0)}',
                                         style: GoogleFonts.inter(
                                           fontSize: 10.5,
                                           fontWeight: FontWeight.w700,
-                                          color: c.outstanding > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                                          color: c.outstanding > 0 ? const Color(0xFF800020) : const Color(0xFF475569),
                                         ),
                                       ),
                                     ),
