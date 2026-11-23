@@ -4266,18 +4266,12 @@ def generate_ledger_statement_pdf(
         ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
     ]))
 
-    story.append(rep_hdr_table)
-    story.append(HRFlowable(width="100%", thickness=1, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=5))
-
     summary_grid = Table([[sm_table, '', r_table]], colWidths=[185, 140, 220])
     summary_grid.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))
-
-    story.append(summary_grid)
-    story.append(Spacer(1, 10))
 
     # 4. FOOTER NOTE & SIGNATURE
     footer_data = [
@@ -4302,7 +4296,16 @@ def generate_ledger_statement_pdf(
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))
-    story.append(footer_table)
+
+    # Keep all closing elements together on the final page so they never orphan or split
+    closing_elements = [
+        rep_hdr_table,
+        HRFlowable(width="100%", thickness=1, color=PRIMARY_COLOR, spaceBefore=2, spaceAfter=5),
+        summary_grid,
+        Spacer(1, 12),
+        footer_table
+    ]
+    story.append(KeepTogether(closing_elements))
 
     doc.build(story, canvasmaker=NumberedCanvas)
     return buf.getvalue()
