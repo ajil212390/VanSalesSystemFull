@@ -131,15 +131,14 @@ export const ReceiptNotesPage: React.FC = () => {
     } });
 
   // Multi-Mode / Movement Purpose:
-  // 1. VAN_TO_GODOWN: Van shift-end returns to godown
-  // 2. SUPPLIER_REFILL: Outward empty cylinders sent to suppliers for refilling
-  // 3. GODOWN_TRANSFER: Stock transfer between godowns
-  type ReceiptMode = 'VAN_TO_GODOWN' | 'SUPPLIER_REFILL' | 'GODOWN_TRANSFER';
-  const [createMode, setCreateMode] = useState<ReceiptMode>('VAN_TO_GODOWN');
-  const [createSourceType, setCreateSourceType] = useState<'VAN' | 'GODOWN'>('VAN');
-  const [createSourceId, setCreateSourceId] = useState<string | null>(null);
-  const [createDestType, setCreateDestType] = useState<'GODOWN' | 'SUPPLIER' | 'VAN'>('GODOWN');
-  const [createDestId, setCreateDestId] = useState<string | null>('1');
+  // 1. SUPPLIER_REFILL: Outward empty cylinders sent to suppliers for refilling
+  // 2. VAN_TO_GODOWN: Van shift-end returns to godown (e.g. cross-depot unloads)
+  type ReceiptMode = 'SUPPLIER_REFILL' | 'VAN_TO_GODOWN';
+  const [createMode, setCreateMode] = useState<ReceiptMode>('SUPPLIER_REFILL');
+  const [createSourceType, setCreateSourceType] = useState<'VAN' | 'GODOWN'>('GODOWN');
+  const [createSourceId, setCreateSourceId] = useState<string | null>('1');
+  const [createDestType, setCreateDestType] = useState<'GODOWN' | 'SUPPLIER'>('SUPPLIER');
+  const [createDestId, setCreateDestId] = useState<string | null>(null);
 
   // Form State for "Add Receipt Note"
   const [createAllocation, setCreateAllocation] = useState<string | null>(null);
@@ -261,13 +260,13 @@ export const ReceiptNotesPage: React.FC = () => {
   >([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
 
   const handleOpenCreateModal = () => {
-    setCreateMode('VAN_TO_GODOWN');
-    setCreateSourceType('VAN');
-    const firstAlloc = allocationOptions[0]?.value || null;
-    setCreateSourceId(firstAlloc);
-    setCreateAllocation(firstAlloc);
-    setCreateDestType('GODOWN');
-    setCreateDestId('1');
+    setCreateMode('SUPPLIER_REFILL');
+    setCreateSourceType('GODOWN');
+    setCreateSourceId('1');
+    setCreateAllocation(null);
+    setCreateDestType('SUPPLIER');
+    const firstSup = supplierOptions[0]?.value || null;
+    setCreateDestId(firstSup);
     setCreateDate(new Date().toISOString().split('T')[0]);
     setCreateRemarks('');
     setCreateLines([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
@@ -277,27 +276,20 @@ export const ReceiptNotesPage: React.FC = () => {
   const handleModeChange = (val: string) => {
     const m = val as ReceiptMode;
     setCreateMode(m);
-    if (m === 'VAN_TO_GODOWN') {
-      setCreateSourceType('VAN');
-      const firstAlloc = allocationOptions[0]?.value || null;
-      setCreateSourceId(firstAlloc);
-      setCreateAllocation(firstAlloc);
-      setCreateDestType('GODOWN');
-      setCreateDestId('1');
-    } else if (m === 'SUPPLIER_REFILL') {
+    if (m === 'SUPPLIER_REFILL') {
       setCreateSourceType('GODOWN');
       setCreateSourceId('1');
       setCreateAllocation(null);
       setCreateDestType('SUPPLIER');
       const firstSup = supplierOptions[0]?.value || null;
       setCreateDestId(firstSup);
-    } else if (m === 'GODOWN_TRANSFER') {
-      setCreateSourceType('GODOWN');
-      setCreateSourceId('1');
-      setCreateAllocation(null);
+    } else {
+      setCreateSourceType('VAN');
+      const firstAlloc = allocationOptions[0]?.value || null;
+      setCreateSourceId(firstAlloc);
+      setCreateAllocation(firstAlloc);
       setCreateDestType('GODOWN');
-      const otherGodown = godownOptions.find((g) => g.value !== '1');
-      setCreateDestId(otherGodown ? otherGodown.value : '2');
+      setCreateDestId('1');
     }
   };
 
@@ -394,9 +386,6 @@ export const ReceiptNotesPage: React.FC = () => {
       if (createMode === 'SUPPLIER_REFILL' && !createDestId) {
         throw new Error('Please select a supplier.');
       }
-      if (createMode === 'GODOWN_TRANSFER' && (!createSourceId || !createDestId)) {
-        throw new Error('Please select both source and destination godowns.');
-      }
 
       const items = createLines
         .filter((l) => l.productId > 0 && ((Number(l.filledQty) || 0) > 0 || (Number(l.emptyQty) || 0) > 0))
@@ -414,7 +403,7 @@ export const ReceiptNotesPage: React.FC = () => {
         source_id: createSourceId ? Number(createSourceId) : (createAllocation ? Number(createAllocation) : 1),
         destination_type: createDestType,
         destination_id: createDestId ? Number(createDestId) : 1,
-        movement_purpose: createMode === 'SUPPLIER_REFILL' ? 'SUPPLIER_REFILL' : (createMode === 'GODOWN_TRANSFER' ? 'GODOWN_TRANSFER' : 'RETURN'),
+        movement_purpose: createMode === 'SUPPLIER_REFILL' ? 'SUPPLIER_REFILL' : 'RETURN',
         allocation_id: createSourceType === 'VAN' && createSourceId ? Number(createSourceId) : (createAllocation ? Number(createAllocation) : 1),
         delivery_date: createDate,
         items,
@@ -432,6 +421,10 @@ export const ReceiptNotesPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['godown-stock'] });
       queryClient.invalidateQueries({ queryKey: ['van-management'] });
       setIsCreateModalOpen(false);
+      const noteId = data.receiptNoteId || data.id;
+      if (noteId && createMode === 'SUPPLIER_REFILL') {
+        window.open(`${apiClient.defaults.baseURL}/receipt-notes/${noteId}/pdf/?_t=${Date.now()}`, '_blank');
+      }
       notifications.show({
         title: createMode === 'SUPPLIER_REFILL' ? 'Refill Challan Created' : 'Receipt Note Created',
         message: data.message || 'Challan / Receipt note created successfully.',
@@ -607,17 +600,13 @@ export const ReceiptNotesPage: React.FC = () => {
               <div>
                 <Text fw={700} style={{ color: '#800020', fontSize: 16 }}>
                   {createMode === 'SUPPLIER_REFILL'
-                    ? 'Outward Empty Cylinder Refill Challan'
-                    : createMode === 'GODOWN_TRANSFER'
-                    ? 'Internal Godown Stock Transfer Note'
-                    : 'Van Shift Return Receipt Note'}
+                    ? 'Outward Empty Cylinder Refill Challan (To Supplier)'
+                    : 'Van Stock Return Receipt Note'}
                 </Text>
                 <Text size="xs" c="dimmed">
                   {createMode === 'SUPPLIER_REFILL'
-                    ? 'Dispatch empty cylinders to supplier for refilling.'
-                    : createMode === 'GODOWN_TRANSFER'
-                    ? 'Transfer stock between warehouse godowns.'
-                    : `Record unsold full & empty cylinders returned by route delivery vans into ${user?.godown_name || 'Central Godown'}.`}
+                    ? 'Dispatch empty cylinders from godown to supplier for refilling. Generates official Refill Challan PDF.'
+                    : `Receive unsold full & empty cylinders returned by route delivery van into ${user?.godown_name || 'Central Godown'}.`}
                 </Text>
               </div>
               <CloseButton
@@ -639,9 +628,8 @@ export const ReceiptNotesPage: React.FC = () => {
                   radius="xl"
                   color="burgundy"
                   data={[
-                    { label: 'Van to Godown Return', value: 'VAN_TO_GODOWN' },
                     { label: 'Outward to Supplier (Refilling)', value: 'SUPPLIER_REFILL' },
-                    { label: 'Godown Transfer', value: 'GODOWN_TRANSFER' },
+                    { label: 'Van to Godown Return', value: 'VAN_TO_GODOWN' },
                   ]}
                   styles={{
                     root: {
@@ -684,7 +672,7 @@ export const ReceiptNotesPage: React.FC = () => {
                   />
                 ) : (
                   <Select
-                    label="Source Godown"
+                    label="Dispatching Godown"
                     placeholder="Select Source Godown"
                     data={godownOptions}
                     value={createSourceId}
@@ -698,7 +686,7 @@ export const ReceiptNotesPage: React.FC = () => {
                 {/* Destination Selection */}
                 {createMode === 'SUPPLIER_REFILL' ? (
                   <Select
-                    label="Supplier"
+                    label="Supplier (Refilling Plant)"
                     placeholder="Select Supplier (Super Gas, Hari Gas...)"
                     data={supplierOptions}
                     value={createDestId}
@@ -706,17 +694,6 @@ export const ReceiptNotesPage: React.FC = () => {
                     searchable
                     clearable
                     nothingFoundMessage="No suppliers found"
-                    comboboxProps={{ withinPortal: true, zIndex: 1000 }}
-                    required
-                  />
-                ) : createMode === 'GODOWN_TRANSFER' ? (
-                  <Select
-                    label="Destination Godown"
-                    placeholder="Select Target Godown"
-                    data={godownOptions}
-                    value={createDestId}
-                    onChange={(val) => setCreateDestId(val)}
-                    searchable
                     comboboxProps={{ withinPortal: true, zIndex: 1000 }}
                     required
                   />
@@ -1463,15 +1440,25 @@ export const ReceiptNotesPage: React.FC = () => {
               <Table.Tbody>
                 {filteredNotes.map((note) => {
                   const isPending = note.status === 'pending';
+                  const isSuppRefill = note.deliveryNoteRef === 'Refill Outward' ||
+                    (note.notes || '').includes('SUPPLIER REFILL') ||
+                    (note.vehicleNumber || '').includes('Supplier');
 
                   return (
                     <Table.Tr key={note.id} style={{ height: 46 }}>
                       {/* Note # & Time */}
                       <Table.Td>
                         <Stack gap={1}>
-                          <Text size="sm" fw={700} style={{ color: '#800020' }}>
-                            {note.noteNumber}
-                          </Text>
+                          <Group gap={6} align="center">
+                            <Text size="sm" fw={700} style={{ color: '#800020' }}>
+                              {note.noteNumber}
+                            </Text>
+                            {isSuppRefill && (
+                              <Badge size="xs" variant="light" styles={{ root: { backgroundColor: '#fff7ed', color: '#c2410c', borderColor: '#fed7aa', border: '1px solid', fontWeight: 700 } }}>
+                                REFILL
+                              </Badge>
+                            )}
+                          </Group>
                           <Group gap={4} wrap="nowrap">
                             <IconClock size={11} color="#64748b" />
                             <Text size="xs" c="dimmed">

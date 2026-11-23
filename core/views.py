@@ -8503,8 +8503,40 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
             lines_list = []
 
             rem_text = n.Remarks or ''
+            is_supp_refill = ('[SUPPLIER REFILL' in rem_text or 'Supplier' in rem_text) and not m_dn
 
-            if ref_dn:
+            if is_supp_refill:
+                ref_dn = None
+                dn_ref = 'Refill Outward'
+                dest_part = 'Supplier'
+                src_part = 'Godown'
+                if 'To:' in rem_text:
+                    try:
+                        dest_part = rem_text.split('To:')[1].split('•')[0].split('|')[0].strip()
+                    except Exception:
+                        pass
+                if 'From:' in rem_text:
+                    try:
+                        src_part = rem_text.split('From:')[1].split('•')[0].split('|')[0].strip()
+                    except Exception:
+                        pass
+                veh_no = 'Supplier Refill'
+                r_name = f"To: {dest_part}"
+                d_name = dest_part
+
+                for line in n.lines.all():
+                    p_name = line.Product.ProductName if line.Product else 'Gas Cylinder'
+                    q = int(line.Quantity)
+                    empty_breakdown.append({'product': p_name, 'qty': q})
+                    total_empties += q
+                    lines_list.append({
+                        'product_name': p_name,
+                        'LoadedQty': 0,
+                        'DeliveredQty': 0,
+                        'FilledQty': 0,
+                        'EmptyQty': q,
+                    })
+            elif ref_dn:
                 # Scoped sales for this delivery note shift
                 sales_qs = Sales.objects.filter(
                     CompanyId=company_id,
