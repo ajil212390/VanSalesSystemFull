@@ -4548,6 +4548,17 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return Response(results, status=status.HTTP_200_OK)
 
     def _post_voucher_for_payment(self, payment, party, amount, created_lines, alloc_instances, company_id, custom_payment_date=None, narration=None, is_customer_receipt=True):
+        if not party:
+            if payment and payment.PartyLedger:
+                party = payment.PartyLedger
+            else:
+                party = (
+                    Ledger.objects.filter(CompanyId=company_id, Group_id=21).first() or
+                    Ledger.objects.filter(CompanyId=company_id, Group__GroupName__icontains='debtor').first() or
+                    Ledger.objects.filter(CompanyId=company_id, LedgerName__icontains='Cash').first() or
+                    Ledger.objects.filter(CompanyId=company_id).first()
+                )
+
         advance_amt = Decimal('0.00')
         bill_alloc_sum = Decimal('0.00')
         explicit_adv_sum = Decimal('0.00')
@@ -4563,19 +4574,24 @@ class PaymentViewSet(viewsets.ModelViewSet):
             elif amount > bill_alloc_sum:
                 advance_amt = amount - bill_alloc_sum
 
-            if advance_amt > Decimal('0.00'):
+            if advance_amt > Decimal('0.00') and party:
                 if not CustomerAdvance.objects.filter(Payment=payment).exists():
                     safe_sync_sequence('CustomerAdvance', 'AdvanceId')
+                    adv_no = f"ADV-{payment.PaymentId:04d}"
+                    adv_seq = 1
+                    while CustomerAdvance.objects.filter(CompanyId=company_id, AdvanceNo=adv_no).exists():
+                        adv_no = f"ADV-{payment.PaymentId:04d}-{adv_seq}"
+                        adv_seq += 1
                     CustomerAdvance.objects.create(
                         CompanyId=company_id,
                         CustomerLedger=party,
                         Payment=payment,
-                        AdvanceNo=f"ADV-{payment.PaymentId:04d}",
+                        AdvanceNo=adv_no,
                         AdvanceDate=custom_payment_date or (payment.CreatedAt.date() if payment.CreatedAt else date.today()),
                         TotalAmount=advance_amt,
                         RemainingAmount=advance_amt,
                         Status='ACTIVE',
-                        Narration=f"Advance from {party.LedgerName} via Receipt #{payment.PaymentId}",
+                        Narration=f"Advance from {getattr(party, 'LedgerName', 'Customer')} via Receipt #{payment.PaymentId}",
                     )
 
         alloc_narr_parts = []
@@ -7242,27 +7258,57 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'status': sale.Status
                 })
 
+        # Collect identifiers of sales in this shift to exclude receipts already tied to these sales
+        shift_sale_identifiers = set()
+        for sale in sales_qs:
+            if sale.SalesNo:
+                shift_sale_identifiers.add(str(sale.SalesNo).strip().upper())
+            if sale.InvoiceNo:
+                shift_sale_identifiers.add(str(sale.InvoiceNo).strip().upper())
+
+        linked_pmt_ids = set()
+        if shift_sale_identifiers:
+            linked_pmt_ids = set(
+                BillwiseAllocation.objects.filter(
+                    ReferenceTable__in=['Receipt', 'Payment'],
+                    BillReference__in=shift_sale_identifiers
+                ).values_list('ReferenceId', flat=True)
+            )
+
         # Also include any standalone shift payments/receipts recorded for this delivery note or driver
-        existing_tickets = {str(r.get('ticketId') or '') for r in results}
+        existing_tickets = {str(r.get('ticketId') or '').upper() for r in results}
         dn_id = active_dn.DeliveryNoteId if active_dn else None
         driver_name = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
 
         pmt_q = Q()
         if dn_id:
             pmt_q |= Q(DeliveryNoteId=dn_id)
+
+        narr_q = Q()
         if driver_name:
-            pmt_q |= (Q(Narration__icontains=driver_name) & Q(CreatedAt__date=date.today()))
-        if active_dn and active_dn.CreatedAt:
-            pmt_q |= Q(CreatedAt__gte=active_dn.CreatedAt)
-        elif not active_dn:
-            pmt_q |= Q(CreatedAt__date=date.today())
+            narr_q |= Q(Narration__icontains=driver_name)
+        if alloc and alloc.Vehicle and alloc.Vehicle.VehicleNumber:
+            narr_q |= Q(Narration__icontains=str(alloc.Vehicle.VehicleNumber).strip())
+
+        if narr_q:
+            if active_dn and active_dn.CreatedAt:
+                pmt_q |= (narr_q & Q(CreatedAt__gte=active_dn.CreatedAt))
+            else:
+                pmt_q |= (narr_q & Q(CreatedAt__date=date.today()))
 
         if pmt_q:
             shift_payments = Payment.objects.filter(pmt_q).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
 
             for pmt in shift_payments:
+                if pmt.PaymentId in linked_pmt_ids:
+                    continue
+                p_narr = (pmt.Narration or '').upper()
+                if any(sid in p_narr for sid in shift_sale_identifiers if sid):
+                    continue
                 t_id = pmt.ReferenceNumber or pmt.PaymentNo or f"TREC-{pmt.PaymentId}"
-                if t_id in existing_tickets or (pmt.PaymentNo and pmt.PaymentNo in existing_tickets):
+                if t_id.upper() in existing_tickets or (pmt.PaymentNo and pmt.PaymentNo.upper() in existing_tickets):
+                    continue
+                if t_id.upper() in shift_sale_identifiers or (pmt.PaymentNo and pmt.PaymentNo.upper() in shift_sale_identifiers):
                     continue
                 c_amt = 0.0
                 u_amt = 0.0
@@ -9317,11 +9363,40 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                 b_coll += u_val
 
             # Also include standalone route collection receipts for this shift
-            shift_standalone_pmts = list(
+            # Deduplicate receipts tied directly to shift sales invoices
+            shift_sale_identifiers = set()
+            for sale in sales_qs:
+                if sale.SalesNo:
+                    shift_sale_identifiers.add(str(sale.SalesNo).strip().upper())
+                if sale.InvoiceNo:
+                    shift_sale_identifiers.add(str(sale.InvoiceNo).strip().upper())
+
+            linked_pmt_ids = set()
+            if shift_sale_identifiers:
+                linked_pmt_ids = set(
+                    BillwiseAllocation.objects.filter(
+                        ReferenceTable__in=['Receipt', 'Payment'],
+                        BillReference__in=shift_sale_identifiers
+                    ).values_list('ReferenceId', flat=True)
+                )
+
+            all_shift_pmts = list(
                 Payment.objects.filter(
                     DeliveryNoteId=dn.DeliveryNoteId
                 ).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
             )
+            shift_standalone_pmts = []
+            for sp in all_shift_pmts:
+                if sp.PaymentId in linked_pmt_ids:
+                    continue
+                sp_narr = (sp.Narration or '').upper()
+                if any(sid in sp_narr for sid in shift_sale_identifiers if sid):
+                    continue
+                sp_ref = (sp.ReferenceNumber or sp.PaymentNo or '').strip().upper()
+                if sp_ref and sp_ref in shift_sale_identifiers:
+                    continue
+                shift_standalone_pmts.append(sp)
+
             for sp in shift_standalone_pmts:
                 sp_c = 0.0
                 sp_u = 0.0
@@ -10279,10 +10354,11 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     if any(ref in pm_narr for ref in shift_sale_nos if ref):
                         shift_pending_pmts.append(pm)
                         continue
-
-                if pm.PartyLedger_id in shift_customer_ids:
-                    shift_pending_pmts.append(pm)
-                    continue
+                    driver_n = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
+                    if driver_n and driver_n.upper() in pm_narr:
+                        if dn.DeliveryDate and getattr(pm, 'CreatedAt', None) and pm.CreatedAt.date() == dn.DeliveryDate:
+                            shift_pending_pmts.append(pm)
+                            continue
 
             safe_sync_sequence('Payment', 'PaymentId')
             safe_sync_sequence('PaymentLine', 'PaymentLineId')
