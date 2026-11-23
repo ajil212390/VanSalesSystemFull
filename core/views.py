@@ -11181,10 +11181,10 @@ class SalesViewSet(viewsets.ModelViewSet):
             'CustomerLedger', 'ApprovedBy'
         ).prefetch_related('lines__Product', 'lines__Unit', 'edit_history').order_by('-SalesDate', '-SalesId')
 
-        # Exclude pure collection receipts (RCPT-), which belong strictly in Receipts (Payment) register
+        # Exclude pure collection receipts (RCPT- and TREC-), which belong strictly in Receipts (Payment) register
         include_receipts = self.request.query_params.get('include_receipts') == 'true'
         if not include_receipts:
-            qs = qs.exclude(SalesNo__startswith='RCPT-')
+            qs = qs.exclude(SalesNo__startswith='RCPT-').exclude(SalesNo__startswith='TREC-')
 
         pg_id = self.request.query_params.get('payment_group_id')
         if pg_id:
