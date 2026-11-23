@@ -1,6 +1,9 @@
 import re
 import time
+import logging
 from datetime import date, datetime, timedelta
+
+logger = logging.getLogger(__name__)
 from decimal import Decimal, ROUND_HALF_UP
 from django.db import models, transaction, IntegrityError
 from django.http import HttpResponse
