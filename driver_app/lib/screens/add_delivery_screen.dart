@@ -1625,28 +1625,12 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                             duration: const Duration(milliseconds: 220),
                             curve: Curves.easeOut,
                             style: GoogleFonts.inter(
-                              fontSize: 12.5,
+                              fontSize: 13,
                               fontWeight: !_isCollectionOnly ? FontWeight.w800 : FontWeight.w600,
                               color: !_isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
                               letterSpacing: -0.1,
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                AnimatedScale(
-                                  duration: const Duration(milliseconds: 220),
-                                  curve: Curves.easeOutBack,
-                                  scale: !_isCollectionOnly ? 1.05 : 0.95,
-                                  child: Icon(
-                                    Icons.propane_tank_rounded,
-                                    size: 16,
-                                    color: !_isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                const Text('Cylinder Delivery'),
-                              ],
-                            ),
+                            child: const Text('Cylinder Delivery'),
                           ),
                         ),
                       ),
@@ -1683,28 +1667,12 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                             duration: const Duration(milliseconds: 220),
                             curve: Curves.easeOut,
                             style: GoogleFonts.inter(
-                              fontSize: 12.5,
+                              fontSize: 13,
                               fontWeight: _isCollectionOnly ? FontWeight.w800 : FontWeight.w600,
                               color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
                               letterSpacing: -0.1,
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                AnimatedScale(
-                                  duration: const Duration(milliseconds: 220),
-                                  curve: Curves.easeOutBack,
-                                  scale: _isCollectionOnly ? 1.05 : 0.95,
-                                  child: Icon(
-                                    Icons.payments_rounded,
-                                    size: 16,
-                                    color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                const Text('Cash Collection Only'),
-                              ],
-                            ),
+                            child: const Text('Cash Collection Only'),
                           ),
                         ),
                       ),
@@ -1780,41 +1748,16 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Customer Outstanding:',
-                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
-                      ),
-                      Text(
-                        '\u20B9${outst.toStringAsFixed(2)}',
-                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
-                      ),
-                    ],
+                  Text(
+                    'Customer Outstanding:',
+                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B)),
                   ),
-                  InkWell(
-                    onTap: () {
-                      _amountController.text = outst.toStringAsFixed(0);
-                      state.setCollectedAmount(outst);
-                      setState(() {});
-                    },
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF800020).withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF800020).withValues(alpha: 0.2)),
-                      ),
-                      child: Text(
-                        'Pay Full Due',
-                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w700, color: const Color(0xFF800020)),
-                      ),
-                    ),
+                  Text(
+                    '\u20B9${outst.toStringAsFixed(2)}',
+                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
                   ),
                 ],
               ),
