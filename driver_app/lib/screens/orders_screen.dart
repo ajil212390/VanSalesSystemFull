@@ -677,39 +677,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                     ],
                   ),
 
-                  const SizedBox(width: 6),
-
-                  // Quick Edit Button directly on each row
-                  InkWell(
-                    onTap: () => _showEditOrderModal(context, state, order),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      height: 32,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFDF2F4),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFF5C2CB), width: 1),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.edit_outlined, size: 14, color: Color(0xFF800020)),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Edit',
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF800020),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
 
                   // Big Arrow at right end of the line
                   AnimatedRotation(
@@ -1070,7 +1038,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                       ),
 
                       const SizedBox(width: 8),
-                      // Edit Amount Button
+                      // Edit Button
                       InkWell(
                         onTap: () => _showEditOrderModal(context, state, order),
                         borderRadius: BorderRadius.circular(8),
@@ -1078,21 +1046,21 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                           height: 36,
                           padding: const EdgeInsets.symmetric(horizontal: 10),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: const Color(0xFFFDF2F4),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFCBD5E1), width: 1),
+                            border: Border.all(color: const Color(0xFFF5C2CB), width: 1),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF475569)),
+                              const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF800020)),
                               const SizedBox(width: 4),
                               Text(
                                 'Edit',
                                 style: GoogleFonts.inter(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF475569),
+                                  color: const Color(0xFF800020),
                                 ),
                               ),
                             ],
