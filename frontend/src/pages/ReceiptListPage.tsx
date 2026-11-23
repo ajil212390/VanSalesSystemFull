@@ -411,7 +411,16 @@ export const ReceiptListPage: React.FC = () => {
           </Group>
 
           {pendingCount > 0 && (
-            <Badge color="yellow" variant="light" size="sm" radius="sm" style={{ border: '1px solid #fde68a', fontWeight: 600 }}>
+            <Badge
+              size="sm"
+              radius="sm"
+              style={{
+                backgroundColor: '#f8fafc',
+                color: '#475569',
+                border: '1px solid #e2e8f0',
+                fontWeight: 600,
+              }}
+            >
               {pendingCount} Temporary Receipt{pendingCount > 1 ? 's' : ''} (TREC) will be approved when driver shift is settled in End Allocation
             </Badge>
           )}
@@ -568,19 +577,19 @@ export const ReceiptListPage: React.FC = () => {
                   const displayNo = receiptNumMap.get(item.PaymentId) || item.PaymentNo || item.ReferenceNumber || `REC-${String(item.PaymentId).padStart(3, '0')}`;
 
                   return (
-                    <Table.Tr key={item.PaymentId} style={{ backgroundColor: isPending ? '#fffdf7' : undefined }}>
+                    <Table.Tr key={item.PaymentId}>
                       <Table.Td style={{ whiteSpace: 'nowrap' }}>
                         <Group gap={6} wrap="nowrap" align="center">
-                          <IconReceipt size={16} color={isPending ? '#d97706' : '#800020'} style={{ flexShrink: 0 }} />
+                          <IconReceipt size={16} color="#800020" style={{ flexShrink: 0 }} />
                           <div>
                             <Group gap={6} align="center">
-                              <Text fw={700} size="sm" c={isPending ? '#b45309' : '#1e293b'} style={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
+                              <Text fw={700} size="sm" c="#1e293b" style={{ whiteSpace: 'nowrap', fontFamily: 'monospace' }}>
                                 {displayNo}
                               </Text>
                               {isPending && (
-                                <Badge size="xs" color="yellow" variant="light" radius="xs" style={{ border: '1px solid #fde68a', fontWeight: 600 }}>
+                                <Text size="11px" fw={600} c="#64748b">
                                   Pending
-                                </Badge>
+                                </Text>
                               )}
                             </Group>
                             {againstBills.length > 0 && (
