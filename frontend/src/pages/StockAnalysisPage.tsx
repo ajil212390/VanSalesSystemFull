@@ -31,11 +31,13 @@ import {
   IconChevronRight,
   IconRotateClockwise2,
   IconBuildingWarehouse,
+  IconCalendar,
 } from '@tabler/icons-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
+import { DateInputDDMMYY, formatDateDDMMYY } from '../components/DateInputDDMMYY';
 interface VanProduct {
   ProductId: number;
   ProductName: string;
@@ -91,11 +93,15 @@ interface ProductStockItem {
     OutwardEmptyQty?: number;
     DispatchedFilledQty?: number;
     DispatchedEmptyQty?: number;
+    SoldFilledQty?: number;
+    SoldEmptyQty?: number;
     FilledQty: number;
     EmptyQty: number;
     TotalQty: number;
   }>;
   AllocatedQty: number;
+  SoldFilledQty?: number;
+  SoldEmptyQty?: number;
   FilledQty?: number;
   EmptyQty?: number;
   TotalStockQty?: number;
@@ -255,19 +261,137 @@ export const StockAnalysisPage: React.FC = () => {
   const [storedProductSearch, setStoredProductSearch] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | 'cylinders' | 'other'>('all');
 
+  // Date filter state
+  const getTodayStr = () => {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const [datePreset, setDatePreset] = useState<'today' | 'yesterday' | 'this_month' | 'all' | 'custom'>('all');
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
+
+  const handlePresetChange = (val: string) => {
+    setDatePreset(val as any);
+    const today = getTodayStr();
+
+    if (val === 'today') {
+      setFromDate(today);
+      setToDate(today);
+    } else if (val === 'yesterday') {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yStr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+      setFromDate(yStr);
+      setToDate(yStr);
+    } else if (val === 'this_month') {
+      const d = new Date();
+      const monthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+      setFromDate(monthStart);
+      setToDate(today);
+    } else if (val === 'all') {
+      setFromDate('');
+      setToDate('');
+    }
+  };
+
   const {
     data,
     isLoading,
     isRefetching,
     refetch,
   } = useQuery<StockAnalysisResponse>({
-    queryKey: ['stock-analysis'],
+    queryKey: ['stock-analysis', fromDate, toDate],
     queryFn: async () => {
-      const res = await apiClient.get<StockAnalysisResponse>('/delivery-notes/stock-analysis/');
+      const params = new URLSearchParams();
+      if (fromDate) params.append('from_date', fromDate);
+      if (toDate) params.append('to_date', toDate);
+      const qs = params.toString() ? `?${params.toString()}` : '';
+      const res = await apiClient.get<StockAnalysisResponse>(`/delivery-notes/stock-analysis/${qs}`);
       return res.data;
     },
-    refetchInterval: 5000,
+    refetchInterval: 10000,
   });
+
+  const renderDateFilter = () => (
+    <Paper
+      p={6}
+      px="xs"
+      radius="md"
+      withBorder
+      style={{
+        backgroundColor: '#ffffff',
+        borderColor: '#e2e8f0',
+        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+      }}
+    >
+      <Group gap="xs" align="center" wrap="wrap">
+        <SegmentedControl
+          value={datePreset}
+          onChange={(val) => handlePresetChange(val)}
+          size="xs"
+          radius="md"
+          color="burgundy"
+          data={[
+            { label: 'All Time', value: 'all' },
+            { label: 'Today', value: 'today' },
+            { label: 'Yesterday', value: 'yesterday' },
+            { label: 'This Month', value: 'this_month' },
+          ]}
+          styles={{
+            root: { backgroundColor: '#f1f5f9', padding: 2 },
+            indicator: { backgroundColor: '#800020' },
+            label: { fontSize: 11, fontWeight: 600, padding: '3px 8px' },
+          }}
+        />
+        <Group gap={4} align="center">
+          <Text size="xs" fw={600} c="#64748b" style={{ fontSize: 11 }}>From:</Text>
+          <DateInputDDMMYY
+            value={fromDate}
+            onChange={(iso) => {
+              setFromDate(iso);
+              setDatePreset('custom');
+            }}
+            size="xs"
+            placeholder="dd/mm/yyyy"
+            style={{ width: 112 }}
+            styles={{
+              input: { height: 28, minHeight: 28, fontSize: 11.5, borderColor: '#cbd5e1', padding: '0 8px' },
+            }}
+          />
+          <Text size="xs" fw={600} c="#64748b" style={{ fontSize: 11 }}>To:</Text>
+          <DateInputDDMMYY
+            value={toDate}
+            onChange={(iso) => {
+              setToDate(iso);
+              setDatePreset('custom');
+            }}
+            size="xs"
+            placeholder="dd/mm/yyyy"
+            style={{ width: 112 }}
+            styles={{
+              input: { height: 28, minHeight: 28, fontSize: 11.5, borderColor: '#cbd5e1', padding: '0 8px' },
+            }}
+          />
+          <ActionIcon
+            variant="light"
+            color="burgundy"
+            size="sm"
+            radius="md"
+            onClick={() => refetch()}
+            loading={isRefetching}
+            title="Refresh Stock Data"
+            style={{ height: 28, width: 28 }}
+          >
+            <IconRefresh size={14} />
+          </ActionIcon>
+        </Group>
+      </Group>
+    </Paper>
+  );
   const products = data?.products ?? EMPTY_PRODUCT_STOCK;
   const filteredProducts = useMemo(() => {
     const q = productSearch.toLowerCase().trim();
@@ -309,7 +433,8 @@ export const StockAnalysisPage: React.FC = () => {
             const onVanEmpty = vanList.reduce((sum, v) => sum + (v.EmptyQty ?? 0), 0);
             const dispatchedFilled = matchingG?.DispatchedFilledQty ?? vanList.reduce((sum, v) => sum + (v.AllocatedQty ?? 0), 0);
             const dispatchedEmpty = matchingG?.DispatchedEmptyQty ?? 0;
-            const soldFilled = vanList.reduce((sum, v) => sum + (v.DeliveredQty ?? 0), 0);
+            const soldFilled = matchingG?.SoldFilledQty ?? (product.SoldFilledQty ?? vanList.reduce((sum, v) => sum + (v.DeliveredQty ?? 0), 0));
+            const soldEmpty = matchingG?.SoldEmptyQty ?? (product.SoldEmptyQty ?? 0);
             const inwardFilled = matchingG?.InwardFilledQty ?? filled;
             const inwardEmpty = matchingG?.InwardEmptyQty ?? empty;
 
@@ -327,7 +452,7 @@ export const StockAnalysisPage: React.FC = () => {
               OnVanFilledQty: onVanFilled,
               OnVanEmptyQty: onVanEmpty,
               SoldFilledQty: soldFilled,
-              SoldEmptyQty: 0,
+              SoldEmptyQty: soldEmpty,
               Qty: filled + (isCyl ? empty : 0),
               AllocatedQty: dispatchedFilled,
               DeliveredQty: soldFilled,
@@ -610,6 +735,9 @@ export const StockAnalysisPage: React.FC = () => {
               </Text>
             </div>
           </Group>
+
+          {/* Date Filter Bar */}
+          {renderDateFilter()}
         </Group>
         {/* Product Metric KPI Cards */}
         <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
@@ -950,6 +1078,9 @@ export const StockAnalysisPage: React.FC = () => {
               </Text>
             </div>
           </Group>
+
+          {/* Date Filter Bar */}
+          {renderDateFilter()}
         </Group>
 
         {/* Location Summary Cards */}
@@ -1119,6 +1250,35 @@ export const StockAnalysisPage: React.FC = () => {
                   ? 'Live morning load, deliveries, balance and empty returns for this route'
                   : 'Breakdown of cylinders by product stored at this location'}
               </Text>
+              <Group gap={6} align="center" mt={4}>
+                <Badge
+                  variant="outline"
+                  size="xs"
+                  radius="md"
+                  color="burgundy"
+                  leftSection={<IconCalendar size={12} />}
+                  styles={{
+                    root: {
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      borderColor: '#f5c2cb',
+                      backgroundColor: '#fff5f7',
+                      color: '#800020',
+                      height: 22,
+                    },
+                  }}
+                >
+                  {datePreset === 'all'
+                    ? 'All Time Movement History'
+                    : datePreset === 'today'
+                    ? `Date: Today (${formatDateDDMMYY(fromDate)})`
+                    : datePreset === 'yesterday'
+                    ? `Date: Yesterday (${formatDateDDMMYY(fromDate)})`
+                    : datePreset === 'this_month'
+                    ? `Date: This Month (${formatDateDDMMYY(fromDate)} — ${formatDateDDMMYY(toDate)})`
+                    : `Date Range: ${fromDate ? formatDateDDMMYY(fromDate) : 'Start'} — ${toDate ? formatDateDDMMYY(toDate) : 'Today'}`}
+                </Badge>
+              </Group>
             </div>
             <Group gap="sm" align="center" wrap="wrap">
               <SegmentedControl
@@ -1459,8 +1619,9 @@ export const StockAnalysisPage: React.FC = () => {
             {user?.godown_name && !isAdmin ? `Live stock and inventory breakdown for ${user.godown_name}` : 'Central warehouse inventory balance and live van fleet allocations'}
           </Text>
         </div>
-        {/* Right Actions: Live Sync & Refresh */}
+        {/* Right Actions: Date Filter, Live Sync & Refresh */}
         <Group gap="sm" align="center" wrap="wrap" style={{ flexGrow: 1, justifyContent: 'flex-end' }}>
+          {renderDateFilter()}
           <Badge
             variant="outline"
             size="md"

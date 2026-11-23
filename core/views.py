@@ -5860,7 +5860,27 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 CompanyId=company_id, IsActive=True
             ).exclude(VehicleId__in=godown_vehicle_ids).exclude(VehicleNumber__in=['Godown Stock', 'OFFICE'])
 
+        # Date filtering support for stock movements & analysis
+        qp = getattr(request, 'query_params', getattr(request, 'GET', {}))
+        from_date_str = qp.get('from_date') or qp.get('startDate')
+        to_date_str = qp.get('to_date') or qp.get('endDate')
+
         all_movements = StockMovement.objects.filter(CompanyId=company_id)
+        period_movements = all_movements
+
+        if from_date_str:
+            try:
+                f_d = datetime.strptime(from_date_str.strip(), '%Y-%m-%d').date()
+                period_movements = period_movements.filter(TransactionDate__gte=f_d)
+            except Exception:
+                pass
+        if to_date_str:
+            try:
+                t_d = datetime.strptime(to_date_str.strip(), '%Y-%m-%d').date()
+                period_movements = period_movements.filter(TransactionDate__lte=t_d)
+                all_movements = all_movements.filter(TransactionDate__lte=t_d)
+            except Exception:
+                pass
 
         alloc_van_map = {}
         alloc_active_sm_id = {}
@@ -5951,55 +5971,84 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             for g in godowns_list_qs:
                 g_rvd = g.RouteVehicleDriver_id
                 
-                # Inward (Full)
-                g_in_full = all_movements.filter(
+                # Inward (Full) for selected period
+                g_in_full = period_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN', 'GODOWN_TRANSFER_IN', 'VAN_UNLOAD_FULL']) |
                     Q(TransactionType='DELIVERY_NOTE', InQty__gt=0)
                 ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
 
-                # Outward (Full)
-                g_out_full = all_movements.filter(
+                # Outward (Full) for selected period
+                g_out_full = period_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE', 'GODOWN_TRANSFER_OUT']) |
                     Q(TransactionType='DELIVERY_NOTE', OutQty__gt=0)
                 ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
 
-                # Specifically Dispatched to Vans / Routes (Delivery Notes Out)
-                g_dispatched_full = all_movements.filter(
+                # Specifically Dispatched to Vans / Routes (Delivery Notes Out) for selected period
+                g_dispatched_full = period_movements.filter(
                     Product=p,
                     RouteVehicleDriverId=g_rvd,
                     TransactionType='DELIVERY_NOTE',
                     OutQty__gt=0
                 ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
 
-                g_qty_val = max(Decimal('0.00'), g_in_full - g_out_full)
+                # Cumulative closing floor stock (all movements up to to_date)
+                g_cum_in = all_movements.filter(
+                    Q(Product=p, RouteVehicleDriverId=g_rvd),
+                    Q(TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN', 'GODOWN_TRANSFER_IN', 'VAN_UNLOAD_FULL']) |
+                    Q(TransactionType='DELIVERY_NOTE', InQty__gt=0)
+                ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
+                g_cum_out = all_movements.filter(
+                    Q(Product=p, RouteVehicleDriverId=g_rvd),
+                    Q(TransactionType__in=['PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE', 'GODOWN_TRANSFER_OUT']) |
+                    Q(TransactionType='DELIVERY_NOTE', OutQty__gt=0)
+                ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
+                g_qty_val = max(Decimal('0.00'), g_cum_in - g_cum_out)
                 p_godown_filled += g_qty_val
 
-                # Empty Inward
-                g_emp_in = all_movements.filter(
+                # Empty Inward for selected period
+                g_emp_in = period_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['GODOWN_RETURN_EMPTY', 'VAN_UNLOAD_EMPTY', 'RECEIPT_NOTE_EMPTY_RETURN', 'VAN_EMPTY_RETURN', 'OPENING_EMPTY', 'ADJUSTMENT_EMPTY_IN', 'GODOWN_TRANSFER_EMPTY_IN']) |
                     Q(TransactionType='DELIVERY_NOTE_EMPTY', InQty__gt=0)
                 ).aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
 
-                # Empty Outward
-                g_emp_out = all_movements.filter(
+                # Empty Outward for selected period
+                g_emp_out = period_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN', 'ADJUSTMENT_EMPTY_OUT', 'GODOWN_TRANSFER_EMPTY_OUT']) |
                     Q(TransactionType='DELIVERY_NOTE_EMPTY', OutQty__gt=0)
                 ).aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
 
-                # Empty Dispatched
-                g_dispatched_emp = all_movements.filter(
+                # Empty Dispatched for selected period
+                g_dispatched_emp = period_movements.filter(
                     Product=p,
                     RouteVehicleDriverId=g_rvd,
                     TransactionType='DELIVERY_NOTE_EMPTY',
                     OutQty__gt=0
                 ).aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
 
-                g_empty_bal_val = max(Decimal('0.00'), g_emp_in - g_emp_out) if is_cylinder else Decimal('0.00')
+                # Cumulative closing empty stock (all movements up to to_date)
+                g_cum_emp_in = all_movements.filter(
+                    Q(Product=p, RouteVehicleDriverId=g_rvd),
+                    Q(TransactionType__in=['GODOWN_RETURN_EMPTY', 'VAN_UNLOAD_EMPTY', 'RECEIPT_NOTE_EMPTY_RETURN', 'VAN_EMPTY_RETURN', 'OPENING_EMPTY', 'ADJUSTMENT_EMPTY_IN', 'GODOWN_TRANSFER_EMPTY_IN']) |
+                    Q(TransactionType='DELIVERY_NOTE_EMPTY', InQty__gt=0)
+                ).aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
+                g_cum_emp_out = all_movements.filter(
+                    Q(Product=p, RouteVehicleDriverId=g_rvd),
+                    Q(TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN', 'ADJUSTMENT_EMPTY_OUT', 'GODOWN_TRANSFER_EMPTY_OUT']) |
+                    Q(TransactionType='DELIVERY_NOTE_EMPTY', OutQty__gt=0)
+                ).aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
+                g_empty_bal_val = max(Decimal('0.00'), g_cum_emp_in - g_cum_emp_out) if is_cylinder else Decimal('0.00')
                 p_godown_empty += g_empty_bal_val
+
+                # Sold during selected period
+                g_sold_full = period_movements.filter(
+                    Product=p,
+                    RouteVehicleDriverId=g_rvd,
+                    TransactionType__in=['DIRECT_SALE', 'SALE']
+                ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
 
                 prod_godowns.append({
                     'GodownId': g.GodownId,
@@ -6013,6 +6062,8 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'OutwardEmptyQty': float(g_emp_out if is_cylinder else Decimal('0.00')),
                     'DispatchedFilledQty': float(g_dispatched_full),
                     'DispatchedEmptyQty': float(g_dispatched_emp if is_cylinder else Decimal('0.00')),
+                    'SoldFilledQty': float(g_sold_full),
+                    'SoldEmptyQty': 0.0,
                     'FilledQty': float(g_qty_val),
                     'EmptyQty': float(g_empty_bal_val),
                     'TotalQty': float(g_qty_val + g_empty_bal_val),
@@ -6132,6 +6183,12 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             else:
                 total_allocated_filled += p_allocated
 
+            # Total sold in this period (VAN_SALE + DIRECT_SALE + SALE)
+            prod_sold_full = period_movements.filter(
+                Product=p,
+                TransactionType__in=['VAN_SALE', 'DIRECT_SALE', 'SALE']
+            ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
+
             product_analysis.append({
                 'ProductId': p.ProductId,
                 'ProductName': p.ProductName,
@@ -6149,6 +6206,8 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 'GodownEmptyQty': float(p_godown_empty),
                 'Godowns': prod_godowns,
                 'AllocatedQty': float(p_allocated),
+                'SoldFilledQty': float(prod_sold_full),
+                'SoldEmptyQty': 0.0,
                 'FilledQty': float(total_p_qty),
                 'EmptyQty': total_empty,
                 'TotalQty': float(total_p_qty) + total_empty,
