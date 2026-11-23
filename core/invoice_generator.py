@@ -4177,10 +4177,13 @@ def generate_ledger_statement_pdf(
     sm_table = Table(sm_rows, colWidths=[175, 65, 65])
     sm_table.setStyle(TableStyle(sm_styles))
 
-    # Right T-Balance Account Summary Table (Matches double-entry balancing)
-    th_sm_r = ParagraphStyle('ThSmR', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=colors.white, alignment=2)
-    td_sm_r = ParagraphStyle('TdSmR', fontName=FONT_NAME, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=2)
-    td_sm_rb = ParagraphStyle('TdSmRb', fontName=FONT_BOLD, fontSize=6.5, leading=8.5, textColor=DARK_COLOR, alignment=2)
+    # Right T-Balance Account Summary (Clean aligned text without table/row borders or background boxes)
+    th_r_l = ParagraphStyle('ThRL', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=0)
+    th_r_r = ParagraphStyle('ThRR', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=PRIMARY_COLOR, alignment=2)
+    td_r_l = ParagraphStyle('TdRL', fontName=FONT_NAME, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=0)
+    td_r_lb = ParagraphStyle('TdRLb', fontName=FONT_BOLD, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=0)
+    td_r_r = ParagraphStyle('TdRR', fontName=FONT_NAME, fontSize=7, leading=9, textColor=DARK_COLOR, alignment=2)
+    td_r_rb = ParagraphStyle('TdRRb', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=2)
 
     op_is_dr = (effective_op >= 0 if is_dr_normal else effective_op < 0)
     op_dr = abs(effective_op) if op_is_dr else Decimal('0.00')
@@ -4202,43 +4205,41 @@ def generate_ledger_statement_pdf(
 
     r_rows = [
         [
-            Paragraph("<b>PARTICULARS</b>", th_sm_l),
-            Paragraph("<b>DEBIT</b>", th_sm_r),
-            Paragraph("<b>CREDIT</b>", th_sm_r),
+            Paragraph("<b>Particulars</b>", th_r_l),
+            Paragraph("<b>Debit</b>", th_r_r),
+            Paragraph("<b>Credit</b>", th_r_r),
         ],
         [
-            Paragraph("Opening Balance", td_sm_lb),
-            Paragraph(f"{op_dr:,.2f}" if (op_dr > 0 or (op_dr == 0 and op_is_dr)) else "", td_sm_r),
-            Paragraph(f"{op_cr:,.2f}" if (op_cr > 0 or (op_cr == 0 and not op_is_dr)) else "", td_sm_r),
+            Paragraph("Opening Balance", td_r_lb),
+            Paragraph(f"{op_dr:,.2f}" if (op_dr > 0 or (op_dr == 0 and op_is_dr)) else "", td_r_r),
+            Paragraph(f"{op_cr:,.2f}" if (op_cr > 0 or (op_cr == 0 and not op_is_dr)) else "", td_r_r),
         ],
         [
-            Paragraph("", td_sm_l),
-            Paragraph(f"{tx_dr:,.2f}" if tx_dr > 0 else "", td_sm_r),
-            Paragraph(f"{tx_cr:,.2f}" if tx_cr > 0 else "", td_sm_r),
+            Paragraph("", td_r_l),
+            Paragraph(f"{tx_dr:,.2f}" if tx_dr > 0 else "", td_r_r),
+            Paragraph(f"{tx_cr:,.2f}" if tx_cr > 0 else "", td_r_r),
         ],
         [
-            Paragraph("Closing Balance", td_sm_lb),
-            Paragraph(f"{close_dr:,.2f}" if close_dr > 0 else "", td_sm_r),
-            Paragraph(f"{close_cr:,.2f}" if close_cr > 0 else "", td_sm_r),
+            Paragraph("Closing Balance", td_r_lb),
+            Paragraph(f"{close_dr:,.2f}" if close_dr > 0 else "", td_r_r),
+            Paragraph(f"{close_cr:,.2f}" if close_cr > 0 else "", td_r_r),
         ],
         [
-            Paragraph("", td_sm_l),
-            Paragraph(f"<b>{final_balanced_sum:,.2f}</b>", td_sm_rb),
-            Paragraph(f"<b>{final_balanced_sum:,.2f}</b>", td_sm_rb),
+            Paragraph("", td_r_l),
+            Paragraph(f"<b>{final_balanced_sum:,.2f}</b>", td_r_rb),
+            Paragraph(f"<b>{final_balanced_sum:,.2f}</b>", td_r_rb),
         ],
     ]
 
     r_style = [
-        ('BACKGROUND', (0, 0), (-1, 0), PRIMARY_COLOR),
-        ('GRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 2.5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ('LEFTPADDING', (0, 0), (-1, -1), 4),
         ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-        ('BACKGROUND', (0, 4), (-1, 4), colors.HexColor('#F1F5F9')),
-        ('LINEABOVE', (0, 4), (-1, 4), 1, PRIMARY_COLOR),
-        ('LINEBELOW', (0, 4), (-1, 4), 1.5, PRIMARY_COLOR),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.75, PRIMARY_COLOR),
+        ('LINEABOVE', (0, 4), (-1, 4), 0.75, DARK_COLOR),
+        ('LINEBELOW', (0, 4), (-1, 4), 1.25, DARK_COLOR),
     ]
 
     r_table = Table(r_rows, colWidths=[110, 65, 65])
