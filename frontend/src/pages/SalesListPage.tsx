@@ -666,32 +666,6 @@ export const SalesListPage: React.FC = () => {
         color: 'red' });
     } });
 
-  // Mutation: Apply Customer Advance
-  const applyAdvanceMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await apiClient.post(`/sales/${id}/apply-advance/`);
-      return res.data;
-    },
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['sales'] });
-      queryClient.invalidateQueries({ queryKey: ['ledgers'] });
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      setViewingSale(null);
-      notifications.show({
-        title: 'Advance Applied',
-        message: data.message || 'Advance adjustment created and invoice settled successfully.',
-        color: 'teal',
-      });
-    },
-    onError: (err: any) => {
-      notifications.show({
-        title: 'Error Applying Advance',
-        message: err.response?.data?.message || err.message || 'Could not apply advance.',
-        color: 'red',
-      });
-    },
-  });
 
   const handleDeleteSale = (sale: any) => {
     setDeleteTargetSale(sale);
@@ -1886,18 +1860,6 @@ export const SalesListPage: React.FC = () => {
               </Button>
 
               <Group gap="sm" wrap="wrap">
-                {Number(viewingSale.GrandTotal || 0) > Number(viewingSale.PaidAmount || 0) && (
-                  <Button
-                    variant="light"
-                    color="burgundy"
-                    size="sm"
-                    leftSection={<IconCash size={16} />}
-                    loading={applyAdvanceMutation.isPending}
-                    onClick={() => applyAdvanceMutation.mutate(viewingSale.SalesId)}
-                  >
-                    Apply Advance
-                  </Button>
-                )}
                 {!viewingSale.IsApproved && (
                   <Button
                     variant="filled"
