@@ -679,6 +679,38 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
 
                   const SizedBox(width: 6),
 
+                  // Quick Edit Button directly on each row
+                  InkWell(
+                    onTap: () => _showEditOrderModal(context, state, order),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      height: 32,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFDF2F4),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFF5C2CB), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.edit_outlined, size: 14, color: Color(0xFF800020)),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Edit',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF800020),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(width: 6),
+
                   // Big Arrow at right end of the line
                   AnimatedRotation(
                     turns: isExpanded ? 0.5 : 0.0,
@@ -1037,57 +1069,55 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         ),
                       ),
 
-                      if (!state.isShiftLocked) ...[
-                        const SizedBox(width: 8),
-                        // Edit Amount Button
-                        InkWell(
-                          onTap: () => _showEditOrderModal(context, state, order),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            height: 36,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFCBD5E1), width: 1),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF475569)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Edit',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF475569),
-                                  ),
+                      const SizedBox(width: 8),
+                      // Edit Amount Button
+                      InkWell(
+                        onTap: () => _showEditOrderModal(context, state, order),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          height: 36,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFCBD5E1), width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.edit_outlined, size: 15, color: Color(0xFF475569)),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Edit',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF475569),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
+                      ),
+                      const SizedBox(width: 8),
 
-                        // Delete Button
-                        InkWell(
-                          onTap: () => _showDeleteOrderModal(context, state, order),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            height: 36,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF2F2),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFFCA5A5), width: 1),
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFF800020)),
-                            ),
+                      // Delete Button
+                      InkWell(
+                        onTap: () => _showDeleteOrderModal(context, state, order),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          height: 36,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF2F2),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFFCA5A5), width: 1),
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.delete_outline_rounded, size: 16, color: Color(0xFF800020)),
                           ),
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ],
