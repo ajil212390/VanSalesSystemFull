@@ -196,6 +196,35 @@ export const EndAllocationsPage: React.FC = () => {
     return true;
   };
 
+  // Helper to extract amounts from backend API attributes or fallback remarks
+  const parseSettlementAmounts = (item: EndRouteDriverItem | null) => {
+    if (!item) return { cash: 0, bank: 0, total: 0, cashExpense: 0, bankExpense: 0, netCash: 0, netBank: 0, netBalance: 0 };
+
+    let cash = Number(item.cash_amount) || 0;
+    let bank = Number(item.bank_amount) || 0;
+    const totalExp = Number(item.trip_expenses) || 0;
+    let cashExpense = Number(item.cash_expense) || 0;
+    let bankExpense = Number(item.bank_expense) || 0;
+
+    if (item.cash_amount === undefined || item.cash_amount === null) {
+      const remarks = item.Remarks || '';
+      const cashMatch = remarks.match(/cash[\s:]*₹?\s*([\d,.]+)/i);
+      const bankMatch = remarks.match(/(?:bank|upi)[\s:]*₹?\s*([\d,.]+)/i);
+      if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
+      if (bankMatch) bank = parseFloat(bankMatch[1].replace(/,/g, '')) || 0;
+    }
+
+    if (cashExpense === 0 && bankExpense === 0 && totalExp > 0) {
+      cashExpense = totalExp;
+    }
+
+    const netCash = item.net_cash !== undefined ? Number(item.net_cash) : (cash - cashExpense);
+    const netBank = item.net_bank !== undefined ? Number(item.net_bank) : (bank - bankExpense);
+    const netBalance = item.net_balance !== undefined ? Number(item.net_balance) : (cash + bank - totalExp);
+
+    return { cash, bank, total: cash + bank, cashExpense, bankExpense, netCash, netBank, netBalance };
+  };
+
   const handlePrintTripSheet = async (item: EndRouteDriverItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     try {
@@ -400,35 +429,6 @@ export const EndAllocationsPage: React.FC = () => {
         return (b.EndRouteDriverId || 0) - (a.EndRouteDriverId || 0);
       });
   }, [dateFilteredData, statusFilter, sortBy, searchQuery]);
-
-  // Helper to extract amounts from backend API attributes or fallback remarks
-  const parseSettlementAmounts = (item: EndRouteDriverItem | null) => {
-    if (!item) return { cash: 0, bank: 0, total: 0, cashExpense: 0, bankExpense: 0, netCash: 0, netBank: 0, netBalance: 0 };
-
-    let cash = Number(item.cash_amount) || 0;
-    let bank = Number(item.bank_amount) || 0;
-    const totalExp = Number(item.trip_expenses) || 0;
-    let cashExpense = Number(item.cash_expense) || 0;
-    let bankExpense = Number(item.bank_expense) || 0;
-
-    if (item.cash_amount === undefined || item.cash_amount === null) {
-      const remarks = item.Remarks || '';
-      const cashMatch = remarks.match(/cash[\s:]*₹?\s*([\d,.]+)/i);
-      const bankMatch = remarks.match(/(?:bank|upi)[\s:]*₹?\s*([\d,.]+)/i);
-      if (cashMatch) cash = parseFloat(cashMatch[1].replace(/,/g, '')) || 0;
-      if (bankMatch) bank = parseFloat(bankMatch[1].replace(/,/g, '')) || 0;
-    }
-
-    if (cashExpense === 0 && bankExpense === 0 && totalExp > 0) {
-      cashExpense = totalExp;
-    }
-
-    const netCash = item.net_cash !== undefined ? Number(item.net_cash) : (cash - cashExpense);
-    const netBank = item.net_bank !== undefined ? Number(item.net_bank) : (bank - bankExpense);
-    const netBalance = item.net_balance !== undefined ? Number(item.net_balance) : (cash + bank - totalExp);
-
-    return { cash, bank, total: cash + bank, cashExpense, bankExpense, netCash, netBank, netBalance };
-  };
 
   // Handle open details modal
   const handleOpenDetail = (item: EndRouteDriverItem) => {
