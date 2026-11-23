@@ -250,18 +250,6 @@ def ensure_payment_columns():
                                 DebitAmount=Decimal('0.00'), CreditAmount=p_rec.Amount, Narration="Collection (SPLIT)"
                             )
 
-        # Ensure SaleEditHistory has detail columns for paid amount and cylinder quantities
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute('ALTER TABLE "SaleEditHistory" ADD COLUMN IF NOT EXISTS "OldPaidAmount" numeric(18,2) NULL;')
-                cursor.execute('ALTER TABLE "SaleEditHistory" ADD COLUMN IF NOT EXISTS "NewPaidAmount" numeric(18,2) NULL;')
-                cursor.execute('ALTER TABLE "SaleEditHistory" ADD COLUMN IF NOT EXISTS "OldDeliveredQty" numeric(18,2) NULL;')
-                cursor.execute('ALTER TABLE "SaleEditHistory" ADD COLUMN IF NOT EXISTS "NewDeliveredQty" numeric(18,2) NULL;')
-                cursor.execute('ALTER TABLE "SaleEditHistory" ADD COLUMN IF NOT EXISTS "OldEmptyQty" numeric(18,2) NULL;')
-                cursor.execute('ALTER TABLE "SaleEditHistory" ADD COLUMN IF NOT EXISTS "NewEmptyQty" numeric(18,2) NULL;')
-        except Exception:
-            pass
-
         # Heal any historical SaleEditHistory rows where NewGrandTotal was saved as PaidAmount
         try:
             from core.models import SaleEditHistory
@@ -7316,10 +7304,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             old_amount = sale.GrandTotal
-            old_paid = sale.PaidAmount if sale.PaidAmount is not None else sale.GrandTotal
             old_pm = sale.PaymentMethod
-            old_deliv = sale.TotalDeliveredQty or Decimal('0.00')
-            old_empty = sale.TotalEmptyQty or Decimal('0.00')
 
             # Determine who edited
             editor_name = 'Admin'
@@ -7488,12 +7473,6 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 EditedAt=timezone.now(),
                 OldGrandTotal=old_amount,
                 NewGrandTotal=sale.GrandTotal,
-                OldPaidAmount=old_paid,
-                NewPaidAmount=sale.PaidAmount,
-                OldDeliveredQty=old_deliv,
-                NewDeliveredQty=sale.TotalDeliveredQty,
-                OldEmptyQty=old_empty,
-                NewEmptyQty=sale.TotalEmptyQty,
                 OldPaymentMethod=old_pm,
                 NewPaymentMethod=sale.PaymentMethod,
                 Notes=sale.EditReason,
@@ -10961,10 +10940,7 @@ class SalesViewSet(viewsets.ModelViewSet):
         customer = Ledger.objects.filter(LedgerId=customer_id).first() if customer_id else None
 
         old_grand_total = instance.GrandTotal
-        old_paid = instance.PaidAmount if instance.PaidAmount is not None else instance.GrandTotal
         old_pm = instance.PaymentMethod
-        old_deliv = instance.TotalDeliveredQty or Decimal('0.00')
-        old_empty = instance.TotalEmptyQty or Decimal('0.00')
 
         sales_date_raw = data.get('SalesDate')
         if sales_date_raw:
@@ -11144,12 +11120,6 @@ class SalesViewSet(viewsets.ModelViewSet):
                 EditedAt=timezone.now(),
                 OldGrandTotal=old_grand_total,
                 NewGrandTotal=instance.GrandTotal,
-                OldPaidAmount=old_paid,
-                NewPaidAmount=instance.PaidAmount,
-                OldDeliveredQty=old_deliv,
-                NewDeliveredQty=instance.TotalDeliveredQty,
-                OldEmptyQty=old_empty,
-                NewEmptyQty=instance.TotalEmptyQty,
                 OldPaymentMethod=old_pm,
                 NewPaymentMethod=instance.PaymentMethod,
                 Notes=instance.EditReason,

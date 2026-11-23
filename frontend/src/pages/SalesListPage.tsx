@@ -58,27 +58,17 @@ interface SanitizedEditHistory {
   notes: string;
   amountChanged: boolean;
   paymentModeChanged: boolean;
-  actionType: 'PAYMENT_COLLECTION' | 'BILL_REVISED' | 'PAYMENT_MODE_CHANGED' | 'CYLINDER_CHANGED' | 'INVOICE_MODIFIED';
+  actionType: 'PAYMENT_COLLECTION' | 'BILL_REVISED' | 'PAYMENT_MODE_CHANGED' | 'INVOICE_MODIFIED';
   actionTitle: string;
   actionSummary: string;
   paidAmount?: number;
-  oldPaid?: number;
-  newPaid?: number;
-  paidChanged: boolean;
   excessAdvance: number;
   balanceDue: number;
   splitCash?: number;
   splitBank?: number;
-  oldDeliv?: number;
-  newDeliv?: number;
-  delivChanged: boolean;
-  oldEmpty?: number;
-  newEmpty?: number;
-  emptyChanged: boolean;
-  cylinderChanged: boolean;
 }
 
-const formatSaleEditHistory = (histories: any[] = [], currentGrandTotal?: number, currentSale?: any): SanitizedEditHistory[] => {
+const formatSaleEditHistory = (histories: any[] = [], currentGrandTotal?: number): SanitizedEditHistory[] => {
   if (!Array.isArray(histories) || histories.length === 0) return [];
 
   const sorted = [...histories].sort((a, b) => {
@@ -87,59 +77,16 @@ const formatSaleEditHistory = (histories: any[] = [], currentGrandTotal?: number
     return tA - tB;
   });
 
-  const parsed = sorted.map((h) => {
-    const rawNote = h.Notes || h.notes || '';
-    const mPaid = rawNote.match(/(?:Paid|Collected)\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
-    const mCash = rawNote.match(/Cash\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
-    const mUpi = rawNote.match(/(?:UPI|Bank)\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
-
-    const splitCash = mCash ? parseFloat(mCash[1].replace(/,/g, '')) : undefined;
-    const splitBank = mUpi ? parseFloat(mUpi[1].replace(/,/g, '')) : undefined;
-
-    let newPaid: number | undefined = undefined;
-    if (h.NewPaidAmount !== undefined && h.NewPaidAmount !== null) {
-      newPaid = Number(h.NewPaidAmount);
-    } else if (mPaid) {
-      newPaid = parseFloat(mPaid[1].replace(/,/g, ''));
-    } else if (splitCash !== undefined || splitBank !== undefined) {
-      newPaid = (splitCash || 0) + (splitBank || 0);
-    }
-
-    let oldPaid: number | undefined = undefined;
-    if (h.OldPaidAmount !== undefined && h.OldPaidAmount !== null) {
-      oldPaid = Number(h.OldPaidAmount);
-    }
-
-    const oldDeliv = h.OldDeliveredQty !== undefined && h.OldDeliveredQty !== null ? Number(h.OldDeliveredQty) : undefined;
-    const newDeliv = h.NewDeliveredQty !== undefined && h.NewDeliveredQty !== null ? Number(h.NewDeliveredQty) : (currentSale?.TotalDeliveredQty != null ? Number(currentSale.TotalDeliveredQty) : undefined);
-    const oldEmpty = h.OldEmptyQty !== undefined && h.OldEmptyQty !== null ? Number(h.OldEmptyQty) : undefined;
-    const newEmpty = h.NewEmptyQty !== undefined && h.NewEmptyQty !== null ? Number(h.NewEmptyQty) : (currentSale?.TotalEmptyQty != null ? Number(currentSale.TotalEmptyQty) : undefined);
-
-    let oldPm = h.OldPaymentMethod || h.old_payment_method || '';
-    let newPm = h.NewPaymentMethod || h.new_payment_method || '';
-    if (!oldPm && newPm && newPm.toLowerCase() === 'split') {
-      oldPm = 'Cash';
-    }
-
-    return {
-      raw: h,
-      timestamp: h.EditedAt || h.edited_at,
-      editor: h.EditedBy || h.edited_by || 'Driver / Admin',
-      oldTotal: Number(h.OldGrandTotal ?? h.old_grand_total ?? 0),
-      newTotal: Number(h.NewGrandTotal ?? h.new_grand_total ?? 0),
-      oldPaid,
-      newPaid,
-      oldPaymentMethod: oldPm,
-      newPaymentMethod: newPm,
-      notes: rawNote || 'Invoice details updated',
-      splitCash,
-      splitBank,
-      oldDeliv,
-      newDeliv,
-      oldEmpty,
-      newEmpty,
-    };
-  });
+  const parsed = sorted.map((h) => ({
+    raw: h,
+    timestamp: h.EditedAt || h.edited_at,
+    editor: h.EditedBy || h.edited_by || 'Driver / Admin',
+    oldTotal: Number(h.OldGrandTotal ?? h.old_grand_total ?? 0),
+    newTotal: Number(h.NewGrandTotal ?? h.new_grand_total ?? 0),
+    oldPaymentMethod: h.OldPaymentMethod || h.old_payment_method || '',
+    newPaymentMethod: h.NewPaymentMethod || h.new_payment_method || '',
+    notes: h.Notes || h.notes || 'Invoice details updated',
+  }));
 
   const n = parsed.length;
   if (currentGrandTotal !== undefined && currentGrandTotal > 0 && n > 0) {
@@ -159,69 +106,54 @@ const formatSaleEditHistory = (histories: any[] = [], currentGrandTotal?: number
     }
   }
 
-  // Fallback / propagate oldPaid for legacy rows if not explicitly stored
-  for (let i = 0; i < n; i++) {
-    const item = parsed[i];
-    if (item.oldPaid === undefined) {
-      if (i > 0 && parsed[i - 1].newPaid !== undefined) {
-        item.oldPaid = parsed[i - 1].newPaid;
-      } else if (item.newPaid !== undefined && item.oldTotal > 0 && Math.abs(item.newPaid - item.oldTotal) > 0.01) {
-        item.oldPaid = item.oldTotal;
-      }
-    }
-  }
-
   return parsed.map((item) => {
+    const rawNote = item.notes || '';
+    const mPaid = rawNote.match(/(?:Paid|Collected)\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+    const mCash = rawNote.match(/Cash\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+    const mUpi = rawNote.match(/(?:UPI|Bank)\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+
+    const splitCash = mCash ? parseFloat(mCash[1].replace(/,/g, '')) : undefined;
+    const splitBank = mUpi ? parseFloat(mUpi[1].replace(/,/g, '')) : undefined;
+
+    let paidAmount: number | undefined = undefined;
+    if (mPaid) {
+      paidAmount = parseFloat(mPaid[1].replace(/,/g, ''));
+    } else if (splitCash !== undefined || splitBank !== undefined) {
+      paidAmount = (splitCash || 0) + (splitBank || 0);
+    }
+
     const billAmount = item.newTotal;
     let excessAdvance = 0;
     let balanceDue = 0;
 
-    const effectivePaid = item.newPaid !== undefined ? item.newPaid : item.oldPaid;
-
-    if (effectivePaid !== undefined && billAmount > 0) {
-      if (effectivePaid > billAmount) {
-        excessAdvance = effectivePaid - billAmount;
-      } else if (effectivePaid < billAmount) {
-        balanceDue = billAmount - effectivePaid;
+    if (paidAmount !== undefined && billAmount > 0) {
+      if (paidAmount > billAmount) {
+        excessAdvance = paidAmount - billAmount;
+      } else if (paidAmount < billAmount) {
+        balanceDue = billAmount - paidAmount;
       }
     }
 
     const amountChanged = Math.abs(item.oldTotal - item.newTotal) > 0.01;
-    const paidChanged = item.oldPaid !== undefined && item.newPaid !== undefined && Math.abs(item.oldPaid - item.newPaid) > 0.01;
-    const paymentModeChanged = Boolean(item.oldPaymentMethod && item.newPaymentMethod && item.oldPaymentMethod.toLowerCase() !== item.newPaymentMethod.toLowerCase());
+    const paymentModeChanged = Boolean(item.oldPaymentMethod && item.newPaymentMethod && item.oldPaymentMethod !== item.newPaymentMethod);
 
-    const delivChanged = item.oldDeliv !== undefined && item.newDeliv !== undefined && item.oldDeliv !== item.newDeliv;
-    const emptyChanged = item.oldEmpty !== undefined && item.newEmpty !== undefined && item.oldEmpty !== item.newEmpty;
-    const cylinderChanged = delivChanged || emptyChanged;
-
-    let actionType: 'PAYMENT_COLLECTION' | 'BILL_REVISED' | 'PAYMENT_MODE_CHANGED' | 'CYLINDER_CHANGED' | 'INVOICE_MODIFIED' = 'INVOICE_MODIFIED';
+    let actionType: 'PAYMENT_COLLECTION' | 'BILL_REVISED' | 'PAYMENT_MODE_CHANGED' | 'INVOICE_MODIFIED' = 'INVOICE_MODIFIED';
     let actionTitle = 'Invoice Updated';
     let actionSummary = '';
 
-    if (cylinderChanged) {
-      actionType = 'CYLINDER_CHANGED';
-      actionTitle = 'Cylinders Modified';
-      const parts: string[] = [];
-      if (delivChanged) parts.push(`Delivered: ${item.oldDeliv} ➔ ${item.newDeliv} Cyl`);
-      if (emptyChanged) parts.push(`Empties: ${item.oldEmpty} ➔ ${item.newEmpty} Ret`);
-      actionSummary = `Driver updated quantities — ${parts.join(', ')}.`;
-    } else if (paidChanged) {
-      actionType = 'PAYMENT_COLLECTION';
-      actionTitle = excessAdvance > 0 ? 'Payment & Advance Collected' : balanceDue > 0 ? 'Partial Payment Collected' : 'Payment Revised';
-      actionSummary = `Driver changed collected payment: ₹${(item.oldPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })} ➔ ₹${(item.newPaid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}.${excessAdvance > 0 ? ` Excess ₹${excessAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} recorded as Customer Advance.` : balanceDue > 0 ? ` Balance ₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending on credit.` : ''}`;
-    } else if (effectivePaid !== undefined && effectivePaid > 0) {
+    if (paidAmount !== undefined && paidAmount > 0) {
       if (excessAdvance > 0) {
         actionType = 'PAYMENT_COLLECTION';
         actionTitle = 'Payment & Advance Collected';
-        actionSummary = `Driver collected ₹${effectivePaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}. Excess ₹${excessAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} recorded as Customer Advance.`;
+        actionSummary = `Driver collected ₹${paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}. Excess ₹${excessAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} recorded as Customer Advance.`;
       } else if (balanceDue > 0) {
         actionType = 'PAYMENT_COLLECTION';
         actionTitle = 'Partial Payment Collected';
-        actionSummary = `Driver collected ₹${effectivePaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}. Balance ₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending on credit.`;
+        actionSummary = `Driver collected ₹${paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}. Balance ₹${balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })} pending on credit.`;
       } else {
         actionType = 'PAYMENT_COLLECTION';
         actionTitle = 'Full Payment Collected';
-        actionSummary = `Driver collected full bill amount ₹${effectivePaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.`;
+        actionSummary = `Driver collected full bill amount ₹${paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}.`;
       }
     } else if (amountChanged) {
       actionType = 'BILL_REVISED';
@@ -239,16 +171,14 @@ const formatSaleEditHistory = (histories: any[] = [], currentGrandTotal?: number
       ...item,
       amountChanged,
       paymentModeChanged,
-      paidChanged,
-      delivChanged,
-      emptyChanged,
-      cylinderChanged,
       actionType,
       actionTitle,
       actionSummary,
-      paidAmount: effectivePaid,
+      paidAmount,
       excessAdvance,
       balanceDue,
+      splitCash,
+      splitBank,
     };
   });
 };
@@ -1734,13 +1664,12 @@ export const SalesListPage: React.FC = () => {
                       <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, minWidth: 200 }}>DRIVER ACTION &amp; DETAILS</Table.Th>
                       <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, textAlign: 'right' }}>BILL TOTAL</Table.Th>
                       <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, textAlign: 'right' }}>COLLECTED</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800 }}>PAYMENT MODE</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800 }}>CYLINDERS</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800 }}>MODE</Table.Th>
                       <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800 }}>NOTES</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {formatSaleEditHistory(viewingSale.edit_history, viewingSale.GrandTotal, viewingSale).map((eh, idx) => (
+                    {formatSaleEditHistory(viewingSale.edit_history, viewingSale.GrandTotal).map((eh, idx) => (
                       <Table.Tr key={idx}>
                         <Table.Td style={{ whiteSpace: 'nowrap' }}>
                           <Text size="xs" fw={700} c="#0f172a">
@@ -1781,12 +1710,9 @@ export const SalesListPage: React.FC = () => {
                               <Text size="xs" td="line-through" c="dimmed">
                                 ₹{eh.oldTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </Text>
-                              <Group gap={4} justify="flex-end" wrap="nowrap">
-                                <IconArrowRight size={11} color="#800020" />
-                                <Text size="xs" fw={700} c="#800020">
-                                  ₹{eh.newTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                </Text>
-                              </Group>
+                              <Text size="xs" fw={700} c="#800020">
+                                ₹{eh.newTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </Text>
                             </div>
                           ) : (
                             <div>
@@ -1801,41 +1727,14 @@ export const SalesListPage: React.FC = () => {
                         </Table.Td>
 
                         <Table.Td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          {eh.paidChanged && eh.oldPaid !== undefined && eh.newPaid !== undefined ? (
-                            <div>
-                              <Text size="xs" td="line-through" c="dimmed">
-                                ₹{eh.oldPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </Text>
-                              <Group gap={4} justify="flex-end" wrap="nowrap">
-                                <IconArrowRight size={11} color="#800020" />
-                                <Text size="xs" fw={700} c="#800020">
-                                  ₹{eh.newPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                </Text>
-                              </Group>
-                              {(eh.excessAdvance || 0) > 0 && (
-                                <Text size="10px" fw={600} style={{ color: '#800020' }}>
-                                  +₹{eh.excessAdvance.toFixed(0)} Adv
-                                </Text>
-                              )}
-                              {(eh.balanceDue || 0) > 0 && (
-                                <Text size="10px" fw={600} style={{ color: '#b91c1c' }}>
-                                  ₹{eh.balanceDue.toFixed(0)} Due
-                                </Text>
-                              )}
-                            </div>
-                          ) : eh.newPaid !== undefined ? (
+                          {eh.paidAmount !== undefined ? (
                             <div>
                               <Text size="xs" fw={700} c="#0f172a">
-                                ₹{eh.newPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                ₹{eh.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </Text>
                               {(eh.excessAdvance || 0) > 0 && (
                                 <Text size="10px" fw={600} style={{ color: '#800020' }}>
                                   +₹{eh.excessAdvance.toFixed(0)} Adv
-                                </Text>
-                              )}
-                              {(eh.balanceDue || 0) > 0 && (
-                                <Text size="10px" fw={600} style={{ color: '#b91c1c' }}>
-                                  ₹{eh.balanceDue.toFixed(0)} Due
                                 </Text>
                               )}
                             </div>
@@ -1846,71 +1745,15 @@ export const SalesListPage: React.FC = () => {
 
                         <Table.Td style={{ whiteSpace: 'nowrap' }}>
                           {eh.paymentModeChanged ? (
-                            <div>
-                              <Group gap={4} wrap="nowrap">
-                                <Badge size="xs" variant="outline" style={{ color: '#64748b', borderColor: '#cbd5e1', backgroundColor: '#f8fafc', fontWeight: 600 }}>
-                                  {eh.oldPaymentMethod}
-                                </Badge>
-                                <IconArrowRight size={11} color="#800020" />
-                                <Badge size="xs" variant="outline" style={{ color: '#800020', borderColor: '#f5c2cb', backgroundColor: '#fdf2f4', fontWeight: 700 }}>
-                                  {eh.newPaymentMethod}
-                                </Badge>
-                              </Group>
-                              {(eh.splitCash !== undefined || eh.splitBank !== undefined) && (
-                                <Text size="10px" c="dimmed" mt={2}>
-                                  {eh.splitCash !== undefined ? `Cash: ₹${eh.splitCash.toFixed(2)}` : ''}
-                                  {eh.splitCash !== undefined && eh.splitBank !== undefined ? ' • ' : ''}
-                                  {eh.splitBank !== undefined ? `UPI: ₹${eh.splitBank.toFixed(2)}` : ''}
-                                </Text>
-                              )}
-                            </div>
+                            <Group gap={4} wrap="nowrap">
+                              <Text size="xs" c="dimmed">{eh.oldPaymentMethod}</Text>
+                              <IconArrowRight size={11} color="#800020" />
+                              <Text size="xs" fw={700} c="#800020">{eh.newPaymentMethod}</Text>
+                            </Group>
                           ) : (
-                            <div>
-                              <Badge size="xs" variant="outline" style={{ color: '#334155', borderColor: '#cbd5e1', backgroundColor: '#f8fafc', fontWeight: 600 }}>
-                                {eh.newPaymentMethod || eh.oldPaymentMethod || 'Cash'}
-                              </Badge>
-                              {(eh.splitCash !== undefined || eh.splitBank !== undefined) && (
-                                <Text size="10px" c="dimmed" mt={2}>
-                                  {eh.splitCash !== undefined ? `Cash: ₹${eh.splitCash.toFixed(2)}` : ''}
-                                  {eh.splitCash !== undefined && eh.splitBank !== undefined ? ' • ' : ''}
-                                  {eh.splitBank !== undefined ? `UPI: ₹${eh.splitBank.toFixed(2)}` : ''}
-                                </Text>
-                              )}
-                            </div>
-                          )}
-                        </Table.Td>
-
-                        <Table.Td style={{ whiteSpace: 'nowrap' }}>
-                          {eh.cylinderChanged ? (
-                            <div>
-                              {eh.delivChanged ? (
-                                <Group gap={3} wrap="nowrap">
-                                  <Text size="xs" td="line-through" c="dimmed">{eh.oldDeliv} Cyl</Text>
-                                  <IconArrowRight size={10} color="#800020" />
-                                  <Text size="xs" fw={700} style={{ color: '#800020' }}>{eh.newDeliv} Cyl</Text>
-                                </Group>
-                              ) : (
-                                <Text size="xs" fw={600} c="#334155">{eh.newDeliv ?? 0} Cyl (Fixed)</Text>
-                              )}
-                              {eh.emptyChanged ? (
-                                <Group gap={3} wrap="nowrap" mt={2}>
-                                  <Text size="11px" td="line-through" c="dimmed">{eh.oldEmpty} Ret</Text>
-                                  <IconArrowRight size={10} color="#800020" />
-                                  <Text size="11px" fw={700} style={{ color: '#800020' }}>{eh.newEmpty} Ret</Text>
-                                </Group>
-                              ) : (
-                                <Text size="10px" c="dimmed" mt={2}>{eh.newEmpty ?? 0} Ret (Fixed)</Text>
-                              )}
-                            </div>
-                          ) : (
-                            <div>
-                              <Text size="xs" fw={600} c="#334155">
-                                {eh.newDeliv ?? viewingSale.TotalDeliveredQty ?? 0} Cyl
-                              </Text>
-                              <Text size="10px" c="dimmed">
-                                {eh.newEmpty ?? viewingSale.TotalEmptyQty ?? 0} Ret (Fixed)
-                              </Text>
-                            </div>
+                            <Text size="xs">
+                              {eh.newPaymentMethod || eh.oldPaymentMethod || '-'}
+                            </Text>
                           )}
                         </Table.Td>
 
@@ -2133,21 +1976,20 @@ export const SalesListPage: React.FC = () => {
                 )}
               </Box>
             ) : (
-              <Table.ScrollContainer minWidth={950} style={{ width: '100%' }}>
+              <Table.ScrollContainer minWidth={850} style={{ width: '100%' }}>
                 <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover withTableBorder style={{ borderRadius: 8, overflow: 'hidden', width: '100%' }}>
                   <Table.Thead style={{ backgroundColor: '#fdf2f4' }}>
                     <Table.Tr>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 160, whiteSpace: 'nowrap' }}>TIMESTAMP &amp; EDITOR</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', minWidth: 240 }}>EXACT DRIVER ACTION &amp; DETAILS</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 130, textAlign: 'right', whiteSpace: 'nowrap' }}>BILL TOTAL</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 170, whiteSpace: 'nowrap' }}>TIMESTAMP &amp; EDITOR</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', minWidth: 260 }}>EXACT DRIVER ACTION &amp; DETAILS</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 140, textAlign: 'right', whiteSpace: 'nowrap' }}>BILL TOTAL</Table.Th>
                       <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 160, textAlign: 'right', whiteSpace: 'nowrap' }}>PAYMENT COLLECTED</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 150, whiteSpace: 'nowrap' }}>PAYMENT MODE</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 160, whiteSpace: 'nowrap' }}>CYLINDERS (DELIV / EMPTY)</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', minWidth: 150 }}>ORIGINAL NOTE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 130, whiteSpace: 'nowrap' }}>PAYMENT MODE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', minWidth: 160 }}>ORIGINAL NOTE</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {formatSaleEditHistory(historySale.edit_history, historySale.GrandTotal, historySale).map((eh, idx) => (
+                    {formatSaleEditHistory(historySale.edit_history, historySale.GrandTotal).map((eh, idx) => (
                       <Table.Tr key={eh.raw.EditId || eh.raw.edit_id || idx}>
                         <Table.Td style={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                           <Text size="xs" fw={700} c="#0f172a">
@@ -2224,35 +2066,10 @@ export const SalesListPage: React.FC = () => {
                         </Table.Td>
 
                         <Table.Td style={{ verticalAlign: 'top', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          {eh.paidChanged && eh.oldPaid !== undefined && eh.newPaid !== undefined ? (
-                            <div>
-                              <Text size="xs" td="line-through" c="dimmed">
-                                ₹{eh.oldPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </Text>
-                              <Group gap={4} justify="flex-end" wrap="nowrap">
-                                <IconArrowRight size={11} color="#800020" />
-                                <Text size="xs" fw={800} style={{ color: '#800020' }}>
-                                  ₹{eh.newPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                </Text>
-                              </Group>
-                              {(eh.excessAdvance || 0) > 0 && (
-                                <Badge size="xs" variant="outline" style={{ color: '#800020', borderColor: '#f5c2cb', backgroundColor: '#ffffff', fontSize: 10, marginTop: 2 }}>
-                                  +₹{eh.excessAdvance.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Cr Adv
-                                </Badge>
-                              )}
-                              {(eh.balanceDue || 0) > 0 && (
-                                <Badge size="xs" variant="outline" style={{ color: '#b91c1c', borderColor: '#fca5a5', backgroundColor: '#ffffff', fontSize: 10, marginTop: 2 }}>
-                                  ₹{eh.balanceDue.toLocaleString('en-IN', { minimumFractionDigits: 2 })} Due
-                                </Badge>
-                              )}
-                            </div>
-                          ) : eh.newPaid !== undefined ? (
+                          {eh.paidAmount !== undefined ? (
                             <div>
                               <Text size="xs" fw={800} style={{ color: '#0f172a' }}>
-                                ₹{eh.newPaid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </Text>
-                              <Text size="10px" c="dimmed">
-                                Paid Fixed
+                                ₹{eh.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                               </Text>
                               {(eh.excessAdvance || 0) > 0 && (
                                 <Badge size="xs" variant="outline" style={{ color: '#800020', borderColor: '#f5c2cb', backgroundColor: '#ffffff', fontSize: 10, marginTop: 2 }}>
@@ -2274,71 +2091,15 @@ export const SalesListPage: React.FC = () => {
 
                         <Table.Td style={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
                           {eh.paymentModeChanged ? (
-                            <div>
-                              <Group gap={4} wrap="nowrap">
-                                <Badge size="xs" variant="outline" style={{ color: '#64748b', borderColor: '#cbd5e1', backgroundColor: '#f8fafc', fontWeight: 600 }}>
-                                  {eh.oldPaymentMethod}
-                                </Badge>
-                                <IconArrowRight size={11} color="#800020" />
-                                <Badge size="xs" variant="outline" style={{ color: '#800020', borderColor: '#f5c2cb', backgroundColor: '#fdf2f4', fontWeight: 700 }}>
-                                  {eh.newPaymentMethod}
-                                </Badge>
-                              </Group>
-                              {(eh.splitCash !== undefined || eh.splitBank !== undefined) && (
-                                <Text size="10px" c="dimmed" mt={3}>
-                                  {eh.splitCash !== undefined ? `Cash: ₹${eh.splitCash.toFixed(2)}` : ''}
-                                  {eh.splitCash !== undefined && eh.splitBank !== undefined ? ' • ' : ''}
-                                  {eh.splitBank !== undefined ? `UPI: ₹${eh.splitBank.toFixed(2)}` : ''}
-                                </Text>
-                              )}
-                            </div>
+                            <Group gap={4} wrap="nowrap">
+                              <Text size="xs" c="dimmed">{eh.oldPaymentMethod}</Text>
+                              <IconArrowRight size={11} color="#800020" />
+                              <Text size="xs" fw={700} style={{ color: '#800020' }}>{eh.newPaymentMethod}</Text>
+                            </Group>
                           ) : (
-                            <div>
-                              <Badge size="xs" variant="outline" style={{ color: '#334155', borderColor: '#cbd5e1', backgroundColor: '#f8fafc', fontWeight: 600 }}>
-                                {eh.newPaymentMethod || eh.oldPaymentMethod || 'Cash'}
-                              </Badge>
-                              {(eh.splitCash !== undefined || eh.splitBank !== undefined) && (
-                                <Text size="10px" c="dimmed" mt={3}>
-                                  {eh.splitCash !== undefined ? `Cash: ₹${eh.splitCash.toFixed(2)}` : ''}
-                                  {eh.splitCash !== undefined && eh.splitBank !== undefined ? ' • ' : ''}
-                                  {eh.splitBank !== undefined ? `UPI: ₹${eh.splitBank.toFixed(2)}` : ''}
-                                </Text>
-                              )}
-                            </div>
-                          )}
-                        </Table.Td>
-
-                        <Table.Td style={{ verticalAlign: 'top', whiteSpace: 'nowrap' }}>
-                          {eh.cylinderChanged ? (
-                            <div>
-                              {eh.delivChanged ? (
-                                <Group gap={3} wrap="nowrap">
-                                  <Text size="xs" td="line-through" c="dimmed">{eh.oldDeliv} Cyl</Text>
-                                  <IconArrowRight size={10} color="#800020" />
-                                  <Text size="xs" fw={700} style={{ color: '#800020' }}>{eh.newDeliv} Cyl</Text>
-                                </Group>
-                              ) : (
-                                <Text size="xs" fw={600} c="#334155">{eh.newDeliv ?? 0} Cyl (Fixed)</Text>
-                              )}
-                              {eh.emptyChanged ? (
-                                <Group gap={3} wrap="nowrap" mt={2}>
-                                  <Text size="11px" td="line-through" c="dimmed">{eh.oldEmpty} Ret</Text>
-                                  <IconArrowRight size={10} color="#800020" />
-                                  <Text size="11px" fw={700} style={{ color: '#800020' }}>{eh.newEmpty} Ret</Text>
-                                </Group>
-                              ) : (
-                                <Text size="10px" c="dimmed" mt={2}>{eh.newEmpty ?? 0} Ret (Fixed)</Text>
-                              )}
-                            </div>
-                          ) : (
-                            <div>
-                              <Text size="xs" fw={600} c="#334155">
-                                {eh.newDeliv ?? historySale.TotalDeliveredQty ?? 0} Cyl Deliv
-                              </Text>
-                              <Text size="10px" c="dimmed">
-                                {eh.newEmpty ?? historySale.TotalEmptyQty ?? 0} Empty Ret (Fixed)
-                              </Text>
-                            </div>
+                            <Badge size="xs" variant="outline" style={{ color: '#334155', borderColor: '#cbd5e1', backgroundColor: '#f8fafc', fontWeight: 600 }}>
+                              {eh.newPaymentMethod || eh.oldPaymentMethod || 'Cash'}
+                            </Badge>
                           )}
                         </Table.Td>
 

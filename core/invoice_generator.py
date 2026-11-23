@@ -1392,7 +1392,7 @@ def generate_customer_statement_pdf(customer, sales_qs, receipts_qs, company_id=
             adv_bal = sum(a.RemainingBalance for a in customer.advances.filter(Status__in=['OPEN', 'PARTIAL']))
         if adv_bal and Decimal(str(adv_bal)) > Decimal('0.00'):
             kpi_box_content.append(
-                Paragraph(f"Customer Advance Balance: <font color='#800020'><b>Rs. {Decimal(str(adv_bal)):,.2f}</b></font>", meta_style)
+                Paragraph(f"Customer Advance Balance: <font color='#0D9488'><b>Rs. {Decimal(str(adv_bal)):,.2f}</b></font>", meta_style)
             )
     except Exception:
         pass
