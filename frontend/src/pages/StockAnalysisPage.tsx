@@ -1621,7 +1621,7 @@ export const StockAnalysisPage: React.FC = () => {
             Stock Analysis {user?.godown_name && !isAdmin ? `— ${user.godown_name}` : ''}
           </Title>
           <Text size="sm" c="dimmed">
-            {user?.godown_name && !isAdmin ? `Live stock and inventory breakdown for ${user.godown_name}` : 'Central warehouse inventory balance and live van fleet allocations'}
+            {user?.godown_name && !isAdmin ? `Live stock and inventory breakdown for ${user.godown_name}` : ''}
           </Text>
         </div>
         {/* Right Actions: Date Filter, Live Sync & Refresh */}
