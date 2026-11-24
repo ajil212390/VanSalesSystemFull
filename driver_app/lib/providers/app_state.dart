@@ -1814,7 +1814,7 @@ class AppState extends ChangeNotifier {
           if (pMethod == 'CREDIT' || pMethod == 'N/A') {
             continue;
           }
-          final amt = safeDouble(s['PaidAmount'] != null ? s['PaidAmount'] : (s['AmountCollected'] ?? 0));
+          final amt = safeDouble(s['PaidAmount'] ?? s['AmountCollected'] ?? 0);
           if (amt <= 0) {
             continue;
           }
