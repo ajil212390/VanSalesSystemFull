@@ -119,6 +119,8 @@ interface StockLocationProduct {
   IsCylinder?: boolean;
   InwardFilledQty?: number;
   InwardEmptyQty?: number;
+  OutwardFilledQty?: number;
+  OutwardEmptyQty?: number;
   DispatchedFilledQty?: number;
   DispatchedEmptyQty?: number;
   OnVanFilledQty?: number;
@@ -432,6 +434,8 @@ export const StockAnalysisPage: React.FC = () => {
             const onVanEmpty = vanList.reduce((sum, v) => sum + (v.EmptyQty ?? 0), 0);
             const dispatchedFilled = matchingG?.DispatchedFilledQty ?? vanList.reduce((sum, v) => sum + (v.AllocatedQty ?? 0), 0);
             const dispatchedEmpty = matchingG?.DispatchedEmptyQty ?? 0;
+            const outwardFilled = matchingG?.OutwardFilledQty ?? dispatchedFilled;
+            const outwardEmpty = matchingG?.OutwardEmptyQty ?? dispatchedEmpty;
             const vanSoldFilled = vanList.reduce((sum, v) => sum + (v.DeliveredQty ?? 0), 0);
             const soldFilled = (product.SoldFilledQty !== undefined && product.SoldFilledQty > 0)
               ? product.SoldFilledQty
@@ -442,7 +446,7 @@ export const StockAnalysisPage: React.FC = () => {
             const inwardFilled = matchingG?.InwardFilledQty ?? filled;
             const inwardEmpty = matchingG?.InwardEmptyQty ?? empty;
 
-            if (filled === 0 && empty === 0 && onVanFilled === 0 && onVanEmpty === 0 && dispatchedFilled === 0 && inwardFilled === 0) return null;
+            if (filled === 0 && empty === 0 && onVanFilled === 0 && onVanEmpty === 0 && dispatchedFilled === 0 && inwardFilled === 0 && outwardFilled === 0) return null;
 
             return {
               ProductId: product.ProductId,
@@ -451,6 +455,8 @@ export const StockAnalysisPage: React.FC = () => {
               UnitName: isCyl ? 'Cyl' : (product.UnitName || 'Nos'),
               InwardFilledQty: inwardFilled,
               InwardEmptyQty: inwardEmpty,
+              OutwardFilledQty: outwardFilled,
+              OutwardEmptyQty: outwardEmpty,
               DispatchedFilledQty: dispatchedFilled,
               DispatchedEmptyQty: dispatchedEmpty,
               OnVanFilledQty: onVanFilled,
@@ -1023,6 +1029,8 @@ export const StockAnalysisPage: React.FC = () => {
     const godownTotals = {
       inwardFilled: displayedProducts.reduce((sum, p) => sum + (p.InwardFilledQty ?? p.BalanceQty ?? 0), 0),
       inwardEmpty: displayedProducts.reduce((sum, p) => sum + (p.InwardEmptyQty ?? p.EmptyQty ?? 0), 0),
+      outwardFilled: displayedProducts.reduce((sum, p) => sum + (p.OutwardFilledQty ?? p.DispatchedFilledQty ?? 0), 0),
+      outwardEmpty: displayedProducts.reduce((sum, p) => sum + (p.OutwardEmptyQty ?? p.DispatchedEmptyQty ?? 0), 0),
       dispatchedFilled: displayedProducts.reduce((sum, p) => sum + (p.DispatchedFilledQty ?? 0), 0),
       dispatchedEmpty: displayedProducts.reduce((sum, p) => sum + (p.DispatchedEmptyQty ?? 0), 0),
       onVanFilled: displayedProducts.reduce((sum, p) => sum + (p.OnVanFilledQty ?? 0), 0),
@@ -1386,27 +1394,17 @@ export const StockAnalysisPage: React.FC = () => {
                       <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
                         OUTWARD
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
-                        ON VANS
-                      </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
-                        SOLD
-                      </Table.Th>
                       <Table.Th colSpan={2} style={{ color: '#0f172a', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', padding: '6px 4px' }}>
                         CLOSING STOCK
                       </Table.Th>
                     </Table.Tr>
                     <Table.Tr>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderLeft: '1px solid #e2e8f0', padding: '4px 6px' }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderRight: '1px solid #e2e8f0', padding: '4px 6px' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, padding: '4px 6px' }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderRight: '1px solid #e2e8f0', padding: '4px 6px' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, padding: '4px 6px' }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderRight: '1px solid #e2e8f0', padding: '4px 6px' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, padding: '4px 6px' }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 50, borderRight: '1px solid #e2e8f0', padding: '4px 6px' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 10, textAlign: 'right', width: 55, padding: '4px 6px' }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 10, textAlign: 'right', width: 55, padding: '4px 6px' }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 60, borderLeft: '1px solid #e2e8f0', padding: '4px 8px' }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 60, borderRight: '1px solid #e2e8f0', padding: '4px 8px' }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 60, padding: '4px 8px' }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 60, borderRight: '1px solid #e2e8f0', padding: '4px 8px' }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 10, textAlign: 'right', width: 65, padding: '4px 8px' }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 10, textAlign: 'right', width: 65, padding: '4px 8px' }}>EMPTY</Table.Th>
                     </Table.Tr>
                   </>
                 )}
@@ -1455,12 +1453,8 @@ export const StockAnalysisPage: React.FC = () => {
                       const isCyl = p.IsCylinder !== false;
                       const inFilled = p.InwardFilledQty ?? p.BalanceQty ?? 0;
                       const inEmpty = p.InwardEmptyQty ?? p.EmptyQty ?? 0;
-                      const dispFilled = p.DispatchedFilledQty ?? 0;
-                      const dispEmpty = p.DispatchedEmptyQty ?? 0;
-                      const onVanFilled = p.OnVanFilledQty ?? 0;
-                      const onVanEmpty = p.OnVanEmptyQty ?? 0;
-                      const soldFilled = p.SoldFilledQty ?? 0;
-                      const soldEmpty = p.SoldEmptyQty ?? 0;
+                      const outFilled = p.OutwardFilledQty ?? p.DispatchedFilledQty ?? 0;
+                      const outEmpty = p.OutwardEmptyQty ?? p.DispatchedEmptyQty ?? 0;
                       const floorFilled = p.BalanceQty ?? p.Qty ?? 0;
                       const floorEmpty = p.EmptyQty ?? 0;
 
@@ -1479,38 +1473,24 @@ export const StockAnalysisPage: React.FC = () => {
                             </Group>
                           </Table.Td>
                           {/* INWARD */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', borderLeft: '1px solid #f1f5f9', padding: '6px 6px' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', borderLeft: '1px solid #f1f5f9', padding: '6px 8px' }}>
                             {inFilled}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 6px' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 8px' }}>
                             {isCyl ? inEmpty : '—'}
                           </Table.Td>
-                          {/* OUTWARD / DISPATCHED */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
-                            {dispFilled}
+                          {/* OUTWARD (Includes Delivery Note Sales) */}
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', padding: '6px 8px' }}>
+                            {outFilled}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 6px' }}>
-                            {isCyl ? dispEmpty : '—'}
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 8px' }}>
+                            {isCyl ? outEmpty : '—'}
                           </Table.Td>
-                          {/* ON VANS */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
-                            {onVanFilled}
-                          </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 6px' }}>
-                            {isCyl ? onVanEmpty : '—'}
-                          </Table.Td>
-                          {/* SOLD */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: '#334155', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
-                            {soldFilled}
-                          </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 12.5, color: isCyl ? '#334155' : '#94a3b8', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #f1f5f9', padding: '6px 6px' }}>
-                            {isCyl ? soldEmpty : '—'}
-                          </Table.Td>
-                          {/* GODOWN STOCK (FLOOR) */}
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
+                          {/* CLOSING STOCK (FLOOR) */}
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '6px 8px' }}>
                             {floorFilled}
                           </Table.Td>
-                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: isCyl ? '#0f172a' : '#94a3b8', fontVariantNumeric: 'tabular-nums', padding: '6px 6px' }}>
+                          <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: isCyl ? '#0f172a' : '#94a3b8', fontVariantNumeric: 'tabular-nums', padding: '6px 8px' }}>
                             {isCyl ? floorEmpty : '—'}
                           </Table.Td>
                         </Table.Tr>
@@ -1521,7 +1501,7 @@ export const StockAnalysisPage: React.FC = () => {
 
                 {displayedProducts.length === 0 && (
                   <Table.Tr>
-                    <Table.Td colSpan={isVehicle ? 6 : 12}>
+                    <Table.Td colSpan={isVehicle ? 6 : 8}>
                       <Center p="xl">
                         <Text size="sm" c="dimmed">No products found matching query.</Text>
                       </Center>
@@ -1558,34 +1538,22 @@ export const StockAnalysisPage: React.FC = () => {
                         Total
                       </Text>
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderLeft: '1px solid #e2e8f0', padding: '8px 6px' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderLeft: '1px solid #e2e8f0', padding: '8px 8px' }}>
                       {godownTotals.inwardFilled}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 6px' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 8px' }}>
                       {godownTotals.inwardEmpty}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
-                      {godownTotals.dispatchedFilled}
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 8px' }}>
+                      {godownTotals.outwardFilled}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 6px' }}>
-                      {godownTotals.dispatchedEmpty}
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 8px' }}>
+                      {godownTotals.outwardEmpty}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
-                      {godownTotals.onVanFilled}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 6px' }}>
-                      {godownTotals.onVanEmpty}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
-                      {godownTotals.soldFilled}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 700, fontSize: 12.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', borderRight: '1px solid #e2e8f0', padding: '8px 6px' }}>
-                      {godownTotals.soldEmpty}
-                    </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 8px' }}>
                       {godownTotals.godownFilled}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 6px' }}>
+                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 13, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '8px 8px' }}>
                       {godownTotals.godownEmpty}
                     </Table.Td>
                   </Table.Tr>

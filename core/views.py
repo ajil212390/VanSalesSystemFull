@@ -6140,39 +6140,53 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             for g in godowns_list_qs:
                 g_rvd = g.RouteVehicleDriver_id
                 
-                # Inward (Full) for selected period
+                # Returns of unsold full cylinders from van shifts back into godown
+                g_return_full = period_movements.filter(
+                    Q(Product=p, RouteVehicleDriverId=g_rvd),
+                    Q(TransactionType__in=['GODOWN_RETURN_FULL', 'VAN_UNLOAD_FULL'])
+                ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
+
+                g_cum_return_full = all_movements.filter(
+                    Q(Product=p, RouteVehicleDriverId=g_rvd),
+                    Q(TransactionType__in=['GODOWN_RETURN_FULL', 'VAN_UNLOAD_FULL'])
+                ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
+
+                # Inward (Full) for selected period - genuine external receipts (excluding returned unsold van stock)
                 g_in_full = period_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
-                    Q(TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN', 'GODOWN_TRANSFER_IN', 'VAN_UNLOAD_FULL']) |
+                    Q(TransactionType__in=['PURCHASE', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN', 'GODOWN_TRANSFER_IN']) |
                     Q(TransactionType='DELIVERY_NOTE', InQty__gt=0)
                 ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
 
-                # Outward (Full) for selected period
-                g_out_full = period_movements.filter(
+                # Outward (Full) for selected period - net outward (sales + dispatches minus unsold returns)
+                g_gross_out = period_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE', 'GODOWN_TRANSFER_OUT']) |
                     Q(TransactionType='DELIVERY_NOTE', OutQty__gt=0)
                 ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
+                g_out_full = max(Decimal('0.00'), g_gross_out - g_return_full)
 
-                # Specifically Dispatched to Vans / Routes (Delivery Notes Out) for selected period
-                g_dispatched_full = period_movements.filter(
+                # Specifically Dispatched to Vans / Routes (Delivery Notes Out) for selected period minus unsold returns
+                g_dispatched_gross = period_movements.filter(
                     Product=p,
                     RouteVehicleDriverId=g_rvd,
                     TransactionType='DELIVERY_NOTE',
                     OutQty__gt=0
                 ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
+                g_dispatched_full = max(Decimal('0.00'), g_dispatched_gross - g_return_full)
 
                 # Cumulative closing floor stock (all movements up to to_date)
                 g_cum_in = all_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
-                    Q(TransactionType__in=['PURCHASE', 'GODOWN_RETURN_FULL', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN', 'GODOWN_TRANSFER_IN', 'VAN_UNLOAD_FULL']) |
+                    Q(TransactionType__in=['PURCHASE', 'RECEIPT_NOTE_RETURN', 'OPENING_STOCK', 'ADJUSTMENT_IN', 'GODOWN_TRANSFER_IN']) |
                     Q(TransactionType='DELIVERY_NOTE', InQty__gt=0)
                 ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
-                g_cum_out = all_movements.filter(
+                g_cum_gross_out = all_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
                     Q(TransactionType__in=['PURCHASE_RETURN', 'ADJUSTMENT_OUT', 'DIRECT_SALE', 'VAN_SALE', 'SALE', 'GODOWN_TRANSFER_OUT']) |
                     Q(TransactionType='DELIVERY_NOTE', OutQty__gt=0)
                 ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
+                g_cum_out = max(Decimal('0.00'), g_cum_gross_out - g_cum_return_full)
                 g_qty_val = max(Decimal('0.00'), g_cum_in - g_cum_out)
                 p_godown_filled += g_qty_val
 
