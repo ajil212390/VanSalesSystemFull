@@ -509,11 +509,11 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             ),
             const SizedBox(height: 10),
 
-            // If customer is selected
+            // If customer is selected: Clean display showing just the customer name
             if (c != null)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(12),
@@ -521,65 +521,46 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 ),
                 child: Row(
                   children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFFDF2F4),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.person_rounded,
-                          size: 20,
-                          color: Color(0xFF800020),
-                        ),
-                      ),
+                    const Icon(
+                      Icons.person_rounded,
+                      size: 20,
+                      color: Color(0xFF800020),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            c.name,
-                            style: GoogleFonts.inter(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF0F172A),
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if (c.phone.isNotEmpty)
-                            Text(
-                              c.phone,
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: const Color(0xFF64748B),
-                              ),
-                            ),
-                        ],
+                      child: Text(
+                        c.name,
+                        style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF0F172A),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    if (c.outstanding != 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    InkWell(
+                      onTap: () {
+                        state.selectCustomer(null);
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
-                          color: c.outstanding > 0 ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
+                          color: const Color(0xFFFEF2F2),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: c.outstanding > 0 ? const Color(0xFFF5C2CB) : const Color(0xFFCBD5E1)),
+                          border: Border.all(color: const Color(0xFFF5C2CB)),
                         ),
                         child: Text(
-                          c.outstanding > 0 ? 'Due: ₹${c.outstanding.abs().toStringAsFixed(0)}' : 'Adv: ₹${c.outstanding.abs().toStringAsFixed(0)}',
+                          'Change',
                           style: GoogleFonts.inter(
-                            fontSize: 11,
+                            fontSize: 11.5,
                             fontWeight: FontWeight.w700,
-                            color: c.outstanding > 0 ? const Color(0xFF800020) : const Color(0xFF475569),
+                            color: const Color(0xFF800020),
                           ),
                         ),
                       ),
+                    ),
                   ],
                 ),
               )
@@ -3050,26 +3031,13 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
                                   ),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          c.name,
-                                          style: GoogleFonts.inter(
-                                            fontSize: 12.5,
-                                            fontWeight: FontWeight.w700,
-                                            color: const Color(0xFF0F172A),
-                                          ),
-                                        ),
-                                        if (c.phone.isNotEmpty)
-                                          Text(
-                                            c.phone,
-                                            style: GoogleFonts.inter(
-                                              fontSize: 11,
-                                              color: const Color(0xFF64748B),
-                                            ),
-                                          ),
-                                      ],
+                                    child: Text(
+                                      c.name,
+                                      style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: const Color(0xFF0F172A),
+                                      ),
                                     ),
                                   ),
                                   if (c.outstanding != 0)

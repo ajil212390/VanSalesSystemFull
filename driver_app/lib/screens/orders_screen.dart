@@ -56,21 +56,27 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     final state = AppStateProvider.of(context);
 
-    // Filter by payment method (Cash, UPI / Bank)
+    // Filter by payment method (Cash, Bank, Credit)
     final cashOrders = state.orders.where((o) {
       final m = o.paymentMethod.toLowerCase();
       return m == 'cash' || (m == 'split' && (o.cashAmount ?? 0) > 0);
     }).toList();
-    final upiOrders = state.orders.where((o) {
+    final bankOrders = state.orders.where((o) {
       final m = o.paymentMethod.toLowerCase();
       return m.contains('upi') || m.contains('bank') || m.contains('online') || (m == 'split' && (o.upiAmount ?? 0) > 0);
+    }).toList();
+    final creditOrders = state.orders.where((o) {
+      final m = o.paymentMethod.toLowerCase();
+      return m == 'credit' || (o.amount <= 0 && m != 'cash' && !m.contains('upi') && !m.contains('bank'));
     }).toList();
 
     List<DeliveryOrder> displayOrders;
     if (_activeFilterIndex == 1) {
       displayOrders = cashOrders;
     } else if (_activeFilterIndex == 2) {
-      displayOrders = upiOrders;
+      displayOrders = bankOrders;
+    } else if (_activeFilterIndex == 3) {
+      displayOrders = creditOrders;
     } else {
       displayOrders = state.orders;
     }
@@ -254,7 +260,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
 
   // ================= 2. SMOOTH ANIMATED SEGMENTED TOGGLE (ZERO GLOW, SLIDING PILL) =================
   Widget _buildAnimatedSegmentedToggle() {
-    final tabs = ['All', 'Cash', 'UPI / Bank'];
+    final tabs = ['All', 'Cash', 'Bank', 'Credit'];
 
     return Container(
       height: 42,
@@ -303,12 +309,16 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         child: AnimatedDefaultTextStyle(
                           duration: const Duration(milliseconds: 200),
                           style: GoogleFonts.inter(
-                            fontSize: 12.5,
+                            fontSize: 12.0,
                             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
                             color: isSelected ? Colors.white : const Color(0xFF64748B),
                             letterSpacing: isSelected ? 0.1 : 0,
                           ),
-                          child: Text(tabs[index]),
+                          child: Text(
+                            tabs[index],
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
                     ),
@@ -1139,11 +1149,17 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
       selectedMethod = 'UPI';
     } else if (mLow == 'split') {
       selectedMethod = 'Split';
+    } else if (mLow == 'credit') {
+      selectedMethod = 'Credit';
     } else {
       selectedMethod = 'Cash';
     }
 
-    final amountController = TextEditingController(text: order.amount.toStringAsFixed(0));
+    // Keep track of non-credit amount so toggling back to Cash/UPI restores it
+    double previousNonCreditAmount = order.amount > 0 ? order.amount : calcTotal();
+    final amountController = TextEditingController(
+      text: selectedMethod == 'Credit' ? '0' : order.amount.toStringAsFixed(0),
+    );
     final splitCashController = TextEditingController(
       text: (order.cashAmount ?? 0) > 0 ? (order.cashAmount ?? 0).toStringAsFixed(0) : '',
     );
@@ -1386,14 +1402,22 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                         if (it.deliveryQty > 0) {
                                           setModalState(() {
                                             it.deliveryQty--;
-                                            amountController.text = calcTotal().toStringAsFixed(0);
+                                            final newTot = calcTotal();
+                                            previousNonCreditAmount = newTot;
+                                            if (selectedMethod.toLowerCase() != 'credit') {
+                                              amountController.text = newTot.toStringAsFixed(0);
+                                            }
                                           });
                                         }
                                       },
                                       onIncrease: () {
                                         setModalState(() {
                                           it.deliveryQty++;
-                                          amountController.text = calcTotal().toStringAsFixed(0);
+                                          final newTot = calcTotal();
+                                          previousNonCreditAmount = newTot;
+                                          if (selectedMethod.toLowerCase() != 'credit') {
+                                            amountController.text = newTot.toStringAsFixed(0);
+                                          }
                                         });
                                       },
                                     ),
@@ -1462,7 +1486,10 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                               InkWell(
                                 onTap: () {
                                   setModalState(() {
-                                    amountController.text = computedTotal.toStringAsFixed(0);
+                                    previousNonCreditAmount = computedTotal;
+                                    if (selectedMethod.toLowerCase() != 'credit') {
+                                      amountController.text = computedTotal.toStringAsFixed(0);
+                                    }
                                   });
                                 },
                                 borderRadius: BorderRadius.circular(6),
@@ -1491,6 +1518,12 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                           readOnly: selectedMethod.toLowerCase() == 'credit',
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           cursorColor: const Color(0xFF800020),
+                          onChanged: (val) {
+                            final parsed = double.tryParse(val.trim());
+                            if (parsed != null && parsed > 0) {
+                              previousNonCreditAmount = parsed;
+                            }
+                          },
                           style: GoogleFonts.inter(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -1504,7 +1537,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                               color: const Color(0xFF800020),
                             ),
                             filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
+                            fillColor: selectedMethod.toLowerCase() == 'credit' ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
                               borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
@@ -1516,6 +1549,26 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           ),
                         ),
+                        if (selectedMethod.toLowerCase() == 'credit')
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.info_outline, size: 13, color: Color(0xFF800020)),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                  child: Text(
+                                    'Credit Sale: ₹0 collected. Total bill will be added to customer credit balance.',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF800020),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -1554,23 +1607,31 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                 child: InkWell(
                                   onTap: () {
                                     setModalState(() {
+                                      final oldMethod = selectedMethod;
                                       selectedMethod = m;
-                                      if (m == 'Split') {
-                                        final half = (computedTotal / 2).roundToDouble();
-                                        if (splitCashController.text.isEmpty) {
-                                          splitCashController.text = half.toStringAsFixed(0);
+                                      if (m == 'Credit') {
+                                        final currentAmt = double.tryParse(amountController.text.trim()) ?? 0;
+                                        if (currentAmt > 0) {
+                                          previousNonCreditAmount = currentAmt;
                                         }
-                                        if (splitUpiController.text.isEmpty) {
-                                          splitUpiController.text = (computedTotal - half).toStringAsFixed(0);
-                                        }
-                                        amountController.text = computedTotal.toStringAsFixed(0);
-                                      } else if (m == 'Credit') {
                                         amountController.text = '0';
                                         splitCashController.clear();
                                         splitUpiController.clear();
+                                      } else if (m == 'Split') {
+                                        final baseAmt = previousNonCreditAmount > 0 ? previousNonCreditAmount : computedTotal;
+                                        final half = (baseAmt / 2).roundToDouble();
+                                        if (splitCashController.text.isEmpty || splitCashController.text == '0') {
+                                          splitCashController.text = half.toStringAsFixed(0);
+                                        }
+                                        if (splitUpiController.text.isEmpty || splitUpiController.text == '0') {
+                                          splitUpiController.text = (baseAmt - half).toStringAsFixed(0);
+                                        }
+                                        amountController.text = baseAmt.toStringAsFixed(0);
                                       } else {
-                                        if (amountController.text == '0' || amountController.text.isEmpty) {
-                                          amountController.text = computedTotal.toStringAsFixed(0);
+                                        // Cash or UPI: restore previous non-credit amount if was 0 or credit
+                                        if (oldMethod == 'Credit' || amountController.text == '0' || amountController.text.isEmpty) {
+                                          final restoreAmt = previousNonCreditAmount > 0 ? previousNonCreditAmount : computedTotal;
+                                          amountController.text = restoreAmt.toStringAsFixed(0);
                                         }
                                       }
                                     });

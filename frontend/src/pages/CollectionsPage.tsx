@@ -796,12 +796,12 @@ export const CollectionsPage: React.FC = () => {
               Print / PDF Statement
             </Button>
             <Button
-              variant="default"
               size="xs"
-              leftSection={<IconCash size={15} color="#800020" />}
+              leftSection={<IconReceipt2 size={15} />}
               onClick={() => navigate('/receipts/new')}
+              style={{ backgroundColor: '#800020', color: '#ffffff' }}
             >
-              + Record Receipt
+              + Receipts
             </Button>
             <Button
               variant="default"

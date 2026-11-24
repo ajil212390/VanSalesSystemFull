@@ -794,7 +794,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void selectCustomer(Customer customer) {
+  void selectCustomer(Customer? customer) {
     selectedCustomer = customer;
     notifyListeners();
   }
