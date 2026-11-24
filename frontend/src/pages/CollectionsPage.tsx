@@ -769,7 +769,7 @@ export const CollectionsPage: React.FC = () => {
               </Title>
             </Group>
             <Text size="xs" c="dimmed" mt={3}>
-            Note: Only showing the approved collections check van management for live van collections
+            Note: Only showing the approved collections 
             </Text>
           </div>
 
