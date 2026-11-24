@@ -11312,10 +11312,10 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
             old_vch.delete()
 
         # Clean up associated Payment, Payment voucher, and BillwiseAllocation
-        stale_pay = Payment.objects.filter(
+        stale_pays = Payment.objects.filter(
             Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
-        ).first()
-        if stale_pay:
+        )
+        for stale_pay in stale_pays:
             stale_vchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=stale_pay.PaymentId)
             for sv in stale_vchs:
                 affected_ledgers.update(sv.lines.values_list('Ledger_id', flat=True))
@@ -11752,10 +11752,10 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
         )
     else:
         # If no cash collected on delivery, delete any obsolete receipt & voucher
-        stale_pay = Payment.objects.filter(
+        stale_pays = Payment.objects.filter(
             Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
-        ).first()
-        if stale_pay:
+        )
+        for stale_pay in stale_pays:
             stale_vchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=stale_pay.PaymentId)
             for sv in stale_vchs:
                 affected_ledgers.update(sv.lines.values_list('Ledger_id', flat=True))

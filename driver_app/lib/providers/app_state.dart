@@ -1296,6 +1296,9 @@ class AppState extends ChangeNotifier {
       finalUpiAmt = upiAmount ?? (newAmount - finalCashAmt);
     }
 
+    final computedBill = updatedItems.fold<double>(0.0, (sum, it) => sum + (it.deliveryQty * it.cylinder.price));
+    final finalBillTotal = computedBill > 0 ? computedBill : oldOrder.billTotal;
+
     orders[index] = DeliveryOrder(
       ticketId: oldOrder.ticketId,
       salesId: oldOrder.salesId,
@@ -1304,7 +1307,7 @@ class AppState extends ChangeNotifier {
       totalCylinders: totalDeliv,
       totalEmpties: totalEmpty,
       amount: newAmount,
-      billTotal: oldOrder.billTotal,
+      billTotal: finalBillTotal,
       paymentMethod: newPaymentMethod,
       cashAmount: finalCashAmt,
       upiAmount: finalUpiAmt,
