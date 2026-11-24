@@ -3,7 +3,7 @@ import io
 import re
 import html
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import datetime
+from datetime import datetime, date
 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
