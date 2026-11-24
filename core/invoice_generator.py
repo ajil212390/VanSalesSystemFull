@@ -450,8 +450,7 @@ def generate_tax_invoice_pdf(sale):
     total_sgst_sum = Decimal('0.00')
     total_igst_sum = Decimal('0.00')
     total_gross_sum = Decimal('0.00')
-    cylinder_tax_breakdown = []
-    other_tax_breakdown = []
+    delivered_tax_items = []
 
     lines = sale.lines.select_related('Product', 'Unit').all()
     is_intra_customer = (not customer or not customer.StateId or customer.StateId in [12, 32])
@@ -535,6 +534,16 @@ def generate_tax_invoice_pdf(sale):
         total_sgst_sum += sgst_val
         total_igst_sum += igst_val
         total_gross_sum += gross_val
+
+        delivered_tax_items.append({
+            'gst_rate': Decimal('18.00') if tot_tax > Decimal('0.00') else Decimal('0.00'),
+            'taxable_amount': taxable_val,
+            'tax_amount': tot_tax,
+            'cgst_amount': cgst_val,
+            'sgst_amount': sgst_val,
+            'igst_amount': igst_val,
+            'qty': Decimal(str(sale.TotalDeliveredQty or 1)),
+        })
     else:
         for idx, line in enumerate(lines, 1):
             prod = line.Product
@@ -583,47 +592,9 @@ def generate_tax_invoice_pdf(sale):
             total_igst_sum += igst_amount
             total_gross_sum += gross_total
 
-            # Determine if this line is a cylinder product and if it was delivered
-            prod = line.Product
-            cat_name = (prod.Category.CategoryName or '') if (prod and prod.Category) else ''
-            p_name = line.ProductName or (prod.ProductName if prod else '') or ''
-            
-            is_cylinder = (
-                ('CYLINDER' in cat_name.upper()) or 
-                ('CYLINDER' in p_name.upper()) or 
-                ('KG' in p_name.upper()) or 
-                ('LPG' in p_name.upper())
-            )
             is_delivered = (qty > Decimal('0.00'))
-
-            # Separate GST breakdown strictly for delivered cylinders
-            if is_cylinder and is_delivered and (tax_amount > Decimal('0.00') or taxable_amount > Decimal('0.00')):
-                m = re.search(r'(\d+(?:\.\d+)?\s*KG)', p_name, re.IGNORECASE)
-                if m:
-                    kg_part = re.sub(r'\b0+(\d+)', r'\1', m.group(1).upper())
-                    kg_part = re.sub(r'(\d+)\s*KG', r'\1 KG', kg_part)
-                    prod_name_clean = f"{kg_part} Cyl"
-                else:
-                    prod_name_clean = re.sub(r'^(?:LPG\s+)?', '', p_name, flags=re.IGNORECASE)
-                    prod_name_clean = re.sub(r'\s+GAS\s+CYLINDER$', ' Cyl', prod_name_clean, flags=re.IGNORECASE)
-                    prod_name_clean = re.sub(r'\s+CYLINDER$', ' Cyl', prod_name_clean, flags=re.IGNORECASE)
-                    prod_name_clean = prod_name_clean.strip() or 'Cylinder'
-
-                cylinder_tax_breakdown.append({
-                    'product_name': line.ProductName,
-                    'clean_label': prod_name_clean,
-                    'gst_rate': gst_rate,
-                    'taxable_amount': taxable_amount,
-                    'tax_amount': tax_amount,
-                    'cgst_amount': cgst_amount,
-                    'sgst_amount': sgst_amount,
-                    'igst_amount': igst_amount,
-                    'qty': qty,
-                })
-            elif (not is_cylinder) and is_delivered and tax_amount > Decimal('0.00'):
-                other_tax_breakdown.append({
-                    'product_name': line.ProductName,
-                    'clean_label': 'Other Items',
+            if is_delivered:
+                delivered_tax_items.append({
                     'gst_rate': gst_rate,
                     'taxable_amount': taxable_amount,
                     'tax_amount': tax_amount,
@@ -642,54 +613,34 @@ def generate_tax_invoice_pdf(sale):
                 Paragraph(f"{taxable_amount:.2f}", cell_right_bold),
             ])
 
-    # Group cylinder tax breakdown by cylinder label and rate
-    grouped_cyl_map = {}
-    for item in cylinder_tax_breakdown:
-        key = (item['clean_label'], item['gst_rate'])
-        if key not in grouped_cyl_map:
-            grouped_cyl_map[key] = {
-                'clean_label': item['clean_label'],
-                'gst_rate': item['gst_rate'],
+    # Group delivered products by GST rate for the sketch GST summary table
+    rate_tax_map = {}
+    for itm in delivered_tax_items:
+        r = itm['gst_rate']
+        if r not in rate_tax_map:
+            rate_tax_map[r] = {
                 'taxable_amount': Decimal('0.00'),
                 'cgst_amount': Decimal('0.00'),
                 'sgst_amount': Decimal('0.00'),
                 'igst_amount': Decimal('0.00'),
                 'tax_amount': Decimal('0.00'),
-                'qty': Decimal('0.00'),
             }
-        grouped_cyl_map[key]['taxable_amount'] += item['taxable_amount']
-        grouped_cyl_map[key]['cgst_amount'] += item['cgst_amount']
-        grouped_cyl_map[key]['sgst_amount'] += item['sgst_amount']
-        grouped_cyl_map[key]['igst_amount'] += item['igst_amount']
-        grouped_cyl_map[key]['tax_amount'] += item['tax_amount']
-        grouped_cyl_map[key]['qty'] += item['qty']
-    grouped_cylinders = list(grouped_cyl_map.values())
+        rate_tax_map[r]['taxable_amount'] += itm['taxable_amount']
+        rate_tax_map[r]['cgst_amount'] += itm['cgst_amount']
+        rate_tax_map[r]['sgst_amount'] += itm['sgst_amount']
+        rate_tax_map[r]['igst_amount'] += itm['igst_amount']
+        rate_tax_map[r]['tax_amount'] += itm['tax_amount']
 
-    # Group non-cylinder tax breakdown
-    grouped_oth_map = {}
-    for item in other_tax_breakdown:
-        key = item['gst_rate']
-        if key not in grouped_oth_map:
-            grouped_oth_map[key] = {
-                'clean_label': 'Other Items',
-                'gst_rate': item['gst_rate'],
-                'taxable_amount': Decimal('0.00'),
-                'cgst_amount': Decimal('0.00'),
-                'sgst_amount': Decimal('0.00'),
-                'igst_amount': Decimal('0.00'),
-                'tax_amount': Decimal('0.00'),
-                'qty': Decimal('0.00'),
-            }
-        grouped_oth_map[key]['taxable_amount'] += item['taxable_amount']
-        grouped_oth_map[key]['cgst_amount'] += item['cgst_amount']
-        grouped_oth_map[key]['sgst_amount'] += item['sgst_amount']
-        grouped_oth_map[key]['igst_amount'] += item['igst_amount']
-        grouped_oth_map[key]['tax_amount'] += item['tax_amount']
-        grouped_oth_map[key]['qty'] += item['qty']
-    grouped_others = list(grouped_oth_map.values())
+    if not rate_tax_map and not is_empty_return and not is_money_receipt:
+        rate_tax_map[Decimal('0.00')] = {
+            'taxable_amount': total_taxable_sum,
+            'cgst_amount': total_cgst_sum,
+            'sgst_amount': total_sgst_sum,
+            'igst_amount': total_igst_sum,
+            'tax_amount': total_cgst_sum + total_sgst_sum + total_igst_sum,
+        }
 
-    # Ensure a 10-line space for product rows (standard ERP invoice format)
-    # If fewer than 10 rows, pad with empty rows so the table always has 10 lines
+    # Ensure strictly 10 product lines in the items table (compact height as requested)
     min_product_rows = 10
     current_product_count = len(table_rows) - 1  # excluding header
     if current_product_count < min_product_rows:
@@ -710,10 +661,10 @@ def generate_tax_invoice_pdf(sale):
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
         ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
-        ('TOPPADDING', (0, 0), (-1, -1), 2.5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
-        ('LEFTPADDING', (0, 0), (-1, -1), 5),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 1.8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 1.8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
     ]
     for r in range(1, len(table_rows)):
         bg = LIGHT_BG if r % 2 == 1 else colors.white
@@ -721,13 +672,139 @@ def generate_tax_invoice_pdf(sale):
 
     items_table.setStyle(TableStyle(t_style))
     story.append(items_table)
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 5))
 
-    # -------------------------------------------------------------
-    # 4. TAX & CUSTOMER LEDGER BREAKDOWN (Matching Handwritten Template)
-    # -------------------------------------------------------------
     total_gst_sum = total_cgst_sum + total_sgst_sum + total_igst_sum
     current_bill_amount = total_gross_sum if total_gross_sum > 0 else Decimal(str(sale.GrandTotal or 0))
+
+    # -------------------------------------------------------------
+    # 4. GST RATE SUMMARY TABLE (DIRECTLY AFTER 10 PRODUCT ROWS AS PER SKETCH)
+    # -------------------------------------------------------------
+    if not is_empty_return and not is_money_receipt:
+        gst_th_style = ParagraphStyle(
+            'GstTh', parent=styles['Normal'],
+            fontName=FONT_BOLD, fontSize=7, leading=9, alignment=1, textColor=colors.white
+        )
+        gst_cell_norm = ParagraphStyle(
+            'GstCellNorm', parent=styles['Normal'],
+            fontName=FONT_NAME, fontSize=7.5, leading=9.5, alignment=1, textColor=DARK_COLOR
+        )
+        gst_cell_right = ParagraphStyle(
+            'GstCellRight', parent=styles['Normal'],
+            fontName=FONT_NAME, fontSize=7.5, leading=9.5, alignment=2, textColor=DARK_COLOR
+        )
+        gst_cell_right_bold = ParagraphStyle(
+            'GstCellRightBold', parent=styles['Normal'],
+            fontName=FONT_BOLD, fontSize=7.5, leading=9.5, alignment=2, textColor=DARK_COLOR
+        )
+
+        gst_table_rows = [
+            [
+                Paragraph("Taxable Value (Rs.)", gst_th_style),
+                Paragraph("GST %", gst_th_style),
+                Paragraph("SGST", gst_th_style),
+                "",
+                Paragraph("CGST", gst_th_style),
+                "",
+                Paragraph("IGST", gst_th_style),
+                "",
+                Paragraph("Total Tax Amount (Rs.)", gst_th_style),
+            ],
+            [
+                "",
+                "",
+                Paragraph("%", gst_th_style),
+                Paragraph("Amount", gst_th_style),
+                Paragraph("%", gst_th_style),
+                Paragraph("Amount", gst_th_style),
+                Paragraph("%", gst_th_style),
+                Paragraph("Amount", gst_th_style),
+                "",
+            ]
+        ]
+
+        def fmt_pct(dec_val):
+            if dec_val % 1 == 0:
+                return f"{int(dec_val)}%"
+            return f"{dec_val.normalize():f}%"
+
+        sorted_rates = sorted(rate_tax_map.keys(), reverse=True)
+        for r in sorted_rates:
+            dt = rate_tax_map[r]
+            r_taxable = dt['taxable_amount']
+            r_cgst = dt['cgst_amount']
+            r_sgst = dt['sgst_amount']
+            r_igst = dt['igst_amount']
+            r_tax = dt['tax_amount']
+            half_r = r / Decimal('2.00')
+
+            if is_intra_customer:
+                s_rate_str = fmt_pct(half_r)
+                s_amt_str = f"{r_sgst:,.2f}"
+                c_rate_str = fmt_pct(half_r)
+                c_amt_str = f"{r_cgst:,.2f}"
+                i_rate_str = "—"
+                i_amt_str = "—"
+            else:
+                s_rate_str = "—"
+                s_amt_str = "—"
+                c_rate_str = "—"
+                c_amt_str = "—"
+                i_rate_str = fmt_pct(r)
+                i_amt_str = f"{r_igst:,.2f}"
+
+            gst_table_rows.append([
+                Paragraph(f"{r_taxable:,.2f}", gst_cell_right),
+                Paragraph(fmt_pct(r), gst_cell_norm),
+                Paragraph(s_rate_str, gst_cell_norm),
+                Paragraph(s_amt_str, gst_cell_right),
+                Paragraph(c_rate_str, gst_cell_norm),
+                Paragraph(c_amt_str, gst_cell_right),
+                Paragraph(i_rate_str, gst_cell_norm),
+                Paragraph(i_amt_str, gst_cell_right),
+                Paragraph(f"{r_tax:,.2f}", gst_cell_right_bold),
+            ])
+
+        # Bottom Total Row for GST breakdown
+        gst_table_rows.append([
+            Paragraph(f"<b>{total_taxable_sum:,.2f}</b>", gst_cell_right_bold),
+            Paragraph("<b>TOTAL</b>", gst_cell_norm),
+            Paragraph("", gst_cell_norm),
+            Paragraph(f"<b>{total_sgst_sum:,.2f}</b>" if is_intra_customer else "—", gst_cell_right_bold),
+            Paragraph("", gst_cell_norm),
+            Paragraph(f"<b>{total_cgst_sum:,.2f}</b>" if is_intra_customer else "—", gst_cell_right_bold),
+            Paragraph("", gst_cell_norm),
+            Paragraph(f"<b>{total_igst_sum:,.2f}</b>" if not is_intra_customer else "—", gst_cell_right_bold),
+            Paragraph(f"<b>Rs. {total_gst_sum:,.2f}</b>", gst_cell_right_bold),
+        ])
+
+        gst_style = [
+            ('BACKGROUND', (0, 0), (-1, 1), PRIMARY_COLOR),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
+            ('TOPPADDING', (0, 0), (-1, -1), 1.8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 1.8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+            ('SPAN', (0, 0), (0, 1)),
+            ('SPAN', (1, 0), (1, 1)),
+            ('SPAN', (2, 0), (3, 0)),
+            ('SPAN', (4, 0), (5, 0)),
+            ('SPAN', (6, 0), (7, 0)),
+            ('SPAN', (8, 0), (8, 1)),
+            ('BACKGROUND', (0, -1), (-1, -1), LIGHT_BG),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, PRIMARY_COLOR),
+        ]
+        for r_idx in range(2, len(gst_table_rows) - 1):
+            bg = LIGHT_BG if r_idx % 2 == 1 else colors.white
+            gst_style.append(('BACKGROUND', (0, r_idx), (-1, r_idx), bg))
+
+        gst_table = Table(gst_table_rows, colWidths=[88, 42, 40, 60, 40, 60, 40, 60, 115])
+        gst_table.setStyle(TableStyle(gst_style))
+        story.append(gst_table)
+        story.append(Spacer(1, 5))
 
     # Determine Paid Amount:
     c_split, u_split = extract_split_amounts(sale)
@@ -1022,63 +1099,22 @@ def generate_tax_invoice_pdf(sale):
              Paragraph(f"<b>Rs. {paid_amt:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
         ], colWidths=[140, 130])
     else:
+        # EXACTLY 3 CALCULATION LINES AS REQUESTED BY USER & IN USER'S SKETCH
         tax_rows = [
-            [Paragraph("<b>TAX &amp; INVOICE BREAKDOWN</b>", section_title), Paragraph("", cell_norm)],
+            [Paragraph("<b>NET AMOUNT CALCULATION</b>", section_title), Paragraph("", cell_norm)],
             [Paragraph("Gross Amount (Taxable) :", cell_norm), Paragraph(f"Rs. {total_taxable_sum:,.2f}", cell_right_bold)],
+            [Paragraph("Total Tax Amount :", cell_norm), Paragraph(f"Rs. {total_gst_sum:,.2f}", cell_right_bold)],
+            [Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
+             Paragraph(f"<b>Rs. {current_bill_amount:,.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
         ]
 
-        if len(grouped_cylinders) > 1:
-            for item in grouped_cylinders:
-                lbl = item['clean_label']
-                rate = item['gst_rate']
-                tax_amt = item['tax_amount']
-                norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
-                tax_rows.append([
-                    Paragraph(f"GST @ {norm_rate}% ({lbl}) :", cell_muted),
-                    Paragraph(f"Rs. {tax_amt:,.2f}", cell_right)
-                ])
-        elif len(grouped_cylinders) == 1:
-            item = grouped_cylinders[0]
-            rate = item['gst_rate']
-            tax_amt = item['tax_amount']
-            norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
-            lbl = item['clean_label']
-            lbl_suffix = f" ({lbl})" if grouped_others else ""
-            tax_rows.append([
-                Paragraph(f"GST @ {norm_rate}%{lbl_suffix} :", cell_muted),
-                Paragraph(f"Rs. {tax_amt:,.2f}", cell_right)
-            ])
-        else:
-            if total_gst_sum > Decimal('0.00'):
-                tax_rows.append([Paragraph("GST :", cell_muted), Paragraph(f"Rs. {total_gst_sum:,.2f}", cell_right)])
-
-        if grouped_others:
-            for item in grouped_others:
-                lbl = item['clean_label']
-                rate = item['gst_rate']
-                tax_amt = item['tax_amount']
-                norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
-                tax_rows.append([
-                    Paragraph(f"GST @ {norm_rate}% ({lbl}) :", cell_muted),
-                    Paragraph(f"Rs. {tax_amt:,.2f}", cell_right)
-                ])
-
-        tax_rows.append([
-            Paragraph("<b>Total GST :</b>", cell_bold),
-            Paragraph(f"<b>Rs. {total_gst_sum:,.2f}</b>", cell_right_bold)
-        ])
-        tax_rows.append([
-            Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
-            Paragraph(f"<b>Rs. {current_bill_amount:,.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))
-        ])
-
-        tax_summary_table = Table(tax_rows, colWidths=[150, 120])
+        tax_summary_table = Table(tax_rows, colWidths=[145, 125])
         tax_summary_table.setStyle(TableStyle([
             ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
-            ('LINEBELOW', (0, -2), (-1, -2), 1, BORDER_COLOR),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, BORDER_COLOR),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 2.5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
             ('LEFTPADDING', (0, 0), (-1, -1), 4),
             ('RIGHTPADDING', (0, 0), (-1, -1), 4),
         ]))
@@ -1092,13 +1128,13 @@ def generate_tax_invoice_pdf(sale):
         ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
         ('BACKGROUND', (1, 0), (1, 0), CARD_BG),
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ('LEFTPADDING', (0, 0), (-1, -1), 6),
         ('RIGHTPADDING', (0, 0), (-1, -1), 6),
     ]))
     story.append(combined_summary_table)
-    story.append(Spacer(1, 8))
+    story.append(Spacer(1, 5))
 
     # -------------------------------------------------------------
     # 5. AMOUNT IN WORDS & TERMS
