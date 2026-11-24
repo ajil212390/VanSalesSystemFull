@@ -7581,20 +7581,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                                 Payment=temp_pmt, LineNo=1, PaymentMode='Cash',
                                 Ledger=cash_led, Amount=c_amt, Narration=f"Cash Split for {bill_ref}"
                             )
-                            BillwiseAllocation.objects.create(
-                                PaymentLine=pl1, ReferenceTable='Receipt', ReferenceId=temp_pmt.PaymentId,
-                                BillType='SALES', BillReference=bill_ref, BillDate=date.today(),
-                                AllocationType='Against Reference', AllocatedAmount=c_amt, CompanyId=company_id
-                            )
                         if u_amt > 0 and bank_led:
                             pl2 = PaymentLine.objects.create(
                                 Payment=temp_pmt, LineNo=2, PaymentMode='Bank',
                                 Ledger=bank_led, Amount=u_amt, Narration=f"UPI Split for {bill_ref}"
-                            )
-                            BillwiseAllocation.objects.create(
-                                PaymentLine=pl2, ReferenceTable='Receipt', ReferenceId=temp_pmt.PaymentId,
-                                BillType='SALES', BillReference=bill_ref, BillDate=date.today(),
-                                AllocationType='Against Reference', AllocatedAmount=u_amt, CompanyId=company_id
                             )
                     else:
                         p_mode = 'Bank' if ('UPI' in pm_upper or 'BANK' in pm_upper or 'ONLINE' in pm_upper) else 'Cash'
@@ -7603,11 +7593,29 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                             Payment=temp_pmt, LineNo=1, PaymentMode=p_mode,
                             Ledger=target_led or customer, Amount=sale.PaidAmount, Narration=f"{p_mode} Receipt for {bill_ref}"
                         )
-                        BillwiseAllocation.objects.create(
-                            PaymentLine=pl, ReferenceTable='Receipt', ReferenceId=temp_pmt.PaymentId,
-                            BillType='SALES', BillReference=bill_ref, BillDate=date.today(),
-                            AllocationType='Against Reference', AllocatedAmount=sale.PaidAmount, CompanyId=company_id
-                        )
+
+                    if is_rcpt_only:
+                        allocate_receipt_to_pending_bills_or_advance(temp_pmt, company_id)
+                    else:
+                        if is_split and (cash_amount > 0 or upi_amount > 0):
+                            if c_amt > 0 and cash_led and 'pl1' in locals():
+                                BillwiseAllocation.objects.create(
+                                    PaymentLine=pl1, ReferenceTable='Receipt', ReferenceId=temp_pmt.PaymentId,
+                                    BillType='SALES', BillReference=bill_ref, BillDate=date.today(),
+                                    AllocationType='Against Reference', AllocatedAmount=c_amt, CompanyId=company_id
+                                )
+                            if u_amt > 0 and bank_led and 'pl2' in locals():
+                                BillwiseAllocation.objects.create(
+                                    PaymentLine=pl2, ReferenceTable='Receipt', ReferenceId=temp_pmt.PaymentId,
+                                    BillType='SALES', BillReference=bill_ref, BillDate=date.today(),
+                                    AllocationType='Against Reference', AllocatedAmount=u_amt, CompanyId=company_id
+                                )
+                        else:
+                            BillwiseAllocation.objects.create(
+                                PaymentLine=pl, ReferenceTable='Receipt', ReferenceId=temp_pmt.PaymentId,
+                                BillType='SALES', BillReference=bill_ref, BillDate=date.today(),
+                                AllocationType='Against Reference', AllocatedAmount=sale.PaidAmount, CompanyId=company_id
+                            )
                 except Exception:
                     pass
 
