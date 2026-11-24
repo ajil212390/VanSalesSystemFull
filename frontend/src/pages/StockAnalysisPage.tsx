@@ -33,7 +33,7 @@ import {
   IconBuildingWarehouse,
   IconCalendar,
 } from '@tabler/icons-react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
@@ -251,9 +251,34 @@ interface StockAnalysisResponse {
 const EMPTY_PRODUCT_STOCK: ProductStockItem[] = [];
 export const StockAnalysisPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = location.state as { from?: string; fromTitle?: string } | null;
   const [searchParams, setSearchParams] = useSearchParams();
   const productParam = searchParams.get('product');
   const locationParam = searchParams.get('location');
+
+  const handleProductBack = () => {
+    if (locationState?.from) {
+      navigate(locationState.from);
+    } else if (window.history.length > 1 && window.history.state?.idx > 0) {
+      navigate(-1);
+    } else {
+      setSearchParams({});
+      setAllocationSearch('');
+    }
+  };
+
+  const handleLocationBack = () => {
+    if (locationState?.from) {
+      navigate(locationState.from);
+    } else if (window.history.length > 1 && window.history.state?.idx > 0) {
+      navigate(-1);
+    } else {
+      setSearchParams({});
+      setStoredProductSearch('');
+      setCategoryFilter('all');
+    }
+  };
 
   const user = useAuthStore((s) => s.user);
   const role = (user?.role || '').toLowerCase();
@@ -773,11 +798,8 @@ export const StockAnalysisPage: React.FC = () => {
               variant="subtle"
               color="gray"
               size="lg"
-              onClick={() => {
-                setSearchParams({});
-                setAllocationSearch('');
-              }}
-              title="Back to Stock Analysis"
+              onClick={handleProductBack}
+              title={locationState?.fromTitle || "Back"}
               style={{ color: '#0f172a' }}
             >
               <IconArrowLeft size={20} />
@@ -1114,12 +1136,8 @@ export const StockAnalysisPage: React.FC = () => {
               variant="subtle"
               color="gray"
               size="lg"
-              onClick={() => {
-                setSearchParams({});
-                setStoredProductSearch('');
-                setCategoryFilter('all');
-              }}
-              title="Back to Stock Analysis"
+              onClick={handleLocationBack}
+              title={locationState?.fromTitle || "Back"}
               style={{ color: '#0f172a' }}
             >
               <IconArrowLeft size={20} />
@@ -1408,59 +1426,59 @@ export const StockAnalysisPage: React.FC = () => {
           </Group>
 
           <Table.ScrollContainer minWidth={680}>
-            <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="xs">
+            <Table highlightOnHover verticalSpacing={5} horizontalSpacing="xs">
               <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
                 {isVehicle ? (
                   <Table.Tr>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', width: 90 }}>
+                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', width: 90, padding: '4px 8px' }}>
                       CODE
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '4px 8px' }}>
                       PRODUCT
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110, padding: '4px 8px' }}>
                       ALLOCATED
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110, padding: '4px 8px' }}>
                       DELIVERED
                     </Table.Th>
-                    <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 130 }}>
+                    <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 130, padding: '4px 8px' }}>
                       BALANCE (FULL)
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 130 }}>
+                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 130, padding: '4px 8px' }}>
                       EMPTY RETURNED
                     </Table.Th>
                   </Table.Tr>
                 ) : (
                   <>
                     <Table.Tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', width: 60, verticalAlign: 'middle', padding: '6px 8px' }}>
+                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', width: 60, verticalAlign: 'middle', padding: '3px 8px', lineHeight: 1.15 }}>
                         CODE
                       </Table.Th>
-                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', minWidth: 140, verticalAlign: 'middle', padding: '6px 8px' }}>
+                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', minWidth: 140, verticalAlign: 'middle', padding: '3px 8px', lineHeight: 1.15 }}>
                         PRODUCT
                       </Table.Th>
-                      <Table.Th rowSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', verticalAlign: 'middle', padding: '6px 8px', width: 80 }}>
+                      <Table.Th rowSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', textAlign: 'center', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', verticalAlign: 'middle', padding: '3px 6px', width: 80, lineHeight: 1.15 }}>
                         INWARD
-                        <Text size="9px" c="dimmed" fw={600} tt="none" style={{ display: 'block' }}>(Purchases)</Text>
+                        <span style={{ display: 'block', fontSize: '8.5px', fontWeight: 500, color: '#64748b', textTransform: 'none', lineHeight: 1 }}>(Purchases)</span>
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
+                      <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '3px 4px', lineHeight: 1.15 }}>
                         OUTWARD
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#800020', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
+                      <Table.Th colSpan={2} style={{ color: '#800020', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '3px 4px', lineHeight: 1.15 }}>
                         VAN RETURN
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#0f172a', fontWeight: 800, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', padding: '6px 4px' }}>
+                      <Table.Th colSpan={2} style={{ color: '#0f172a', fontWeight: 800, fontSize: 10.5, textTransform: 'uppercase', textAlign: 'center', padding: '3px 4px', lineHeight: 1.15 }}>
                         CLOSING STOCK
                       </Table.Th>
                     </Table.Tr>
                     <Table.Tr>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 60, padding: '4px 8px' }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 60, borderRight: '1px solid #e2e8f0', padding: '4px 8px' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 60, padding: '4px 8px' }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 10, textAlign: 'right', width: 60, borderRight: '1px solid #e2e8f0', padding: '4px 8px' }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 10, textAlign: 'right', width: 65, padding: '4px 8px' }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 10, textAlign: 'right', width: 65, padding: '4px 8px' }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 9.5, textAlign: 'right', width: 60, padding: '2px 8px', lineHeight: 1.1 }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 9.5, textAlign: 'right', width: 60, borderRight: '1px solid #e2e8f0', padding: '2px 8px', lineHeight: 1.1 }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 9.5, textAlign: 'right', width: 60, padding: '2px 8px', lineHeight: 1.1 }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 9.5, textAlign: 'right', width: 60, borderRight: '1px solid #e2e8f0', padding: '2px 8px', lineHeight: 1.1 }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 9.5, textAlign: 'right', width: 65, padding: '2px 8px', lineHeight: 1.1 }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 9.5, textAlign: 'right', width: 65, padding: '2px 8px', lineHeight: 1.1 }}>EMPTY</Table.Th>
                     </Table.Tr>
                   </>
                 )}

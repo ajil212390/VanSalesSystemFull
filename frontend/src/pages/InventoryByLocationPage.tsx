@@ -489,7 +489,9 @@ export const InventoryByLocationPage: React.FC = () => {
                       style={{ cursor: 'pointer', height: 48 }}
                       onClick={() => {
                         if (isGodown) {
-                          navigate(`/stock-analysis?location=${location.id}`);
+                          navigate(`/stock-analysis?location=${location.id}`, {
+                            state: { from: '/inventory/locations', fromTitle: 'Back to Inventory by Location' },
+                          });
                         } else {
                           navigate('/van-management');
                         }

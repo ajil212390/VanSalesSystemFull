@@ -384,7 +384,11 @@ export const InventoryByProductPage: React.FC = () => {
                     <Table.Tr
                       key={p.ProductId}
                       style={{ cursor: 'pointer', height: 46 }}
-                      onClick={() => navigate(`/stock-analysis?product=${p.ProductId}`)}
+                      onClick={() =>
+                        navigate(`/stock-analysis?product=${p.ProductId}`, {
+                          state: { from: '/inventory/products', fromTitle: 'Back to Inventory by Product' },
+                        })
+                      }
                     >
                       <Table.Td>
                         <Badge

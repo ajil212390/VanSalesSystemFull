@@ -203,8 +203,8 @@ def generate_tax_invoice_pdf(sale):
         pagesize=A4,
         leftMargin=25,
         rightMargin=25,
-        topMargin=22,
-        bottomMargin=22
+        topMargin=20,
+        bottomMargin=105
     )
 
     story = []
@@ -688,11 +688,9 @@ def generate_tax_invoice_pdf(sale):
         grouped_oth_map[key]['qty'] += item['qty']
     grouped_others = list(grouped_oth_map.values())
 
-    # Ensure consistent space for product rows without pushing to page 2
-    # Dynamically adjust min padding so the entire invoice fits neatly on a single A4 page
-    total_tax_count = len(grouped_cylinders) + len(grouped_others)
-    extra_tax_lines = max(0, (total_tax_count * 2) - 2) if is_intra_customer else max(0, total_tax_count - 1)
-    min_product_rows = max(4, 9 - extra_tax_lines)
+    # Ensure a 10-line space for product rows (standard ERP invoice format)
+    # If fewer than 10 rows, pad with empty rows so the table always has 10 lines
+    min_product_rows = 10
     current_product_count = len(table_rows) - 1  # excluding header
     if current_product_count < min_product_rows:
         for empty_idx in range(current_product_count + 1, min_product_rows + 1):
@@ -712,8 +710,8 @@ def generate_tax_invoice_pdf(sale):
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
         ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 2.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
         ('LEFTPADDING', (0, 0), (-1, -1), 5),
         ('RIGHTPADDING', (0, 0), (-1, -1), 5),
     ]
@@ -723,7 +721,7 @@ def generate_tax_invoice_pdf(sale):
 
     items_table.setStyle(TableStyle(t_style))
     story.append(items_table)
-    story.append(Spacer(1, 10))
+    story.append(Spacer(1, 6))
 
     # -------------------------------------------------------------
     # 4. TAX & CUSTOMER LEDGER BREAKDOWN (Matching Handwritten Template)
@@ -1033,79 +1031,37 @@ def generate_tax_invoice_pdf(sale):
             for item in grouped_cylinders:
                 lbl = item['clean_label']
                 rate = item['gst_rate']
-                cgst = item['cgst_amount']
-                sgst = item['sgst_amount']
-                igst = item['igst_amount']
-
-                if is_intra_customer:
-                    half_rate = (rate / Decimal('2.00')).quantize(Decimal('0.1')) if (rate / Decimal('2.00')) % 1 != 0 else (rate / Decimal('2.00')).quantize(Decimal('1'))
-                    tax_rows.append([
-                        Paragraph(f"CGST @ {half_rate}% ({lbl}) :", cell_muted),
-                        Paragraph(f"Rs. {cgst:,.2f}", cell_right)
-                    ])
-                    tax_rows.append([
-                        Paragraph(f"SGST @ {half_rate}% ({lbl}) :", cell_muted),
-                        Paragraph(f"Rs. {sgst:,.2f}", cell_right)
-                    ])
-                else:
-                    norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
-                    tax_rows.append([
-                        Paragraph(f"IGST @ {norm_rate}% ({lbl}) :", cell_muted),
-                        Paragraph(f"Rs. {igst:,.2f}", cell_right)
-                    ])
+                tax_amt = item['tax_amount']
+                norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
+                tax_rows.append([
+                    Paragraph(f"GST @ {norm_rate}% ({lbl}) :", cell_muted),
+                    Paragraph(f"Rs. {tax_amt:,.2f}", cell_right)
+                ])
         elif len(grouped_cylinders) == 1:
             item = grouped_cylinders[0]
             rate = item['gst_rate']
-            cgst = item['cgst_amount']
-            sgst = item['sgst_amount']
-            igst = item['igst_amount']
-
-            if is_intra_customer:
-                half_rate = (rate / Decimal('2.00')).quantize(Decimal('0.1')) if (rate / Decimal('2.00')) % 1 != 0 else (rate / Decimal('2.00')).quantize(Decimal('1'))
-                tax_rows.append([
-                    Paragraph(f"CGST @ {half_rate}% :", cell_muted),
-                    Paragraph(f"Rs. {cgst:,.2f}", cell_right)
-                ])
-                tax_rows.append([
-                    Paragraph(f"SGST @ {half_rate}% :", cell_muted),
-                    Paragraph(f"Rs. {sgst:,.2f}", cell_right)
-                ])
-            else:
-                norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
-                tax_rows.append([
-                    Paragraph(f"IGST @ {norm_rate}% :", cell_muted),
-                    Paragraph(f"Rs. {igst:,.2f}", cell_right)
-                ])
+            tax_amt = item['tax_amount']
+            norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
+            lbl = item['clean_label']
+            lbl_suffix = f" ({lbl})" if grouped_others else ""
+            tax_rows.append([
+                Paragraph(f"GST @ {norm_rate}%{lbl_suffix} :", cell_muted),
+                Paragraph(f"Rs. {tax_amt:,.2f}", cell_right)
+            ])
         else:
-            if is_intra_customer:
-                tax_rows.append([Paragraph("CGST :", cell_muted), Paragraph(f"Rs. {total_cgst_sum:,.2f}", cell_right)])
-                tax_rows.append([Paragraph("SGST :", cell_muted), Paragraph(f"Rs. {total_sgst_sum:,.2f}", cell_right)])
-            else:
-                tax_rows.append([Paragraph("IGST :", cell_muted), Paragraph(f"Rs. {total_igst_sum:,.2f}", cell_right)])
+            if total_gst_sum > Decimal('0.00'):
+                tax_rows.append([Paragraph("GST :", cell_muted), Paragraph(f"Rs. {total_gst_sum:,.2f}", cell_right)])
 
         if grouped_others:
             for item in grouped_others:
                 lbl = item['clean_label']
                 rate = item['gst_rate']
-                cgst = item['cgst_amount']
-                sgst = item['sgst_amount']
-                igst = item['igst_amount']
-                if is_intra_customer:
-                    half_rate = (rate / Decimal('2.00')).quantize(Decimal('0.1')) if (rate / Decimal('2.00')) % 1 != 0 else (rate / Decimal('2.00')).quantize(Decimal('1'))
-                    tax_rows.append([
-                        Paragraph(f"CGST @ {half_rate}% ({lbl}) :", cell_muted),
-                        Paragraph(f"Rs. {cgst:,.2f}", cell_right)
-                    ])
-                    tax_rows.append([
-                        Paragraph(f"SGST @ {half_rate}% ({lbl}) :", cell_muted),
-                        Paragraph(f"Rs. {sgst:,.2f}", cell_right)
-                    ])
-                else:
-                    norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
-                    tax_rows.append([
-                        Paragraph(f"IGST @ {norm_rate}% ({lbl}) :", cell_muted),
-                        Paragraph(f"Rs. {igst:,.2f}", cell_right)
-                    ])
+                tax_amt = item['tax_amount']
+                norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
+                tax_rows.append([
+                    Paragraph(f"GST @ {norm_rate}% ({lbl}) :", cell_muted),
+                    Paragraph(f"Rs. {tax_amt:,.2f}", cell_right)
+                ])
 
         tax_rows.append([
             Paragraph("<b>Total GST :</b>", cell_bold),
@@ -1175,10 +1131,9 @@ def generate_tax_invoice_pdf(sale):
         ('RIGHTPADDING', (0, 0), (-1, -1), 8),
     ]))
     story.append(terms_box)
-    story.append(Spacer(1, 14))
 
     # -------------------------------------------------------------
-    # 6. SIGNATURE FOOTER & PAYMENT GROUP QR CODE
+    # 6. SIGNATURE FOOTER & PAYMENT GROUP QR CODE (FIXED FOOTER)
     # -------------------------------------------------------------
     pg_obj = None
     if sale.RouteVehicleDriver and sale.RouteVehicleDriver.PaymentGroup:
@@ -1188,6 +1143,10 @@ def generate_tax_invoice_pdf(sale):
         rvd_cand = RouteVehicleDriver.objects.filter(Driver__DriverName=sale.DriverName, IsActive=True).first()
         if rvd_cand and rvd_cand.PaymentGroup:
             pg_obj = rvd_cand.PaymentGroup
+
+    if not pg_obj:
+        from core.models import PaymentGroup
+        pg_obj = PaymentGroup.objects.filter(IsActive=True).exclude(QRCodeLocation__isnull=True).exclude(QRCodeLocation='').first()
 
     qr_img_flowable = None
     if pg_obj and pg_obj.QRCodeLocation:
@@ -1204,7 +1163,7 @@ def generate_tax_invoice_pdf(sale):
         for cand in candidates:
             if os.path.exists(cand) and os.path.isfile(cand):
                 try:
-                    qr_img_flowable = RLImage(cand, width=90, height=90)
+                    qr_img_flowable = RLImage(cand, width=64, height=64)
                     break
                 except Exception:
                     qr_img_flowable = None
@@ -1212,58 +1171,63 @@ def generate_tax_invoice_pdf(sale):
     if qr_img_flowable:
         bank_name_str = pg_obj.BankLedger.LedgerName if (pg_obj.BankLedger and pg_obj.BankLedger.LedgerName) else ""
         qr_box = [
-            [Paragraph("<b>SCAN &amp; PAY</b>", ParagraphStyle('QrH', fontName=FONT_BOLD, fontSize=8, leading=10, alignment=1, textColor=PRIMARY_COLOR))],
+            [Paragraph("<b>SCAN &amp; PAY UPI</b>", ParagraphStyle('QrH', fontName=FONT_BOLD, fontSize=7, leading=8.5, alignment=1, textColor=PRIMARY_COLOR))],
             [qr_img_flowable],
-            [Paragraph(f"<font size=7 color='#334155'><b>{pg_obj.PaymentGroupName}</b>{(' • ' + bank_name_str) if bank_name_str else ''}</font>", ParagraphStyle('QrF', fontName=FONT_NAME, fontSize=7, leading=8.5, alignment=1))],
+            [Paragraph(f"<font size=6 color='#334155'><b>{pg_obj.PaymentGroupName}</b>{(' • ' + bank_name_str) if bank_name_str else ''}</font>", ParagraphStyle('QrF', fontName=FONT_NAME, fontSize=6, leading=7.5, alignment=1))],
         ]
-        qr_table = Table(qr_box, colWidths=[120])
+        qr_table = Table(qr_box, colWidths=[96])
         qr_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('BOX', (0, 0), (-1, -1), 0.75, BORDER_COLOR),
             ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
         ]))
 
         footer_data = [
             [
                 Paragraph(
-                    f"<b>Customer / Receiver's Signature:</b> ___________________<br/>"
-                    f"<font size=7 color='#64748B'>I accept goods and cylinder return count as noted above</font>",
-                    cell_norm
+                    f"<b>Customer / Receiver's Signature:</b><br/><br/><br/>"
+                    f"________________________________<br/>"
+                    f"<font size=6.5 color='#64748B'>I accept goods &amp; cylinder return count</font>",
+                    ParagraphStyle('SigL', parent=cell_norm, fontSize=7.5, leading=10)
                 ),
                 qr_table,
                 Paragraph(
                     f"For <b>{company_name}</b><br/><br/><br/>"
                     f"<b>Authorized Signatory</b><br/>"
-                    f"<font size=7 color='#64748B'>Computer generated official tax invoice</font>",
-                    ParagraphStyle('SigR', parent=cell_norm, alignment=2)
+                    f"<font size=6.5 color='#64748B'>Computer generated official tax invoice</font>",
+                    ParagraphStyle('SigR', parent=cell_norm, fontSize=7.5, leading=10, alignment=2)
                 )
             ]
         ]
-        footer_table = Table(footer_data, colWidths=[212, 121, 212])
+        footer_table = Table(footer_data, colWidths=[224, 97, 224])
         footer_table.setStyle(TableStyle([
             ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
             ('ALIGN', (1, 0), (1, 0), 'CENTER'),
             ('LEFTPADDING', (0, 0), (-1, -1), 0),
             ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
+        ftr_height = 86
     else:
         footer_data = [
             [
                 Paragraph(
-                    f"<b>Customer / Receiver's Signature:</b> ___________________<br/>"
-                    f"<font size=7 color='#64748B'>I accept goods and cylinder return count as noted above</font>",
-                    cell_norm
+                    f"<b>Customer / Receiver's Signature:</b><br/><br/><br/>"
+                    f"________________________________<br/>"
+                    f"<font size=6.5 color='#64748B'>I accept goods &amp; cylinder return count</font>",
+                    ParagraphStyle('SigL', parent=cell_norm, fontSize=7.5, leading=10)
                 ),
                 Paragraph(
                     f"For <b>{company_name}</b><br/><br/><br/>"
                     f"<b>Authorized Signatory</b><br/>"
-                    f"<font size=7 color='#64748B'>Computer generated official tax invoice</font>",
-                    ParagraphStyle('SigR', parent=cell_norm, alignment=2)
+                    f"<font size=6.5 color='#64748B'>Computer generated official tax invoice</font>",
+                    ParagraphStyle('SigR', parent=cell_norm, fontSize=7.5, leading=10, alignment=2)
                 )
             ]
         ]
@@ -1272,11 +1236,25 @@ def generate_tax_invoice_pdf(sale):
             ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
             ('LEFTPADDING', (0, 0), (-1, -1), 0),
             ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
-    story.append(footer_table)
+        ftr_height = 55
 
-    # Build PDF
-    doc.build(story)
+    # InvoiceNumberedCanvas fixes the signatory & scanner to the bottom footer just like in the ledger statement
+    def make_invoice_canvas(ftr_table, ftr_h):
+        class InvoiceNumberedCanvas(NumberedCanvas):
+            def draw_page_decorations(self, page_count):
+                super().draw_page_decorations(page_count)
+                if self._pageNumber == page_count and ftr_table:
+                    self.saveState()
+                    ftr_table.wrapOn(self, 545, ftr_h)
+                    ftr_table.drawOn(self, 25, 20)
+                    self.restoreState()
+        return InvoiceNumberedCanvas
+
+    # Build PDF with fixed bottom footer canvas
+    doc.build(story, canvasmaker=make_invoice_canvas(footer_table, ftr_height))
     return buf.getvalue()
 
 
