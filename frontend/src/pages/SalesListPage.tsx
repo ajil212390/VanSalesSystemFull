@@ -567,15 +567,15 @@ export const SalesListPage: React.FC = () => {
     return result;
   }, [sales, search, statusFilter, typeFilter, paymentModeFilter, paymentGroupFilter, dateFilter, customStartDate, customEndDate, sortBy]);
 
-  // KPI Metrics
+  // KPI Metrics (Calculated for approved sales, excluding pending & cancelled)
   const totalSalesAmount = useMemo(() => {
     return filteredSales
-      .filter((s: any) => s.Status !== 'CANCELLED')
+      .filter((s: any) => Boolean(s.IsApproved) && s.Status !== 'CANCELLED')
       .reduce((sum: number, s: any) => sum + Number(s.display_amount ?? s.GrandTotal ?? 0), 0);
   }, [filteredSales]);
 
   const activeInvoicesCount = useMemo(() => {
-    return filteredSales.filter((s: any) => s.Status !== 'CANCELLED').length;
+    return filteredSales.filter((s: any) => Boolean(s.IsApproved) && s.Status !== 'CANCELLED').length;
   }, [filteredSales]);
 
   const collectionsSummary = useMemo(() => {
@@ -583,7 +583,8 @@ export const SalesListPage: React.FC = () => {
     let totalBank = 0;
 
     filteredSales.forEach((s: any) => {
-      if (s.Status === 'CANCELLED') return;
+      // Exclude pending and cancelled sales - strictly count approved collections
+      if (!s.IsApproved || s.Status === 'CANCELLED') return;
       if (s.display_amount !== undefined) {
         const isB = (s.display_payment_method || '').toUpperCase().includes('BANK') || (s.display_payment_method || '').toUpperCase().includes('UPI');
         if (isB) totalBank += Number(s.display_amount);
@@ -828,7 +829,7 @@ export const SalesListPage: React.FC = () => {
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-              Total Billed Sales
+              Total Billed Amount
             </Text>
             <IconFileInvoice size={20} color="#800020" stroke={1.75} />
           </Group>
@@ -836,14 +837,14 @@ export const SalesListPage: React.FC = () => {
             ₹{totalSalesAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </Text>
           <Text size="xs" c="dimmed" mt={4}>
-            {activeInvoicesCount} total invoice{activeInvoicesCount !== 1 ? 's' : ''} generated
+            {activeInvoicesCount} approved invoice{activeInvoicesCount !== 1 ? 's' : ''}
           </Text>
         </Paper>
 
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-              Collections (Includes Pending)
+              Total Collected Amount
             </Text>
             <IconCash size={20} color="#800020" stroke={1.75} />
           </Group>
