@@ -521,12 +521,6 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.person_rounded,
-                      size: 20,
-                      color: Color(0xFF800020),
-                    ),
-                    const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         c.name,
@@ -701,25 +695,6 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                               child: Row(
                                 children: [
-                                  Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFDF2F4),
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        cust.name.isNotEmpty ? cust.name.substring(0, 1).toUpperCase() : 'C',
-                                        style: GoogleFonts.inter(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w800,
-                                          color: const Color(0xFF800020),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2103,20 +2078,6 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                     // Customer Row
                     Row(
                       children: [
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF800020),
-                            shape: BoxShape.circle,
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            customerName.isNotEmpty ? customerName.trim().substring(0, 1).toUpperCase() : 'C',
-                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2819,26 +2780,6 @@ class _NewConnectionSheetState extends State<_NewConnectionSheet> {
               ),
               child: Row(
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF800020),
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      _selectedCustomer!.name.isNotEmpty
-                          ? _selectedCustomer!.name.trim().substring(0, 1).toUpperCase()
-                          : 'C',
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
