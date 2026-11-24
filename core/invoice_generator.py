@@ -204,7 +204,7 @@ def generate_tax_invoice_pdf(sale):
         leftMargin=25,
         rightMargin=25,
         topMargin=20,
-        bottomMargin=105
+        bottomMargin=118
     )
 
     story = []
@@ -1228,14 +1228,14 @@ def generate_tax_invoice_pdf(sale):
         footer_data = [
             [
                 Paragraph(
-                    f"<b>Customer / Receiver's Signature:</b><br/><br/><br/>"
+                    f"<b>Customer / Receiver's Signature:</b><br/><br/>"
                     f"________________________________<br/>"
                     f"<font size=6.5 color='#64748B'>I accept goods &amp; cylinder return count</font>",
                     ParagraphStyle('SigL', parent=cell_norm, fontSize=7.5, leading=10)
                 ),
                 qr_table,
                 Paragraph(
-                    f"For <b>{company_name}</b><br/><br/><br/>"
+                    f"For <b>{company_name}</b><br/><br/>"
                     f"<b>Authorized Signatory</b><br/>"
                     f"<font size=6.5 color='#64748B'>Computer generated official tax invoice</font>",
                     ParagraphStyle('SigR', parent=cell_norm, fontSize=7.5, leading=10, alignment=2)
@@ -1251,18 +1251,18 @@ def generate_tax_invoice_pdf(sale):
             ('TOPPADDING', (0, 0), (-1, -1), 0),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
         ]))
-        ftr_height = 86
+        ftr_height = 84
     else:
         footer_data = [
             [
                 Paragraph(
-                    f"<b>Customer / Receiver's Signature:</b><br/><br/><br/>"
+                    f"<b>Customer / Receiver's Signature:</b><br/><br/>"
                     f"________________________________<br/>"
                     f"<font size=6.5 color='#64748B'>I accept goods &amp; cylinder return count</font>",
                     ParagraphStyle('SigL', parent=cell_norm, fontSize=7.5, leading=10)
                 ),
                 Paragraph(
-                    f"For <b>{company_name}</b><br/><br/><br/>"
+                    f"For <b>{company_name}</b><br/><br/>"
                     f"<b>Authorized Signatory</b><br/>"
                     f"<font size=6.5 color='#64748B'>Computer generated official tax invoice</font>",
                     ParagraphStyle('SigR', parent=cell_norm, fontSize=7.5, leading=10, alignment=2)
@@ -1279,16 +1279,26 @@ def generate_tax_invoice_pdf(sale):
         ]))
         ftr_height = 55
 
-    # InvoiceNumberedCanvas fixes the signatory & scanner to the bottom footer just like in the ledger statement
+    # InvoiceNumberedCanvas fixes the signatory & scanner to the bottom footer cleanly above page decorations
     def make_invoice_canvas(ftr_table, ftr_h):
         class InvoiceNumberedCanvas(NumberedCanvas):
             def draw_page_decorations(self, page_count):
-                super().draw_page_decorations(page_count)
+                self.saveState()
+                self.setFont('Helvetica', 7)
+                self.setFillColor(colors.HexColor('#64748B'))
+                # Bottom running footer line & text (positioned cleanly below the footer table)
+                text = f"Page {self._pageNumber} of {page_count}"
+                self.drawRightString(595.28 - 25, 11, text)
+                self.drawString(25, 11, "Future Gas Cloud ERP • Official Tax Invoice • Valid Proof of Delivery")
+                self.setStrokeColor(colors.HexColor('#CBD5E1'))
+                self.setLineWidth(0.5)
+                self.line(25, 20, 595.28 - 25, 20)
+
+                # Draw the footer table (signatures & QR scanner) cleanly above the line
                 if self._pageNumber == page_count and ftr_table:
-                    self.saveState()
                     ftr_table.wrapOn(self, 545, ftr_h)
-                    ftr_table.drawOn(self, 25, 20)
-                    self.restoreState()
+                    ftr_table.drawOn(self, 25, 26)
+                self.restoreState()
         return InvoiceNumberedCanvas
 
     # Build PDF with fixed bottom footer canvas
