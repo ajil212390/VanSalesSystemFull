@@ -1388,7 +1388,7 @@ export const StockAnalysisPage: React.FC = () => {
                         OUTWARD
                       </Table.Th>
                       <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
-                        ON VANS
+                        ON VANS <span style={{ color: '#16a34a', fontSize: 10, fontWeight: 800 }}>● LIVE</span>
                       </Table.Th>
                       <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '6px 4px' }}>
                         SOLD
