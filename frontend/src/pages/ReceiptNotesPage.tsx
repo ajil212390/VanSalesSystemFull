@@ -805,7 +805,7 @@ export const ReceiptNotesPage: React.FC = () => {
                               <Group justify="space-between" wrap="nowrap" style={{ width: '100%' }}>
                                 <Text size="sm">{(p as any)?.product_name || option.label}</Text>
                                 {count !== undefined && (
-                                  <Badge size="xs" variant="light" color={count > 0 ? 'teal' : 'gray'}>
+                                  <Badge size="xs" variant="light" color={count > 0 ? 'burgundy' : 'gray'} styles={{ root: { fontWeight: 700 } }}>
                                     {count} Empty Avail
                                   </Badge>
                                 )}
@@ -814,7 +814,7 @@ export const ReceiptNotesPage: React.FC = () => {
                           } : undefined}
                           rightSection={
                             createMode === 'SUPPLIER_REFILL' && line.productId > 0 && availEmpty !== undefined ? (
-                              <Badge size="xs" variant="light" color={availEmpty > 0 ? 'teal' : 'gray'} mr={4}>
+                              <Badge size="xs" variant="light" color={availEmpty > 0 ? 'burgundy' : 'gray'} mr={4} styles={{ root: { fontWeight: 700 } }}>
                                 {availEmpty} Empty
                               </Badge>
                             ) : undefined
