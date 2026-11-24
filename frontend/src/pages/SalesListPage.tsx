@@ -1005,7 +1005,11 @@ export const SalesListPage: React.FC = () => {
                   const isRcpt = invStr.startsWith('RCPT-');
 
                   return (
-                    <Table.Tr key={`${sale.SalesId}-${sale.display_payment_method || 'full'}`}>
+                    <Table.Tr
+                      key={`${sale.SalesId}-${sale.display_payment_method || 'full'}`}
+                      onClick={() => setViewingSale(sale)}
+                      style={{ cursor: 'pointer' }}
+                    >
                       <Table.Td style={{ width: 140, minWidth: 130, paddingRight: '8px' }}>
                         <Group gap={6} align="center" wrap="nowrap">
                           <Text fw={700} size="sm" ff="monospace" style={{ color: '#800020', whiteSpace: 'nowrap' }}>
@@ -1319,7 +1323,7 @@ export const SalesListPage: React.FC = () => {
                         )}
                       </Table.Td>
 
-                      <Table.Td style={{ textAlign: 'center' }}>
+                      <Table.Td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
                         <Group gap={6} justify="center" wrap="nowrap">
                           {/* 1. Eye icon (View Details) FIRST */}
                           <Tooltip label="View Details & Lines" withArrow>

@@ -687,15 +687,15 @@ def generate_tax_invoice_pdf(sale):
         )
         gst_cell_norm = ParagraphStyle(
             'GstCellNorm', parent=styles['Normal'],
-            fontName=FONT_NAME, fontSize=7.5, leading=9.5, alignment=1, textColor=DARK_COLOR
+            fontName=FONT_NAME, fontSize=8, leading=10, alignment=1, textColor=DARK_COLOR
         )
         gst_cell_right = ParagraphStyle(
             'GstCellRight', parent=styles['Normal'],
-            fontName=FONT_NAME, fontSize=7.5, leading=9.5, alignment=2, textColor=DARK_COLOR
+            fontName=FONT_NAME, fontSize=8, leading=10, alignment=2, textColor=DARK_COLOR
         )
         gst_cell_right_bold = ParagraphStyle(
             'GstCellRightBold', parent=styles['Normal'],
-            fontName=FONT_BOLD, fontSize=7.5, leading=9.5, alignment=2, textColor=DARK_COLOR
+            fontName=FONT_BOLD, fontSize=8, leading=10, alignment=2, textColor=DARK_COLOR
         )
 
         gst_table_rows = [
@@ -784,8 +784,8 @@ def generate_tax_invoice_pdf(sale):
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
             ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
-            ('TOPPADDING', (0, 0), (-1, -1), 1.8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1.8),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
             ('LEFTPADDING', (0, 0), (-1, -1), 3),
             ('RIGHTPADDING', (0, 0), (-1, -1), 3),
             ('SPAN', (0, 0), (0, 1)),
@@ -801,7 +801,8 @@ def generate_tax_invoice_pdf(sale):
             bg = LIGHT_BG if r_idx % 2 == 1 else colors.white
             gst_style.append(('BACKGROUND', (0, r_idx), (-1, r_idx), bg))
 
-        gst_table = Table(gst_table_rows, colWidths=[88, 42, 40, 60, 40, 60, 40, 60, 115])
+        row_h_list = [13, 13] + [16.5] * (len(gst_table_rows) - 2)
+        gst_table = Table(gst_table_rows, colWidths=[88, 42, 40, 60, 40, 60, 40, 60, 115], rowHeights=row_h_list)
         gst_table.setStyle(TableStyle(gst_style))
         story.append(gst_table)
         story.append(Spacer(1, 5))
@@ -1028,7 +1029,6 @@ def generate_tax_invoice_pdf(sale):
             [Spacer(1, 2)],
             [qr_img_flowable],
             [Spacer(1, 2)],
-            [Paragraph(f"<b>{pg_obj.PaymentGroupName}</b>", ParagraphStyle('QrN', fontName=FONT_BOLD, fontSize=8, leading=10, alignment=1, textColor=DARK_COLOR))],
             [Paragraph(f"<font size=6.5 color='#64748B'>{bank_name_str + ' • ' if bank_name_str else ''}BHIM • GPay • PhonePe • Paytm</font>", ParagraphStyle('QrS', fontName=FONT_NAME, fontSize=6.5, leading=8.5, alignment=1))],
         ]
         left_card = Table(qr_card_rows, colWidths=[215])
@@ -1144,6 +1144,7 @@ def generate_tax_invoice_pdf(sale):
 
     cust_summary_table = Table(cust_summary_rows, colWidths=[160, 145])
     cust_table_style = [
+        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
         ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
         ('LINEBELOW', (0, -2), (-1, -2), 0.75, BORDER_COLOR),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -1162,10 +1163,11 @@ def generate_tax_invoice_pdf(sale):
             [Paragraph("Amount Collected :", cell_muted), Paragraph("Rs. 0.00", cell_right)],
             [Paragraph("Stock Destination :", cell_muted), Paragraph("Van Stock", cell_right)],
             [Paragraph("<b>Inspection Status :</b>", cell_bold), Paragraph("<b>VERIFIED</b>", cell_right_bold)],
-            [Paragraph("<b>Total Collected :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
-             Paragraph("<b>Rs. 0.00</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
+            [Paragraph("<b>Total Collected :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=11.5, leading=14, textColor=PRIMARY_COLOR)),
+             Paragraph("<b>Rs. 0.00</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=13.5, leading=16, textColor=PRIMARY_COLOR))],
         ], colWidths=[160, 145])
         tax_summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), CARD_BG),
             ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
             ('LINEABOVE', (0, -1), (-1, -1), 1, BORDER_COLOR),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -1183,10 +1185,11 @@ def generate_tax_invoice_pdf(sale):
             [Paragraph("Empties Collected :", cell_muted), Paragraph(empties_count_display, cell_right)],
             [Paragraph("Current Bill :", cell_muted), Paragraph("Rs. 0.00", cell_right)],
             [Paragraph("<b>Credited To :</b>", cell_bold), Paragraph("<b>Customer Account</b>", cell_right_bold)],
-            [Paragraph("<b>Net Amount Paid :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
-             Paragraph(f"<b>Rs. {paid_amt:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
+            [Paragraph("<b>Net Amount Paid :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=11.5, leading=14, textColor=PRIMARY_COLOR)),
+             Paragraph(f"<b>Rs. {paid_amt:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=13.5, leading=16, textColor=PRIMARY_COLOR))],
         ], colWidths=[160, 145])
         tax_summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), CARD_BG),
             ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
             ('LINEABOVE', (0, -1), (-1, -1), 1, BORDER_COLOR),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
@@ -1202,15 +1205,15 @@ def generate_tax_invoice_pdf(sale):
             [Paragraph("<b>NET AMOUNT CALCULATION</b>", section_title), Paragraph("", cell_norm)],
             [Paragraph("Gross Amount (Taxable) :", cell_norm), Paragraph(f"Rs. {total_taxable_sum:,.2f}", cell_right_bold)],
             [Paragraph("Total Tax Amount :", cell_norm), Paragraph(f"Rs. {total_gst_sum:,.2f}", cell_right_bold)],
-            [Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
-             Paragraph(f"<b>Rs. {current_bill_amount:,.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
+            [Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=11.5, leading=14, textColor=PRIMARY_COLOR)),
+             Paragraph(f"<b>Rs. {current_bill_amount:,.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=13.5, leading=16, textColor=PRIMARY_COLOR))],
         ]
 
         net_calc_table = Table(tax_rows, colWidths=[160, 145])
         net_calc_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), CARD_BG),
             ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
             ('LINEABOVE', (0, 3), (-1, 3), 1, BORDER_COLOR),
-            ('LINEBELOW', (0, 3), (-1, 3), 1, PRIMARY_COLOR),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('TOPPADDING', (0, 0), (-1, -1), 2.5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
@@ -1226,7 +1229,7 @@ def generate_tax_invoice_pdf(sale):
         ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
         ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
         ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
-        ('BACKGROUND', (1, 0), (1, 0), CARD_BG),
+        ('BACKGROUND', (1, 0), (1, 0), colors.white),
         ('VALIGN', (0, 0), (0, 0), 'MIDDLE'),
         ('VALIGN', (1, 0), (1, 0), 'TOP'),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
