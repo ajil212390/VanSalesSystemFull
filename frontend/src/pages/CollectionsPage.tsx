@@ -61,7 +61,6 @@ interface CollectionItem {
   totalBillAmount?: number;
   notes: string;
   packageName?: string;
-  isApproved?: boolean;
   raw: any;
 }
 
@@ -156,8 +155,9 @@ export const CollectionsPage: React.FC = () => {
 
     sales.forEach((s: any) => {
       if (s.Status === 'CANCELLED') return;
-      // Include both approved sales and live/provisional van shift sales
+      // In Future Gas workflow, unapproved van sales are provisional until driver ends allocation and admin approves
       const isApproved = Boolean(s.IsApproved || s.is_approved);
+      if (!isApproved) return;
 
       const rawPaid = Number(s.PaidAmount || 0);
       if (rawPaid <= 0) return;
@@ -246,7 +246,6 @@ export const CollectionsPage: React.FC = () => {
         totalBillAmount: Number(s.GrandTotal || 0),
         notes: s.Notes ? String(s.Notes) : (isConnection ? `New Connection on bill ${sRef}` : `Direct counter collection on bill ${sRef}`),
         packageName: pkgName,
-        isApproved,
         raw: s,
       });
     });
@@ -263,8 +262,8 @@ export const CollectionsPage: React.FC = () => {
     });
 
     payments.forEach((p: any) => {
-      if (p.Status && String(p.Status).toUpperCase() === 'CANCELLED') return;
-      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : false;
+      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      if (!isApproved) return;
 
       const pType = String(p.voucher_type || '').toUpperCase();
       if (pType === 'PAYMENT') return;
@@ -360,7 +359,6 @@ export const CollectionsPage: React.FC = () => {
         totalBillAmount: amt,
         notes: p.Narration ? String(p.Narration) : `Customer balance receipt ${pRef}`,
         packageName: undefined,
-        isApproved,
         raw: p,
       });
     });
@@ -792,7 +790,7 @@ export const CollectionsPage: React.FC = () => {
               </Title>
             </Group>
             <Text size="xs" c="dimmed" mt={3}>
-              Real-time unified collections register (Van live collections &amp; counter sales)
+            Note: Only showing the approved collections 
             </Text>
           </div>
 
@@ -1399,26 +1397,19 @@ export const CollectionsPage: React.FC = () => {
                     {/* Type Badge (Only shown in ALL view) */}
                     {categoryFilter === 'ALL' && (
                       <Table.Td style={{ textAlign: 'center' }}>
-                        <Group gap={4} justify="center">
-                          {item.isConnection ? (
-                            <Badge size="xs" variant="filled" color="burgundy">
-                              New Connection
-                            </Badge>
-                          ) : item.source === 'RECEIPT' ? (
-                            <Badge size="xs" variant="filled" color="burgundy">
-                              RECEIPT
-                            </Badge>
-                          ) : (
-                            <Badge size="xs" variant="light" color="gray">
-                              Refill Sale
-                            </Badge>
-                          )}
-                          {!item.isApproved && (
-                            <Badge size="xs" variant="light" color="orange" title="Awaiting shift end approval">
-                              Live / Van
-                            </Badge>
-                          )}
-                        </Group>
+                        {item.isConnection ? (
+                          <Badge size="xs" variant="filled" color="burgundy">
+                            New Connection
+                          </Badge>
+                        ) : item.source === 'RECEIPT' ? (
+                          <Badge size="xs" variant="filled" color="burgundy">
+                            RECEIPT
+                          </Badge>
+                        ) : (
+                          <Badge size="xs" variant="light" color="gray">
+                            Refill Sale
+                          </Badge>
+                        )}
                       </Table.Td>
                     )}
 
