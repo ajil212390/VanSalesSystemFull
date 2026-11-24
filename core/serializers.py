@@ -7,7 +7,7 @@ from drf_spectacular.utils import extend_schema_field
 from core.models import (
     User, Company, State, UserRole, Driver, Route, Vehicle, RouteVehicleDriver,
     PaymentGroup,
-    Category, Unit, Product, Group, Ledger, ProductPriceAudit, CustomerProductPrice,
+    Category, Unit, Product, Group, Ledger, ProductPriceAudit, CustomerProductPrice, PriceUpdateHistory,
     Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
     Payment, PaymentLine, BillwiseAllocation, LedgerLine,
     SaleEditHistory, ConnectionPackage, ConnectionPackageItem, FinancialYear
@@ -864,6 +864,17 @@ class CustomerProductPriceSerializer(serializers.ModelSerializer):
             'product_name', 'product_code', 'customer_name', 'standard_price',
             'SpecialPrice', 'CompanyId', 'CreatedTimestamp', 'UpdatedTimestamp'
         ]
+
+
+class PriceUpdateHistorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PriceUpdateHistory
+        fields = [
+            'HistoryId', 'Product', 'ProductName', 'HikeAmount',
+            'OldBasePrice', 'NewBasePrice', 'AffectedCustomersCount',
+            'UpdatedBy', 'CompanyId', 'CreatedTimestamp'
+        ]
+        read_only_fields = fields
 
 
 class PurchaseLineSerializer(serializers.ModelSerializer):

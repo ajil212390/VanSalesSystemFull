@@ -43,7 +43,7 @@ def safe_parse_date(val):
 
 from core.models import (
     State, UserRole, Company, Driver, Route, Vehicle, RouteVehicleDriver,
-    User, Category, Unit, Product, Group, Ledger, ProductPriceAudit, CustomerProductPrice,
+    User, Category, Unit, Product, Group, Ledger, ProductPriceAudit, CustomerProductPrice, PriceUpdateHistory,
     Purchase, PurchaseLine, Sales, SalesLine, StockMovement, Voucher, VoucherLine,
     Payment, PaymentLine, BillwiseAllocation, LedgerLine, RouteExpense,
     DeliveryNote, DeliveryNoteLine,
@@ -58,7 +58,7 @@ from core.serializers import (
     CompanySerializer, StateSerializer, UserRoleSerializer,
     DriverSerializer, RouteSerializer, VehicleSerializer, RouteVehicleDriverSerializer,
     UserManagementSerializer, CategorySerializer, UnitSerializer, ProductSerializer,
-    GroupSerializer, LedgerSerializer, ProductPriceAuditSerializer, CustomerProductPriceSerializer,
+    GroupSerializer, LedgerSerializer, ProductPriceAuditSerializer, CustomerProductPriceSerializer, PriceUpdateHistorySerializer,
     PurchaseSerializer, PurchaseLineSerializer, PaymentSerializer, PaymentLineSerializer, BillwiseAllocationSerializer,
     LedgerLineSerializer,
     SaleEditHistorySerializer, ConnectionPackageSerializer, ConnectionPackageItemSerializer
@@ -1902,6 +1902,188 @@ class CustomerProductPriceViewSet(viewsets.ModelViewSet):
             'success': True,
             'saved_count': len(saved),
             'message': 'Customer special prices updated successfully'
+        })
+
+    @action(detail=False, methods=['get'], url_path='history')
+    def history(self, request):
+        """
+        Returns history log of cylinder / product price updates and hikes.
+        """
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        records = PriceUpdateHistory.objects.filter(Q(CompanyId=company_id) | Q(CompanyId=0)).order_by('-CreatedTimestamp')[:100]
+        serializer = PriceUpdateHistorySerializer(records, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='bulk_hike')
+    def bulk_hike(self, request):
+        """
+        Applies price hike / increment across all customers for selected products.
+        e.g. Month-start cylinder price increment (e.g. +₹40).
+        - Increases existing CustomerProductPrice records for each customer by hike_amount.
+        - Increases base Product.SalesPrice by hike_amount.
+        - Records history in PriceUpdateHistory and ProductPriceAudit.
+        """
+        data = request.data
+        hikes = data.get('hikes', [])
+        if not hikes and data.get('product_id'):
+            hikes = [{'product_id': data.get('product_id'), 'hike_amount': data.get('hike_amount')}]
+
+        if not hikes:
+            return Response({'error': 'No product hike data provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        user_name = getattr(request.user, 'Username', None) or getattr(request.user, 'username', 'Admin')
+
+        results = []
+        with transaction.atomic():
+            for item in hikes:
+                prod_id = item.get('product_id')
+                hike_amt = Decimal(str(item.get('hike_amount') or 0))
+                if not prod_id or hike_amt == Decimal('0.00'):
+                    continue
+
+                prod = Product.objects.filter(ProductId=prod_id).first()
+                if not prod:
+                    continue
+
+                old_base = prod.SalesPrice or Decimal('0.00')
+                new_base = old_base + hike_amt
+                prod.SalesPrice = new_base
+                prod.save(update_fields=['SalesPrice'])
+
+                # Log in ProductPriceAudit
+                ProductPriceAudit.objects.create(
+                    Product=prod,
+                    ProductName=prod.ProductName,
+                    OldSalesPrice=old_base,
+                    NewSalesPrice=new_base,
+                    User=request.user if request.user.is_authenticated else None,
+                    Role_id=getattr(request.user, 'UserRoleId', None),
+                    CompanyId=company_id
+                )
+
+                # Update all existing customer-specific prices for this product by +hike_amt
+                cust_prices = CustomerProductPrice.objects.filter(Product=prod)
+                affected_count = 0
+                for cp in cust_prices:
+                    cp.SpecialPrice = (cp.SpecialPrice or Decimal('0.00')) + hike_amt
+                    cp.save(update_fields=['SpecialPrice', 'UpdatedTimestamp'])
+                    affected_count += 1
+
+                # Log in PriceUpdateHistory
+                PriceUpdateHistory.objects.create(
+                    Product=prod,
+                    ProductName=prod.ProductName,
+                    HikeAmount=hike_amt,
+                    OldBasePrice=old_base,
+                    NewBasePrice=new_base,
+                    AffectedCustomersCount=affected_count,
+                    UpdatedBy=user_name,
+                    CompanyId=company_id
+                )
+                results.append({
+                    'product_id': prod.ProductId,
+                    'product_name': prod.ProductName,
+                    'hike_amount': float(hike_amt),
+                    'old_base_price': float(old_base),
+                    'new_base_price': float(new_base),
+                    'affected_customers_count': affected_count
+                })
+
+        return Response({
+            'success': True,
+            'results': results,
+            'message': f'Price hike successfully applied to {len(results)} product(s).'
+        })
+
+    @action(detail=False, methods=['post'], url_path='import_bulk')
+    def import_bulk(self, request):
+        """
+        Bulk import customer prices from CSV/Excel data.
+        Payload: {"rows": [{"customer_id": 1, "product_id": 4, "price": 2450.0}, ...]}
+        """
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+        rows = request.data.get('rows', [])
+        if not rows or not isinstance(rows, list):
+            return Response({'error': 'A list of rows is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Pre-cache customers and products for O(1) matching
+        debtor_ledgers = {l.LedgerId: l for l in Ledger.objects.filter(CompanyId=company_id)}
+        debtors_by_name = {l.LedgerName.strip().lower(): l for l in debtor_ledgers.values()}
+        debtors_by_phone = {str(l.MobileNumber or l.PhoneNumber or '').strip(): l for l in debtor_ledgers.values() if l.MobileNumber or l.PhoneNumber}
+
+        all_prods = {p.ProductId: p for p in Product.objects.all()}
+        prods_by_name = {p.ProductName.strip().lower(): p for p in all_prods.values()}
+        prods_by_code = {str(p.ProductCode or '').strip().lower(): p for p in all_prods.values() if p.ProductCode}
+
+        saved_count = 0
+        errors = []
+
+        with transaction.atomic():
+            for idx, r in enumerate(rows, 1):
+                # 1. Resolve Customer
+                cust = None
+                c_id = r.get('customer_id') or r.get('CustomerLedgerId') or r.get('CustomerLedger')
+                try:
+                    if c_id and int(c_id) in debtor_ledgers:
+                        cust = debtor_ledgers[int(c_id)]
+                except Exception:
+                    pass
+                if not cust and r.get('customer_phone'):
+                    phone_clean = str(r.get('customer_phone')).strip()
+                    cust = debtors_by_phone.get(phone_clean)
+                if not cust and r.get('customer_name'):
+                    name_clean = str(r.get('customer_name')).strip().lower()
+                    cust = debtors_by_name.get(name_clean)
+
+                if not cust:
+                    errors.append(f"Row {idx}: Customer not found ({r.get('customer_name') or r.get('customer_id') or 'Unknown'})")
+                    continue
+
+                # 2. Resolve Product
+                prod = None
+                p_id = r.get('product_id') or r.get('ProductId')
+                try:
+                    if p_id and int(p_id) in all_prods:
+                        prod = all_prods[int(p_id)]
+                except Exception:
+                    pass
+                if not prod and r.get('product_code'):
+                    code_clean = str(r.get('product_code')).strip().lower()
+                    prod = prods_by_code.get(code_clean)
+                if not prod and r.get('product_name'):
+                    pname_clean = str(r.get('product_name')).strip().lower()
+                    prod = prods_by_name.get(pname_clean)
+
+                if not prod:
+                    errors.append(f"Row {idx}: Product not found ({r.get('product_name') or r.get('product_id') or 'Unknown'})")
+                    continue
+
+                # 3. Resolve Price
+                raw_price = r.get('price') or r.get('special_price') or r.get('SpecialPrice')
+                if raw_price is None or str(raw_price).strip() == '':
+                    continue
+
+                try:
+                    price_val = Decimal(str(raw_price))
+                    if price_val <= Decimal('0.00'):
+                        CustomerProductPrice.objects.filter(CustomerLedger=cust, Product=prod).delete()
+                    else:
+                        CustomerProductPrice.objects.update_or_create(
+                            CustomerLedger=cust,
+                            Product=prod,
+                            defaults={'SpecialPrice': price_val, 'CompanyId': company_id}
+                        )
+                        saved_count += 1
+                except Exception:
+                    errors.append(f"Row {idx}: Invalid price value '{raw_price}'")
+
+        return Response({
+            'success': True,
+            'saved_count': saved_count,
+            'error_count': len(errors),
+            'errors': errors[:20],
+            'message': f'Successfully imported {saved_count} customer price record(s).'
         })
 
 
@@ -7185,7 +7367,9 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 })
 
             total_tax_amount = total_cgst_amount + total_sgst_amount + total_igst_amount
-            is_credit = (payment_method or '').strip().upper() == 'CREDIT'
+            is_credit = (payment_method or '').strip().upper() == 'CREDIT' or (
+                'amount_collected' in data and Decimal(str(data.get('amount_collected') or 0)) == Decimal('0.00') and (payment_method or '').strip().upper() != 'SPLIT' and not is_empties_only
+            )
             is_split = (payment_method or '').strip().upper() == 'SPLIT'
 
             if is_empties_only:
@@ -7194,6 +7378,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 sale_notes = f"Empty Return Voucher | Customer: {customer_name}"
             elif is_credit:
                 paid_amount = Decimal('0.00')
+                payment_method = 'Credit'
                 sale_notes = f"Payment: CREDIT | Customer: {customer_name}"
             elif is_split:
                 paid_amount = (cash_amount + upi_amount) if (cash_amount + upi_amount) > Decimal('0.00') else (amount_collected or total_gross_amount)
@@ -7201,6 +7386,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             elif amount_collected > 0:
                 paid_amount = amount_collected
                 sale_notes = f"Payment: {payment_method} | Customer: {customer_name}"
+            elif 'amount_collected' in data and amount_collected == Decimal('0.00'):
+                paid_amount = Decimal('0.00')
+                payment_method = 'Credit'
+                sale_notes = f"Payment: CREDIT | Customer: {customer_name}"
             else:
                 paid_amount = total_gross_amount
                 sale_notes = f"Payment: {payment_method} | Customer: {customer_name}"
@@ -8215,8 +8404,9 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                         )
 
             # 2. Correctly set PaidAmount without overwriting GrandTotal
-            if is_credit:
+            if is_credit or (collected_amount == Decimal('0.00') and not is_split):
                 sale.PaidAmount = Decimal('0.00')
+                sale.PaymentMethod = 'Credit'
                 sale.Notes = f"Payment: CREDIT | Customer: {cust_label}"
                 split_breakdown = ""
             elif is_split:
@@ -8226,11 +8416,13 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     cash_amount = (effective_split / Decimal('2.00')).quantize(Decimal('0.01'))
                     upi_amount = effective_split - cash_amount
                 sale.PaidAmount = effective_split
+                sale.PaymentMethod = 'Split'
                 sale.Notes = f"Payment: SPLIT (Cash: ₹{cash_amount:,.2f}, UPI: ₹{upi_amount:,.2f}) | Customer: {cust_label}"
                 split_breakdown = f" (Cash: ₹{cash_amount:,.2f}, Bank: ₹{upi_amount:,.2f})"
             else:
                 sale.PaidAmount = collected_amount
-                sale.Notes = f"Payment: {new_payment_method or sale.PaymentMethod} | Customer: {cust_label}"
+                sale.PaymentMethod = new_payment_method or sale.PaymentMethod or 'Cash'
+                sale.Notes = f"Payment: {sale.PaymentMethod} | Customer: {cust_label}"
                 split_breakdown = ""
 
             sale.IsEdited = True
@@ -8333,12 +8525,33 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     sync_sales_billwise_allocation(sale, None)
             else:
                 # PaidAmount is 0 (Unpaid / Credit):
-                # Clean up any linked Payment, Receipt lines, and BillwiseAllocation so physical shift cash decreases to 0
+                # Clean up all linked Payments, Receipt lines, Vouchers, and BillwiseAllocations
+                linked_pmts = Payment.objects.filter(
+                    Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
+                )
+                bill_refs = [sale.SalesNo]
+                if sale.InvoiceNo:
+                    bill_refs.append(sale.InvoiceNo)
+                bwa_ids = list(BillwiseAllocation.objects.filter(
+                    ReferenceTable__in=['Receipt', 'Payment'],
+                    BillReference__in=bill_refs
+                ).values_list('ReferenceId', flat=True))
+
+                all_pmt_ids = set(linked_pmts.values_list('PaymentId', flat=True)).union(set(bwa_ids))
                 if linked_pmt:
-                    BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=linked_pmt.PaymentId).delete()
-                    linked_pmt.lines.all().delete()
-                    Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=linked_pmt.PaymentId).delete()
-                    linked_pmt.delete()
+                    all_pmt_ids.add(linked_pmt.PaymentId)
+
+                if all_pmt_ids:
+                    BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId__in=all_pmt_ids).delete()
+                    for pid in all_pmt_ids:
+                        pmt = Payment.objects.filter(PaymentId=pid).first()
+                        if pmt:
+                            pmt.lines.all().delete()
+                            vchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pid)
+                            for v in vchs:
+                                v.lines.all().delete()
+                            vchs.delete()
+                            pmt.delete()
 
                 BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
 

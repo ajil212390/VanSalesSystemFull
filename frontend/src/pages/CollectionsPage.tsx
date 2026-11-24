@@ -1465,6 +1465,20 @@ export const CollectionsPage: React.FC = () => {
                             </ActionIcon>
                           </Tooltip>
                         )}
+
+                        {item.source === 'RECEIPT' && (item.raw?.PaymentId || item.raw?.payment_id) && (
+                          <Tooltip label="Edit Receipt" withArrow position="top">
+                            <ActionIcon
+                              variant="subtle"
+                              color="burgundy"
+                              size="sm"
+                              onClick={() => navigate(`/receipts/${item.raw.PaymentId || item.raw.payment_id}/edit`)}
+                              style={{ color: '#800020' }}
+                            >
+                              <IconEdit size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
                       </Group>
                     </Table.Td>
                   </Table.Tr>
@@ -1586,6 +1600,22 @@ export const CollectionsPage: React.FC = () => {
                     styles={{ root: { borderColor: '#800020', color: '#800020', fontWeight: 600 } }}
                   >
                     Edit Invoice
+                  </Button>
+                )}
+                {selectedItem.source === 'RECEIPT' && (selectedItem.raw?.PaymentId || selectedItem.raw?.payment_id) && (
+                  <Button
+                    variant="outline"
+                    color="burgundy"
+                    size="xs"
+                    leftSection={<IconEdit size={14} color="#800020" />}
+                    onClick={() => {
+                      const pid = selectedItem.raw.PaymentId || selectedItem.raw.payment_id;
+                      setSelectedItem(null);
+                      navigate(`/receipts/${pid}/edit`);
+                    }}
+                    styles={{ root: { borderColor: '#800020', color: '#800020', fontWeight: 600 } }}
+                  >
+                    Edit Receipt
                   </Button>
                 )}
                 <Button

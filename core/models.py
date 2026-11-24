@@ -429,6 +429,27 @@ class CustomerProductPrice(models.Model):
         return f"{self.CustomerLedger.LedgerName} - {self.Product.ProductName}: ₹{self.SpecialPrice}"
 
 
+class PriceUpdateHistory(models.Model):
+    HistoryId = models.BigAutoField(primary_key=True, db_column='HistoryId')
+    Product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, db_column='ProductId', related_name='hike_histories')
+    ProductName = models.CharField(max_length=150, db_column='ProductName')
+    HikeAmount = models.DecimalField(max_digits=12, decimal_places=2, db_column='HikeAmount')
+    OldBasePrice = models.DecimalField(max_digits=12, decimal_places=2, default=0, db_column='OldBasePrice')
+    NewBasePrice = models.DecimalField(max_digits=12, decimal_places=2, default=0, db_column='NewBasePrice')
+    AffectedCustomersCount = models.IntegerField(default=0, db_column='AffectedCustomersCount')
+    UpdatedBy = models.CharField(max_length=100, default='Admin', db_column='UpdatedBy')
+    CompanyId = models.BigIntegerField(default=1, db_column='CompanyId')
+    CreatedTimestamp = models.DateTimeField(auto_now_add=True, db_column='CreatedTimestamp')
+
+    class Meta:
+        managed = False
+        db_table = '"PriceUpdateHistory"'
+        ordering = ['-CreatedTimestamp']
+
+    def __str__(self):
+        return f"{self.ProductName}: +₹{self.HikeAmount} by {self.UpdatedBy}"
+
+
 class Purchase(models.Model):
     PurchaseId = models.BigAutoField(primary_key=True, db_column='PurchaseId')
     PurchaseNo = models.CharField(max_length=50, db_column='PurchaseNo')

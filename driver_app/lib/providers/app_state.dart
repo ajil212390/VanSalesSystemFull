@@ -1543,9 +1543,12 @@ class AppState extends ChangeNotifier {
   double get cashIncome => isSettledShift ? 0.0 : orders
       .fold(0.0, (sum, o) {
         final pm = o.paymentMethod.toLowerCase();
+        if (pm == 'credit' || pm == 'n/a' || (o.amount <= 0 && (o.cashAmount == null || o.cashAmount! <= 0))) {
+          return sum;
+        }
         if (pm == 'split') {
           return sum + (o.cashAmount ?? 0.0);
-        } else if (pm == 'cash' || (o.cashAmount != null && o.cashAmount! > 0) || (pm != 'credit' && !pm.contains('upi') && !pm.contains('bank') && o.amount > 0)) {
+        } else if (pm == 'cash' || (o.cashAmount != null && o.cashAmount! > 0) || (!pm.contains('upi') && !pm.contains('bank') && o.amount > 0)) {
           return sum + (o.cashAmount != null && o.cashAmount! > 0 ? o.cashAmount! : o.amount);
         }
         return sum;
@@ -1554,6 +1557,9 @@ class AppState extends ChangeNotifier {
   double get upiIncome => isSettledShift ? 0.0 : orders
       .fold(0.0, (sum, o) {
         final pm = o.paymentMethod.toLowerCase();
+        if (pm == 'credit' || pm == 'n/a' || (o.amount <= 0 && (o.upiAmount == null || o.upiAmount! <= 0))) {
+          return sum;
+        }
         if (pm == 'split') {
           return sum + (o.upiAmount ?? 0.0);
         } else if (pm.contains('upi') || pm.contains('bank') || pm.contains('online') || (o.upiAmount != null && o.upiAmount! > 0)) {
@@ -1804,8 +1810,14 @@ class AppState extends ChangeNotifier {
       for (final s in allSales) {
         final sDate = (s['SalesDate'] ?? s['date'] ?? '').toString();
         if (sDate.startsWith(todayStr)) {
-          final amt = safeDouble(s['PaidAmount'] ?? s['TotalAmount'] ?? s['GrandTotal']);
           final pMethod = (s['PaymentMode'] ?? s['PaymentMethod'] ?? '').toString().toUpperCase();
+          if (pMethod == 'CREDIT' || pMethod == 'N/A') {
+            continue;
+          }
+          final amt = safeDouble(s['PaidAmount'] != null ? s['PaidAmount'] : (s['AmountCollected'] ?? 0));
+          if (amt <= 0) {
+            continue;
+          }
           totalTodayRevenue += amt;
           if (pMethod == 'SPLIT') {
             final cAmt = safeDouble(s['cash_amount']);

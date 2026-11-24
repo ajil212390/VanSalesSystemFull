@@ -1287,6 +1287,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
       {'key': 'Cash', 'title': 'Cash', 'icon': Icons.payments_outlined},
       {'key': 'UPI', 'title': 'Bank', 'icon': Icons.qr_code_2_rounded},
       {'key': 'Split', 'title': 'Split', 'icon': Icons.call_split_rounded},
+      {'key': 'Credit', 'title': 'Credit', 'icon': Icons.account_balance_wallet_outlined},
     ];
 
     return Container(
@@ -1385,11 +1386,18 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                   child: GestureDetector(
                     onTap: () {
                       state.setPaymentMethod(m['key'] as String);
+                      if (m['key'] == 'Credit') {
+                        _amountController.text = '0';
+                        state.setCollectedAmount(0.0);
+                      } else if (_amountController.text == '0' || _amountController.text.isEmpty) {
+                        _amountController.text = state.totalBillAmount.toStringAsFixed(0);
+                        state.setCollectedAmount(state.totalBillAmount);
+                      }
                       setState(() {});
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
-                      margin: EdgeInsets.only(right: m['key'] != 'Split' ? 6 : 0),
+                      margin: EdgeInsets.only(right: m['key'] != 'Credit' ? 6 : 0),
                       padding: const EdgeInsets.symmetric(vertical: 11),
                       decoration: BoxDecoration(
                         color: isSelected ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
@@ -1431,6 +1439,35 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 );
               }).toList(),
             ),
+
+            if (state.paymentMethod == 'Credit') ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFDF2F4),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFF5C2CB)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.account_balance_wallet_outlined, color: Color(0xFF800020), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Credit Sale (₹0 Collected): Bill amount of ₹${state.totalBillAmount.toStringAsFixed(2)} will be debited to customer account without collection.',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF800020),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             if (state.paymentMethod == 'Split') ...[
               const SizedBox(height: 12),
@@ -2223,9 +2260,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                             state.setPaymentMethod('N/A');
                             state.setCollectedAmount(0.0);
                           } else {
-                            if (state.paymentMethod.isEmpty) {
-                              state.setPaymentMethod('Cash');
-                            }
+                            state.setPaymentMethod('Credit');
                             state.setCollectedAmount(0.0);
                           }
                           _submitDelivery(state, autoShareWhatsApp: true);
