@@ -1487,6 +1487,8 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         const SizedBox(height: 8),
                         TextField(
                           controller: amountController,
+                          enabled: selectedMethod.toLowerCase() != 'credit',
+                          readOnly: selectedMethod.toLowerCase() == 'credit',
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           cursorColor: const Color(0xFF800020),
                           style: GoogleFonts.inter(

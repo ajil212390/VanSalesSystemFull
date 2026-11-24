@@ -1638,7 +1638,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: amountController,
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 cursorColor: const Color(0xFF800020),
-                enabled: !isSaving,
+                enabled: !isSaving && selectedMethod.toLowerCase() != 'credit',
+                readOnly: selectedMethod.toLowerCase() == 'credit',
                 style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
                 decoration: InputDecoration(
                   prefixText: '\u20B9 ',
@@ -1664,7 +1665,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 3),
                       child: InkWell(
-                        onTap: isSaving ? null : () => setDialogState(() => selectedMethod = m),
+                        onTap: isSaving ? null : () => setDialogState(() {
+                          selectedMethod = m;
+                          if (m.toLowerCase() == 'credit') {
+                            amountController.text = '0';
+                          }
+                        }),
                         borderRadius: BorderRadius.circular(8),
                         child: Container(
                           height: 38,

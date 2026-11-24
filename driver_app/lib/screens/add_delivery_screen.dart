@@ -400,8 +400,8 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
 
                     const SizedBox(height: 14),
 
-                    // 4. Redesigned Bill Amount Collection Card (Hidden for Split)
-                    if (!isSplit) ...[
+                    // 4. Redesigned Bill Amount Collection Card (Hidden for Split and Credit)
+                    if (!isSplit && state.paymentMethod.toLowerCase() != 'credit') ...[
                       _buildRedesignedBillAmountCard(state, isMoneyOnly: isMoneyOnly),
                       const SizedBox(height: 14),
                     ],
@@ -1859,6 +1859,8 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                 Expanded(
                   child: TextField(
                     controller: _amountController,
+                    enabled: state.paymentMethod.toLowerCase() != 'credit',
+                    readOnly: state.paymentMethod.toLowerCase() == 'credit',
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     style: GoogleFonts.inter(
                       fontSize: 20,
