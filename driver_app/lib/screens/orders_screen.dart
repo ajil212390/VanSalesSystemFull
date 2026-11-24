@@ -67,6 +67,8 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
     }).toList();
     final creditOrders = state.orders.where((o) {
       final m = o.paymentMethod.toLowerCase();
+      final isEmptyOnly = o.totalCylinders == 0 && o.totalEmpties > 0 && o.amount <= 0;
+      if (isEmptyOnly) return false;
       return m == 'credit' || (o.amount <= 0 && m != 'cash' && !m.contains('upi') && !m.contains('bank'));
     }).toList();
 
@@ -335,11 +337,9 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
 
   // ================= TOP SUMMARY: TODAY'S SALES OVERVIEW CARD =================
   Widget _buildTodaySalesSummaryCard(AppState state) {
-    final double totalRevenue = state.orders.fold(0.0, (sum, o) => sum + o.amount);
-    final double cashTotal = state.orders
-        .where((o) => o.paymentMethod.toLowerCase() == 'cash')
-        .fold(0.0, (sum, o) => sum + o.amount);
-    final double upiTotal = totalRevenue - cashTotal;
+    final double cashTotal = state.cashIncome;
+    final double upiTotal = state.upiIncome;
+    final double totalRevenue = state.totalIncome;
     final int totalDeliveredCyls = state.orders.fold(0, (sum, o) => sum + o.totalCylinders);
     final int totalReturnedEmpties = state.orders.fold(0, (sum, o) => sum + o.totalEmpties);
 

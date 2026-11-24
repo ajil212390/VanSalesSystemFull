@@ -702,7 +702,7 @@ class AppState extends ChangeNotifier {
                   items: itemsList,
                   totalCylinders: safeInt(s['totalCylinders']),
                   totalEmpties: safeInt(s['totalEmpties']),
-                  amount: isCreditSale ? 0.0 : (paidAmt > 0 ? paidAmt : billAmt),
+                  amount: isCreditSale ? 0.0 : paidAmt,
                   billTotal: billAmt > 0 ? billAmt : (paidAmt > 0 ? paidAmt : null),
                   paymentMethod: s['paymentMethod'] ?? 'Cash',
                   cashAmount: s['cashAmount'] != null ? safeDouble(s['cashAmount']) : null,
@@ -1365,6 +1365,10 @@ class AppState extends ChangeNotifier {
         upiAmount: finalUpiAmt,
         items: backendItems,
       );
+      if (res['success'] == true) {
+        fetchCustomers();
+        syncFromBackend();
+      }
       return res['success'] == true;
     } catch (e) {
       debugPrint('Live backend order update error: $e');
@@ -1423,6 +1427,10 @@ class AppState extends ChangeNotifier {
         cashAmount: finalCashAmt,
         upiAmount: finalUpiAmt,
       );
+      if (res['success'] == true) {
+        fetchCustomers();
+        syncFromBackend();
+      }
       return res['success'] == true;
     } catch (e) {
       debugPrint('Live backend order update error: $e');

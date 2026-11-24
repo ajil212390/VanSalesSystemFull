@@ -7223,7 +7223,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 trec_no = get_next_temp_receipt_number()
                 driver_n = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
                 route_n = alloc.Route.RouteName if (alloc and alloc.Route) else ''
-                pay_narr = f"Van Collection Receipt | Driver: {driver_n} | Route: {route_n}"
+                pay_narr = f"Van Collection Receipt | Driver: {driver_n} | Route: {route_n} [RVD:{allocation_id}]"
 
                 cash_led = (
                     Ledger.objects.filter(LedgerId=24).first() or
@@ -7497,7 +7497,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     trec_no = get_next_temp_receipt_number()
                     driver_n = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
                     route_n = alloc.Route.RouteName if (alloc and alloc.Route) else ''
-                    pay_narr = f"Van Collection Receipt | Driver: {driver_n} | Route: {route_n}"
+                    pay_narr = f"Van Collection Receipt | Driver: {driver_n} | Route: {route_n} [RVD:{allocation_id}]"
 
                     cash_led = (
                         Ledger.objects.filter(LedgerId=24).first() or
@@ -7730,7 +7730,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'items': items_data,
                     'totalCylinders': int(sale.TotalDeliveredQty or 0),
                     'totalEmpties': int(sale.TotalEmptyQty or 0),
-                    'amount': float(sale.PaidAmount if (sale.PaidAmount is not None and (sale.PaidAmount > 0 or (sale.PaymentMethod or '').upper() == 'CREDIT')) else (sale.GrandTotal or 0)),
+                    'amount': float(sale.PaidAmount if sale.PaidAmount is not None else 0),
                     'paidAmount': float(sale.PaidAmount if sale.PaidAmount is not None else 0),
                     'grandTotal': float(sale.GrandTotal or 0),
                     'paymentMethod': sale.PaymentMethod or 'Cash',
@@ -7766,7 +7766,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         if dn_id:
             pmt_q |= Q(DeliveryNoteId=dn_id)
 
-        narr_q = Q()
+        narr_q = Q(Narration__icontains=f'[RVD:{allocation_id}]')
         if driver_name:
             narr_q |= Q(Narration__icontains=driver_name)
         if alloc and alloc.Vehicle and alloc.Vehicle.VehicleNumber:
@@ -7782,10 +7782,11 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             shift_payments = Payment.objects.filter(pmt_q).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
 
             for pmt in shift_payments:
-                if pmt.PaymentId in linked_pmt_ids:
-                    continue
                 p_narr = (pmt.Narration or '').upper()
-                if any(sid in p_narr for sid in shift_sale_identifiers if sid):
+                is_standalone_van_receipt = p_narr.startswith('VAN COLLECTION RECEIPT')
+                if not is_standalone_van_receipt and pmt.PaymentId in linked_pmt_ids:
+                    continue
+                if not is_standalone_van_receipt and any(sid in p_narr for sid in shift_sale_identifiers if sid):
                     continue
                 t_id = pmt.ReferenceNumber or pmt.PaymentNo or f"TREC-{pmt.PaymentId}"
                 if t_id.upper() in existing_tickets or (pmt.PaymentNo and pmt.PaymentNo.upper() in existing_tickets):
