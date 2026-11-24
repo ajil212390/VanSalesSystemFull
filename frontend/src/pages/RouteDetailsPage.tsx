@@ -88,6 +88,7 @@ interface RecentSale {
   is_approved?: boolean;
   is_edited?: boolean;
   IsEdited?: boolean;
+  is_receipt?: boolean;
   edited_by?: string;
   edited_at?: string;
   edit_reason?: string;
@@ -918,10 +919,10 @@ export const RouteDetailsPage: React.FC = () => {
         <Group justify="space-between" align="center" p="md" px="lg" style={{ borderBottom: '1px solid #f1f5f9' }}>
           <div>
             <Text fw={700} style={{ color: '#0f172a', fontSize: 16, letterSpacing: '-0.01em' }}>
-              Live Sales &amp; Delivery Feed ({data.recent_sales?.length ?? 0})
+              Live Deliveries &amp; Collections Feed ({data.recent_sales?.length ?? 0})
             </Text>
             <Text size="xs" c="dimmed">
-              Real-time invoices delivered to retail customers &amp; commercial spots along this route
+              Real-time invoices delivered and payment collections received from customers along this route
             </Text>
           </div>
           {isLive && (
@@ -976,6 +977,13 @@ export const RouteDetailsPage: React.FC = () => {
                     sale.sales_no ||
                     (sale.sale_id ? `#${sale.sale_id}` : sale.sales_id ? `#${sale.sales_id}` : `#${idx + 1}`);
 
+                  const isReceipt = Boolean(
+                    sale.is_receipt ||
+                    billNo.startsWith('TREC-') ||
+                    billNo.startsWith('RCPT-') ||
+                    billNo.startsWith('REC-')
+                  );
+
                   const customerName = sale.customer || sale.customer_name || 'Walk-in Customer';
                   const amountVal = (sale.paid_amount !== undefined && sale.paid_amount !== null)
                     ? Number(sale.paid_amount)
@@ -995,9 +1003,31 @@ export const RouteDetailsPage: React.FC = () => {
                       </Table.Td>
                       <Table.Td>
                         <Group gap={6} wrap="nowrap" align="center">
-                          <Text size="sm" fw={700} ff="monospace" style={{ color: '#800020' }}>
+                          <Text size="sm" fw={700} ff="monospace" style={{ color: isReceipt ? '#4338ca' : '#800020' }}>
                             {billNo}
                           </Text>
+                          {isReceipt && (
+                            <Badge
+                              size="xs"
+                              variant="light"
+                              styles={{
+                                root: {
+                                  backgroundColor: '#eef2ff',
+                                  color: '#4338ca',
+                                  fontWeight: 800,
+                                  fontSize: 9,
+                                  letterSpacing: '0.4px',
+                                  height: 18,
+                                  paddingLeft: 6,
+                                  paddingRight: 6,
+                                  borderRadius: 4,
+                                  border: '1px solid #c7d2fe',
+                                },
+                              }}
+                            >
+                              RECEIPT
+                            </Badge>
+                          )}
                           {(sale.is_edited || sale.IsEdited || (sale.edit_history && sale.edit_history.length > 0)) && (
                             <Tooltip
                               label="Click to inspect invoice revision history"
@@ -1050,20 +1080,20 @@ export const RouteDetailsPage: React.FC = () => {
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="sm" fw={600} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                          {deliveredQty}
+                        <Text size="sm" fw={600} style={{ color: isReceipt ? '#94a3b8' : '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          {isReceipt ? '—' : deliveredQty}
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="sm" fw={600} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                          {emptyReturned}
+                        <Text size="sm" fw={600} style={{ color: isReceipt ? '#94a3b8' : '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                          {isReceipt ? '—' : emptyReturned}
                         </Text>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
                         <Text size="sm" fw={700} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
                           {fmtInr(amountVal)}
                         </Text>
-                        {grandTotalVal > 0 && Math.abs(grandTotalVal - amountVal) > 0.01 && (
+                        {!isReceipt && grandTotalVal > 0 && Math.abs(grandTotalVal - amountVal) > 0.01 && (
                           <Text size="10px" c="dimmed">
                             Bill: {fmtInr(grandTotalVal)}
                           </Text>
@@ -1088,10 +1118,10 @@ export const RouteDetailsPage: React.FC = () => {
                       <Table.Td style={{ textAlign: 'center' }}>
                         <ActionIcon
                           variant="subtle"
-                          color="red"
+                          color={isReceipt ? 'indigo' : 'red'}
                           size="sm"
                           radius="sm"
-                          title="View / Print Tax Invoice PDF"
+                          title={isReceipt ? 'View / Print Official Receipt PDF' : 'View / Print Tax Invoice PDF'}
                           onClick={() => {
                             const baseUrl = apiClient.defaults.baseURL?.replace(/\/api\/v1\/?$/, '') || '';
                             const cleanTicket = billNo.replace(/^#/, '');

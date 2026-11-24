@@ -648,9 +648,67 @@ class RouteViewSet(viewsets.ModelViewSet):
                 )
                 .aggregate(s=Sum('PaidAmount'))['s'] or 0
             )
+
+            for ss in shift_sales_qs.filter(PaymentMethod__iexact='SPLIT'):
+                c_m = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', ss.Notes or '', re.IGNORECASE)
+                u_m = re.search(r'(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', ss.Notes or '', re.IGNORECASE)
+                c_val = float(c_m.group(1).replace(',', '')) if c_m else 0.0
+                u_val = float(u_m.group(1).replace(',', '')) if u_m else 0.0
+                paid = float(ss.PaidAmount if ss.PaidAmount is not None else ss.GrandTotal or 0)
+                if c_val <= 0 and u_val <= 0:
+                    c_val = paid
+                elif c_val > 0 and u_val <= 0 and paid > c_val:
+                    u_val = paid - c_val
+                elif u_val > 0 and c_val <= 0 and paid > u_val:
+                    c_val = paid - u_val
+                cash_collection += c_val
+                bank_collection += u_val
+
             total_collection = float(
                 shift_sales_qs.aggregate(s=Sum('PaidAmount'))['s'] or (cash_collection + bank_collection)
             )
+
+            # Standalone customer payment receipts collected by driver during this shift
+            sale_refs = set(shift_sales_qs.values_list('SalesNo', flat=True)) | set(shift_sales_qs.values_list('InvoiceNo', flat=True))
+            sale_pmt_ids = set(BillwiseAllocation.objects.filter(BillReference__in=sale_refs).values_list('PaymentLine__Payment_id', flat=True))
+
+            shift_receipt_qs = Payment.objects.filter(
+                Q(DeliveryNoteId=latest_dn.DeliveryNoteId) |
+                (Q(Narration__icontains=route.RouteName) & Q(CreatedAt__gte=latest_dn.CreatedAt))
+            ).exclude(
+                Q(PaymentId__in=sale_pmt_ids) |
+                Q(Narration__startswith='Sales Receipt for ') |
+                Q(Status='CANCELLED') |
+                Q(PartyLedger__LedgerName__icontains='travel') |
+                Q(PartyLedger_id=31) |
+                Q(PartyLedger__LedgerName__icontains='trip') |
+                Q(PartyLedger__LedgerName__icontains='fuel')
+            ).prefetch_related('lines')
+
+            if next_dn and next_dn.CreatedAt:
+                shift_receipt_qs = shift_receipt_qs.filter(CreatedAt__lt=next_dn.CreatedAt)
+
+            rec_cash_total = 0.0
+            rec_bank_total = 0.0
+            for rec in shift_receipt_qs:
+                lines = list(rec.lines.all())
+                r_c = 0.0
+                r_b = 0.0
+                if lines:
+                    for pl in lines:
+                        pl_mode = (pl.PaymentMode or 'Cash').upper()
+                        if any(b in pl_mode for b in ['BANK', 'UPI', 'ONLINE', 'CHEQUE', 'CARD']):
+                            r_b += float(pl.Amount or 0)
+                        else:
+                            r_c += float(pl.Amount or 0)
+                else:
+                    r_c += float(rec.Amount or 0)
+                rec_cash_total += r_c
+                rec_bank_total += r_b
+
+            cash_collection += rec_cash_total
+            bank_collection += rec_bank_total
+            total_collection += (rec_cash_total + rec_bank_total)
 
             # Expenses strictly for THIS active delivery note shift
             shift_exp_qs = RouteExpense.objects.filter(
@@ -953,6 +1011,49 @@ class RouteViewSet(viewsets.ModelViewSet):
             shift_sales_qs.aggregate(s=Sum('PaidAmount'))['s'] or (cash_collection + bank_collection)
         )
 
+        # Standalone customer payment receipts collected by driver during this shift
+        sale_refs = set(shift_sales_qs.values_list('SalesNo', flat=True)) | set(shift_sales_qs.values_list('InvoiceNo', flat=True))
+        sale_pmt_ids = set(BillwiseAllocation.objects.filter(BillReference__in=sale_refs).values_list('PaymentLine__Payment_id', flat=True))
+
+        shift_receipt_qs = Payment.objects.filter(
+            Q(DeliveryNoteId=latest_dn.DeliveryNoteId) |
+            (Q(Narration__icontains=route.RouteName) & Q(CreatedAt__gte=latest_dn.CreatedAt))
+        ).exclude(
+            Q(PaymentId__in=sale_pmt_ids) |
+            Q(Narration__startswith='Sales Receipt for ') |
+            Q(Status='CANCELLED') |
+            Q(PartyLedger__LedgerName__icontains='travel') |
+            Q(PartyLedger_id=31) |
+            Q(PartyLedger__LedgerName__icontains='trip') |
+            Q(PartyLedger__LedgerName__icontains='fuel')
+        ).prefetch_related('lines', 'PartyLedger')
+
+        if next_dn and next_dn.CreatedAt:
+            shift_receipt_qs = shift_receipt_qs.filter(CreatedAt__lt=next_dn.CreatedAt)
+
+        rec_cash_total = 0.0
+        rec_bank_total = 0.0
+        for rec in shift_receipt_qs:
+            lines = list(rec.lines.all())
+            r_c = 0.0
+            r_b = 0.0
+            if lines:
+                for pl in lines:
+                    pl_mode = (pl.PaymentMode or 'Cash').upper()
+                    if any(b in pl_mode for b in ['BANK', 'UPI', 'ONLINE', 'CHEQUE', 'CARD']):
+                        r_b += float(pl.Amount or 0)
+                    else:
+                        r_c += float(pl.Amount or 0)
+            else:
+                r_c += float(rec.Amount or 0)
+            rec_cash_total += r_c
+            rec_bank_total += r_b
+
+        cash_collection += rec_cash_total
+        bank_collection += rec_bank_total
+        total_collection += (rec_cash_total + rec_bank_total)
+        total_sales_count += shift_receipt_qs.count()
+
         # Expenses strictly for THIS active delivery note shift
         shift_exp_qs = RouteExpense.objects.filter(
             CompanyId=company_id,
@@ -1099,6 +1200,51 @@ class RouteViewSet(viewsets.ModelViewSet):
                 'lines': line_items,
                 'edit_history': history_list,
             })
+
+        for rec in shift_receipt_qs:
+            lines = list(rec.lines.all())
+            r_c = sum(float(pl.Amount or 0) for pl in lines if 'CASH' in (pl.PaymentMode or '').upper())
+            r_b = sum(float(pl.Amount or 0) for pl in lines if any(x in (pl.PaymentMode or '').upper() for x in ['BANK', 'UPI', 'ONLINE', 'CHEQUE', 'CARD']))
+            if r_c > 0 and r_b > 0:
+                p_mode = 'Split'
+            elif r_b > 0:
+                p_mode = 'UPI'
+            else:
+                p_mode = 'Cash'
+
+            ref_no = rec.ReferenceNumber or rec.PaymentNo or f"TREC-{rec.PaymentId}"
+            cust_name = rec.PartyLedger.LedgerName if rec.PartyLedger else 'Walk-in Customer'
+            time_str = rec.CreatedAt.strftime('%I:%M %p') if rec.CreatedAt else ''
+
+            recent_sales.append({
+                'sales_id': rec.PaymentId,
+                'sale_id': rec.PaymentId,
+                'sales_no': ref_no,
+                'invoice_no': ref_no,
+                'bill_number': ref_no,
+                'customer': cust_name,
+                'customer_name': cust_name,
+                'payment_method': p_mode,
+                'payment_mode': p_mode,
+                'grand_total': float(rec.Amount or 0),
+                'paid_amount': float(rec.Amount or 0),
+                'amount': float(rec.Amount or 0),
+                'delivered_qty': 0,
+                'empty_qty': 0,
+                'empty_returned': 0,
+                'time': time_str,
+                'created_at': rec.CreatedAt.isoformat() if rec.CreatedAt else '',
+                'status': rec.Status or 'APPROVED',
+                'is_approved': rec.Status == 'APPROVED',
+                'is_edited': False,
+                'IsEdited': False,
+                'is_receipt': True,
+                'lines': [],
+                'edit_history': [],
+            })
+
+        recent_sales.sort(key=lambda x: x.get('created_at') or '', reverse=True)
+        recent_sales = recent_sales[:30]
 
         # Product breakdown for this shift
         product_breakdown = []
