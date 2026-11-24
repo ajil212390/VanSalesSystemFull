@@ -684,11 +684,8 @@ export const StockAnalysisPage: React.FC = () => {
       ? godownsForDetail.reduce((sum: number, g: any) => sum + (g.EmptyQty || 0), 0)
       : godownEmptyForSelected;
 
-    const totalQty = (userGodownId && !isAdmin) ? (totalGodownFilledDetail + (isCyl ? totalGodownEmptyDetail : 0)) : (selectedProduct.TotalQty || 0);
-    const altTotal = totalQty * (selectedProduct.UnitConversion || 1);
     const altUnit = selectedProduct.AltUnitName || 'KG';
     const rateVal = selectedProduct.Rate ?? selectedProduct.PurchasePrice ?? 0;
-    const valuationVal = (userGodownId && !isAdmin) ? (altTotal * rateVal) : (selectedProduct.TotalValue || 0);
 
     const isGodownMatch = (godownsForDetail.length > 0 || (selectedProduct.GodownQty || 0) > 0 || godownEmptyForSelected > 0) && (
       !allocationSearch.trim() ||
@@ -711,7 +708,6 @@ export const StockAnalysisPage: React.FC = () => {
     const filteredAllocationsCount = (isGodownMatch ? (godownsForDetail.length || 1) : 0) + filteredVans.length;
     const totalFilledAlloc = (isGodownMatch ? totalGodownFilledDetail : 0) + filteredVans.reduce((sum, v) => sum + (v.BalanceQty ?? v.Qty), 0);
     const totalEmptyAlloc = (isGodownMatch ? totalGodownEmptyDetail : 0) + filteredVans.reduce((sum, v) => sum + (v.EmptyQty ?? 0), 0);
-    const filteredAllocationsTotalQty = totalFilledAlloc + totalEmptyAlloc;
 
     return (
       <Stack gap="lg">
@@ -750,18 +746,45 @@ export const StockAnalysisPage: React.FC = () => {
           {renderDateFilter()}
         </Group>
         {/* Product Metric KPI Cards */}
-        <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
-          <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-            <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              Total Stock Available
-            </Text>
-            <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={4}>
-              {totalQty}
-            </Text>
-            <Text size="xs" c="dimmed" mt={4}>
-              Converted weight: <strong style={{ color: '#800020' }}>{altTotal} {altUnit}</strong>
-            </Text>
-          </Paper>
+        <SimpleGrid cols={{ base: 1, sm: isCyl ? 4 : 3 }} spacing="md">
+          {isCyl ? (
+            <>
+              <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+                <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                  Filled Cylinders
+                </Text>
+                <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={4}>
+                  {totalFilledAlloc}
+                </Text>
+                <Text size="xs" c="dimmed" mt={4}>
+                  Converted weight: <strong style={{ color: '#800020' }}>{totalFilledAlloc * (selectedProduct.UnitConversion || 1)} {altUnit}</strong>
+                </Text>
+              </Paper>
+              <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+                <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                  Empty Cylinders
+                </Text>
+                <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={4}>
+                  {totalEmptyAlloc}
+                </Text>
+                <Text size="xs" c="dimmed" mt={4}>
+                  Empties awaiting refill
+                </Text>
+              </Paper>
+            </>
+          ) : (
+            <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
+              <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
+                Available Stock
+              </Text>
+              <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={4}>
+                {totalFilledAlloc}
+              </Text>
+              <Text size="xs" c="dimmed" mt={4}>
+                Total units on hand
+              </Text>
+            </Paper>
+          )}
           <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
             <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
               Purchase Rate & Cost
@@ -779,10 +802,10 @@ export const StockAnalysisPage: React.FC = () => {
               Total Stock Valuation
             </Text>
             <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={4}>
-              ₹{valuationVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              ₹{(totalFilledAlloc * (selectedProduct.UnitConversion || 1) * rateVal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </Text>
             <Text size="xs" c="dimmed" mt={4}>
-              Formula: {altTotal} {altUnit} &times; ₹{(selectedProduct.Rate ?? selectedProduct.PurchasePrice).toFixed(2)}
+              Formula: {totalFilledAlloc * (selectedProduct.UnitConversion || 1)} {altUnit} &times; ₹{(selectedProduct.Rate ?? selectedProduct.PurchasePrice).toFixed(2)}
             </Text>
           </Paper>
         </SimpleGrid>
@@ -860,14 +883,11 @@ export const StockAnalysisPage: React.FC = () => {
                   <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     ROUTE / DRIVER
                   </Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 120 }}>
                     FILLED
                   </Table.Th>
-                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110 }}>
+                  <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 120 }}>
                     EMPTY
-                  </Table.Th>
-                  <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 11.5, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 120 }}>
-                    TOTAL
                   </Table.Th>
                 </Table.Tr>
               </Table.Thead>
@@ -889,9 +909,6 @@ export const StockAnalysisPage: React.FC = () => {
                     <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
                       {isCyl ? (g.EmptyQty || 0) : '—'}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
-                      {(g.FilledQty || 0) + (isCyl ? (g.EmptyQty || 0) : 0)}
-                    </Table.Td>
                   </Table.Tr>
                 ))}
                 {isGodownMatch && godownsForDetail.length === 0 && (
@@ -911,15 +928,11 @@ export const StockAnalysisPage: React.FC = () => {
                     <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
                       {isCyl ? godownEmptyForSelected : '—'}
                     </Table.Td>
-                    <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
-                      {(selectedProduct.GodownQty || 0) + (isCyl ? godownEmptyForSelected : 0)}
-                    </Table.Td>
                   </Table.Tr>
                 )}
                 {filteredVans.map((van) => {
                   const filled = van.BalanceQty ?? van.Qty;
                   const empty = van.EmptyQty ?? 0;
-                  const total = filled + empty;
                   return (
                     <Table.Tr key={van.RouteVehicleDriverId} style={{ height: 44 }}>
                       <Table.Td>
@@ -944,15 +957,12 @@ export const StockAnalysisPage: React.FC = () => {
                       <Table.Td style={{ textAlign: 'right', fontWeight: 500, fontSize: 13.5, color: isCyl ? '#475569' : '#94a3b8', fontVariantNumeric: 'tabular-nums' }}>
                         {isCyl ? empty : '—'}
                       </Table.Td>
-                      <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14, color: '#000000', fontVariantNumeric: 'tabular-nums' }}>
-                        {total}
-                      </Table.Td>
                     </Table.Tr>
                   );
                 })}
                 {!isGodownMatch && filteredVans.length === 0 && (
                   <Table.Tr>
-                    <Table.Td colSpan={5}>
+                    <Table.Td colSpan={4}>
                       <Center p="xl">
                         <Text size="sm" c="dimmed">No stock locations match your search query.</Text>
                       </Center>
@@ -972,9 +982,6 @@ export const StockAnalysisPage: React.FC = () => {
                   </Table.Td>
                   <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 14.5, color: '#0f172a', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
                     {totalEmptyAlloc}
-                  </Table.Td>
-                  <Table.Td style={{ textAlign: 'right', fontWeight: 800, fontSize: 15, color: '#000000', fontVariantNumeric: 'tabular-nums', padding: '10px 16px' }}>
-                    {filteredAllocationsTotalQty}
                   </Table.Td>
                 </Table.Tr>
               </Table.Tfoot>
@@ -1159,19 +1166,7 @@ export const StockAnalysisPage: React.FC = () => {
             </Paper>
           </SimpleGrid>
         ) : (
-          <SimpleGrid cols={{ base: 2, sm: 3, md: 5 }} spacing="sm">
-            <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
-              <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
-                Total Warehouse Stock
-              </Text>
-              <Text fw={800} style={{ color: '#0f172a', fontSize: '22px', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }} mt={2}>
-                {selectedLocation.quantity}
-              </Text>
-              <Text size="xs" c="dimmed" mt={2} style={{ fontSize: 11 }}>
-                Stored inventory on hand
-              </Text>
-            </Paper>
-
+          <SimpleGrid cols={{ base: 2, sm: 2, md: 4 }} spacing="sm">
             <Paper p="sm" px="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
               <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 10.5 }}>
                 Filled Cylinders
