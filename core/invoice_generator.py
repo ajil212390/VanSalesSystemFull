@@ -1059,22 +1059,23 @@ def generate_tax_invoice_pdf(sale):
                 Paragraph("<b>Balance Due :</b>", cell_bold),
                 Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))
             ])
-        cust_summary_rows.append([
-            Paragraph("<b>Narration :</b>", cell_bold),
-            Paragraph(f"<i>{narration_text}</i>", cell_norm)
-        ])
 
     cust_summary_table = Table(cust_summary_rows, colWidths=[130, 125])
-    cust_summary_table.setStyle(TableStyle([
+    cust_table_style = [
         ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
-        ('LINEBELOW', (0, -3), (-1, -3), 1, BORDER_COLOR),
-        ('LINEBELOW', (0, -2), (-1, -2), 1, BORDER_COLOR),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), 3),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ('LEFTPADDING', (0, 0), (-1, -1), 4),
         ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-    ]))
+    ]
+    if not is_empty_return and not is_money_receipt:
+        cust_table_style.append(('LINEABOVE', (0, -1), (-1, -1), 1, BORDER_COLOR))
+    else:
+        cust_table_style.append(('LINEBELOW', (0, -3), (-1, -3), 1, BORDER_COLOR))
+        cust_table_style.append(('LINEBELOW', (0, -2), (-1, -2), 1, BORDER_COLOR))
+
+    cust_summary_table.setStyle(TableStyle(cust_table_style))
 
     if is_empty_return:
         tax_summary_table = Table([
@@ -1099,19 +1100,21 @@ def generate_tax_invoice_pdf(sale):
              Paragraph(f"<b>Rs. {paid_amt:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
         ], colWidths=[140, 130])
     else:
-        # EXACTLY 3 CALCULATION LINES AS REQUESTED BY USER & IN USER'S SKETCH
+        # NET AMOUNT CALCULATION (3 lines) + NARRATION (balances left and right boxes perfectly)
         tax_rows = [
             [Paragraph("<b>NET AMOUNT CALCULATION</b>", section_title), Paragraph("", cell_norm)],
             [Paragraph("Gross Amount (Taxable) :", cell_norm), Paragraph(f"Rs. {total_taxable_sum:,.2f}", cell_right_bold)],
             [Paragraph("Total Tax Amount :", cell_norm), Paragraph(f"Rs. {total_gst_sum:,.2f}", cell_right_bold)],
             [Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
              Paragraph(f"<b>Rs. {current_bill_amount:,.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
+            [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
         ]
 
-        tax_summary_table = Table(tax_rows, colWidths=[145, 125])
+        tax_summary_table = Table(tax_rows, colWidths=[120, 145])
         tax_summary_table.setStyle(TableStyle([
             ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
-            ('LINEABOVE', (0, -1), (-1, -1), 1, BORDER_COLOR),
+            ('LINEABOVE', (0, 3), (-1, 3), 1, BORDER_COLOR),
+            ('LINEBELOW', (0, 3), (-1, 3), 1, BORDER_COLOR),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('TOPPADDING', (0, 0), (-1, -1), 3),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
