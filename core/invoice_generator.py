@@ -2435,15 +2435,48 @@ def generate_collections_statement_pdf(records, source_type='ALL', period_text='
     # 2. KPI Summary Cards
     tot_count = len(records)
     tot_amt = sum(Decimal(str(r.get('amount') or 0)) for r in records)
-    cash_amt = sum(Decimal(str(r.get('amount') or 0)) for r in records if str(r.get('paymentMode') or r.get('payment_mode') or '').upper() == 'CASH')
-    bank_amt = tot_amt - cash_amt
+    cash_amt = Decimal('0.00')
+    bank_amt = Decimal('0.00')
 
-    if summary_stats:
+    for r in records:
+        amt = Decimal(str(r.get('amount') or 0))
+        pm = str(r.get('paymentMode') or r.get('payment_mode') or '').upper()
+        if 'SPLIT' in pm:
+            notes = str(r.get('notes') or '')
+            import re
+            cM = re.search(r'Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', notes, re.IGNORECASE)
+            uM = re.search(r'UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)', notes, re.IGNORECASE)
+            if cM or uM:
+                c_val = Decimal(cM.group(1).replace(',', '')) if cM else Decimal('0.00')
+                u_val = Decimal(uM.group(1).replace(',', '')) if uM else Decimal('0.00')
+                s_tot = c_val + u_val
+                scale = (amt / s_tot) if s_tot > 0 else Decimal('1.00')
+                cash_amt += c_val * scale
+                bank_amt += u_val * scale
+            else:
+                cash_amt += amt / 2
+                bank_amt += amt / 2
+        elif 'CASH' in pm:
+            cash_amt += amt
+        else:
+            bank_amt += amt
+
+    if summary_stats and isinstance(summary_stats, dict):
         try:
-            tot_count = int(summary_stats.get('totalCount') or tot_count)
-            tot_amt = Decimal(str(summary_stats.get('totalAmount') or tot_amt))
-            cash_amt = Decimal(str(summary_stats.get('cashTotal') or cash_amt))
-            bank_amt = Decimal(str(summary_stats.get('bankTotal') or bank_amt))
+            if 'totalCount' in summary_stats or 'totCount' in summary_stats:
+                tot_count = int(summary_stats.get('totalCount') or summary_stats.get('totCount') or tot_count)
+            if 'totAmt' in summary_stats or 'totalAmount' in summary_stats:
+                val = summary_stats.get('totAmt') if 'totAmt' in summary_stats else summary_stats.get('totalAmount')
+                if val is not None:
+                    tot_amt = Decimal(str(val))
+            if 'cashAmt' in summary_stats or 'cashTotal' in summary_stats:
+                val = summary_stats.get('cashAmt') if 'cashAmt' in summary_stats else summary_stats.get('cashTotal')
+                if val is not None:
+                    cash_amt = Decimal(str(val))
+            if 'digitalAmt' in summary_stats or 'bankTotal' in summary_stats or 'bankAmt' in summary_stats:
+                val = summary_stats.get('digitalAmt') if 'digitalAmt' in summary_stats else (summary_stats.get('bankTotal') or summary_stats.get('bankAmt'))
+                if val is not None:
+                    bank_amt = Decimal(str(val))
         except Exception:
             pass
 

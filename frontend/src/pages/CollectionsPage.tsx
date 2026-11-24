@@ -536,6 +536,40 @@ export const CollectionsPage: React.FC = () => {
     if (filteredCollections.length === 0) return;
     setIsGeneratingPdf(true);
     try {
+      let filteredTotAmt = 0;
+      let filteredCashAmt = 0;
+      let filteredDigitalAmt = 0;
+      filteredCollections.forEach((c) => {
+        const amt = Number(c.amount || 0);
+        filteredTotAmt += amt;
+        const pMode = String(c.paymentMode || '').toUpperCase();
+        if (pMode === 'SPLIT') {
+          const raw = c.raw || {};
+          const cVal = Number(raw.cash_amount ?? 0);
+          const uVal = Number(raw.upi_amount ?? raw.bank_amount ?? 0);
+          if (cVal > 0 || uVal > 0) {
+            const splitTot = cVal + uVal;
+            const scale = splitTot > 0 ? amt / splitTot : 1;
+            filteredCashAmt += cVal * scale;
+            filteredDigitalAmt += uVal * scale;
+          } else {
+            const notes = String(c.notes || '');
+            const cM = /Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
+            const uM = /UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
+            const cashSplit = cM ? Number(cM[1].replace(/,/g, '')) : amt / 2;
+            const upiSplit = uM ? Number(uM[1].replace(/,/g, '')) : amt - cashSplit;
+            const splitTot = cashSplit + upiSplit;
+            const scale = splitTot > 0 ? amt / splitTot : 1;
+            filteredCashAmt += cashSplit * scale;
+            filteredDigitalAmt += upiSplit * scale;
+          }
+        } else if (pMode.includes('CASH')) {
+          filteredCashAmt += amt;
+        } else {
+          filteredDigitalAmt += amt;
+        }
+      });
+
       const payload = {
         records: filteredCollections.map((c) => ({
           date: c.date,
@@ -554,7 +588,15 @@ export const CollectionsPage: React.FC = () => {
           ? `New Connections (${selectedDriver !== 'ALL' ? selectedDriver : 'All Drivers'})`
           : (categoryFilter === 'SALES' ? 'Sales Paid (Refills)' : 'All Collections'),
         period_label: periodLabel,
-        summary_stats: stats,
+        summary_stats: {
+          totalCount: filteredCollections.length,
+          totAmt: filteredTotAmt,
+          totalAmount: filteredTotAmt,
+          cashAmt: filteredCashAmt,
+          cashTotal: filteredCashAmt,
+          digitalAmt: filteredDigitalAmt,
+          bankTotal: filteredDigitalAmt,
+        },
       };
 
       const response = await apiClient.post('/sales/collections-statement-pdf/', payload, {
