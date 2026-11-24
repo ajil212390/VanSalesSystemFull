@@ -22,7 +22,6 @@ import {
 import {
   IconBuildingFactory2,
   IconTruckDelivery,
-  IconPackage,
   IconSearch,
   IconRefresh,
   IconTruck,
@@ -1670,47 +1669,9 @@ export const StockAnalysisPage: React.FC = () => {
           </Button>
         </Group>
       </Group>
-      {/* 2. Top 4 Metric KPI Cards */}
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
-        {/* Card 1: Total System Stock */}
-        <Paper
-          p="md"
-          radius="md"
-          withBorder
-          style={{
-            backgroundColor: '#ffffff',
-            borderColor: '#e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.02)',
-            transition: 'all 180ms cubic-bezier(0.16, 1, 0.3, 1)',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 8px 20px -4px rgba(0, 0, 0, 0.06)';
-            e.currentTarget.style.borderColor = '#cbd5e1';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'none';
-            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.02)';
-            e.currentTarget.style.borderColor = '#e2e8f0';
-          }}
-        >
-          <Group justify="space-between" align="center" mb="xs">
-            <Text size="xs" fw={600} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.4px', fontSize: 11 }}>
-              {userGodownId && !isAdmin ? `${user?.godown_name || 'Godown'} ` : 'Total System Stock'}
-            </Text>
-            <IconPackage size={20} color="#800020" stroke={1.75} />
-          </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: '24px', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>
-            {(userGodownId && !isAdmin ? summary.total_godown_cylinders : summary.total_system_cylinders).toLocaleString()}
-          </Text>
-          <Group justify="space-between" align="center" mt="xs" wrap="nowrap">
-            <Text size="xs" c="dimmed" truncate style={{ whiteSpace: 'nowrap' }}>
-              Est. Value ₹{summary.total_system_value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </Text>
-            <IconArrowUpRight size={15} color="#800020" style={{ flexShrink: 0 }} />
-          </Group>
-        </Paper>
-        {/* Card 2: Central Godown Stock / Filled Stock */}
+      {/* 2. Top Metric KPI Cards */}
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+        {/* Card 1: Central Godown Stock / Filled Stock */}
         <Paper
           p="md"
           radius="md"
