@@ -450,7 +450,8 @@ def generate_tax_invoice_pdf(sale):
     total_sgst_sum = Decimal('0.00')
     total_igst_sum = Decimal('0.00')
     total_gross_sum = Decimal('0.00')
-    product_tax_breakdown = []
+    cylinder_tax_breakdown = []
+    other_tax_breakdown = []
 
     lines = sale.lines.select_related('Product', 'Unit').all()
     is_intra_customer = (not customer or not customer.StateId or customer.StateId in [12, 32])
@@ -504,7 +505,7 @@ def generate_tax_invoice_pdf(sale):
                     Paragraph("0.00", cell_right_bold),
                 ])
                 line_idx += 1
-    elif not lines.exists():
+    elif not (lines.exists() if hasattr(lines, 'exists') else bool(lines)):
         # Synthetic single line fallback
         gross_val = Decimal(str(sale.GrandTotal or 0))
         taxable_val = Decimal(str(sale.SubTotal or gross_val))
@@ -582,25 +583,55 @@ def generate_tax_invoice_pdf(sale):
             total_igst_sum += igst_amount
             total_gross_sum += gross_total
 
-            # Clean product name for GST breakdown
-            prod_name_clean = re.sub(r'^(?:LPG\s+)?', '', line.ProductName or '', flags=re.IGNORECASE)
-            prod_name_clean = re.sub(r'\s+GAS\s+CYLINDER$', ' Cylinder', prod_name_clean, flags=re.IGNORECASE)
-            prod_name_clean = re.sub(r'\s+CYLINDER$', ' Cylinder', prod_name_clean, flags=re.IGNORECASE)
-            prod_name_clean = re.sub(r'\b04KG\b', '4KG', prod_name_clean, flags=re.IGNORECASE).strip()
-            if not prod_name_clean:
-                prod_name_clean = line.ProductName or 'Cylinder'
+            # Determine if this line is a cylinder product and if it was delivered
+            prod = line.Product
+            cat_name = (prod.Category.CategoryName or '') if (prod and prod.Category) else ''
+            p_name = line.ProductName or (prod.ProductName if prod else '') or ''
+            
+            is_cylinder = (
+                ('CYLINDER' in cat_name.upper()) or 
+                ('CYLINDER' in p_name.upper()) or 
+                ('KG' in p_name.upper()) or 
+                ('LPG' in p_name.upper())
+            )
+            is_delivered = (qty > Decimal('0.00'))
 
-            product_tax_breakdown.append({
-                'product_name': line.ProductName,
-                'clean_label': prod_name_clean,
-                'gst_rate': gst_rate,
-                'taxable_amount': taxable_amount,
-                'tax_amount': tax_amount,
-                'cgst_amount': cgst_amount,
-                'sgst_amount': sgst_amount,
-                'igst_amount': igst_amount,
-                'qty': qty,
-            })
+            # Separate GST breakdown strictly for delivered cylinders
+            if is_cylinder and is_delivered and (tax_amount > Decimal('0.00') or taxable_amount > Decimal('0.00')):
+                m = re.search(r'(\d+(?:\.\d+)?\s*KG)', p_name, re.IGNORECASE)
+                if m:
+                    kg_part = re.sub(r'\b0+(\d+)', r'\1', m.group(1).upper())
+                    kg_part = re.sub(r'(\d+)\s*KG', r'\1 KG', kg_part)
+                    prod_name_clean = f"{kg_part} Cyl"
+                else:
+                    prod_name_clean = re.sub(r'^(?:LPG\s+)?', '', p_name, flags=re.IGNORECASE)
+                    prod_name_clean = re.sub(r'\s+GAS\s+CYLINDER$', ' Cyl', prod_name_clean, flags=re.IGNORECASE)
+                    prod_name_clean = re.sub(r'\s+CYLINDER$', ' Cyl', prod_name_clean, flags=re.IGNORECASE)
+                    prod_name_clean = prod_name_clean.strip() or 'Cylinder'
+
+                cylinder_tax_breakdown.append({
+                    'product_name': line.ProductName,
+                    'clean_label': prod_name_clean,
+                    'gst_rate': gst_rate,
+                    'taxable_amount': taxable_amount,
+                    'tax_amount': tax_amount,
+                    'cgst_amount': cgst_amount,
+                    'sgst_amount': sgst_amount,
+                    'igst_amount': igst_amount,
+                    'qty': qty,
+                })
+            elif (not is_cylinder) and is_delivered and tax_amount > Decimal('0.00'):
+                other_tax_breakdown.append({
+                    'product_name': line.ProductName,
+                    'clean_label': 'Other Items',
+                    'gst_rate': gst_rate,
+                    'taxable_amount': taxable_amount,
+                    'tax_amount': tax_amount,
+                    'cgst_amount': cgst_amount,
+                    'sgst_amount': sgst_amount,
+                    'igst_amount': igst_amount,
+                    'qty': qty,
+                })
 
             table_rows.append([
                 Paragraph(str(idx), ParagraphStyle('C1', parent=cell_norm, alignment=1)),
@@ -611,12 +642,12 @@ def generate_tax_invoice_pdf(sale):
                 Paragraph(f"{taxable_amount:.2f}", cell_right_bold),
             ])
 
-    # Group tax breakdown by clean product label and gst rate
-    grouped_tax_map = {}
-    for item in product_tax_breakdown:
+    # Group cylinder tax breakdown by cylinder label and rate
+    grouped_cyl_map = {}
+    for item in cylinder_tax_breakdown:
         key = (item['clean_label'], item['gst_rate'])
-        if key not in grouped_tax_map:
-            grouped_tax_map[key] = {
+        if key not in grouped_cyl_map:
+            grouped_cyl_map[key] = {
                 'clean_label': item['clean_label'],
                 'gst_rate': item['gst_rate'],
                 'taxable_amount': Decimal('0.00'),
@@ -626,17 +657,41 @@ def generate_tax_invoice_pdf(sale):
                 'tax_amount': Decimal('0.00'),
                 'qty': Decimal('0.00'),
             }
-        grouped_tax_map[key]['taxable_amount'] += item['taxable_amount']
-        grouped_tax_map[key]['cgst_amount'] += item['cgst_amount']
-        grouped_tax_map[key]['sgst_amount'] += item['sgst_amount']
-        grouped_tax_map[key]['igst_amount'] += item['igst_amount']
-        grouped_tax_map[key]['tax_amount'] += item['tax_amount']
-        grouped_tax_map[key]['qty'] += item['qty']
-    grouped_taxes = list(grouped_tax_map.values())
+        grouped_cyl_map[key]['taxable_amount'] += item['taxable_amount']
+        grouped_cyl_map[key]['cgst_amount'] += item['cgst_amount']
+        grouped_cyl_map[key]['sgst_amount'] += item['sgst_amount']
+        grouped_cyl_map[key]['igst_amount'] += item['igst_amount']
+        grouped_cyl_map[key]['tax_amount'] += item['tax_amount']
+        grouped_cyl_map[key]['qty'] += item['qty']
+    grouped_cylinders = list(grouped_cyl_map.values())
+
+    # Group non-cylinder tax breakdown
+    grouped_oth_map = {}
+    for item in other_tax_breakdown:
+        key = item['gst_rate']
+        if key not in grouped_oth_map:
+            grouped_oth_map[key] = {
+                'clean_label': 'Other Items',
+                'gst_rate': item['gst_rate'],
+                'taxable_amount': Decimal('0.00'),
+                'cgst_amount': Decimal('0.00'),
+                'sgst_amount': Decimal('0.00'),
+                'igst_amount': Decimal('0.00'),
+                'tax_amount': Decimal('0.00'),
+                'qty': Decimal('0.00'),
+            }
+        grouped_oth_map[key]['taxable_amount'] += item['taxable_amount']
+        grouped_oth_map[key]['cgst_amount'] += item['cgst_amount']
+        grouped_oth_map[key]['sgst_amount'] += item['sgst_amount']
+        grouped_oth_map[key]['igst_amount'] += item['igst_amount']
+        grouped_oth_map[key]['tax_amount'] += item['tax_amount']
+        grouped_oth_map[key]['qty'] += item['qty']
+    grouped_others = list(grouped_oth_map.values())
 
     # Ensure consistent space for product rows without pushing to page 2
     # Dynamically adjust min padding so the entire invoice fits neatly on a single A4 page
-    extra_tax_lines = max(0, (len(grouped_taxes) * 2) - 2) if is_intra_customer else max(0, len(grouped_taxes) - 1)
+    total_tax_count = len(grouped_cylinders) + len(grouped_others)
+    extra_tax_lines = max(0, (total_tax_count * 2) - 2) if is_intra_customer else max(0, total_tax_count - 1)
     min_product_rows = max(4, 9 - extra_tax_lines)
     current_product_count = len(table_rows) - 1  # excluding header
     if current_product_count < min_product_rows:
@@ -974,8 +1029,8 @@ def generate_tax_invoice_pdf(sale):
             [Paragraph("Gross Amount (Taxable) :", cell_norm), Paragraph(f"Rs. {total_taxable_sum:,.2f}", cell_right_bold)],
         ]
 
-        if grouped_taxes:
-            for item in grouped_taxes:
+        if len(grouped_cylinders) > 1:
+            for item in grouped_cylinders:
                 lbl = item['clean_label']
                 rate = item['gst_rate']
                 cgst = item['cgst_amount']
@@ -998,12 +1053,59 @@ def generate_tax_invoice_pdf(sale):
                         Paragraph(f"IGST @ {norm_rate}% ({lbl}) :", cell_muted),
                         Paragraph(f"Rs. {igst:,.2f}", cell_right)
                     ])
+        elif len(grouped_cylinders) == 1:
+            item = grouped_cylinders[0]
+            rate = item['gst_rate']
+            cgst = item['cgst_amount']
+            sgst = item['sgst_amount']
+            igst = item['igst_amount']
+
+            if is_intra_customer:
+                half_rate = (rate / Decimal('2.00')).quantize(Decimal('0.1')) if (rate / Decimal('2.00')) % 1 != 0 else (rate / Decimal('2.00')).quantize(Decimal('1'))
+                tax_rows.append([
+                    Paragraph(f"CGST @ {half_rate}% :", cell_muted),
+                    Paragraph(f"Rs. {cgst:,.2f}", cell_right)
+                ])
+                tax_rows.append([
+                    Paragraph(f"SGST @ {half_rate}% :", cell_muted),
+                    Paragraph(f"Rs. {sgst:,.2f}", cell_right)
+                ])
+            else:
+                norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
+                tax_rows.append([
+                    Paragraph(f"IGST @ {norm_rate}% :", cell_muted),
+                    Paragraph(f"Rs. {igst:,.2f}", cell_right)
+                ])
         else:
             if is_intra_customer:
                 tax_rows.append([Paragraph("CGST :", cell_muted), Paragraph(f"Rs. {total_cgst_sum:,.2f}", cell_right)])
                 tax_rows.append([Paragraph("SGST :", cell_muted), Paragraph(f"Rs. {total_sgst_sum:,.2f}", cell_right)])
             else:
                 tax_rows.append([Paragraph("IGST :", cell_muted), Paragraph(f"Rs. {total_igst_sum:,.2f}", cell_right)])
+
+        if grouped_others:
+            for item in grouped_others:
+                lbl = item['clean_label']
+                rate = item['gst_rate']
+                cgst = item['cgst_amount']
+                sgst = item['sgst_amount']
+                igst = item['igst_amount']
+                if is_intra_customer:
+                    half_rate = (rate / Decimal('2.00')).quantize(Decimal('0.1')) if (rate / Decimal('2.00')) % 1 != 0 else (rate / Decimal('2.00')).quantize(Decimal('1'))
+                    tax_rows.append([
+                        Paragraph(f"CGST @ {half_rate}% ({lbl}) :", cell_muted),
+                        Paragraph(f"Rs. {cgst:,.2f}", cell_right)
+                    ])
+                    tax_rows.append([
+                        Paragraph(f"SGST @ {half_rate}% ({lbl}) :", cell_muted),
+                        Paragraph(f"Rs. {sgst:,.2f}", cell_right)
+                    ])
+                else:
+                    norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
+                    tax_rows.append([
+                        Paragraph(f"IGST @ {norm_rate}% ({lbl}) :", cell_muted),
+                        Paragraph(f"Rs. {igst:,.2f}", cell_right)
+                    ])
 
         tax_rows.append([
             Paragraph("<b>Total GST :</b>", cell_bold),
