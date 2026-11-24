@@ -1573,7 +1573,10 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         ),
                         const SizedBox(height: 10),
                         Row(
-                          children: ['Cash', 'UPI', 'Split', 'Credit'].map((m) {
+                          children: (order.items.isEmpty || order.ticketId.startsWith('RCPT-') || order.ticketId.startsWith('TREC-')
+                                  ? ['Cash', 'UPI', 'Split']
+                                  : ['Cash', 'UPI', 'Split', 'Credit'])
+                              .map((m) {
                             final isSel = selectedMethod.toLowerCase() == m.toLowerCase();
                             final label = m == 'UPI' ? 'UPI' : m;
                             return Expanded(

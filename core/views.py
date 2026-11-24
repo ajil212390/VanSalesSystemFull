@@ -8116,7 +8116,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 TransactionNo__in=t_nos
             ).delete()
 
-            # 2. Cancel Sale record
+            # 2. Cancel Sale record (or standalone Payment receipt)
             if sale:
                 sale.Status = 'CANCELLED'
                 sale.save(update_fields=['Status'])
@@ -8128,6 +8128,30 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     v.save(update_fields=['IsCancelled'])
                     v_ledgers = v.lines.values_list('Ledger_id', flat=True)
                     sync_ledger_balances(*v_ledgers)
+            elif ticket_id:
+                clean_tid = str(ticket_id).strip()
+                pmt = (
+                    Payment.objects.filter(ReferenceNumber__iexact=clean_tid).first()
+                    or Payment.objects.filter(PaymentNo__iexact=clean_tid).first()
+                )
+                if not pmt and clean_tid.upper().startswith('TREC-'):
+                    try:
+                        p_id = int(clean_tid.upper().replace('TREC-', ''))
+                        pmt = Payment.objects.filter(PaymentId=p_id).first()
+                    except Exception:
+                        pass
+                if pmt:
+                    if str(pmt.Status).upper() in ['SETTLED', 'APPROVED']:
+                        return Response({'success': False, 'message': 'Cannot cancel an already settled/approved receipt.'}, status=status.HTTP_400_BAD_REQUEST)
+                    pmt.Status = 'CANCELLED'
+                    pmt.save(update_fields=['Status'])
+                    BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=pmt.PaymentId).delete()
+                    vouchers = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pmt.PaymentId)
+                    for v in vouchers:
+                        v.IsCancelled = True
+                        v.save(update_fields=['IsCancelled'])
+                    if pmt.PartyLedger_id:
+                        sync_ledger_balances(pmt.PartyLedger_id, 24, 56)
 
         target_display = (sale.InvoiceNo or sale.SalesNo) if sale else ticket_id
         return Response({

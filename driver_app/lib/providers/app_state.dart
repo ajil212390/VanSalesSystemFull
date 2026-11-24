@@ -1229,6 +1229,8 @@ class AppState extends ChangeNotifier {
             newOrder.salesId = int.tryParse(sid.toString());
           }
           notifyListeners();
+          fetchCustomers();
+          syncFromBackend();
         }
       } catch (e) {
         debugPrint('Package sale sync error: $e');
@@ -1259,7 +1261,8 @@ class AppState extends ChangeNotifier {
     // Synchronize deletion to backend to reverse StockMovement and cancel Sales record
     try {
       await ApiService.cancelSaleByTicket(order.ticketId, salesId: order.salesId);
-      // Immediately refresh from backend to ensure 100% authoritative stock and sales sync
+      // Immediately refresh from backend to ensure 100% authoritative stock, customers, and sales sync
+      fetchCustomers();
       await syncFromBackend();
     } catch (e) {
       debugPrint('Live backend order cancel error: $e');
