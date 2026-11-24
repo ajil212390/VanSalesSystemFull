@@ -18,6 +18,7 @@ import {
   Grid,
   ActionIcon,
   SegmentedControl,
+  Modal,
 } from '@mantine/core';
 import {
   IconBuildingFactory2,
@@ -36,7 +37,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/authStore';
 import { apiClient } from '../api/client';
-import { DateInputDDMMYY, formatDateDDMMYY } from '../components/DateInputDDMMYY';
+import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
 interface VanProduct {
   ProductId: number;
   ProductName: string;
@@ -271,9 +272,14 @@ export const StockAnalysisPage: React.FC = () => {
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  const [datePreset, setDatePreset] = useState<'today' | 'yesterday' | 'this_month' | 'all' | 'custom'>('all');
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
+  const [customModalOpened, setCustomModalOpened] = useState(false);
+  const [customDates, setCustomDates] = useState<{ from: string; to: string }>({
+    from: getTodayStr(),
+    to: getTodayStr(),
+  });
 
   const handlePresetChange = (val: string) => {
     setDatePreset(val as any);
@@ -282,13 +288,14 @@ export const StockAnalysisPage: React.FC = () => {
     if (val === 'today') {
       setFromDate(today);
       setToDate(today);
-    } else if (val === 'yesterday') {
-      const y = new Date();
-      y.setDate(y.getDate() - 1);
-      const yStr = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
-      setFromDate(yStr);
-      setToDate(yStr);
-    } else if (val === 'this_month') {
+    } else if (val === 'week') {
+      const now = new Date();
+      const start = new Date();
+      start.setDate(now.getDate() - 7);
+      const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+      setFromDate(startStr);
+      setToDate(today);
+    } else if (val === 'month') {
       const d = new Date();
       const monthStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
       setFromDate(monthStart);
@@ -318,80 +325,120 @@ export const StockAnalysisPage: React.FC = () => {
   });
 
   const renderDateFilter = () => (
-    <Paper
-      p={6}
-      px="xs"
-      radius="md"
-      withBorder
-      style={{
-        backgroundColor: '#ffffff',
-        borderColor: '#e2e8f0',
-        boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-      }}
-    >
-      <Group gap="xs" align="center" wrap="wrap">
-        <SegmentedControl
-          value={datePreset}
-          onChange={(val) => handlePresetChange(val)}
-          size="xs"
-          radius="md"
-          color="burgundy"
-          data={[
-            { label: 'All Time', value: 'all' },
-            { label: 'Today', value: 'today' },
-            { label: 'Yesterday', value: 'yesterday' },
-            { label: 'This Month', value: 'this_month' },
-          ]}
-          styles={{
-            root: { backgroundColor: '#f1f5f9', padding: 2 },
-            indicator: { backgroundColor: '#800020' },
-            label: { fontSize: 11, fontWeight: 600, padding: '3px 8px' },
-          }}
-        />
-        <Group gap={4} align="center">
-          <Text size="xs" fw={600} c="#64748b" style={{ fontSize: 11 }}>From:</Text>
-          <DateInputDDMMYY
-            value={fromDate}
-            onChange={(iso) => {
-              setFromDate(iso);
-              setDatePreset('custom');
-            }}
-            size="xs"
-            placeholder="dd/mm/yyyy"
-            style={{ width: 112 }}
-            styles={{
-              input: { height: 28, minHeight: 28, fontSize: 11.5, borderColor: '#cbd5e1', padding: '0 8px' },
-            }}
+    <Group gap="xs" align="center" wrap="nowrap">
+      <SegmentedControl
+        value={datePreset}
+        onChange={(val) => {
+          if (val === 'custom') {
+            setCustomModalOpened(true);
+          } else {
+            handlePresetChange(val);
+          }
+        }}
+        color="burgundy"
+        radius="xl"
+        size="xs"
+        transitionDuration={250}
+        transitionTimingFunction="cubic-bezier(0.16, 1, 0.3, 1)"
+        data={[
+          { label: 'All', value: 'all' },
+          { label: 'Today', value: 'today' },
+          { label: 'This Week', value: 'week' },
+          { label: 'This Month', value: 'month' },
+          {
+            label: (
+              <Group gap={4} wrap="nowrap" align="center" style={{ display: 'inline-flex' }}>
+                <IconCalendar size={13} />
+                <span>Custom</span>
+              </Group>
+            ),
+            value: 'custom',
+          },
+        ]}
+        styles={{
+          root: {
+            backgroundColor: '#f1f5f9',
+            border: '1px solid #e2e8f0',
+            padding: 3,
+            borderRadius: 9999,
+          },
+          control: {
+            border: 'none',
+          },
+          indicator: {
+            backgroundColor: '#800020',
+            borderRadius: 9999,
+            boxShadow: 'none',
+            border: 'none',
+            outline: 'none',
+          },
+          label: {
+            fontSize: 12,
+            fontWeight: 500,
+            padding: '4px 14px',
+            transition: 'color 150ms ease, font-weight 150ms ease',
+          },
+        }}
+      />
+      <ActionIcon
+        variant="default"
+        size="lg"
+        radius="xl"
+        onClick={() => refetch()}
+        loading={isRefetching}
+        title="Refresh Stock Data"
+        style={{
+          borderColor: '#e2e8f0',
+          backgroundColor: '#ffffff',
+          color: '#800020',
+          height: 32,
+          width: 32,
+        }}
+      >
+        <IconRefresh size={15} />
+      </ActionIcon>
+
+      {/* Custom Date Range Modal */}
+      <Modal
+        opened={customModalOpened}
+        onClose={() => setCustomModalOpened(false)}
+        title="Select Custom Date Range"
+        centered
+        radius="md"
+        overlayProps={{ backgroundOpacity: 0.35, blur: 3 }}
+      >
+        <Stack gap="md">
+          <TextInput
+            type="date"
+            label="From Date"
+            value={customDates.from}
+            onChange={(e) => setCustomDates((prev) => ({ ...prev, from: e.target.value }))}
           />
-          <Text size="xs" fw={600} c="#64748b" style={{ fontSize: 11 }}>To:</Text>
-          <DateInputDDMMYY
-            value={toDate}
-            onChange={(iso) => {
-              setToDate(iso);
-              setDatePreset('custom');
-            }}
-            size="xs"
-            placeholder="dd/mm/yyyy"
-            style={{ width: 112 }}
-            styles={{
-              input: { height: 28, minHeight: 28, fontSize: 11.5, borderColor: '#cbd5e1', padding: '0 8px' },
-            }}
+          <TextInput
+            type="date"
+            label="To Date"
+            value={customDates.to}
+            onChange={(e) => setCustomDates((prev) => ({ ...prev, to: e.target.value }))}
           />
-          <ActionIcon
-            variant="light"
-            color="burgundy"
-            size="sm"
-            radius="md"
-            onClick={() => refetch()}
-            loading={isRefetching}
-            title="Refresh Stock Data"
-            style={{ height: 28, width: 28 }}
-          >
-            <IconRefresh size={14} />
-          </ActionIcon>
-        </Group>
-      </Group>
-    </Paper>
+          <Group justify="flex-end" mt="xs">
+            <Button variant="default" onClick={() => setCustomModalOpened(false)}>
+              Cancel
+            </Button>
+            <Button
+              style={{ backgroundColor: '#800020' }}
+              onClick={() => {
+                setFromDate(customDates.from);
+                setToDate(customDates.to);
+                setDatePreset('custom');
+                setCustomModalOpened(false);
+              }}
+            >
+              Apply Filter
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </Group>
   );
   const products = data?.products ?? EMPTY_PRODUCT_STOCK;
   const filteredProducts = useMemo(() => {
@@ -1279,9 +1326,9 @@ export const StockAnalysisPage: React.FC = () => {
                     ? 'All Time Movement History'
                     : datePreset === 'today'
                     ? `Date: Today (${formatDateDDMMYY(fromDate)})`
-                    : datePreset === 'yesterday'
-                    ? `Date: Yesterday (${formatDateDDMMYY(fromDate)})`
-                    : datePreset === 'this_month'
+                    : datePreset === 'week'
+                    ? `Date: This Week (${formatDateDDMMYY(fromDate)} — ${formatDateDDMMYY(toDate)})`
+                    : datePreset === 'month'
                     ? `Date: This Month (${formatDateDDMMYY(fromDate)} — ${formatDateDDMMYY(toDate)})`
                     : `Date Range: ${fromDate ? formatDateDDMMYY(fromDate) : 'Start'} — ${toDate ? formatDateDDMMYY(toDate) : 'Today'}`}
                 </Badge>
