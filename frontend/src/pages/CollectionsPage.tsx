@@ -69,7 +69,7 @@ export const CollectionsPage: React.FC = () => {
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'SALES' | 'CONNECTIONS'>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'SALES' | 'RECEIPTS' | 'CONNECTIONS'>('ALL');
   const [selectedDriver, setSelectedDriver] = useState<string>('ALL');
   const [modeFilter, setModeFilter] = useState<string>('ALL');
   const [datePreset, setDatePreset] = useState<'ALL' | 'TODAY' | 'YESTERDAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'CUSTOM'>('ALL');
@@ -388,9 +388,14 @@ export const CollectionsPage: React.FC = () => {
     return allCollections.filter((c) => c.isConnection);
   }, [allCollections]);
 
-  // Regular Refill Sales Collection Items
+  // Regular Refill Sales Collection Items (direct sales billing, excluding new connections and receipts)
   const regularSalesCollections = useMemo(() => {
-    return allCollections.filter((c) => !c.isConnection);
+    return allCollections.filter((c) => c.source === 'SALE' && !c.isConnection);
+  }, [allCollections]);
+
+  // Standalone Customer Receipts
+  const receiptCollections = useMemo(() => {
+    return allCollections.filter((c) => c.source === 'RECEIPT');
   }, [allCollections]);
 
   // Compute Driver-Wise Aggregation for New Connections
@@ -475,8 +480,11 @@ export const CollectionsPage: React.FC = () => {
   // Base filtered collections (by category, driver, date, search - without modeFilter)
   const baseFilteredCollections = useMemo(() => {
     return allCollections.filter((item) => {
-      // Category filter (ALL vs SALES vs CONNECTIONS)
-      if (categoryFilter === 'SALES' && item.isConnection) {
+      // Category filter (ALL vs SALES vs RECEIPTS vs CONNECTIONS)
+      if (categoryFilter === 'SALES' && (item.isConnection || item.source !== 'SALE')) {
+        return false;
+      }
+      if (categoryFilter === 'RECEIPTS' && item.source !== 'RECEIPT') {
         return false;
       }
       if (categoryFilter === 'CONNECTIONS' && !item.isConnection) {
@@ -790,6 +798,14 @@ export const CollectionsPage: React.FC = () => {
             <Button
               variant="default"
               size="xs"
+              leftSection={<IconCash size={15} color="#800020" />}
+              onClick={() => navigate('/receipts/new')}
+            >
+              + Record Receipt
+            </Button>
+            <Button
+              variant="default"
+              size="xs"
               leftSection={<IconPackages size={15} color="#800020" />}
               onClick={() => navigate('/sales/new-connection')}
             >
@@ -962,6 +978,7 @@ export const CollectionsPage: React.FC = () => {
               data={[
                 { label: `All Collections (${allCollections.length})`, value: 'ALL' },
                 { label: `Sales Paid (${regularSalesCollections.length})`, value: 'SALES' },
+                { label: `Receipts (${receiptCollections.length})`, value: 'RECEIPTS' },
                 { label: `New Connections (${connectionCollections.length})`, value: 'CONNECTIONS' },
               ]}
               styles={{
@@ -1364,8 +1381,8 @@ export const CollectionsPage: React.FC = () => {
                             New Connection
                           </Badge>
                         ) : item.source === 'RECEIPT' ? (
-                          <Badge size="xs" variant="filled" color="teal">
-                            Receipt
+                          <Badge size="xs" variant="filled" color="burgundy">
+                            RECEIPT
                           </Badge>
                         ) : (
                           <Badge size="xs" variant="light" color="gray">
@@ -1487,7 +1504,7 @@ export const CollectionsPage: React.FC = () => {
                 </div>
                 <Badge
                   size="md"
-                  color={selectedItem.isConnection ? 'burgundy' : selectedItem.source === 'RECEIPT' ? 'teal' : 'gray'}
+                  color={selectedItem.isConnection || selectedItem.source === 'RECEIPT' ? 'burgundy' : 'gray'}
                   variant="filled"
                 >
                   {selectedItem.isConnection ? 'New Connection Package' : (selectedItem.source === 'RECEIPT' ? 'Customer Account Receipt' : 'Direct Sale Collection')}
@@ -1578,7 +1595,7 @@ export const CollectionsPage: React.FC = () => {
                   onClick={() => {
                     const isRcpt = selectedItem.source === 'RECEIPT';
                     setSelectedItem(null);
-                    navigate(isRcpt ? '/payments' : '/sales');
+                    navigate(isRcpt ? '/receipts' : '/sales');
                   }}
                 >
                   {selectedItem.source === 'RECEIPT' ? 'View in Receipts' : 'View in Sales Register'}
