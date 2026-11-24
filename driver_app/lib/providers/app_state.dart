@@ -713,8 +713,13 @@ class AppState extends ChangeNotifier {
               }
 
               // Preserve any locally recorded order that backend hasn't synced yet
-              final backendTicketIds = newOrders.map((o) => o.ticketId).toSet();
-              final localOnly = orders.where((o) => !backendTicketIds.contains(o.ticketId)).toList();
+              final backendTicketIds = newOrders.map((o) => o.ticketId.trim().toUpperCase()).toSet();
+              final backendSalesIds = newOrders.where((o) => o.salesId != null).map((o) => o.salesId).toSet();
+              final localOnly = orders.where((o) {
+                final tIdMatch = backendTicketIds.contains(o.ticketId.trim().toUpperCase());
+                final sIdMatch = o.salesId != null && backendSalesIds.contains(o.salesId);
+                return !tIdMatch && !sIdMatch;
+              }).toList();
 
               orders.clear();
               orders.addAll(newOrders);
@@ -954,6 +959,28 @@ class AppState extends ChangeNotifier {
       stopNumber: _stopCounter,
     );
     orders.insert(0, newOrder);
+
+    // Immediately update customer outstanding balance locally
+    final isCredit = paymentMethod.toLowerCase() == 'credit';
+    final isPureReceipt = (totalCylinders == 0 && totalOtherDeliveryCount == 0 && totalEmpties == 0 && collectedAmount > 0);
+    if (selectedCustomer != null) {
+      if (isCredit) {
+        selectedCustomer!.outstanding += orderBillTotal;
+      } else if (isPureReceipt) {
+        selectedCustomer!.outstanding -= collectedAmount;
+      }
+      try {
+        final custInList = customers.firstWhere((c) =>
+          (selectedCustomer?.ledgerId != null && c.ledgerId == selectedCustomer!.ledgerId) ||
+          (c.name.toLowerCase() == selectedCustomer!.name.toLowerCase())
+        );
+        if (isCredit) {
+          custInList.outstanding += orderBillTotal;
+        } else if (isPureReceipt) {
+          custInList.outstanding -= collectedAmount;
+        }
+      } catch (_) {}
+    }
 
     // Update stock locally
     for (final item in deliveryItems) {

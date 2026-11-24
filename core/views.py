@@ -1437,7 +1437,7 @@ class RouteViewSet(viewsets.ModelViewSet):
                 CompanyId=company_id,
                 RouteVehicleDriver=alloc
             ).order_by('-DeliveryNoteId').first()
-            if not latest_dn or latest_dn.Status in ['COMPLETED', 'PENDING_APPROVAL']:
+            if latest_dn and latest_dn.Status in ['COMPLETED', 'PENDING_APPROVAL']:
                 return Response({
                     'detail': 'Cannot record expense: Shift has ended and is awaiting approval or settled. Please wait for a new load allocation.'
                 }, status=status.HTTP_400_BAD_REQUEST)
@@ -2346,15 +2346,26 @@ class LedgerViewSet(viewsets.ModelViewSet):
             ).values('CustomerLedger').annotate(tot_adv=Sum('RemainingAmount'))
         }
 
+        # Include live unapproved shift credit sales in customer outstanding
+        pending_sales_map = {}
+        for row in Sales.objects.filter(CompanyId=company_id, IsApproved=False).exclude(Status='CANCELLED').values('CustomerLedger').annotate(tot_due=Sum(F('GrandTotal') - F('PaidAmount'))):
+            if row['CustomerLedger']:
+                pending_sales_map[row['CustomerLedger']] = float(row['tot_due'] or 0)
+
+        # Deduct live route collection receipts (status=PENDING) from customer outstanding
+        pending_pmt_map = {}
+        for row in Payment.objects.filter(PartyLedger__isnull=False, Status='PENDING').values('PartyLedger').annotate(tot_pmt=Sum('Amount')):
+            if row['PartyLedger']:
+                pending_pmt_map[row['PartyLedger']] = float(row['tot_pmt'] or 0)
+
         data = []
         for l in debtor_ledgers:
             adv_rem = adv_map.get(l.LedgerId, 0.0)
             cur_bal = float(l.CurrentBalance or 0)
-            # If customer has active advance, net position accounts for advance credit
-            if adv_rem > 0:
-                effective_balance = cur_bal - adv_rem
-            else:
-                effective_balance = cur_bal
+            pend_sale = pending_sales_map.get(l.LedgerId, 0.0)
+            pend_pmt = pending_pmt_map.get(l.LedgerId, 0.0)
+            # Net position includes ledger balance, advance adjustment, live shift sales and pending receipts
+            effective_balance = cur_bal - adv_rem + pend_sale - pend_pmt
 
             data.append({
                 'LedgerId': l.LedgerId,
@@ -7194,7 +7205,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
         ).order_by('-DeliveryNoteId').first()
 
-        if not latest_dn or latest_dn.Status in ['COMPLETED', 'PENDING_APPROVAL']:
+        if latest_dn and latest_dn.Status in ['COMPLETED', 'PENDING_APPROVAL']:
             return Response({
                 'success': False,
                 'message': 'Cannot record delivery: Shift has ended and is awaiting approval or settled. Please wait for a new load allocation.'
@@ -7980,7 +7991,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             RouteVehicleDriver_id=alloc.RouteVehicleDriverId
         ).order_by('-DeliveryNoteId').first()
 
-        if not latest_dn or latest_dn.Status in ['COMPLETED', 'PENDING_APPROVAL']:
+        if latest_dn and latest_dn.Status in ['COMPLETED', 'PENDING_APPROVAL']:
             return Response({
                 'detail': 'Cannot record expense: Shift has ended and is awaiting approval or settled. Please wait for a new load allocation.'
             }, status=status.HTTP_400_BAD_REQUEST)
