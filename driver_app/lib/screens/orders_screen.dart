@@ -1494,8 +1494,8 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
                           cursorColor: const Color(0xFF800020),
                           onChanged: (val) {
-                            final parsed = double.tryParse(val.trim());
-                            if (parsed != null && parsed > 0) {
+                            final parsed = double.tryParse(val.replaceAll(',', '').trim());
+                            if (parsed != null && parsed >= 0) {
                               previousNonCreditAmount = parsed;
                             }
                           },
@@ -1606,8 +1606,8 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                         }
                                         amountController.text = baseAmt.toStringAsFixed(0);
                                       } else {
-                                        // Cash or UPI: restore previous non-credit amount if was 0 or credit
-                                        if (oldMethod == 'Credit' || amountController.text == '0' || amountController.text.isEmpty) {
+                                        // Cash or UPI: restore previous non-credit amount only when switching from Credit
+                                        if (oldMethod == 'Credit') {
                                           final restoreAmt = previousNonCreditAmount > 0 ? previousNonCreditAmount : computedTotal;
                                           amountController.text = restoreAmt.toStringAsFixed(0);
                                         }
@@ -1766,15 +1766,15 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                     cashAmt = 0;
                                     upiAmt = 0;
                                   } else if (selectedMethod.toLowerCase() == 'split') {
-                                    cashAmt = double.tryParse(splitCashController.text.trim()) ?? 0;
-                                    upiAmt = double.tryParse(splitUpiController.text.trim()) ?? 0;
+                                    cashAmt = double.tryParse(splitCashController.text.replaceAll(',', '').trim()) ?? 0;
+                                    upiAmt = double.tryParse(splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
                                     parsedAmt = cashAmt + upiAmt;
                                   } else if (selectedMethod.toLowerCase() == 'cash') {
-                                    parsedAmt = double.tryParse(amountController.text.trim()) ?? computedTotal;
+                                    parsedAmt = double.tryParse(amountController.text.replaceAll(',', '').trim()) ?? computedTotal;
                                     cashAmt = parsedAmt;
                                     upiAmt = 0;
                                   } else {
-                                    parsedAmt = double.tryParse(amountController.text.trim()) ?? computedTotal;
+                                    parsedAmt = double.tryParse(amountController.text.replaceAll(',', '').trim()) ?? computedTotal;
                                     cashAmt = 0;
                                     upiAmt = parsedAmt;
                                   }
