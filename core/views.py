@@ -588,6 +588,15 @@ class RouteViewSet(viewsets.ModelViewSet):
                 continue
 
             # --- ACTIVE LOADED SHIFT ---
+            # Find next delivery note for this route to strictly bound this shift's time window
+            next_dn = DeliveryNote.objects.filter(
+                CompanyId=company_id,
+                RouteVehicleDriver_id=allocation_id,
+                DeliveryNoteId__gt=latest_dn.DeliveryNoteId
+            ).exclude(
+                Q(DeliveryNoteNo__startswith='TDN-') | Q(Remarks__startswith='Transfer Outward')
+            ).order_by('DeliveryNoteId').first()
+
             # Stock from van_stock logic (use StockMovement for the current active DN)
             filled_qty = 0.0
             empty_qty = 0.0
@@ -604,6 +613,14 @@ class RouteViewSet(viewsets.ModelViewSet):
             )
             if first_dn_sm:
                 base_movs = base_movs.filter(StockMovementId__gte=first_dn_sm.StockMovementId)
+            if next_dn:
+                next_dn_sm = StockMovement.objects.filter(
+                    RouteVehicleDriverId=allocation_id,
+                    ReferenceId=next_dn.DeliveryNoteId,
+                    TransactionType='DELIVERY_NOTE'
+                ).order_by('StockMovementId').first()
+                if next_dn_sm:
+                    base_movs = base_movs.filter(StockMovementId__lt=next_dn_sm.StockMovementId)
 
             dn_in = base_movs.filter(TransactionType='DELIVERY_NOTE').aggregate(s=Sum('InQty'))['s'] or Decimal('0')
             if dn_in == 0 and latest_dn:
@@ -615,6 +632,8 @@ class RouteViewSet(viewsets.ModelViewSet):
                 RouteVehicleDriver_id=allocation_id,
                 CreatedAt__gte=latest_dn.CreatedAt
             ).exclude(Status='CANCELLED')
+            if next_dn and next_dn.CreatedAt:
+                shift_sales_qs = shift_sales_qs.filter(CreatedAt__lt=next_dn.CreatedAt)
 
             sale_out = base_movs.filter(TransactionType='VAN_SALE').aggregate(s=Sum('OutQty'))['s'] or Decimal('0')
             if sale_out == 0 and latest_dn:
@@ -716,6 +735,8 @@ class RouteViewSet(viewsets.ModelViewSet):
                 RouteVehicleDriver_id=allocation_id,
                 CreatedAt__gte=latest_dn.CreatedAt
             )
+            if next_dn and next_dn.CreatedAt:
+                shift_exp_qs = shift_exp_qs.filter(CreatedAt__lt=next_dn.CreatedAt)
 
             total_exp = float(shift_exp_qs.aggregate(s=Sum('Amount'))['s'] or 0)
             cash_exp = float(shift_exp_qs.filter(PaymentMode='Cash').aggregate(s=Sum('Amount'))['s'] or 0)
@@ -730,6 +751,8 @@ class RouteViewSet(viewsets.ModelViewSet):
                 | Q(PartyLedger__LedgerName__icontains='fuel'),
                 CreatedAt__gte=latest_dn.CreatedAt
             ).exclude(PaymentId__in=linked_pmt_ids)
+            if next_dn and next_dn.CreatedAt:
+                travel_pmts = travel_pmts.filter(CreatedAt__lt=next_dn.CreatedAt)
 
             active_alloc_route_ids = set(
                 RouteVehicleDriver.objects.filter(CompanyId=company_id, IsActive=True)
