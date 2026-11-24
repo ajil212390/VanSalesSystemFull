@@ -1088,11 +1088,18 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
     // Clone items or match with active state cylinders
     final Map<int, DeliveryItem> editedItemsMap = {};
 
-    // 1. Populate from order.items
+    // 1. Populate from order.items (always prefer authoritative catalog CylinderType from state.cylinders)
     for (final it in order.items) {
-      final pId = it.cylinder.productId ?? 0;
-      editedItemsMap[pId] = DeliveryItem(
-        cylinder: it.cylinder,
+      final itPid = it.cylinder.productId;
+      final itWNorm = it.cylinder.weight.replaceAll(' ', '').toUpperCase();
+      final catalogCyl = state.cylinders.firstWhere(
+        (c) => (itPid != null && c.productId == itPid) ||
+               c.weight.replaceAll(' ', '').toUpperCase() == itWNorm,
+        orElse: () => it.cylinder,
+      );
+      final keyId = catalogCyl.productId ?? itPid ?? catalogCyl.weight.hashCode;
+      editedItemsMap[keyId] = DeliveryItem(
+        cylinder: catalogCyl,
         deliveryQty: it.deliveryQty,
         emptyReturnQty: it.emptyReturnQty,
       );
@@ -1100,9 +1107,9 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
 
     // 2. Also ensure all cylinders currently loaded in van are accessible for editing
     for (final cyl in state.cylinders) {
-      final pId = cyl.productId ?? 0;
-      if (!editedItemsMap.containsKey(pId)) {
-        editedItemsMap[pId] = DeliveryItem(
+      final keyId = cyl.productId ?? cyl.weight.hashCode;
+      if (!editedItemsMap.containsKey(keyId)) {
+        editedItemsMap[keyId] = DeliveryItem(
           cylinder: cyl,
           deliveryQty: 0,
           emptyReturnQty: 0,
@@ -1111,11 +1118,6 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
     }
 
     final itemsList = editedItemsMap.values.toList();
-
-    // Helper to calculate auto-amount
-    double calcTotal() {
-      return itemsList.fold(0.0, (sum, it) => sum + (it.deliveryQty * it.cylinder.price));
-    }
 
     final initialMethod = order.paymentMethod.isNotEmpty ? order.paymentMethod : 'Cash';
     String selectedMethod = 'Cash';
@@ -1130,10 +1132,10 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
       selectedMethod = 'Cash';
     }
 
-    // Keep track of non-credit amount so toggling back to Cash/UPI restores it
-    double previousNonCreditAmount = order.amount > 0 ? order.amount : calcTotal();
+    // Keep track of user's non-credit collected amount only (never auto-fill cylinder bill price)
+    double previousNonCreditAmount = order.amount > 0 ? order.amount : 0.0;
     final amountController = TextEditingController(
-      text: selectedMethod == 'Credit' ? '0' : order.amount.toStringAsFixed(0),
+      text: selectedMethod == 'Credit' ? '0' : (order.amount > 0 ? order.amount.toStringAsFixed(0) : ''),
     );
     final splitCashController = TextEditingController(
       text: (order.cashAmount ?? 0) > 0 ? (order.cashAmount ?? 0).toStringAsFixed(0) : '',
@@ -1149,7 +1151,6 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setModalState) {
-          final computedTotal = calcTotal();
 
           return Container(
             constraints: BoxConstraints(
@@ -1377,22 +1378,12 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                         if (it.deliveryQty > 0) {
                                           setModalState(() {
                                             it.deliveryQty--;
-                                            final newTot = calcTotal();
-                                            previousNonCreditAmount = newTot;
-                                            if (selectedMethod.toLowerCase() != 'credit') {
-                                              amountController.text = newTot.toStringAsFixed(0);
-                                            }
                                           });
                                         }
                                       },
                                       onIncrease: () {
                                         setModalState(() {
                                           it.deliveryQty++;
-                                          final newTot = calcTotal();
-                                          previousNonCreditAmount = newTot;
-                                          if (selectedMethod.toLowerCase() != 'credit') {
-                                            amountController.text = newTot.toStringAsFixed(0);
-                                          }
                                         });
                                       },
                                     ),
@@ -1433,122 +1424,92 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
 
                   const SizedBox(height: 16),
 
-                  // Collected Amount Card
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'COLLECTED AMOUNT',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: const Color(0xFF64748B),
-                                letterSpacing: 0.5,
-                              ),
+                  // Collected Amount Card (hidden when Split is selected, since Cash + Bank defines total)
+                  if (selectedMethod.toLowerCase() != 'split') ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'COLLECTED AMOUNT',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF64748B),
+                              letterSpacing: 0.5,
                             ),
-                            if (computedTotal > 0)
-                              InkWell(
-                                onTap: () {
-                                  setModalState(() {
-                                    previousNonCreditAmount = computedTotal;
-                                    if (selectedMethod.toLowerCase() != 'credit') {
-                                      amountController.text = computedTotal.toStringAsFixed(0);
-                                    }
-                                  });
-                                },
-                                borderRadius: BorderRadius.circular(6),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFEF2F2),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    'Auto: ₹${computedTotal.toStringAsFixed(0)}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                      color: const Color(0xFF800020),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          controller: amountController,
-                          enabled: selectedMethod.toLowerCase() != 'credit',
-                          readOnly: selectedMethod.toLowerCase() == 'credit',
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          cursorColor: const Color(0xFF800020),
-                          onChanged: (val) {
-                            final parsed = double.tryParse(val.replaceAll(',', '').trim());
-                            if (parsed != null && parsed >= 0) {
-                              previousNonCreditAmount = parsed;
-                            }
-                          },
-                          style: GoogleFonts.inter(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: const Color(0xFF0F172A),
                           ),
-                          decoration: InputDecoration(
-                            prefixText: '₹ ',
-                            prefixStyle: GoogleFonts.inter(
+                          const SizedBox(height: 8),
+                          TextField(
+                            controller: amountController,
+                            enabled: selectedMethod.toLowerCase() != 'credit',
+                            readOnly: selectedMethod.toLowerCase() == 'credit',
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            cursorColor: const Color(0xFF800020),
+                            onChanged: (val) {
+                              final parsed = double.tryParse(val.replaceAll(',', '').trim());
+                              if (parsed != null && parsed >= 0) {
+                                previousNonCreditAmount = parsed;
+                              }
+                            },
+                            style: GoogleFonts.inter(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
-                              color: const Color(0xFF800020),
+                              color: const Color(0xFF0F172A),
                             ),
-                            filled: true,
-                            fillColor: selectedMethod.toLowerCase() == 'credit' ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                            decoration: InputDecoration(
+                              hintText: '0',
+                              prefixText: '₹ ',
+                              prefixStyle: GoogleFonts.inter(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF800020),
+                              ),
+                              filled: true,
+                              fillColor: selectedMethod.toLowerCase() == 'credit' ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: const BorderSide(color: Color(0xFF800020), width: 1.5),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           ),
-                        ),
-                        if (selectedMethod.toLowerCase() == 'credit')
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.info_outline, size: 13, color: Color(0xFF800020)),
-                                const SizedBox(width: 5),
-                                Expanded(
-                                  child: Text(
-                                    'Credit Sale: ₹0 collected. Total bill will be added to customer credit balance.',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: const Color(0xFF800020),
+                          if (selectedMethod.toLowerCase() == 'credit')
+                            Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.info_outline, size: 13, color: Color(0xFF800020)),
+                                  const SizedBox(width: 5),
+                                  Expanded(
+                                    child: Text(
+                                      'Credit Sale: ₹0 collected. Total bill will be added to customer credit balance.',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: const Color(0xFF800020),
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-
-                  const SizedBox(height: 14),
+                    const SizedBox(height: 14),
+                  ],
 
                   // Payment method selector: Cash, UPI, Split, Credit
                   Container(
@@ -1588,7 +1549,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                       final oldMethod = selectedMethod;
                                       selectedMethod = m;
                                       if (m == 'Credit') {
-                                        final currentAmt = double.tryParse(amountController.text.trim()) ?? 0;
+                                        final currentAmt = double.tryParse(amountController.text.replaceAll(',', '').trim()) ?? 0;
                                         if (currentAmt > 0) {
                                           previousNonCreditAmount = currentAmt;
                                         }
@@ -1596,20 +1557,23 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                         splitCashController.clear();
                                         splitUpiController.clear();
                                       } else if (m == 'Split') {
-                                        final baseAmt = previousNonCreditAmount > 0 ? previousNonCreditAmount : computedTotal;
-                                        final half = (baseAmt / 2).roundToDouble();
-                                        if (splitCashController.text.isEmpty || splitCashController.text == '0') {
-                                          splitCashController.text = half.toStringAsFixed(0);
-                                        }
-                                        if (splitUpiController.text.isEmpty || splitUpiController.text == '0') {
-                                          splitUpiController.text = (baseAmt - half).toStringAsFixed(0);
-                                        }
-                                        amountController.text = baseAmt.toStringAsFixed(0);
-                                      } else {
-                                        // Cash or UPI: restore previous non-credit amount only when switching from Credit
                                         if (oldMethod == 'Credit') {
-                                          final restoreAmt = previousNonCreditAmount > 0 ? previousNonCreditAmount : computedTotal;
-                                          amountController.text = restoreAmt.toStringAsFixed(0);
+                                          amountController.clear();
+                                        }
+                                      } else {
+                                        // Cash or UPI: restore only user's prior non-credit amount (never auto-fill cylinder bill rate)
+                                        if (oldMethod == 'Credit') {
+                                          amountController.text = previousNonCreditAmount > 0
+                                              ? previousNonCreditAmount.toStringAsFixed(0)
+                                              : '';
+                                        } else if (oldMethod == 'Split') {
+                                          final sCash = double.tryParse(splitCashController.text.replaceAll(',', '').trim()) ?? 0;
+                                          final sUpi = double.tryParse(splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
+                                          final sTot = sCash + sUpi;
+                                          if (sTot > 0) {
+                                            amountController.text = sTot.toStringAsFixed(0);
+                                            previousNonCreditAmount = sTot;
+                                          }
                                         }
                                       }
                                     });
@@ -1674,10 +1638,10 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFFCBD5E1))),
                                             ),
                                             onChanged: (val) {
-                                              final c = double.tryParse(val) ?? 0;
-                                              final u = (computedTotal - c).clamp(0, computedTotal);
-                                              splitUpiController.text = u.toStringAsFixed(0);
+                                              final c = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                              final u = double.tryParse(splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
                                               setModalState(() {
+                                                previousNonCreditAmount = c + u;
                                                 amountController.text = (c + u).toStringAsFixed(0);
                                               });
                                             },
@@ -1704,9 +1668,10 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: Color(0xFF800020))),
                                             ),
                                             onChanged: (val) {
-                                              final u = double.tryParse(val) ?? 0;
-                                              final c = double.tryParse(splitCashController.text) ?? 0;
+                                              final u = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
+                                              final c = double.tryParse(splitCashController.text.replaceAll(',', '').trim()) ?? 0;
                                               setModalState(() {
+                                                previousNonCreditAmount = c + u;
                                                 amountController.text = (c + u).toStringAsFixed(0);
                                               });
                                             },
@@ -1715,6 +1680,14 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                       ),
                                     ),
                                   ],
+                                ),
+                                const SizedBox(height: 8),
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Text(
+                                    'Split Total: ₹${((double.tryParse(splitCashController.text.replaceAll(',', '').trim()) ?? 0) + (double.tryParse(splitUpiController.text.replaceAll(',', '').trim()) ?? 0)).toStringAsFixed(0)}',
+                                    style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                  ),
                                 ),
                               ],
                             ),
@@ -1769,12 +1742,26 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                     cashAmt = double.tryParse(splitCashController.text.replaceAll(',', '').trim()) ?? 0;
                                     upiAmt = double.tryParse(splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
                                     parsedAmt = cashAmt + upiAmt;
+                                    if (parsedAmt <= 0) {
+                                      AppToast.warning(context, 'Please enter Cash or Bank amount for Split payment.');
+                                      return;
+                                    }
                                   } else if (selectedMethod.toLowerCase() == 'cash') {
-                                    parsedAmt = double.tryParse(amountController.text.replaceAll(',', '').trim()) ?? computedTotal;
+                                    final typed = double.tryParse(amountController.text.replaceAll(',', '').trim()) ?? 0;
+                                    if (typed <= 0) {
+                                      AppToast.warning(context, 'Please enter collected Cash amount (or select Credit).');
+                                      return;
+                                    }
+                                    parsedAmt = typed;
                                     cashAmt = parsedAmt;
                                     upiAmt = 0;
                                   } else {
-                                    parsedAmt = double.tryParse(amountController.text.replaceAll(',', '').trim()) ?? computedTotal;
+                                    final typed = double.tryParse(amountController.text.replaceAll(',', '').trim()) ?? 0;
+                                    if (typed <= 0) {
+                                      AppToast.warning(context, 'Please enter collected UPI/Bank amount (or select Credit).');
+                                      return;
+                                    }
+                                    parsedAmt = typed;
                                     cashAmt = 0;
                                     upiAmt = parsedAmt;
                                   }

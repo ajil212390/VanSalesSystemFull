@@ -7699,14 +7699,17 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                         p_weight = m_weight.group(1).replace(' ', '').upper() if m_weight else p_name
                     elif not p_weight:
                         p_weight = p_name
+                    qty_val = float(line.Quantity or 0)
+                    tot_val = float(line.Total or 0)
+                    gross_rate = round(tot_val / qty_val, 2) if (qty_val > 0 and tot_val > 0) else (float(p.SalesPrice or 0) if p else float(line.SalesPrice or 0))
                     items_data.append({
                         'productId': line.Product_id,
                         'productName': p_name,
                         'weight': p_weight,
                         'deliveryQty': int(line.Quantity or 0),
                         'emptyReturnQty': int(line.EmptyQuantity or 0),
-                        'rate': float(line.SalesPrice or 0),
-                        'amount': float(line.Total or 0)
+                        'rate': gross_rate,
+                        'amount': tot_val
                     })
                 time_str = sale.CreatedAt.strftime("%I:%M %p") if sale.CreatedAt else datetime.now().strftime("%I:%M %p")
                 cash_val = 0.0
@@ -8548,7 +8551,41 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     target_led = bank_led if p_mode == 'Bank' else cash_led
                     PaymentLine.objects.create(Payment=linked_pmt, LineNo=1, PaymentMode=p_mode, Ledger=target_led or sale.CustomerLedger, Amount=sale.PaidAmount, Narration=linked_pmt.Narration)
                 linked_pmt.save()
-                allocate_receipt_to_pending_bills_or_advance(linked_pmt, company_id)
+
+                # Link this payment strictly to THIS sale (and ADVANCE for any overpayment) without touching other sales or capping PaidAmount
+                BillwiseAllocation.objects.filter(
+                    ReferenceTable__in=['Receipt', 'Payment'],
+                    ReferenceId=linked_pmt.PaymentId
+                ).delete()
+                first_pmt_line = linked_pmt.lines.first()
+                gross_sale_total = Decimal(str(sale.GrandTotal or 0))
+                paid_here = Decimal(str(sale.PaidAmount or 0))
+                sale_alloc_amt = min(paid_here, gross_sale_total) if gross_sale_total > Decimal('0.00') else Decimal('0.00')
+                excess_here = max(Decimal('0.00'), paid_here - sale_alloc_amt)
+                if sale_alloc_amt > Decimal('0.00'):
+                    BillwiseAllocation.objects.create(
+                        PaymentLine=first_pmt_line,
+                        ReferenceTable='Receipt',
+                        ReferenceId=linked_pmt.PaymentId,
+                        BillType='SALES',
+                        BillReference=bill_ref,
+                        BillDate=sale.SalesDate,
+                        AllocationType='Against Reference',
+                        AllocatedAmount=sale_alloc_amt,
+                        CompanyId=company_id
+                    )
+                if excess_here > Decimal('0.00'):
+                    BillwiseAllocation.objects.create(
+                        PaymentLine=first_pmt_line,
+                        ReferenceTable='Receipt',
+                        ReferenceId=linked_pmt.PaymentId,
+                        BillType='ADVANCE',
+                        BillReference='ADVANCE',
+                        BillDate=sale.SalesDate,
+                        AllocationType='Advance',
+                        AllocatedAmount=excess_here,
+                        CompanyId=company_id
+                    )
 
                 existing_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=linked_pmt.PaymentId).first()
                 if existing_vch:

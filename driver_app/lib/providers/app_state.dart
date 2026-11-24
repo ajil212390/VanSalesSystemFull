@@ -647,11 +647,14 @@ class AppState extends ChangeNotifier {
                   if (kgMatch != null) {
                     w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
                   }
+                  final itPid = safeIntNullable(it['productId']);
+                  final wNorm = w.replaceAll(' ', '').toUpperCase();
                   final matchedCyl = cylinders.firstWhere(
-                    (c) => c.weight.trim().toUpperCase() == w.toUpperCase() ||
-                           (w.isNotEmpty && c.weight.toUpperCase().contains(w.toUpperCase())),
+                    (c) => (itPid != null && c.productId == itPid) ||
+                           c.weight.replaceAll(' ', '').toUpperCase() == wNorm ||
+                           (wNorm.isNotEmpty && c.weight.replaceAll(' ', '').toUpperCase().contains(wNorm)),
                     orElse: () => CylinderType(
-                      productId: safeInt(it['productId']),
+                      productId: itPid,
                       weight: w,
                       price: safeDouble(it['rate']),
                       filledStock: 0,
