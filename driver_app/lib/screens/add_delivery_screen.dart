@@ -1672,7 +1672,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                               color: _isCollectionOnly ? const Color(0xFF800020) : const Color(0xFF64748B),
                               letterSpacing: -0.1,
                             ),
-                            child: const Text('Cash Collection Only'),
+                            child: const Text('Receipt Only'),
                           ),
                         ),
                       ),

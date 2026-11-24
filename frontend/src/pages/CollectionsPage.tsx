@@ -644,7 +644,7 @@ export const CollectionsPage: React.FC = () => {
               </Title>
             </Group>
             <Text size="xs" c="dimmed" mt={3}>
-              Consolidated real-time register of all money collected across Sales Invoices &amp; New Connections
+            Note: Only showing the approved collections check van management for live van collections
             </Text>
           </div>
 

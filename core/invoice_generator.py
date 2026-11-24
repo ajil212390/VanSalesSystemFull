@@ -450,6 +450,7 @@ def generate_tax_invoice_pdf(sale):
     total_sgst_sum = Decimal('0.00')
     total_igst_sum = Decimal('0.00')
     total_gross_sum = Decimal('0.00')
+    product_tax_breakdown = []
 
     lines = sale.lines.select_related('Product', 'Unit').all()
     is_intra_customer = (not customer or not customer.StateId or customer.StateId in [12, 32])
@@ -581,6 +582,26 @@ def generate_tax_invoice_pdf(sale):
             total_igst_sum += igst_amount
             total_gross_sum += gross_total
 
+            # Clean product name for GST breakdown
+            prod_name_clean = re.sub(r'^(?:LPG\s+)?', '', line.ProductName or '', flags=re.IGNORECASE)
+            prod_name_clean = re.sub(r'\s+GAS\s+CYLINDER$', ' Cylinder', prod_name_clean, flags=re.IGNORECASE)
+            prod_name_clean = re.sub(r'\s+CYLINDER$', ' Cylinder', prod_name_clean, flags=re.IGNORECASE)
+            prod_name_clean = re.sub(r'\b04KG\b', '4KG', prod_name_clean, flags=re.IGNORECASE).strip()
+            if not prod_name_clean:
+                prod_name_clean = line.ProductName or 'Cylinder'
+
+            product_tax_breakdown.append({
+                'product_name': line.ProductName,
+                'clean_label': prod_name_clean,
+                'gst_rate': gst_rate,
+                'taxable_amount': taxable_amount,
+                'tax_amount': tax_amount,
+                'cgst_amount': cgst_amount,
+                'sgst_amount': sgst_amount,
+                'igst_amount': igst_amount,
+                'qty': qty,
+            })
+
             table_rows.append([
                 Paragraph(str(idx), ParagraphStyle('C1', parent=cell_norm, alignment=1)),
                 Paragraph(f"<b>{line.ProductName}</b>", cell_bold),
@@ -590,9 +611,33 @@ def generate_tax_invoice_pdf(sale):
                 Paragraph(f"{taxable_amount:.2f}", cell_right_bold),
             ])
 
-    # Ensure a 10-line space for product rows (standard ERP invoice format)
-    # If fewer than 10 rows, pad with empty rows so the footer always appears after consistent spacing
-    min_product_rows = 10
+    # Group tax breakdown by clean product label and gst rate
+    grouped_tax_map = {}
+    for item in product_tax_breakdown:
+        key = (item['clean_label'], item['gst_rate'])
+        if key not in grouped_tax_map:
+            grouped_tax_map[key] = {
+                'clean_label': item['clean_label'],
+                'gst_rate': item['gst_rate'],
+                'taxable_amount': Decimal('0.00'),
+                'cgst_amount': Decimal('0.00'),
+                'sgst_amount': Decimal('0.00'),
+                'igst_amount': Decimal('0.00'),
+                'tax_amount': Decimal('0.00'),
+                'qty': Decimal('0.00'),
+            }
+        grouped_tax_map[key]['taxable_amount'] += item['taxable_amount']
+        grouped_tax_map[key]['cgst_amount'] += item['cgst_amount']
+        grouped_tax_map[key]['sgst_amount'] += item['sgst_amount']
+        grouped_tax_map[key]['igst_amount'] += item['igst_amount']
+        grouped_tax_map[key]['tax_amount'] += item['tax_amount']
+        grouped_tax_map[key]['qty'] += item['qty']
+    grouped_taxes = list(grouped_tax_map.values())
+
+    # Ensure consistent space for product rows without pushing to page 2
+    # Dynamically adjust min padding so the entire invoice fits neatly on a single A4 page
+    extra_tax_lines = max(0, (len(grouped_taxes) * 2) - 2) if is_intra_customer else max(0, len(grouped_taxes) - 1)
+    min_product_rows = max(4, 9 - extra_tax_lines)
     current_product_count = len(table_rows) - 1  # excluding header
     if current_product_count < min_product_rows:
         for empty_idx in range(current_product_count + 1, min_product_rows + 1):
@@ -924,25 +969,61 @@ def generate_tax_invoice_pdf(sale):
              Paragraph(f"<b>Rs. {paid_amt:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
         ], colWidths=[140, 130])
     else:
-        tax_summary_table = Table([
-            [Paragraph("<b>TAX & INVOICE BREAKDOWN</b>", section_title), Paragraph("", cell_norm)],
-            [Paragraph("Gross Amount (Taxable) :", cell_norm), Paragraph(f"Rs. {total_taxable_sum:.2f}", cell_right_bold)],
-            [Paragraph("CGST :", cell_muted), Paragraph(f"Rs. {total_cgst_sum:.2f}", cell_right)],
-            [Paragraph("SGST :", cell_muted), Paragraph(f"Rs. {total_sgst_sum:.2f}", cell_right)],
-            [Paragraph("IGST :", cell_muted), Paragraph(f"Rs. {total_igst_sum:.2f}", cell_right)],
-            [Paragraph("<b>Total GST :</b>", cell_bold), Paragraph(f"<b>Rs. {total_gst_sum:.2f}</b>", cell_right_bold)],
-            [Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
-             Paragraph(f"<b>Rs. {current_bill_amount:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
-        ], colWidths=[140, 130])
-    tax_summary_table.setStyle(TableStyle([
-        ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
-        ('LINEBELOW', (0, 5), (-1, 5), 1, BORDER_COLOR),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
-    ]))
+        tax_rows = [
+            [Paragraph("<b>TAX &amp; INVOICE BREAKDOWN</b>", section_title), Paragraph("", cell_norm)],
+            [Paragraph("Gross Amount (Taxable) :", cell_norm), Paragraph(f"Rs. {total_taxable_sum:,.2f}", cell_right_bold)],
+        ]
+
+        if grouped_taxes:
+            for item in grouped_taxes:
+                lbl = item['clean_label']
+                rate = item['gst_rate']
+                cgst = item['cgst_amount']
+                sgst = item['sgst_amount']
+                igst = item['igst_amount']
+
+                if is_intra_customer:
+                    half_rate = (rate / Decimal('2.00')).quantize(Decimal('0.1')) if (rate / Decimal('2.00')) % 1 != 0 else (rate / Decimal('2.00')).quantize(Decimal('1'))
+                    tax_rows.append([
+                        Paragraph(f"CGST @ {half_rate}% ({lbl}) :", cell_muted),
+                        Paragraph(f"Rs. {cgst:,.2f}", cell_right)
+                    ])
+                    tax_rows.append([
+                        Paragraph(f"SGST @ {half_rate}% ({lbl}) :", cell_muted),
+                        Paragraph(f"Rs. {sgst:,.2f}", cell_right)
+                    ])
+                else:
+                    norm_rate = rate.quantize(Decimal('0.1')) if rate % 1 != 0 else rate.quantize(Decimal('1'))
+                    tax_rows.append([
+                        Paragraph(f"IGST @ {norm_rate}% ({lbl}) :", cell_muted),
+                        Paragraph(f"Rs. {igst:,.2f}", cell_right)
+                    ])
+        else:
+            if is_intra_customer:
+                tax_rows.append([Paragraph("CGST :", cell_muted), Paragraph(f"Rs. {total_cgst_sum:,.2f}", cell_right)])
+                tax_rows.append([Paragraph("SGST :", cell_muted), Paragraph(f"Rs. {total_sgst_sum:,.2f}", cell_right)])
+            else:
+                tax_rows.append([Paragraph("IGST :", cell_muted), Paragraph(f"Rs. {total_igst_sum:,.2f}", cell_right)])
+
+        tax_rows.append([
+            Paragraph("<b>Total GST :</b>", cell_bold),
+            Paragraph(f"<b>Rs. {total_gst_sum:,.2f}</b>", cell_right_bold)
+        ])
+        tax_rows.append([
+            Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
+            Paragraph(f"<b>Rs. {current_bill_amount:,.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))
+        ])
+
+        tax_summary_table = Table(tax_rows, colWidths=[150, 120])
+        tax_summary_table.setStyle(TableStyle([
+            ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
+            ('LINEBELOW', (0, -2), (-1, -2), 1, BORDER_COLOR),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2.5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ]))
 
     combined_summary_table = Table([
         [cust_summary_table, tax_summary_table]
