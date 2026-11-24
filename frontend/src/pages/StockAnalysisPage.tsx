@@ -1426,59 +1426,66 @@ export const StockAnalysisPage: React.FC = () => {
           </Group>
 
           <Table.ScrollContainer minWidth={680}>
-            <Table highlightOnHover verticalSpacing={5} horizontalSpacing="xs">
+            <Table
+              highlightOnHover
+              verticalSpacing={2}
+              horizontalSpacing="xs"
+              styles={{
+                th: { padding: '2px 6px' },
+              }}
+            >
               <Table.Thead style={{ backgroundColor: '#ffffff', borderBottom: '1px solid #e2e8f0' }}>
                 {isVehicle ? (
-                  <Table.Tr>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', width: 90, padding: '4px 8px' }}>
+                  <Table.Tr style={{ height: 24, lineHeight: 1 }}>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.4px', width: 85, padding: '2px 6px', lineHeight: 1 }}>
                       CODE
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '4px 8px' }}>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.4px', padding: '2px 6px', lineHeight: 1 }}>
                       PRODUCT
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110, padding: '4px 8px' }}>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 100, padding: '2px 6px', lineHeight: 1 }}>
                       ALLOCATED
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 110, padding: '4px 8px' }}>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 100, padding: '2px 6px', lineHeight: 1 }}>
                       DELIVERED
                     </Table.Th>
-                    <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 130, padding: '4px 8px' }}>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 120, padding: '2px 6px', lineHeight: 1 }}>
                       BALANCE (FULL)
                     </Table.Th>
-                    <Table.Th style={{ color: '#475569', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'right', width: 130, padding: '4px 8px' }}>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.4px', textAlign: 'right', width: 120, padding: '2px 6px', lineHeight: 1 }}>
                       EMPTY RETURNED
                     </Table.Th>
                   </Table.Tr>
                 ) : (
                   <>
-                    <Table.Tr style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', width: 60, verticalAlign: 'middle', padding: '3px 8px', lineHeight: 1.15 }}>
+                    <Table.Tr style={{ borderBottom: '1px solid #e2e8f0', height: 20, lineHeight: 1 }}>
+                      <Table.Th rowSpan={2} style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', width: 55, verticalAlign: 'middle', padding: '1px 6px', lineHeight: 1 }}>
                         CODE
                       </Table.Th>
-                      <Table.Th rowSpan={2} style={{ color: '#475569', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', minWidth: 140, verticalAlign: 'middle', padding: '3px 8px', lineHeight: 1.15 }}>
+                      <Table.Th rowSpan={2} style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', minWidth: 140, verticalAlign: 'middle', padding: '1px 6px', lineHeight: 1 }}>
                         PRODUCT
                       </Table.Th>
-                      <Table.Th rowSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', textAlign: 'center', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', verticalAlign: 'middle', padding: '3px 6px', width: 80, lineHeight: 1.15 }}>
+                      <Table.Th rowSpan={2} style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', textAlign: 'center', borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', verticalAlign: 'middle', padding: '1px 4px', width: 75, lineHeight: 1 }}>
                         INWARD
-                        <span style={{ display: 'block', fontSize: '8.5px', fontWeight: 500, color: '#64748b', textTransform: 'none', lineHeight: 1 }}>(Purchases)</span>
+                        <span style={{ display: 'block', fontSize: '7.5px', fontWeight: 600, color: '#64748b', textTransform: 'none', lineHeight: 1, marginTop: 1 }}>(Purchases)</span>
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#334155', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '3px 4px', lineHeight: 1.15 }}>
+                      <Table.Th colSpan={2} style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '1px 4px', lineHeight: 1, height: 18 }}>
                         OUTWARD
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#800020', fontWeight: 700, fontSize: 10.5, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '3px 4px', lineHeight: 1.15 }}>
+                      <Table.Th colSpan={2} style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', textAlign: 'center', borderRight: '1px solid #e2e8f0', padding: '1px 4px', lineHeight: 1, height: 18 }}>
                         VAN RETURN
                       </Table.Th>
-                      <Table.Th colSpan={2} style={{ color: '#0f172a', fontWeight: 800, fontSize: 10.5, textTransform: 'uppercase', textAlign: 'center', padding: '3px 4px', lineHeight: 1.15 }}>
+                      <Table.Th colSpan={2} style={{ color: '#800020', fontWeight: 700, fontSize: 10, textTransform: 'uppercase', textAlign: 'center', padding: '1px 4px', lineHeight: 1, height: 18 }}>
                         CLOSING STOCK
                       </Table.Th>
                     </Table.Tr>
-                    <Table.Tr>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 9.5, textAlign: 'right', width: 60, padding: '2px 8px', lineHeight: 1.1 }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#64748b', fontWeight: 600, fontSize: 9.5, textAlign: 'right', width: 60, borderRight: '1px solid #e2e8f0', padding: '2px 8px', lineHeight: 1.1 }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 9.5, textAlign: 'right', width: 60, padding: '2px 8px', lineHeight: 1.1 }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 9.5, textAlign: 'right', width: 60, borderRight: '1px solid #e2e8f0', padding: '2px 8px', lineHeight: 1.1 }}>EMPTY</Table.Th>
-                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 9.5, textAlign: 'right', width: 65, padding: '2px 8px', lineHeight: 1.1 }}>FULL</Table.Th>
-                      <Table.Th style={{ color: '#0f172a', fontWeight: 700, fontSize: 9.5, textAlign: 'right', width: 65, padding: '2px 8px', lineHeight: 1.1 }}>EMPTY</Table.Th>
+                    <Table.Tr style={{ height: 16, lineHeight: 1 }}>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 8.5, textAlign: 'right', width: 55, padding: '1px 6px', lineHeight: 1, height: 16 }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 8.5, textAlign: 'right', width: 55, borderRight: '1px solid #e2e8f0', padding: '1px 6px', lineHeight: 1, height: 16 }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 8.5, textAlign: 'right', width: 55, padding: '1px 6px', lineHeight: 1, height: 16 }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 8.5, textAlign: 'right', width: 55, borderRight: '1px solid #e2e8f0', padding: '1px 6px', lineHeight: 1, height: 16 }}>EMPTY</Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 8.5, textAlign: 'right', width: 60, padding: '1px 6px', lineHeight: 1, height: 16 }}>FULL</Table.Th>
+                      <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 8.5, textAlign: 'right', width: 60, padding: '1px 6px', lineHeight: 1, height: 16 }}>EMPTY</Table.Th>
                     </Table.Tr>
                   </>
                 )}
