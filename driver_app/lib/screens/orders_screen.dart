@@ -512,9 +512,6 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
     final isCash = order.paymentMethod.toLowerCase() == 'cash';
     final isCredit = order.paymentMethod.toLowerCase() == 'credit';
     final isEmptyOnly = order.totalCylinders == 0 && order.totalEmpties > 0;
-    final initial = order.customer.name.trim().isNotEmpty
-        ? order.customer.name.trim().substring(0, 1).toUpperCase()
-        : 'C';
 
     final deliveredItems = order.items.where((it) => it.deliveryQty > 0).toList();
     final returnItems = order.items.where((it) => it.emptyReturnQty > 0).toList();
@@ -563,33 +560,11 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
             },
             borderRadius: BorderRadius.circular(14),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Avatar circle
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFDF2F4),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFFCE7EC), width: 0.8),
-                    ),
-                    child: Center(
-                      child: Text(
-                        initial,
-                        style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF800020),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-
-                  // Customer Details
+                  // Customer Details (Clean display with just name and ticket/time)
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -598,7 +573,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         Text(
                           order.customer.name,
                           style: GoogleFonts.inter(
-                            fontSize: 14,
+                            fontSize: 14.5,
                             fontWeight: FontWeight.w800,
                             color: const Color(0xFF0F172A),
                           ),
