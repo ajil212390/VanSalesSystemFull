@@ -4610,6 +4610,10 @@ def generate_route_trip_sheet_pdf(route, details_data, company_id=1):
     cell_right_bold = ParagraphStyle('RTSCellRB', fontName=FONT_BOLD, fontSize=7.5, leading=9.5, textColor=DARK_COLOR, alignment=2)
     cell_right_burg = ParagraphStyle('RTSCellRBurg', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=PRIMARY_COLOR, alignment=2)
 
+    # Table Header Typography (Crisp white text on maroon header background)
+    th_left = ParagraphStyle('RTSThL', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=colors.white, alignment=0)
+    th_right = ParagraphStyle('RTSThR', fontName=FONT_BOLD, fontSize=8, leading=10, textColor=colors.white, alignment=2)
+
     story = []
 
     # 1. Header
@@ -4685,12 +4689,12 @@ def generate_route_trip_sheet_pdf(route, details_data, company_id=1):
     col_widths = [165, 80, 75, 75, 75, 75]
     table_rows = [
         [
-            Paragraph("<b>PRODUCT NAME</b>", cell_bold),
-            Paragraph("<b>ALLOCATED</b>", cell_right_bold),
-            Paragraph("<b>DELIVERED</b>", cell_right_bold),
-            Paragraph("<b>BALANCE</b>", cell_right_bold),
-            Paragraph("<b>EMPTY RET.</b>", cell_right_bold),
-            Paragraph("<b>TOTAL ON VAN</b>", cell_right_bold),
+            Paragraph("<b>PRODUCT NAME</b>", th_left),
+            Paragraph("<b>ALLOCATED</b>", th_right),
+            Paragraph("<b>DELIVERED</b>", th_right),
+            Paragraph("<b>BALANCE</b>", th_right),
+            Paragraph("<b>EMPTY RET.</b>", th_right),
+            Paragraph("<b>TOTAL ON VAN</b>", th_right),
         ]
     ]
 
