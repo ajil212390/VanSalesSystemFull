@@ -44,7 +44,7 @@ import { formatDateDDMMYY } from '../components/DateInputDDMMYY';
 
 interface CollectionItem {
   id: string;
-  source: 'SALE';
+  source: 'SALE' | 'RECEIPT';
   isConnection: boolean;
   date: string;
   ref: string;
@@ -79,6 +79,16 @@ export const CollectionsPage: React.FC = () => {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const handlePrintReceiptPdf = (item: CollectionItem) => {
+    if (item.source === 'RECEIPT') {
+      const paymentId = item.raw?.PaymentId || item.raw?.payment_id;
+      if (!paymentId) {
+        notifications.show({ message: 'Receipt ID not found.', color: 'red' });
+        return;
+      }
+      const url = `${apiClient.defaults.baseURL}/payments/${paymentId}/voucher-pdf/?_t=${Date.now()}`;
+      window.open(url, '_blank');
+      return;
+    }
     const salesId = item.raw?.SalesId;
     if (!salesId) {
       notifications.show({ message: 'Invoice ID not found.', color: 'red' });
@@ -93,6 +103,15 @@ export const CollectionsPage: React.FC = () => {
     queryKey: ['sales'],
     queryFn: async () => {
       const res = await apiClient.get('/sales/');
+      return Array.isArray(res.data) ? res.data : (res.data.results || []);
+    },
+  });
+
+  // 1b. Fetch Payments & Receipts (for standalone customer on-account receipts)
+  const { data: payments = [], isLoading: isLoadingPayments, refetch: refetchPayments } = useQuery<any[]>({
+    queryKey: ['payments'],
+    queryFn: async () => {
+      const res = await apiClient.get('/payments/');
       return Array.isArray(res.data) ? res.data : (res.data.results || []);
     },
   });
@@ -124,9 +143,15 @@ export const CollectionsPage: React.FC = () => {
     return map;
   }, [ledgers]);
 
-  // Construct Unified Collections Register (Direct payments on Sales Invoices & New Connections)
+  // Construct Unified Collections Register (Direct payments on Sales Invoices & Customer Receipts)
   const allCollections = useMemo(() => {
     const list: CollectionItem[] = [];
+
+    const salesRefUpperSet = new Set<string>();
+    sales.forEach((s: any) => {
+      if (s.InvoiceNo) salesRefUpperSet.add(String(s.InvoiceNo).trim().toUpperCase());
+      if (s.SalesNo) salesRefUpperSet.add(String(s.SalesNo).trim().toUpperCase());
+    });
 
     sales.forEach((s: any) => {
       if (s.Status === 'CANCELLED') return;
@@ -225,6 +250,98 @@ export const CollectionsPage: React.FC = () => {
       });
     });
 
+    // Customer receipts from Payment table (e.g. On-Account collections, office receipts, route collections)
+    const customerLedgerIds = new Set(
+      ledgers
+        .filter((l: any) => {
+          const gName = (l.group_name || l.GroupName || '').toLowerCase();
+          const gid = Number(l.GroupId ?? l.Group ?? 0);
+          return gid === 21 || gName.includes('debtor') || gName.includes('customer');
+        })
+        .map((l: any) => l.LedgerId)
+    );
+
+    payments.forEach((p: any) => {
+      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      if (!isApproved) return;
+
+      const pType = String(p.voucher_type || '').toUpperCase();
+      if (pType === 'PAYMENT') return;
+
+      const pid = Number(p.PartyLedgerId ?? p.PartyLedger?.LedgerId ?? p.PartyLedger);
+      const isCustomer = customerLedgerIds.has(pid) || pType === 'RECEIPT' || String(p.PaymentNo || '').startsWith('REC-');
+      if (!isCustomer) return;
+
+      const narr = String(p.Narration || '').toLowerCase();
+      // If narration indicates it's an auto-receipt for a sale invoice already counted
+      if (narr.includes('sales receipt for') || narr.includes('receipt for sales')) {
+        for (const ref of salesRefUpperSet) {
+          if (ref && narr.includes(ref.toLowerCase())) return;
+        }
+      }
+
+      // If linked against bills in sales
+      const againstBills = Array.isArray(p.against_bills) ? p.against_bills : [];
+      if (againstBills.some((b: string) => salesRefUpperSet.has(String(b).trim().toUpperCase()))) {
+        return;
+      }
+
+      // If lines have billwise allocation to any known sales bill in sales
+      const hasSaleAllocation = (p.lines || []).some((l: any) =>
+        (l.allocations || []).some((a: any) => {
+          if (!a.BillReference) return false;
+          const ref = String(a.BillReference).trim().toUpperCase();
+          return salesRefUpperSet.has(ref);
+        })
+      );
+      if (hasSaleAllocation) return;
+
+      const amt = Number(p.Amount || 0);
+      if (amt <= 0) return;
+
+      const pRef = String(p.voucher_no || p.PaymentNo || p.ReferenceNumber || `REC-${p.PaymentId || ''}`).trim();
+      const custObj = pid && !isNaN(pid) ? ledgerMap.get(pid) : null;
+      const partyName = String(custObj?.LedgerName || p.party_name || p.PartyLedger?.LedgerName || 'Customer');
+      const partyMobile = String(custObj?.Mobile || p.PartyLedger?.Mobile || '');
+
+      let dName = 'Direct Office';
+      let rName = 'Office Collection Point';
+      let vNum = '';
+      if (p.Narration) {
+        const nStr = String(p.Narration);
+        const dMatch = /Driver:\s*([^|\n]+)/i.exec(nStr);
+        if (dMatch) dName = dMatch[1].trim();
+        const rMatch = /Route:\s*([^|\n]+)/i.exec(nStr);
+        if (rMatch) rName = rMatch[1].trim();
+        const vMatch = /Vehicle:\s*([^|\n]+)/i.exec(nStr);
+        if (vMatch) vNum = vMatch[1].trim();
+      }
+
+      const pMode = String(p.primary_mode || p.PaymentMode || 'CASH').toUpperCase();
+
+      list.push({
+        id: `receipt-${p.PaymentId || Math.random()}`,
+        source: 'RECEIPT',
+        isConnection: false,
+        date: p.payment_date ? String(p.payment_date).slice(0, 10) : (p.CreatedAt ? String(p.CreatedAt).split('T')[0] : (p.VoucherDate ? String(p.VoucherDate).slice(0, 10) : '')),
+        ref: pRef,
+        rawRef: pRef,
+        partyName,
+        partyMobile,
+        partyId: pid && !isNaN(pid) ? pid : null,
+        driverName: dName,
+        driverId: null,
+        vehicleNumber: vNum,
+        routeName: rName,
+        paymentMode: pMode,
+        amount: amt,
+        totalBillAmount: amt,
+        notes: p.Narration ? String(p.Narration) : `Customer balance receipt ${pRef}`,
+        packageName: undefined,
+        raw: p,
+      });
+    });
+
     // Sort chronologically (newest first)
     list.sort((a, b) => {
       const dateA = a.date || '';
@@ -233,7 +350,7 @@ export const CollectionsPage: React.FC = () => {
     });
 
     return list;
-  }, [sales, ledgerMap]);
+  }, [sales, payments, ledgerMap, ledgers]);
 
   // Compute Date Boundaries based on preset
   const dateBounds = useMemo(() => {
@@ -618,7 +735,7 @@ export const CollectionsPage: React.FC = () => {
     }
   };
 
-  const isLoading = isLoadingSales;
+  const isLoading = isLoadingSales || isLoadingPayments;
 
   return (
     <Stack gap="lg" style={{ width: '100%' }}>
@@ -655,6 +772,7 @@ export const CollectionsPage: React.FC = () => {
               leftSection={<IconRefresh size={14} />}
               onClick={() => {
                 refetchSales();
+                refetchPayments();
               }}
             >
               Refresh
@@ -1150,7 +1268,7 @@ export const CollectionsPage: React.FC = () => {
                 <Table.Tr>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 105 }}>Date</Table.Th>
                   <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13, width: 140 }}>
-                    {categoryFilter === 'CONNECTIONS' ? 'Connection #' : 'Invoice #'}
+                    {categoryFilter === 'CONNECTIONS' ? 'Connection #' : 'Ref / Invoice #'}
                   </Table.Th>
                   {categoryFilter === 'CONNECTIONS' && (
                     <Table.Th style={{ color: '#800020', fontWeight: 600, fontSize: 13 }}>Package / Details</Table.Th>
@@ -1244,6 +1362,10 @@ export const CollectionsPage: React.FC = () => {
                         {item.isConnection ? (
                           <Badge size="xs" variant="filled" color="burgundy">
                             New Connection
+                          </Badge>
+                        ) : item.source === 'RECEIPT' ? (
+                          <Badge size="xs" variant="filled" color="teal">
+                            Receipt
                           </Badge>
                         ) : (
                           <Badge size="xs" variant="light" color="gray">
@@ -1365,10 +1487,10 @@ export const CollectionsPage: React.FC = () => {
                 </div>
                 <Badge
                   size="md"
-                  color="burgundy"
+                  color={selectedItem.isConnection ? 'burgundy' : selectedItem.source === 'RECEIPT' ? 'teal' : 'gray'}
                   variant="filled"
                 >
-                  {selectedItem.isConnection ? 'New Connection Package' : 'Direct Sale Collection'}
+                  {selectedItem.isConnection ? 'New Connection Package' : (selectedItem.source === 'RECEIPT' ? 'Customer Account Receipt' : 'Direct Sale Collection')}
                 </Badge>
               </Group>
             </Paper>
@@ -1397,7 +1519,7 @@ export const CollectionsPage: React.FC = () => {
                 <Text size="xs" fw={700}>{selectedItem.routeName}</Text>
               </Paper>
               <Paper p="xs" radius="sm" withBorder>
-                <Text size="11px" c="dimmed">Invoice #</Text>
+                <Text size="11px" c="dimmed">{selectedItem.source === 'RECEIPT' ? 'Receipt #' : 'Invoice #'}</Text>
                 <Text size="xs" fw={700}>{selectedItem.rawRef || selectedItem.ref}</Text>
               </Paper>
             </SimpleGrid>
@@ -1454,11 +1576,12 @@ export const CollectionsPage: React.FC = () => {
                   leftSection={<IconReceipt2 size={14} />}
                   style={{ backgroundColor: '#800020' }}
                   onClick={() => {
+                    const isRcpt = selectedItem.source === 'RECEIPT';
                     setSelectedItem(null);
-                    navigate('/sales');
+                    navigate(isRcpt ? '/payments' : '/sales');
                   }}
                 >
-                  View in Sales Register
+                  {selectedItem.source === 'RECEIPT' ? 'View in Receipts' : 'View in Sales Register'}
                 </Button>
               </Group>
             </Group>

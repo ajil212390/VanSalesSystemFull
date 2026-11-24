@@ -281,14 +281,13 @@ export const DashboardPage: React.FC = () => {
     enabled: !isManager,
   });
 
-  // 2. Fetch Payments & Receipts (Only for Admin & Accountant)
+  // 2. Fetch Payments & Receipts
   const { data: payments = [], isLoading: isLoadingPayments } = useQuery<any[]>({
     queryKey: ['payments'],
     queryFn: async () => {
       const res = await apiClient.get('/payments/');
       return Array.isArray(res.data) ? res.data : res.data.results || [];
     },
-    enabled: !isManager,
   });
 
   // 3. Fetch Ledgers
@@ -616,7 +615,7 @@ export const DashboardPage: React.FC = () => {
     return set;
   }, [filteredSales]);
 
-  // 2. Standalone Customer Receipts from Payment table (e.g. On-Account collections, office receipts)
+  // 2. Standalone Customer Receipts from Payment table (e.g. On-Account collections, office receipts, route collections)
   // Exclude payments that were auto-generated from or allocated to sales to guarantee zero double counting
   const standaloneCustomerReceipts = useMemo(() => {
     return filteredCustomerReceipts.filter((p: any) => {
@@ -624,27 +623,26 @@ export const DashboardPage: React.FC = () => {
       const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
       if (!isApproved) return false;
 
-      // If associated with a van route delivery shift, it was generated for route sales
-      if (p.DeliveryNoteId) return false;
-
-      // If narration indicates it's an invoice or van collection receipt
+      // If narration indicates it's an auto-generated receipt for a specific sales invoice already in sales
       const narr = String(p.Narration || '').toLowerCase();
-      if (narr.includes('sales receipt') || narr.includes('van collection') || narr.includes('receipt for sales')) {
-        return false;
+      if (narr.includes('sales receipt for') || narr.includes('receipt for sales')) {
+        for (const ref of salesRefUpperSet) {
+          if (ref && narr.includes(ref.toLowerCase())) return false;
+        }
       }
 
-      // If linked against sales bills
+      // If linked against sales bills present in sales
       const againstBills = Array.isArray(p.against_bills) ? p.against_bills : [];
       if (againstBills.some((b: string) => salesRefUpperSet.has(String(b).trim().toUpperCase()))) {
         return false;
       }
 
-      // If lines have billwise allocation to any known sales bill
+      // If lines have billwise allocation to any known sales bill in sales
       const hasSaleAllocation = (p.lines || []).some((l: any) =>
         (l.allocations || []).some((a: any) => {
           if (!a.BillReference) return false;
           const ref = String(a.BillReference).trim().toUpperCase();
-          return salesRefUpperSet.has(ref) || ref.startsWith('INV-') || ref.startsWith('SALE-');
+          return salesRefUpperSet.has(ref);
         })
       );
       if (hasSaleAllocation) return false;
