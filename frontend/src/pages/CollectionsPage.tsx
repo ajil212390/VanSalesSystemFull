@@ -34,6 +34,7 @@ import {
   IconTruckDelivery,
   IconFilter,
   IconEdit,
+  IconQrcode,
 } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -354,8 +355,8 @@ export const CollectionsPage: React.FC = () => {
     return Array.from(map.values()).sort((a, b) => b.count - a.count || b.totalAmount - a.totalAmount);
   }, [connectionCollections, drivers, dateBounds]);
 
-  // Filtered Collections Dataset
-  const filteredCollections = useMemo(() => {
+  // Base filtered collections (by category, driver, date, search - without modeFilter)
+  const baseFilteredCollections = useMemo(() => {
     return allCollections.filter((item) => {
       // Category filter (ALL vs SALES vs CONNECTIONS)
       if (categoryFilter === 'SALES' && item.isConnection) {
@@ -370,22 +371,6 @@ export const CollectionsPage: React.FC = () => {
         const itemDriver = String(item.driverName || '').toLowerCase().trim();
         const targetDriver = String(selectedDriver || '').toLowerCase().trim();
         if (itemDriver !== targetDriver && !itemDriver.includes(targetDriver)) {
-          return false;
-        }
-      }
-
-      // Payment Mode filter dropdown
-      if (modeFilter !== 'ALL') {
-        const itemMode = String(item.paymentMode || '').toLowerCase();
-        const target = String(modeFilter || '').toLowerCase();
-        if (itemMode === 'split') {
-          // Split payment includes both Cash and Bank/UPI components
-          if (target !== 'cash' && target !== 'bank' && target !== 'upi') {
-            return false;
-          }
-        } else if (target === 'bank' && !itemMode.includes('bank') && !itemMode.includes('upi') && !itemMode.includes('card')) {
-          return false;
-        } else if (target !== 'bank' && !itemMode.includes(target)) {
           return false;
         }
       }
@@ -415,17 +400,19 @@ export const CollectionsPage: React.FC = () => {
 
       return true;
     });
-  }, [allCollections, categoryFilter, selectedDriver, modeFilter, dateBounds, searchQuery]);
+  }, [allCollections, categoryFilter, selectedDriver, dateBounds, searchQuery]);
 
-  // Aggregate Metrics for Filtered Dataset
+  // Aggregate Metrics for Dataset (Calculated on base filtered items so Total, Cash, and UPI are always comprehensive)
   const stats = useMemo(() => {
     let totAmt = 0;
     let saleAmt = 0;
     let saleCount = 0;
     let cashAmt = 0;
     let digitalAmt = 0;
+    let cashCount = 0;
+    let digitalCount = 0;
 
-    filteredCollections.forEach((c) => {
+    baseFilteredCollections.forEach((c) => {
       const amt = Number(c.amount || 0);
       totAmt += amt;
       saleAmt += amt;
@@ -439,8 +426,12 @@ export const CollectionsPage: React.FC = () => {
         if (cVal > 0 || uVal > 0) {
           const splitTot = cVal + uVal;
           const scale = splitTot > 0 ? amt / splitTot : 1;
-          cashAmt += cVal * scale;
-          digitalAmt += uVal * scale;
+          const finalCVal = cVal * scale;
+          const finalUVal = uVal * scale;
+          cashAmt += finalCVal;
+          digitalAmt += finalUVal;
+          if (finalCVal > 0) cashCount++;
+          if (finalUVal > 0) digitalCount++;
         } else {
           const notes = String(c.notes || '');
           const cM = /Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
@@ -449,13 +440,19 @@ export const CollectionsPage: React.FC = () => {
           const upiSplit = uM ? Number(uM[1].replace(/,/g, '')) : amt - cashSplit;
           const splitTot = cashSplit + upiSplit;
           const scale = splitTot > 0 ? amt / splitTot : 1;
-          cashAmt += cashSplit * scale;
-          digitalAmt += upiSplit * scale;
+          const finalCVal = cashSplit * scale;
+          const finalUVal = upiSplit * scale;
+          cashAmt += finalCVal;
+          digitalAmt += finalUVal;
+          if (finalCVal > 0) cashCount++;
+          if (finalUVal > 0) digitalCount++;
         }
       } else if (pMode.includes('CASH')) {
         cashAmt += amt;
+        cashCount++;
       } else {
         digitalAmt += amt;
+        digitalCount++;
       }
     });
 
@@ -465,9 +462,34 @@ export const CollectionsPage: React.FC = () => {
       saleCount,
       cashAmt,
       digitalAmt,
-      totalCount: filteredCollections.length,
+      cashCount,
+      digitalCount,
+      totalCount: baseFilteredCollections.length,
     };
-  }, [filteredCollections]);
+  }, [baseFilteredCollections]);
+
+  // Filtered Collections Dataset for the Table
+  const filteredCollections = useMemo(() => {
+    if (modeFilter === 'ALL') return baseFilteredCollections;
+
+    return baseFilteredCollections.filter((item) => {
+      const itemMode = String(item.paymentMode || '').toLowerCase();
+      const target = String(modeFilter || '').toLowerCase();
+      if (itemMode === 'split') {
+        // Split payment includes both Cash and Bank/UPI components
+        if (target !== 'cash' && target !== 'bank' && target !== 'upi') {
+          return false;
+        }
+      } else if (target === 'bank' && !itemMode.includes('bank') && !itemMode.includes('upi') && !itemMode.includes('card')) {
+        return false;
+      } else if (target === 'upi' && !itemMode.includes('upi') && !itemMode.includes('bank') && !itemMode.includes('card') && !itemMode.includes('digital') && !itemMode.includes('online')) {
+        return false;
+      } else if (target !== 'bank' && target !== 'upi' && !itemMode.includes(target)) {
+        return false;
+      }
+      return true;
+    });
+  }, [baseFilteredCollections, modeFilter]);
 
   // Human-readable Period Label for Statement Header
   const periodLabel = useMemo(() => {
@@ -632,17 +654,26 @@ export const CollectionsPage: React.FC = () => {
           p="md"
           radius="lg"
           withBorder
+          onClick={() => setModeFilter('ALL')}
           style={{
             backgroundColor: '#ffffff',
-            borderColor: '#eef2f6',
-            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
+            borderColor: modeFilter === 'ALL' ? '#800020' : '#eef2f6',
+            borderWidth: modeFilter === 'ALL' ? 2 : 1,
+            boxShadow: modeFilter === 'ALL' ? '0 4px 16px 0 rgba(128, 0, 32, 0.08)' : '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
           }}
         >
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <div>
-              <Text size="xs" fw={700} tt="uppercase" c="#800020" style={{ letterSpacing: '0.5px' }}>
-                {categoryFilter === 'CONNECTIONS' ? 'Connection Collections' : 'Total Collections'}
-              </Text>
+              <Group gap={6} align="center">
+                <Text size="xs" fw={700} tt="uppercase" c="#800020" style={{ letterSpacing: '0.5px' }}>
+                  {categoryFilter === 'CONNECTIONS' ? 'Connection Collections' : 'Total Collected'}
+                </Text>
+                {modeFilter === 'ALL' && (
+                  <Badge size="xs" variant="filled" color="burgundy" radius="sm">Active</Badge>
+                )}
+              </Group>
               <Text size="22px" fw={800} mt={4} style={{ color: '#800020', fontVariantNumeric: 'tabular-nums' }}>
                 ₹{stats.totAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
@@ -656,88 +687,86 @@ export const CollectionsPage: React.FC = () => {
               {categoryFilter === 'CONNECTIONS' ? (
                 <IconPackages size={24} color="#800020" stroke={1.75} />
               ) : (
-                <IconCash size={24} color="#800020" stroke={1.75} />
+                <IconWallet size={24} color="#800020" stroke={1.75} />
               )}
             </Box>
           </Group>
         </Paper>
 
-        {/* Card 2: Direct Sales / Active Drivers */}
+        {/* Card 2: Cash Collections */}
         <Paper
           p="md"
           radius="lg"
           withBorder
+          onClick={() => setModeFilter(modeFilter === 'CASH' ? 'ALL' : 'CASH')}
           style={{
             backgroundColor: '#ffffff',
-            borderColor: '#eef2f6',
-            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
+            borderColor: modeFilter === 'CASH' ? '#800020' : '#eef2f6',
+            borderWidth: modeFilter === 'CASH' ? 2 : 1,
+            boxShadow: modeFilter === 'CASH' ? '0 4px 16px 0 rgba(128, 0, 32, 0.08)' : '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
           }}
         >
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <div>
-              <Text size="xs" fw={700} tt="uppercase" c="#64748b" style={{ letterSpacing: '0.5px' }}>
-                {categoryFilter === 'CONNECTIONS' ? 'Active Drivers with Connections' : 'Direct Sales Paid'}
-              </Text>
-              <Text size="22px" fw={800} mt={4} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
-                {categoryFilter === 'CONNECTIONS' ? (
-                  `${driverSummaryList.filter((d) => d.count > 0).length} Drivers`
-                ) : (
-                  `₹${stats.saleAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              <Group gap={6} align="center">
+                <Text size="xs" fw={700} tt="uppercase" c={modeFilter === 'CASH' ? '#800020' : '#64748b'} style={{ letterSpacing: '0.5px' }}>
+                  Cash
+                </Text>
+                {modeFilter === 'CASH' && (
+                  <Badge size="xs" variant="filled" color="burgundy" radius="sm">Active</Badge>
                 )}
+              </Group>
+              <Text size="22px" fw={800} mt={4} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                ₹{stats.cashAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Text>
               <Text size="xs" c="dimmed" mt={2}>
-                {categoryFilter === 'CONNECTIONS'
-                  ? `${connectionCollections.length} connections across all routes`
-                  : `${regularSalesCollections.length} refill sales invoices with payments`}
+                {stats.cashCount} payment{stats.cashCount !== 1 ? 's' : ''}
+                {stats.totAmt > 0 ? ` • ${Math.round((stats.cashAmt / stats.totAmt) * 100)}% of total` : ''}
               </Text>
             </div>
             <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              {categoryFilter === 'CONNECTIONS' ? (
-                <IconTruckDelivery size={24} color="#800020" stroke={1.75} />
-              ) : (
-                <IconReceipt2 size={24} color="#800020" stroke={1.75} />
-              )}
+              <IconCash size={24} color={modeFilter === 'CASH' ? '#800020' : '#64748b'} stroke={1.75} />
             </Box>
           </Group>
         </Paper>
 
-        {/* Card 3: Cash vs Bank/Digital */}
+        {/* Card 3: UPI Collections */}
         <Paper
           p="md"
           radius="lg"
           withBorder
+          onClick={() => setModeFilter(modeFilter === 'UPI' ? 'ALL' : 'UPI')}
           style={{
             backgroundColor: '#ffffff',
-            borderColor: '#eef2f6',
-            boxShadow: '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
+            borderColor: modeFilter === 'UPI' ? '#800020' : '#eef2f6',
+            borderWidth: modeFilter === 'UPI' ? 2 : 1,
+            boxShadow: modeFilter === 'UPI' ? '0 4px 16px 0 rgba(128, 0, 32, 0.08)' : '0 4px 14px 0 rgba(15, 23, 42, 0.04)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
           }}
         >
           <Group justify="space-between" align="flex-start" wrap="nowrap">
             <div>
-              <Text size="xs" fw={700} tt="uppercase" c="#64748b" style={{ letterSpacing: '0.5px' }}>
-                Cash / UPI
-              </Text>
-              <Group gap="xs" align="baseline" mt={4}>
-                <Text size="14px" fw={800} style={{ color: '#0f172a' }}>
-                  Cash: ₹{stats.cashAmt.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              <Group gap={6} align="center">
+                <Text size="xs" fw={700} tt="uppercase" c={modeFilter === 'UPI' ? '#800020' : '#64748b'} style={{ letterSpacing: '0.5px' }}>
+                  UPI
                 </Text>
-                <Text size="xs" c="dimmed">|</Text>
-                <Text size="14px" fw={800} style={{ color: '#800020' }}>
-                  UPI: ₹{stats.digitalAmt.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </Text>
+                {modeFilter === 'UPI' && (
+                  <Badge size="xs" variant="filled" color="burgundy" radius="sm">Active</Badge>
+                )}
               </Group>
+              <Text size="22px" fw={800} mt={4} style={{ color: '#0f172a', fontVariantNumeric: 'tabular-nums' }}>
+                ₹{stats.digitalAmt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </Text>
               <Text size="xs" c="dimmed" mt={2}>
-                {stats.totAmt > 0
-                  ? (() => {
-                      const cPct = Math.round((stats.cashAmt / stats.totAmt) * 100);
-                      const uPct = 100 - cPct;
-                      return `${cPct}% Cash • ${uPct}% UPI`;
-                    })()
-                  : '0% Cash • 0% UPI'}
+                {stats.digitalCount} payment{stats.digitalCount !== 1 ? 's' : ''}
+                {stats.totAmt > 0 ? ` • ${Math.round((stats.digitalAmt / stats.totAmt) * 100)}% of total` : ''}
               </Text>
             </div>
             <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <IconWallet size={24} color="#800020" stroke={1.75} />
+              <IconQrcode size={24} color={modeFilter === 'UPI' ? '#800020' : '#64748b'} stroke={1.75} />
             </Box>
           </Group>
         </Paper>
