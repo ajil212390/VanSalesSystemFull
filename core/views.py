@@ -12418,9 +12418,10 @@ class SalesViewSet(viewsets.ModelViewSet):
                 v_ledgers = v.lines.values_list('Ledger_id', flat=True)
                 sync_ledger_balances(*v_ledgers)
 
-            # 3. Soft-delete by setting status CANCELLED
+            # 3. Soft-delete by setting status CANCELLED and clean up associated receipts & vouchers
             sale.Status = 'CANCELLED'
             sale.save(update_fields=['Status'])
+            post_sale_voucher(sale, company_id=company_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
