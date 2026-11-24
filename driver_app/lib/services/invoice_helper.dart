@@ -124,17 +124,26 @@ class InvoiceHelper {
           'Thank you for choosing Future Gas!';
     }
 
-    // Case 1B: Empty Collection + Customer Payment on Account (RCPT document)
-    if (ticketId.startsWith('RCPT-') || (totalDelivered == 0 && totalEmpties > 0 && collectedAmount > 0.01)) {
+    // Case 1B: Customer Payment Receipt (pure on-account money receipt, or receipt + empty collection)
+    final isMoneyReceipt = ticketId.startsWith('RCPT-') ||
+        ticketId.startsWith('TREC-') ||
+        ticketId.startsWith('REC-') ||
+        (totalDelivered == 0 && collectedAmount > 0.01);
+
+    if (isMoneyReceipt) {
       final drv = (driverName != null && driverName.trim().isNotEmpty) ? driverName.trim() : 'our driver';
       final dt = (dateStr != null && dateStr.trim().isNotEmpty) ? dateStr.trim() : 'today';
       final paidStr = collectedAmount.toStringAsFixed(2);
+      final emptyLine = totalEmpties > 0 ? 'Returned Empties: $totalEmpties cylinder(s)\n' : '';
+      final title = totalEmpties > 0
+          ? '*FUTURE GAS - OFFICIAL PAYMENT & EMPTY RECEIPT*'
+          : '*FUTURE GAS - OFFICIAL PAYMENT RECEIPT*';
       return 'Dear $customerName,\n\n'
-          '*FUTURE GAS - OFFICIAL PAYMENT & EMPTY RECEIPT*\n'
+          '$title\n'
           '-----------------------------------------\n'
           'Receipt No: #$ticketId\n'
           'Amount Received: ₹$paidStr (${paymentMethod.toUpperCase()})\n'
-          'Returned Empties: $totalEmpties cylinder(s)\n'
+          '$emptyLine'
           'Date: $dt\n'
           'Driver: $drv\n'
           '-----------------------------------------\n'
