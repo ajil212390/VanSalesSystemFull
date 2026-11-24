@@ -252,7 +252,9 @@ export const ReceiptNotesPage: React.FC = () => {
   // Unified Dropdown options with all allocated products (or all products fallback)
   const productOptions = useMemo(() => {
     if (createMode === 'SUPPLIER_REFILL') {
-      return (godownEmptyStock || []).map((p: any) => ({
+      const withStock = (godownEmptyStock || []).filter((p: any) => (p.empty_qty ?? 0) > 0);
+      const listToUse = withStock.length > 0 ? withStock : (godownEmptyStock || []);
+      return listToUse.map((p: any) => ({
         value: String(p.product_id),
         label: `${p.product_name} (${p.empty_qty} Empty Avail)`,
         product_name: p.product_name,
@@ -281,7 +283,7 @@ export const ReceiptNotesPage: React.FC = () => {
 
   const [createLines, setCreateLines] = useState<
     Array<{ productId: number; productName?: string; filledQty: number | string; emptyQty: number | string; isCylinder?: boolean }>
-  >([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
+  >([{ productId: 0, filledQty: '', emptyQty: '', isCylinder: true }]);
 
   const handleOpenCreateModal = () => {
     setCreateMode('SUPPLIER_REFILL');
@@ -293,7 +295,7 @@ export const ReceiptNotesPage: React.FC = () => {
     setCreateDestId(suppliers[0] ? String(suppliers[0].LedgerId || suppliers[0].id) : null);
     setCreateDate(new Date().toISOString().split('T')[0]);
     setCreateRemarks('');
-    setCreateLines([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
+    setCreateLines([{ productId: 0, filledQty: '', emptyQty: '', isCylinder: true }]);
     setIsCreateModalOpen(true);
   };
 
@@ -320,11 +322,11 @@ export const ReceiptNotesPage: React.FC = () => {
   const handleAllocationChange = (val: string | null) => {
     setCreateAllocation(val);
     setCreateSourceId(val);
-    setCreateLines([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
+    setCreateLines([{ productId: 0, filledQty: '', emptyQty: '', isCylinder: true }]);
   };
 
   const handleAddLine = () => {
-    setCreateLines((prev) => [...prev, { productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
+    setCreateLines((prev) => [...prev, { productId: 0, filledQty: '', emptyQty: '', isCylinder: true }]);
   };
 
   const handleRemoveLine = (index: number) => {
@@ -340,9 +342,7 @@ export const ReceiptNotesPage: React.FC = () => {
         productId: pId,
         productName: (pOpt as any)?.product_name || pOpt?.label,
         isCylinder: pOpt?.is_cylinder ?? true,
-        emptyQty: createMode === 'SUPPLIER_REFILL' && (pOpt as any)?.empty_qty !== undefined
-          ? (l.emptyQty && Number(l.emptyQty) > 0 ? l.emptyQty : ((pOpt as any).empty_qty > 0 ? (pOpt as any).empty_qty : 0))
-          : (pOpt?.is_cylinder ? l.emptyQty : 0)
+        emptyQty: l.emptyQty === 0 || l.emptyQty === '0' ? '' : (l.emptyQty ?? ''),
       } : l))
     );
   };
@@ -814,11 +814,11 @@ export const ReceiptNotesPage: React.FC = () => {
                       <Box style={{ width: createMode === 'SUPPLIER_REFILL' ? 240 : 180, minWidth: 120 }}>
                         <NumberInput
                           label={idx === 0 ? (createMode === 'SUPPLIER_REFILL' ? 'Empty Cylinders to Refill' : 'Empty Returns Qty') : undefined}
-                          placeholder={line.isCylinder ? '0' : '—'}
+                          placeholder={line.isCylinder ? 'Enter qty' : '—'}
                           disabled={!line.isCylinder}
                           min={0}
                           max={createMode === 'SUPPLIER_REFILL' && availEmpty !== undefined && availEmpty > 0 ? availEmpty : undefined}
-                          value={line.isCylinder ? line.emptyQty : 0}
+                          value={line.isCylinder ? (line.emptyQty === 0 || line.emptyQty === '0' || line.emptyQty === '' ? '' : line.emptyQty) : ''}
                           onChange={(val) => handleLineEmptyQtyChange(idx, val)}
                         />
                         {createMode === 'SUPPLIER_REFILL' && line.productId > 0 && (
@@ -869,15 +869,6 @@ export const ReceiptNotesPage: React.FC = () => {
                 Cancel
               </Button>
               <Group gap="sm">
-                <Button
-                  variant="outline"
-                  radius={10}
-                  style={{ borderColor: '#800020', color: '#800020', fontWeight: 600 }}
-                  loading={createReceiptNoteMutation.isPending}
-                  onClick={() => createReceiptNoteMutation.mutate(false)}
-                >
-                  Save as Pending
-                </Button>
                 <Button
                   color="burgundy"
                   radius={10}
