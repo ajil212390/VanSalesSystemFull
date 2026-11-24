@@ -6186,7 +6186,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 # Empty Outward for selected period
                 g_emp_out = period_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
-                    Q(TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN', 'ADJUSTMENT_EMPTY_OUT', 'GODOWN_TRANSFER_EMPTY_OUT']) |
+                    Q(TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN', 'ADJUSTMENT_EMPTY_OUT', 'GODOWN_TRANSFER_EMPTY_OUT', 'SUPPLIER_EMPTY_DISPATCH']) |
                     Q(TransactionType='DELIVERY_NOTE_EMPTY', OutQty__gt=0)
                 ).aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
 
@@ -6206,7 +6206,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 ).aggregate(s=Sum('InQty'))['s'] or Decimal('0.00')
                 g_cum_emp_out = all_movements.filter(
                     Q(Product=p, RouteVehicleDriverId=g_rvd),
-                    Q(TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN', 'ADJUSTMENT_EMPTY_OUT', 'GODOWN_TRANSFER_EMPTY_OUT']) |
+                    Q(TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN', 'ADJUSTMENT_EMPTY_OUT', 'GODOWN_TRANSFER_EMPTY_OUT', 'SUPPLIER_EMPTY_DISPATCH']) |
                     Q(TransactionType='DELIVERY_NOTE_EMPTY', OutQty__gt=0)
                 ).aggregate(s=Sum('OutQty'))['s'] or Decimal('0.00')
                 g_empty_bal_val = max(Decimal('0.00'), g_cum_emp_in - g_cum_emp_out) if is_cylinder else Decimal('0.00')
@@ -9640,6 +9640,91 @@ class ReceiptNoteViewSet(viewsets.ModelViewSet):
                 'unit_name': p.Unit.UnitName if p.Unit else 'Unit',
                 'is_cylinder': is_cyl,
             })
+        return Response(results)
+
+    @action(detail=False, methods=['get'], url_path='godown-empty-stock')
+    def godown_empty_stock(self, request):
+        """
+        Returns real-time available empty cylinder stock for a godown.
+        Exclusively returns active gas cylinder products.
+        """
+        godown_id = getattr(request, 'query_params', getattr(request, 'GET', {})).get('godown_id')
+        company_id = getattr(request.user, 'CompanyId', 1) or 1
+
+        from core.models import Godown
+        g = None
+        if godown_id:
+            try:
+                g = Godown.objects.filter(CompanyId=company_id, GodownId=int(godown_id)).first() or Godown.objects.filter(GodownId=int(godown_id)).first()
+            except (ValueError, TypeError):
+                g = None
+        if not g:
+            g = Godown.objects.filter(CompanyId=company_id, IsCentral=True).first() or Godown.objects.filter(IsCentral=True).first() or Godown.objects.filter(CompanyId=company_id).first()
+
+        g_rvd = g.RouteVehicleDriver_id if g and g.RouteVehicleDriver_id else 1
+
+        # Only cylinder products
+        cyl_products = Product.objects.filter(
+            CompanyId=company_id,
+            IsActive=True
+        ).exclude(
+            Q(Category__CategoryName__iexact='SERVICES') |
+            Q(Category__CategoryName__iexact='SERVICE') |
+            Q(ProductCode__istartswith='SRV-') |
+            Q(ProductName__icontains='Fitting') |
+            Q(ProductName__icontains='Installation') |
+            Q(ProductName__icontains='Regulator') |
+            Q(ProductName__icontains='Stove') |
+            Q(ProductName__icontains='Burner') |
+            Q(ProductName__icontains='Pipe') |
+            Q(ProductName__icontains='Hose') |
+            Q(ProductName__icontains='Lighter') |
+            Q(ProductName__icontains='Trolley') |
+            Q(Category__CategoryName__icontains='Stove') |
+            Q(Category__CategoryName__icontains='Accessory') |
+            Q(Category__CategoryName__icontains='Accessories')
+        ).select_related('Unit', 'Category').order_by('ProductName')
+
+        results = []
+        for p in cyl_products:
+            cat_n = p.Category.CategoryName.lower() if p.Category else ''
+            p_n = p.ProductName.lower()
+            is_cyl = ('cylinder' in cat_n) or ('cylinder' in p_n) or ('kg' in p_n) or ('lpg' in p_n)
+            if not is_cyl:
+                continue
+
+            emp_in = StockMovement.objects.filter(
+                CompanyId=company_id,
+                Product=p,
+                RouteVehicleDriverId=g_rvd,
+            ).filter(
+                Q(TransactionType__in=['GODOWN_RETURN_EMPTY', 'VAN_UNLOAD_EMPTY', 'RECEIPT_NOTE_EMPTY_RETURN', 'VAN_EMPTY_RETURN', 'OPENING_EMPTY', 'ADJUSTMENT_EMPTY_IN', 'GODOWN_TRANSFER_EMPTY_IN']) |
+                Q(TransactionType='DELIVERY_NOTE_EMPTY', InQty__gt=0)
+            ).aggregate(tot=Sum('InQty'))['tot'] or Decimal('0.00')
+
+            emp_out = StockMovement.objects.filter(
+                CompanyId=company_id,
+                Product=p,
+                RouteVehicleDriverId=g_rvd,
+            ).filter(
+                Q(TransactionType__in=['PURCHASE_EMPTY_RETURN', 'FACTORY_EMPTY_RETURN', 'ADJUSTMENT_EMPTY_OUT', 'GODOWN_TRANSFER_EMPTY_OUT', 'SUPPLIER_EMPTY_DISPATCH']) |
+                Q(TransactionType='DELIVERY_NOTE_EMPTY', OutQty__gt=0)
+            ).aggregate(tot=Sum('OutQty'))['tot'] or Decimal('0.00')
+
+            bal = max(0, int(emp_in - emp_out))
+
+            results.append({
+                'product_id': p.ProductId,
+                'product_name': p.ProductName,
+                'product_code': p.ProductCode or '',
+                'unit_id': p.Unit_id,
+                'unit_name': p.Unit.UnitName if p.Unit else 'Cyl',
+                'empty_qty': bal,
+                'is_cylinder': True,
+            })
+
+        # Sort: cylinders with available empty stock first, then by name
+        results.sort(key=lambda x: (-x['empty_qty'], x['product_name']))
         return Response(results)
 
 

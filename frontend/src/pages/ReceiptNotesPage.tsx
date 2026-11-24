@@ -172,6 +172,18 @@ export const ReceiptNotesPage: React.FC = () => {
     },
     enabled: Boolean(createAllocation) });
 
+  // Fetch Available Empty Cylinders in Godown for Supplier Refill Outward
+  const { data: godownEmptyStock = [], isFetching: isFetchingGodownEmpty } = useQuery<any[]>({
+    queryKey: ['godown-empty-stock', createSourceId],
+    queryFn: async () => {
+      const gId = createSourceId || '';
+      const res = await apiClient.get<any>(`/receipt-notes/godown-empty-stock/?godown_id=${gId}`);
+      const raw = res.data;
+      return Array.isArray(raw) ? raw : (raw?.results || []);
+    },
+    enabled: isCreateModalOpen && createMode === 'SUPPLIER_REFILL'
+  });
+
   // Helper to determine if product is a gas cylinder
   const isCylinderProduct = (p: any) => {
     if (typeof p.is_cylinder === 'boolean') {
@@ -239,6 +251,16 @@ export const ReceiptNotesPage: React.FC = () => {
 
   // Unified Dropdown options with all allocated products (or all products fallback)
   const productOptions = useMemo(() => {
+    if (createMode === 'SUPPLIER_REFILL') {
+      return (godownEmptyStock || []).map((p: any) => ({
+        value: String(p.product_id),
+        label: `${p.product_name} (${p.empty_qty} Empty Avail)`,
+        product_name: p.product_name,
+        empty_qty: p.empty_qty,
+        is_cylinder: true,
+      }));
+    }
+
     const sourceList = (createAllocation && allocatedProducts.length > 0)
       ? allocatedProducts.map((ap: any) => ({
           ProductId: ap.product_id || ap.ProductId,
@@ -252,8 +274,10 @@ export const ReceiptNotesPage: React.FC = () => {
     return sourceList.map((p: any) => ({
       value: String(p.ProductId),
       label: p.ProductName || `Product ${p.ProductId}`,
+      product_name: p.ProductName,
+      empty_qty: 0,
       is_cylinder: Boolean(p.is_cylinder) }));
-  }, [products, allocatedProducts, createAllocation]);
+  }, [products, allocatedProducts, createAllocation, createMode, godownEmptyStock]);
 
   const [createLines, setCreateLines] = useState<
     Array<{ productId: number; productName?: string; filledQty: number | string; emptyQty: number | string; isCylinder?: boolean }>
@@ -262,10 +286,11 @@ export const ReceiptNotesPage: React.FC = () => {
   const handleOpenCreateModal = () => {
     setCreateMode('SUPPLIER_REFILL');
     setCreateSourceType('GODOWN');
-    setCreateSourceId(null);
+    const defaultG = godowns.find((g: any) => g.IsCentral) || godowns[0];
+    setCreateSourceId(defaultG ? String(defaultG.GodownId) : null);
     setCreateAllocation(null);
     setCreateDestType('SUPPLIER');
-    setCreateDestId(null);
+    setCreateDestId(suppliers[0] ? String(suppliers[0].LedgerId || suppliers[0].id) : null);
     setCreateDate(new Date().toISOString().split('T')[0]);
     setCreateRemarks('');
     setCreateLines([{ productId: 0, filledQty: 0, emptyQty: 0, isCylinder: true }]);
@@ -277,16 +302,18 @@ export const ReceiptNotesPage: React.FC = () => {
     setCreateMode(m);
     if (m === 'SUPPLIER_REFILL') {
       setCreateSourceType('GODOWN');
-      setCreateSourceId(null);
+      const defaultG = godowns.find((g: any) => g.IsCentral) || godowns[0];
+      setCreateSourceId(defaultG ? String(defaultG.GodownId) : null);
       setCreateAllocation(null);
       setCreateDestType('SUPPLIER');
-      setCreateDestId(null);
+      setCreateDestId(suppliers[0] ? String(suppliers[0].LedgerId || suppliers[0].id) : null);
     } else {
       setCreateSourceType('VAN');
       setCreateSourceId(null);
       setCreateAllocation(null);
       setCreateDestType('GODOWN');
-      setCreateDestId(null);
+      const defaultG = godowns.find((g: any) => g.IsCentral) || godowns[0];
+      setCreateDestId(defaultG ? String(defaultG.GodownId) : null);
     }
   };
 
@@ -311,9 +338,12 @@ export const ReceiptNotesPage: React.FC = () => {
       prev.map((l, i) => (i === index ? {
         ...l,
         productId: pId,
-        productName: pOpt?.label,
+        productName: (pOpt as any)?.product_name || pOpt?.label,
         isCylinder: pOpt?.is_cylinder ?? true,
-        emptyQty: pOpt?.is_cylinder ? l.emptyQty : 0 } : l))
+        emptyQty: createMode === 'SUPPLIER_REFILL' && (pOpt as any)?.empty_qty !== undefined
+          ? (l.emptyQty && Number(l.emptyQty) > 0 ? l.emptyQty : ((pOpt as any).empty_qty > 0 ? (pOpt as any).empty_qty : 0))
+          : (pOpt?.is_cylinder ? l.emptyQty : 0)
+      } : l))
     );
   };
 
@@ -733,7 +763,13 @@ export const ReceiptNotesPage: React.FC = () => {
                         ? 'Empty Cylinders Dispatched for Refilling'
                         : 'Products Returned / Unloaded into Godown'}
                     </Text>
-                    {isFetchingAllocated && (
+                    {createMode === 'SUPPLIER_REFILL' && isFetchingGodownEmpty && (
+                      <Group gap={4}>
+                        <Loader size={12} color="#800020" />
+                        <Text size="11px" c="#800020" fw={500}>Checking godown empty stock...</Text>
+                      </Group>
+                    )}
+                    {createMode !== 'SUPPLIER_REFILL' && isFetchingAllocated && (
                       <Group gap={4}>
                         <Loader size={12} color="#800020" />
                         <Text size="11px" c="#800020" fw={500}>Fetching van products...</Text>
@@ -746,55 +782,66 @@ export const ReceiptNotesPage: React.FC = () => {
 
               {/* Single Unified Returned Products List */}
               <Stack gap="xs">
-                {createLines.map((line, idx) => (
-                  <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
-                    <Box style={{ flex: 1, minWidth: 220 }}>
-                      <Select
-                        label={idx === 0 ? 'Product (Cylinders & Accessories)' : undefined}
-                        placeholder="Choose Product"
-                        data={productOptions}
-                        value={line.productId > 0 ? String(line.productId) : null}
-                        onChange={(val) => handleLineProductChange(idx, val)}
-                        searchable
-                        nothingFoundMessage="No products found"
-                        comboboxProps={{ withinPortal: true, zIndex: 1000 }}
-                      />
-                    </Box>
-                    {createMode !== 'SUPPLIER_REFILL' && (
-                      <Box style={{ width: 180, minWidth: 120 }}>
-                        <NumberInput
-                          label={idx === 0 ? 'Unsold Full / Return Qty' : undefined}
-                          placeholder="0"
-                          min={0}
-                          value={line.filledQty}
-                          onChange={(val) => handleLineFilledQtyChange(idx, val)}
+                {createLines.map((line, idx) => {
+                  const pOpt = productOptions.find((p: any) => Number(p.value) === line.productId);
+                  const availEmpty = (pOpt as any)?.empty_qty;
+
+                  return (
+                    <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
+                      <Box style={{ flex: 1, minWidth: 220 }}>
+                        <Select
+                          label={idx === 0 ? (createMode === 'SUPPLIER_REFILL' ? 'Empty Cylinder Product' : 'Product (Cylinders & Accessories)') : undefined}
+                          placeholder={createMode === 'SUPPLIER_REFILL' ? 'Choose Empty Cylinder' : 'Choose Product'}
+                          data={productOptions}
+                          value={line.productId > 0 ? String(line.productId) : null}
+                          onChange={(val) => handleLineProductChange(idx, val)}
+                          searchable
+                          nothingFoundMessage={createMode === 'SUPPLIER_REFILL' ? 'No cylinder products found' : 'No products found'}
+                          comboboxProps={{ withinPortal: true, zIndex: 1000 }}
                         />
                       </Box>
-                    )}
-                    <Box style={{ width: createMode === 'SUPPLIER_REFILL' ? 240 : 180, minWidth: 120 }}>
-                      <NumberInput
-                        label={idx === 0 ? (createMode === 'SUPPLIER_REFILL' ? 'Empty Cylinders to Refill' : 'Empty Returns Qty') : undefined}
-                        placeholder={line.isCylinder ? '0' : '—'}
-                        disabled={!line.isCylinder}
-                        min={0}
-                        value={line.isCylinder ? line.emptyQty : 0}
-                        onChange={(val) => handleLineEmptyQtyChange(idx, val)}
-                      />
-                    </Box>
-                    {createLines.length > 1 ? (
-                      <ActionIcon
-                        variant="subtle"
-                        color="gray"
-                        onClick={() => handleRemoveLine(idx)}
-                        style={{ marginBottom: 4 }}
-                      >
-                        <IconTrash size={16} />
-                      </ActionIcon>
-                    ) : (
-                      <Box style={{ width: 28 }} />
-                    )}
-                  </Group>
-                ))}
+                      {createMode !== 'SUPPLIER_REFILL' && (
+                        <Box style={{ width: 180, minWidth: 120 }}>
+                          <NumberInput
+                            label={idx === 0 ? 'Unsold Full / Return Qty' : undefined}
+                            placeholder="0"
+                            min={0}
+                            value={line.filledQty}
+                            onChange={(val) => handleLineFilledQtyChange(idx, val)}
+                          />
+                        </Box>
+                      )}
+                      <Box style={{ width: createMode === 'SUPPLIER_REFILL' ? 240 : 180, minWidth: 120 }}>
+                        <NumberInput
+                          label={idx === 0 ? (createMode === 'SUPPLIER_REFILL' ? 'Empty Cylinders to Refill' : 'Empty Returns Qty') : undefined}
+                          placeholder={line.isCylinder ? '0' : '—'}
+                          disabled={!line.isCylinder}
+                          min={0}
+                          max={createMode === 'SUPPLIER_REFILL' && availEmpty !== undefined && availEmpty > 0 ? availEmpty : undefined}
+                          value={line.isCylinder ? line.emptyQty : 0}
+                          onChange={(val) => handleLineEmptyQtyChange(idx, val)}
+                        />
+                        {createMode === 'SUPPLIER_REFILL' && line.productId > 0 && (
+                          <Text size="11px" fw={600} c={availEmpty && availEmpty > 0 ? '#16a34a' : '#dc2626'} mt={2}>
+                            Available in Godown: {availEmpty ?? 0} Empty
+                          </Text>
+                        )}
+                      </Box>
+                      {createLines.length > 1 ? (
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          onClick={() => handleRemoveLine(idx)}
+                          style={{ marginBottom: createMode === 'SUPPLIER_REFILL' && line.productId > 0 ? 20 : 4 }}
+                        >
+                          <IconTrash size={16} />
+                        </ActionIcon>
+                      ) : (
+                        <Box style={{ width: 28 }} />
+                      )}
+                    </Group>
+                  );
+                })}
 
                 <Button
                   variant="subtle"
