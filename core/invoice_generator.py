@@ -323,8 +323,8 @@ def generate_tax_invoice_pdf(sale):
                 f"{rev_display}"
                 f"<b>Date:</b> {date_formatted}<br/>"
                 f"{payment_mode_display}"
-                f"<b>Vehicle No:</b> {sale.VehicleName or 'Van Delivery'}<br/>"
-                f"<b>Driver:</b> {sale.DriverName or 'Van Driver'}",
+                f"<b>Vehicle No:</b> {getattr(sale, 'VehicleName', None) or 'Van Delivery'}<br/>"
+                f"<b>Driver:</b> {getattr(sale, 'DriverName', None) or 'Van Driver'}",
                 inv_meta
             )
         ]
@@ -388,9 +388,9 @@ def generate_tax_invoice_pdf(sale):
                 cell_norm
             ),
             Paragraph(
-                f"<b>Route Name:</b> {sale.RouteName or 'Local Route'}<br/>"
-                f"<b>Driver Name:</b> {sale.DriverName or 'Driver'}<br/>"
-                f"<b>Vehicle Number:</b> {sale.VehicleName or 'Delivery Van'}<br/>"
+                f"<b>Route Name:</b> {getattr(sale, 'RouteName', None) or 'Local Route'}<br/>"
+                f"<b>Driver Name:</b> {getattr(sale, 'DriverName', None) or 'Driver'}<br/>"
+                f"<b>Vehicle Number:</b> {getattr(sale, 'VehicleName', None) or 'Delivery Van'}<br/>"
                 f"<b>Full Cylinders Delivered:</b> {int(sale.TotalDeliveredQty or 0)} NOS<br/>"
                 f"<b>Empty Cylinders Collected:</b> {empties_display_text}",
                 cell_norm
@@ -1136,11 +1136,13 @@ def generate_tax_invoice_pdf(sale):
     # 6. SIGNATURE FOOTER & PAYMENT GROUP QR CODE (FIXED FOOTER)
     # -------------------------------------------------------------
     pg_obj = None
-    if sale.RouteVehicleDriver and sale.RouteVehicleDriver.PaymentGroup:
-        pg_obj = sale.RouteVehicleDriver.PaymentGroup
-    elif sale.DriverName:
+    rvd = getattr(sale, 'RouteVehicleDriver', None)
+    d_name = getattr(sale, 'DriverName', None)
+    if rvd and getattr(rvd, 'PaymentGroup', None):
+        pg_obj = rvd.PaymentGroup
+    elif d_name:
         from core.models import RouteVehicleDriver
-        rvd_cand = RouteVehicleDriver.objects.filter(Driver__DriverName=sale.DriverName, IsActive=True).first()
+        rvd_cand = RouteVehicleDriver.objects.filter(Driver__DriverName=d_name, IsActive=True).first()
         if rvd_cand and rvd_cand.PaymentGroup:
             pg_obj = rvd_cand.PaymentGroup
 

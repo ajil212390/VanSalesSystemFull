@@ -1003,7 +1003,7 @@ export const RouteDetailsPage: React.FC = () => {
                       </Table.Td>
                       <Table.Td>
                         <Group gap={6} wrap="nowrap" align="center">
-                          <Text size="sm" fw={700} ff="monospace" style={{ color: isReceipt ? '#4338ca' : '#800020' }}>
+                          <Text size="sm" fw={700} ff="monospace" style={{ color: '#800020' }}>
                             {billNo}
                           </Text>
                           {isReceipt && (
@@ -1012,8 +1012,8 @@ export const RouteDetailsPage: React.FC = () => {
                               variant="light"
                               styles={{
                                 root: {
-                                  backgroundColor: '#eef2ff',
-                                  color: '#4338ca',
+                                  backgroundColor: '#fdf2f4',
+                                  color: '#800020',
                                   fontWeight: 800,
                                   fontSize: 9,
                                   letterSpacing: '0.4px',
@@ -1021,7 +1021,7 @@ export const RouteDetailsPage: React.FC = () => {
                                   paddingLeft: 6,
                                   paddingRight: 6,
                                   borderRadius: 4,
-                                  border: '1px solid #c7d2fe',
+                                  border: '1px solid #f5c2cb',
                                 },
                               }}
                             >
@@ -1118,9 +1118,9 @@ export const RouteDetailsPage: React.FC = () => {
                       <Table.Td style={{ textAlign: 'center' }}>
                         <ActionIcon
                           variant="subtle"
-                          color={isReceipt ? 'indigo' : 'red'}
                           size="sm"
                           radius="sm"
+                          style={{ color: '#800020' }}
                           title={isReceipt ? 'View / Print Official Receipt PDF' : 'View / Print Tax Invoice PDF'}
                           onClick={() => {
                             const baseUrl = apiClient.defaults.baseURL?.replace(/\/api\/v1\/?$/, '') || '';

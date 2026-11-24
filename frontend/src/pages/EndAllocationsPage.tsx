@@ -1131,20 +1131,6 @@ export const EndAllocationsPage: React.FC = () => {
                   <Text size="xs" fw={700} style={{ color: '#800020', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     VAN STOCK RECONCILIATION & GODOWN RETURNS
                   </Text>
-                  <Group gap="xs">
-                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#0f172a', color: '#0f172a', fontWeight: 700 }}>
-                      LOADED: {selectedItem.total_loaded ?? modalLines.reduce((s, l) => s + (l.LoadedQty ?? 0), 0)}
-                    </Badge>
-                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#0f172a', color: '#0f172a', fontWeight: 700 }}>
-                      DELIVERED: {selectedItem.total_delivered ?? modalLines.reduce((s, l) => s + (l.DeliveredQty ?? 0), 0)}
-                    </Badge>
-                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#0f172a', color: '#0f172a', fontWeight: 700 }}>
-                      UNSOLD FULL: {modalTotalFilled}
-                    </Badge>
-                    <Badge variant="outline" radius="sm" size="sm" style={{ borderColor: '#800020', color: '#800020', fontWeight: 700 }}>
-                      EMPTIES RETURNED: {modalTotalEmpty}
-                    </Badge>
-                  </Group>
                 </Group>
 
                 {modalLines.length === 0 ? (
@@ -1428,8 +1414,15 @@ export const EndAllocationsPage: React.FC = () => {
                                   <Badge
                                     size="xs"
                                     variant="light"
-                                    color={isEmtrtn ? 'gray' : (sale.PaymentMethod?.toLowerCase() === 'cash' ? 'gray' : (sale.PaymentMethod?.toLowerCase() === 'credit' ? 'red' : 'blue'))}
-                                    styles={{ root: { fontWeight: 600 } }}
+                                    radius="sm"
+                                    styles={{
+                                      root: {
+                                        fontWeight: 700,
+                                        backgroundColor: sale.PaymentMethod?.toLowerCase() === 'credit' ? '#fdf2f4' : '#f8fafc',
+                                        color: sale.PaymentMethod?.toLowerCase() === 'credit' ? '#800020' : '#334155',
+                                        border: `1px solid ${sale.PaymentMethod?.toLowerCase() === 'credit' ? '#f5c2cb' : '#e2e8f0'}`,
+                                      },
+                                    }}
                                   >
                                     {isEmtrtn ? 'N/A' : (sale.PaymentMethod || 'Cash')}
                                   </Badge>

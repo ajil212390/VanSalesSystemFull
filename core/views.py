@@ -12310,11 +12310,11 @@ class SalesViewSet(viewsets.ModelViewSet):
                 pass
 
         if not sale and ticket_id:
-            cleaned_ticket = str(ticket_id).strip()
-            sale = Sales.objects.filter(SalesNo=cleaned_ticket).first() or Sales.objects.filter(InvoiceNo=cleaned_ticket).first()
+            cleaned_ticket = str(ticket_id).lstrip('#').strip()
+            sale = Sales.objects.filter(Q(SalesNo__iexact=cleaned_ticket) | Q(InvoiceNo__iexact=cleaned_ticket)).first()
             if not sale:
                 # Also check StockMovement TransactionNo
-                sm = StockMovement.objects.filter(TransactionNo=cleaned_ticket).first()
+                sm = StockMovement.objects.filter(TransactionNo__iexact=cleaned_ticket).first()
                 if sm and sm.RouteVehicleDriverId:
                     sale = Sales.objects.filter(
                         RouteVehicleDriver_id=sm.RouteVehicleDriverId,
@@ -12323,9 +12323,9 @@ class SalesViewSet(viewsets.ModelViewSet):
 
             if not sale:
                 pmt = Payment.objects.filter(
-                    Q(ReferenceNumber=cleaned_ticket) | Q(PaymentNo=cleaned_ticket)
+                    Q(ReferenceNumber__iexact=cleaned_ticket) | Q(PaymentNo__iexact=cleaned_ticket)
                 ).first()
-                if not pmt and any(k in cleaned_ticket for k in ['TREC-', 'RCPT-', 'REC-']):
+                if not pmt and any(k in cleaned_ticket.upper() for k in ['TREC-', 'RCPT-', 'REC-']):
                     try:
                         num_match = re.search(r'\d+', cleaned_ticket)
                         if num_match:
@@ -12341,13 +12341,37 @@ class SalesViewSet(viewsets.ModelViewSet):
                             self.SalesNo = p.ReferenceNumber or p.PaymentNo or f"TREC-{p.PaymentId}"
                             self.InvoiceNo = self.SalesNo
                             self.SalesDate = p.CreatedAt.date() if p.CreatedAt else date.today()
+                            self.CreatedAt = p.CreatedAt
                             self.CompanyId = getattr(p.PartyLedger, 'CompanyId', 1) if p.PartyLedger else 1
                             self.CustomerLedger = p.PartyLedger
                             self.CustomerPhone = (p.PartyLedger.MobileNumber or p.PartyLedger.PhoneNumber or '') if p.PartyLedger else ''
                             self.TotalDeliveredQty = 0
                             self.TotalEmptyQty = 0
                             self.GrandTotal = p.Amount
+                            self.SubTotal = p.Amount
+                            self.TaxAmount = Decimal('0.00')
                             self.PaidAmount = p.Amount
+                            self.VehicleName = 'Van Delivery'
+                            self.DriverName = 'Route Driver'
+                            self.RouteName = 'Route Delivery'
+                            self.RouteVehicleDriver = None
+                            self.AdvanceAdjusted = Decimal('0.00')
+                            self.advance_adjustments = None
+                            self.EditedAt = None
+                            self.IsEdited = False
+
+                            if getattr(p, 'DeliveryNoteId', None):
+                                try:
+                                    from core.models import DeliveryNoteMaster
+                                    dn = DeliveryNoteMaster.objects.filter(DeliveryNoteId=p.DeliveryNoteId).first()
+                                    if dn and dn.RouteVehicleDriver:
+                                        self.RouteVehicleDriver = dn.RouteVehicleDriver
+                                        self.VehicleName = dn.RouteVehicleDriver.Vehicle.VehicleNumber if dn.RouteVehicleDriver.Vehicle else 'Van Delivery'
+                                        self.DriverName = dn.RouteVehicleDriver.Driver.DriverName if dn.RouteVehicleDriver.Driver else 'Route Driver'
+                                        self.RouteName = dn.RouteVehicleDriver.Route.RouteName if dn.RouteVehicleDriver.Route else 'Route Delivery'
+                                except Exception:
+                                    pass
+
                             lines_list = list(p.lines.all())
                             c_amt = sum(pl.Amount for pl in lines_list if 'CASH' in (pl.PaymentMode or '').upper())
                             u_amt = sum(pl.Amount for pl in lines_list if any(x in (pl.PaymentMode or '').upper() for x in ['UPI', 'BANK', 'ONLINE']))
