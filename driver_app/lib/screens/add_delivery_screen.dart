@@ -1260,16 +1260,25 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
   // ================= 3. PAYMENT METHOD SECTION =================
   Widget _buildPaymentMethodSection(AppState state) {
     final isEmptiesOnly = state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties > 0;
+    final isMoneyOnly = _isCollectionOnly || (state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties == 0);
     final textTrim = _amountController.text.trim();
     final enteredAmount = double.tryParse(textTrim.replaceAll(',', '')) ?? 0;
     final isZeroAmount = textTrim.isEmpty || textTrim == '0' || textTrim == '0.0' || enteredAmount <= 0;
 
+    // Credit is strictly disabled/hidden for pure money collections (no cylinders or empties)
     final methods = [
       {'key': 'Cash', 'title': 'Cash', 'icon': Icons.payments_outlined},
       {'key': 'UPI', 'title': 'Bank', 'icon': Icons.qr_code_2_rounded},
       {'key': 'Split', 'title': 'Split', 'icon': Icons.call_split_rounded},
-      {'key': 'Credit', 'title': 'Credit', 'icon': Icons.account_balance_wallet_outlined},
+      if (!isMoneyOnly)
+        {'key': 'Credit', 'title': 'Credit', 'icon': Icons.account_balance_wallet_outlined},
     ];
+
+    if (isMoneyOnly && state.paymentMethod.toLowerCase() == 'credit') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) state.setPaymentMethod('Cash');
+      });
+    }
 
     return Container(
       width: double.infinity,
@@ -1363,6 +1372,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             Row(
               children: methods.map((m) {
                 final isSelected = state.paymentMethod == m['key'];
+                final isLast = m == methods.last;
                 return Expanded(
                   child: GestureDetector(
                     onTap: () {
@@ -1378,7 +1388,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                     },
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 180),
-                      margin: EdgeInsets.only(right: m['key'] != 'Credit' ? 6 : 0),
+                      margin: EdgeInsets.only(right: isLast ? 0 : 6),
                       padding: const EdgeInsets.symmetric(vertical: 11),
                       decoration: BoxDecoration(
                         color: isSelected ? const Color(0xFFFDF2F4) : const Color(0xFFF8FAFC),
