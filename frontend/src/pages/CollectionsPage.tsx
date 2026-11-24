@@ -251,15 +251,15 @@ export const CollectionsPage: React.FC = () => {
     });
 
     // Customer receipts from Payment table (e.g. On-Account collections, office receipts, route collections)
-    const customerLedgerIds = new Set(
-      ledgers
-        .filter((l: any) => {
-          const gName = (l.group_name || l.GroupName || '').toLowerCase();
-          const gid = Number(l.GroupId ?? l.Group ?? 0);
-          return gid === 21 || gName.includes('debtor') || gName.includes('customer');
-        })
-        .map((l: any) => l.LedgerId)
-    );
+    const customerLedgerIds = new Set<number>();
+    ledgers.forEach((l: any) => {
+      const gName = String(l.group_name || l.GroupName || l.Group?.GroupName || '').toLowerCase();
+      const gid = Number(l.GroupId ?? l.Group?.GroupId ?? l.Group ?? 0);
+      const isCust = gid === 21 || gName.includes('debtor') || gName.includes('customer');
+      if (isCust && l.LedgerId) {
+        customerLedgerIds.add(Number(l.LedgerId));
+      }
+    });
 
     payments.forEach((p: any) => {
       const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
@@ -269,7 +269,29 @@ export const CollectionsPage: React.FC = () => {
       if (pType === 'PAYMENT') return;
 
       const pid = Number(p.PartyLedgerId ?? p.PartyLedger?.LedgerId ?? p.PartyLedger);
-      const isCustomer = customerLedgerIds.has(pid) || pType === 'RECEIPT' || String(p.PaymentNo || '').startsWith('REC-');
+      const custObj = pid && !isNaN(pid) ? ledgerMap.get(pid) : null;
+      const grpName = String(custObj?.group_name || custObj?.GroupName || custObj?.Group?.GroupName || p.party_group_name || '').toLowerCase();
+      const partyNameLower = String(custObj?.LedgerName || p.party_name || p.PartyLedger?.LedgerName || '').toLowerCase();
+
+      // STRICT EXCLUSION: Capital Account, Loans, Drawings, Partner Equity, Bank transfers are NOT customer sales collections!
+      if (
+        grpName.includes('capital') ||
+        grpName.includes('loan') ||
+        grpName.includes('equity') ||
+        grpName.includes('reserve') ||
+        grpName.includes('drawing') ||
+        grpName.includes('investment') ||
+        partyNameLower.includes('capital') ||
+        partyNameLower.includes('drawing') ||
+        partyNameLower.includes('equity')
+      ) {
+        return; // Skip non-trade capital / internal funding receipts
+      }
+
+      // STRICT CUSTOMER CHECK: Must be a customer/debtor ledger
+      const isCustomer = (pid && customerLedgerIds.has(pid)) ||
+        grpName.includes('debtor') ||
+        grpName.includes('customer');
       if (!isCustomer) return;
 
       const narr = String(p.Narration || '').toLowerCase();
@@ -300,7 +322,6 @@ export const CollectionsPage: React.FC = () => {
       if (amt <= 0) return;
 
       const pRef = String(p.voucher_no || p.PaymentNo || p.ReferenceNumber || `REC-${p.PaymentId || ''}`).trim();
-      const custObj = pid && !isNaN(pid) ? ledgerMap.get(pid) : null;
       const partyName = String(custObj?.LedgerName || p.party_name || p.PartyLedger?.LedgerName || 'Customer');
       const partyMobile = String(custObj?.Mobile || p.PartyLedger?.Mobile || '');
 
