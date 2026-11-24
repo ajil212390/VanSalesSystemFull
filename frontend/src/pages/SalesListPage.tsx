@@ -947,10 +947,10 @@ export const SalesListPage: React.FC = () => {
           <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover>
             <Table.Thead style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <Table.Tr>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', minWidth: 210 }}>
+                <Table.Th style={{ color: '#800020', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', width: 140, minWidth: 130, paddingRight: '8px' }}>
                   INVOICE # &amp; DATE
                 </Table.Th>
-                <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', minWidth: 150 }}>
+                <Table.Th style={{ color: '#800020', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', minWidth: 180, paddingLeft: '8px' }}>
                   CUSTOMER
                 </Table.Th>
                 <Table.Th style={{ color: '#64748b', fontSize: 11, fontWeight: 700, letterSpacing: '0.5px', minWidth: 160 }}>
@@ -1006,7 +1006,7 @@ export const SalesListPage: React.FC = () => {
 
                   return (
                     <Table.Tr key={`${sale.SalesId}-${sale.display_payment_method || 'full'}`}>
-                      <Table.Td>
+                      <Table.Td style={{ width: 140, minWidth: 130, paddingRight: '8px' }}>
                         <Group gap={6} align="center" wrap="nowrap">
                           <Text fw={700} size="sm" ff="monospace" style={{ color: '#800020', whiteSpace: 'nowrap' }}>
                             {sale.InvoiceNo || sale.SalesNo || `#${sale.SalesId}`}
@@ -1113,7 +1113,7 @@ export const SalesListPage: React.FC = () => {
                         </Text>
                       </Table.Td>
 
-                      <Table.Td>
+                      <Table.Td style={{ paddingLeft: '8px' }}>
                         <Text fw={600} size="sm" style={{ color: '#0f172a' }}>
                           {sale.customer_name || 'Walk-in Cash Customer'}
                         </Text>
