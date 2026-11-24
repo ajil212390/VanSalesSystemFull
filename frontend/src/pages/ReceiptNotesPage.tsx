@@ -256,7 +256,7 @@ export const ReceiptNotesPage: React.FC = () => {
       const listToUse = withStock.length > 0 ? withStock : (godownEmptyStock || []);
       return listToUse.map((p: any) => ({
         value: String(p.product_id),
-        label: `${p.product_name} (${p.empty_qty} Empty Avail)`,
+        label: p.product_name,
         product_name: p.product_name,
         empty_qty: p.empty_qty,
         is_cylinder: true,
@@ -787,8 +787,8 @@ export const ReceiptNotesPage: React.FC = () => {
                   const availEmpty = (pOpt as any)?.empty_qty;
 
                   return (
-                    <Group key={idx} align="flex-end" wrap="nowrap" gap="sm">
-                      <Box style={{ flex: 1, minWidth: 220 }}>
+                    <Group key={idx} align="flex-start" wrap="nowrap" gap="sm">
+                      <Box style={{ flex: 1, minWidth: 240 }}>
                         <Select
                           label={idx === 0 ? (createMode === 'SUPPLIER_REFILL' ? 'Empty Cylinder Product' : 'Product (Cylinders & Accessories)') : undefined}
                           placeholder={createMode === 'SUPPLIER_REFILL' ? 'Choose Empty Cylinder' : 'Choose Product'}
@@ -798,6 +798,28 @@ export const ReceiptNotesPage: React.FC = () => {
                           searchable
                           nothingFoundMessage={createMode === 'SUPPLIER_REFILL' ? 'No cylinder products found' : 'No products found'}
                           comboboxProps={{ withinPortal: true, zIndex: 1000 }}
+                          renderOption={createMode === 'SUPPLIER_REFILL' ? ({ option }) => {
+                            const p = productOptions.find((item: any) => String(item.value) === option.value);
+                            const count = (p as any)?.empty_qty;
+                            return (
+                              <Group justify="space-between" wrap="nowrap" style={{ width: '100%' }}>
+                                <Text size="sm">{(p as any)?.product_name || option.label}</Text>
+                                {count !== undefined && (
+                                  <Badge size="xs" variant="light" color={count > 0 ? 'teal' : 'gray'}>
+                                    {count} Empty Avail
+                                  </Badge>
+                                )}
+                              </Group>
+                            );
+                          } : undefined}
+                          rightSection={
+                            createMode === 'SUPPLIER_REFILL' && line.productId > 0 && availEmpty !== undefined ? (
+                              <Badge size="xs" variant="light" color={availEmpty > 0 ? 'teal' : 'gray'} mr={4}>
+                                {availEmpty} Empty
+                              </Badge>
+                            ) : undefined
+                          }
+                          rightSectionWidth={createMode === 'SUPPLIER_REFILL' && line.productId > 0 && availEmpty !== undefined ? 92 : undefined}
                         />
                       </Box>
                       {createMode !== 'SUPPLIER_REFILL' && (
@@ -811,7 +833,7 @@ export const ReceiptNotesPage: React.FC = () => {
                           />
                         </Box>
                       )}
-                      <Box style={{ width: createMode === 'SUPPLIER_REFILL' ? 240 : 180, minWidth: 120 }}>
+                      <Box style={{ width: createMode === 'SUPPLIER_REFILL' ? 220 : 180, minWidth: 120 }}>
                         <NumberInput
                           label={idx === 0 ? (createMode === 'SUPPLIER_REFILL' ? 'Empty Cylinders to Refill' : 'Empty Returns Qty') : undefined}
                           placeholder={line.isCylinder ? 'Enter qty' : '—'}
@@ -821,18 +843,13 @@ export const ReceiptNotesPage: React.FC = () => {
                           value={line.isCylinder ? (line.emptyQty === 0 || line.emptyQty === '0' || line.emptyQty === '' ? '' : line.emptyQty) : ''}
                           onChange={(val) => handleLineEmptyQtyChange(idx, val)}
                         />
-                        {createMode === 'SUPPLIER_REFILL' && line.productId > 0 && (
-                          <Text size="11px" fw={600} c={availEmpty && availEmpty > 0 ? '#16a34a' : '#dc2626'} mt={2}>
-                            Available in Godown: {availEmpty ?? 0} Empty
-                          </Text>
-                        )}
                       </Box>
                       {createLines.length > 1 ? (
                         <ActionIcon
                           variant="subtle"
                           color="gray"
                           onClick={() => handleRemoveLine(idx)}
-                          style={{ marginBottom: createMode === 'SUPPLIER_REFILL' && line.productId > 0 ? 20 : 4 }}
+                          style={{ marginTop: idx === 0 ? 25 : 2 }}
                         >
                           <IconTrash size={16} />
                         </ActionIcon>
