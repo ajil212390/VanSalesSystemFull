@@ -482,7 +482,7 @@ export const CollectionsPage: React.FC = () => {
         }
       } else if (target === 'bank' && !itemMode.includes('bank') && !itemMode.includes('upi') && !itemMode.includes('card')) {
         return false;
-      } else if (target === 'upi' && !itemMode.includes('upi') && !itemMode.includes('bank') && !itemMode.includes('card') && !itemMode.includes('digital') && !itemMode.includes('online')) {
+      } else if (target === 'upi' && !itemMode.includes('upi') && !itemMode.includes('bank') && !itemMode.includes('card') && !itemMode.includes('digital') && !itemMode.includes('online') && !itemMode.includes('cheque')) {
         return false;
       } else if (target !== 'bank' && target !== 'upi' && !itemMode.includes(target)) {
         return false;
@@ -751,7 +751,7 @@ export const CollectionsPage: React.FC = () => {
             <div>
               <Group gap={6} align="center">
                 <Text size="xs" fw={700} tt="uppercase" c={modeFilter === 'UPI' ? '#800020' : '#64748b'} style={{ letterSpacing: '0.5px' }}>
-                  UPI
+                  UPI / Bank
                 </Text>
                 {modeFilter === 'UPI' && (
                   <Badge size="xs" variant="filled" color="burgundy" radius="sm">Active</Badge>
@@ -930,8 +930,7 @@ export const CollectionsPage: React.FC = () => {
                 data={[
                   { value: 'ALL', label: 'All Modes' },
                   { value: 'CASH', label: 'Cash Only' },
-                  { value: 'UPI', label: 'UPI' },
-                  { value: 'BANK', label: 'Bank / Cheque' },
+                  { value: 'UPI', label: 'UPI / Bank' },
                 ]}
                 styles={{
                   input: {
