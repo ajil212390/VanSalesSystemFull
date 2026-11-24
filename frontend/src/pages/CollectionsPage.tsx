@@ -46,7 +46,6 @@ interface CollectionItem {
   id: string;
   source: 'SALE' | 'RECEIPT';
   isConnection: boolean;
-  isApproved?: boolean;
   date: string;
   ref: string;
   rawRef: string;
@@ -156,8 +155,9 @@ export const CollectionsPage: React.FC = () => {
 
     sales.forEach((s: any) => {
       if (s.Status === 'CANCELLED') return;
-      // In Future Gas workflow, both approved sales and live route collections appear in Collections
+      // In Future Gas workflow, unapproved van sales are provisional until driver ends allocation and admin approves
       const isApproved = Boolean(s.IsApproved || s.is_approved);
+      if (!isApproved) return;
 
       const rawPaid = Number(s.PaidAmount || 0);
       if (rawPaid <= 0) return;
@@ -231,7 +231,6 @@ export const CollectionsPage: React.FC = () => {
         id: `sale-${s.SalesId || Math.random()}`,
         source: 'SALE',
         isConnection,
-        isApproved,
         date: s.SalesDate ? String(s.SalesDate).slice(0, 10) : (s.CreatedAt ? String(s.CreatedAt).split('T')[0] : ''),
         ref: sRef,
         rawRef: sRef,
@@ -264,6 +263,7 @@ export const CollectionsPage: React.FC = () => {
 
     payments.forEach((p: any) => {
       const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      if (!isApproved) return;
 
       const pType = String(p.voucher_type || '').toUpperCase();
       if (pType === 'PAYMENT') return;
@@ -344,7 +344,6 @@ export const CollectionsPage: React.FC = () => {
         id: `receipt-${p.PaymentId || Math.random()}`,
         source: 'RECEIPT',
         isConnection: false,
-        isApproved,
         date: p.payment_date ? String(p.payment_date).slice(0, 10) : (p.CreatedAt ? String(p.CreatedAt).split('T')[0] : (p.VoucherDate ? String(p.VoucherDate).slice(0, 10) : '')),
         ref: pRef,
         rawRef: pRef,
@@ -791,7 +790,7 @@ export const CollectionsPage: React.FC = () => {
               </Title>
             </Group>
             <Text size="xs" c="dimmed" mt={3}>
-              Showing live van collections and approved sales receipts
+            Note: Only showing the approved collections 
             </Text>
           </div>
 
@@ -1398,26 +1397,19 @@ export const CollectionsPage: React.FC = () => {
                     {/* Type Badge (Only shown in ALL view) */}
                     {categoryFilter === 'ALL' && (
                       <Table.Td style={{ textAlign: 'center' }}>
-                        <Group gap={4} justify="center" wrap="nowrap">
-                          {item.isConnection ? (
-                            <Badge size="xs" variant="filled" color="burgundy">
-                              New Connection
-                            </Badge>
-                          ) : item.source === 'RECEIPT' ? (
-                            <Badge size="xs" variant="filled" color="burgundy">
-                              RECEIPT
-                            </Badge>
-                          ) : (
-                            <Badge size="xs" variant="light" color="gray">
-                              Refill Sale
-                            </Badge>
-                          )}
-                          {!item.isApproved && (
-                            <Badge size="xs" variant="light" color="orange" title="On Route / Awaiting Shift Settlement">
-                              Live Van
-                            </Badge>
-                          )}
-                        </Group>
+                        {item.isConnection ? (
+                          <Badge size="xs" variant="filled" color="burgundy">
+                            New Connection
+                          </Badge>
+                        ) : item.source === 'RECEIPT' ? (
+                          <Badge size="xs" variant="filled" color="burgundy">
+                            RECEIPT
+                          </Badge>
+                        ) : (
+                          <Badge size="xs" variant="light" color="gray">
+                            Refill Sale
+                          </Badge>
+                        )}
                       </Table.Td>
                     )}
 
