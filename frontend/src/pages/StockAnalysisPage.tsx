@@ -433,8 +433,13 @@ export const StockAnalysisPage: React.FC = () => {
             const onVanEmpty = vanList.reduce((sum, v) => sum + (v.EmptyQty ?? 0), 0);
             const dispatchedFilled = matchingG?.DispatchedFilledQty ?? vanList.reduce((sum, v) => sum + (v.AllocatedQty ?? 0), 0);
             const dispatchedEmpty = matchingG?.DispatchedEmptyQty ?? 0;
-            const soldFilled = matchingG?.SoldFilledQty ?? (product.SoldFilledQty ?? vanList.reduce((sum, v) => sum + (v.DeliveredQty ?? 0), 0));
-            const soldEmpty = matchingG?.SoldEmptyQty ?? (product.SoldEmptyQty ?? 0);
+            const vanSoldFilled = vanList.reduce((sum, v) => sum + (v.DeliveredQty ?? 0), 0);
+            const soldFilled = (product.SoldFilledQty !== undefined && product.SoldFilledQty > 0)
+              ? product.SoldFilledQty
+              : ((matchingG?.SoldFilledQty || 0) + vanSoldFilled);
+            const soldEmpty = (product.SoldEmptyQty !== undefined && product.SoldEmptyQty > 0)
+              ? product.SoldEmptyQty
+              : (matchingG?.SoldEmptyQty || 0);
             const inwardFilled = matchingG?.InwardFilledQty ?? filled;
             const inwardEmpty = matchingG?.InwardEmptyQty ?? empty;
 
