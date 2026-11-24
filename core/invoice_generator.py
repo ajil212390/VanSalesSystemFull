@@ -204,7 +204,7 @@ def generate_tax_invoice_pdf(sale):
         leftMargin=25,
         rightMargin=25,
         topMargin=20,
-        bottomMargin=118
+        bottomMargin=76
     )
 
     story = []
@@ -982,8 +982,86 @@ def generate_tax_invoice_pdf(sale):
     if empty_breakdown_str:
         empties_count_display += f"<br/><font size=7 color='#64748B'>{empty_breakdown_str}</font>"
 
-    # Left Box: Customer Account Summary (Handwritten layout)
-    # Right Box: Tax Breakdown (Handwritten layout)
+    # -------------------------------------------------------------
+    # 4. PAYMENT GROUP QR CODE RESOLUTION (Enlarged for Left Side Card)
+    # -------------------------------------------------------------
+    pg_obj = None
+    rvd = getattr(sale, 'RouteVehicleDriver', None)
+    d_name = getattr(sale, 'DriverName', None)
+    if rvd and getattr(rvd, 'PaymentGroup', None):
+        pg_obj = rvd.PaymentGroup
+    elif d_name:
+        from core.models import RouteVehicleDriver
+        rvd_cand = RouteVehicleDriver.objects.filter(Driver__DriverName=d_name, IsActive=True).first()
+        if rvd_cand and rvd_cand.PaymentGroup:
+            pg_obj = rvd_cand.PaymentGroup
+
+    if not pg_obj:
+        from core.models import PaymentGroup
+        pg_obj = PaymentGroup.objects.filter(IsActive=True).exclude(QRCodeLocation__isnull=True).exclude(QRCodeLocation='').first()
+
+    qr_img_flowable = None
+    if pg_obj and pg_obj.QRCodeLocation:
+        from reportlab.platypus import Image as RLImage
+        from django.conf import settings
+        loc = str(pg_obj.QRCodeLocation).replace('\\', '/').lstrip('/')
+        candidates = [
+            os.path.join(settings.MEDIA_ROOT, loc),
+            os.path.join(settings.BASE_DIR, 'media', loc),
+            os.path.join(settings.BASE_DIR, loc),
+        ]
+        if os.path.isabs(str(pg_obj.QRCodeLocation)):
+            candidates.insert(0, str(pg_obj.QRCodeLocation))
+        for cand in candidates:
+            if os.path.exists(cand) and os.path.isfile(cand):
+                try:
+                    # Prominent, high-resolution enlarged QR scanner image for the left card
+                    qr_img_flowable = RLImage(cand, width=102, height=102)
+                    break
+                except Exception:
+                    qr_img_flowable = None
+
+    bank_name_str = pg_obj.BankLedger.LedgerName if (pg_obj and pg_obj.BankLedger and pg_obj.BankLedger.LedgerName) else ""
+    if qr_img_flowable:
+        qr_card_rows = [
+            [Paragraph("<b>SCAN &amp; PAY UPI</b>", ParagraphStyle('QrH', fontName=FONT_BOLD, fontSize=9.5, leading=12, alignment=1, textColor=PRIMARY_COLOR))],
+            [Spacer(1, 2)],
+            [qr_img_flowable],
+            [Spacer(1, 2)],
+            [Paragraph(f"<b>{pg_obj.PaymentGroupName}</b>", ParagraphStyle('QrN', fontName=FONT_BOLD, fontSize=8, leading=10, alignment=1, textColor=DARK_COLOR))],
+            [Paragraph(f"<font size=6.5 color='#64748B'>{bank_name_str + ' • ' if bank_name_str else ''}BHIM • GPay • PhonePe • Paytm</font>", ParagraphStyle('QrS', fontName=FONT_NAME, fontSize=6.5, leading=8.5, alignment=1))],
+        ]
+        left_card = Table(qr_card_rows, colWidths=[215])
+        left_card.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+    else:
+        bank_lines = [
+            [Paragraph("<b>PAYMENT &amp; BANK DETAILS</b>", section_title)],
+            [Spacer(1, 3)],
+            [Paragraph(f"<b>Payee:</b> {company_name}", cell_norm)],
+            [Paragraph(f"<b>Bank:</b> State Bank of India", cell_norm)],
+            [Paragraph(f"<b>A/c No:</b> 38927189201", cell_norm)],
+            [Paragraph(f"<b>IFSC:</b> SBIN0070188", cell_norm)],
+            [Paragraph(f"<b>Branch:</b> Kuttiyadi Branch", cell_norm)],
+            [Spacer(1, 2)],
+            [Paragraph("<font size=6.5 color='#64748B'>Accepted: UPI / Cash / Online Transfer</font>", cell_muted)],
+        ]
+        left_card = Table(bank_lines, colWidths=[215])
+        left_card.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+        ]))
+
+    # Right Box: Customer Account Summary
     if is_empty_return:
         cust_summary_rows = [
             [Paragraph("<b>CUSTOMER ACCOUNT SUMMARY</b>", section_title), Paragraph("", cell_norm)],
@@ -1031,12 +1109,12 @@ def generate_tax_invoice_pdf(sale):
                 Paragraph(f"(-) Rs. {paid_amt:.2f}", cell_right_bold)
             ])
             cust_summary_rows.append([
-                Paragraph("&nbsp;&nbsp;&bull; Cash Paid :", ParagraphStyle('CshLbl', parent=cell_muted, fontSize=8)),
-                Paragraph(f"Rs. {c_split:.2f}", ParagraphStyle('CshVal', parent=cell_right, fontSize=8))
+                Paragraph("&nbsp;&nbsp;&bull; Cash Paid :", ParagraphStyle('CshLbl', parent=cell_muted, fontSize=7.5)),
+                Paragraph(f"Rs. {c_split:.2f}", ParagraphStyle('CshVal', parent=cell_right, fontSize=7.5))
             ])
             cust_summary_rows.append([
-                Paragraph("&nbsp;&nbsp;&bull; UPI / Bank :", ParagraphStyle('UpiLbl', parent=cell_muted, fontSize=8)),
-                Paragraph(f"Rs. {u_split:.2f}", ParagraphStyle('UpiVal', parent=cell_right, fontSize=8))
+                Paragraph("&nbsp;&nbsp;&bull; UPI / Bank :", ParagraphStyle('UpiLbl', parent=cell_muted, fontSize=7.5)),
+                Paragraph(f"Rs. {u_split:.2f}", ParagraphStyle('UpiVal', parent=cell_right, fontSize=7.5))
             ])
         elif is_credit or paid_amt == Decimal('0.00'):
             cust_summary_rows.append([
@@ -1052,29 +1130,28 @@ def generate_tax_invoice_pdf(sale):
         if is_closing_advance and closing_balance > Decimal('0.00'):
             cust_summary_rows.append([
                 Paragraph("<b>Advance Remaining :</b>", cell_bold),
-                Paragraph(f"<b>Rs. {closing_balance:.2f} Cr</b>", ParagraphStyle('BalAdv', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))
+                Paragraph(f"<b>Rs. {closing_balance:.2f} Cr</b>", ParagraphStyle('BalAdv', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9))
             ])
         else:
             cust_summary_rows.append([
                 Paragraph("<b>Balance Due :</b>", cell_bold),
-                Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9.5))
+                Paragraph(f"<b>Rs. {closing_balance:.2f}</b>", ParagraphStyle('BalR', parent=cell_right_bold, textColor=PRIMARY_COLOR, fontSize=9))
             ])
+        cust_summary_rows.append([
+            Paragraph("<b>Narration :</b>", cell_bold),
+            Paragraph(f"<i>{narration_text}</i>", cell_norm)
+        ])
 
-    cust_summary_table = Table(cust_summary_rows, colWidths=[130, 125])
+    cust_summary_table = Table(cust_summary_rows, colWidths=[160, 145])
     cust_table_style = [
         ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
+        ('LINEBELOW', (0, -2), (-1, -2), 0.75, BORDER_COLOR),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('LEFTPADDING', (0, 0), (-1, -1), 4),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
     ]
-    if not is_empty_return and not is_money_receipt:
-        cust_table_style.append(('LINEABOVE', (0, -1), (-1, -1), 1, BORDER_COLOR))
-    else:
-        cust_table_style.append(('LINEBELOW', (0, -3), (-1, -3), 1, BORDER_COLOR))
-        cust_table_style.append(('LINEBELOW', (0, -2), (-1, -2), 1, BORDER_COLOR))
-
     cust_summary_table.setStyle(TableStyle(cust_table_style))
 
     if is_empty_return:
@@ -1087,7 +1164,17 @@ def generate_tax_invoice_pdf(sale):
             [Paragraph("<b>Inspection Status :</b>", cell_bold), Paragraph("<b>VERIFIED</b>", cell_right_bold)],
             [Paragraph("<b>Total Collected :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
              Paragraph("<b>Rs. 0.00</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
-        ], colWidths=[140, 130])
+        ], colWidths=[160, 145])
+        tax_summary_table.setStyle(TableStyle([
+            ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, BORDER_COLOR),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        right_content = [tax_summary_table, Spacer(1, 4), cust_summary_table]
     elif is_money_receipt:
         tax_summary_table = Table([
             [Paragraph("<b>PAYMENT RECEIPT BREAKDOWN</b>", section_title), Paragraph("", cell_norm)],
@@ -1098,43 +1185,54 @@ def generate_tax_invoice_pdf(sale):
             [Paragraph("<b>Credited To :</b>", cell_bold), Paragraph("<b>Customer Account</b>", cell_right_bold)],
             [Paragraph("<b>Net Amount Paid :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
              Paragraph(f"<b>Rs. {paid_amt:.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
-        ], colWidths=[140, 130])
+        ], colWidths=[160, 145])
+        tax_summary_table.setStyle(TableStyle([
+            ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, BORDER_COLOR),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('LEFTPADDING', (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        right_content = [tax_summary_table, Spacer(1, 4), cust_summary_table]
     else:
-        # NET AMOUNT CALCULATION (3 lines) + NARRATION (balances left and right boxes perfectly)
+        # NET AMOUNT CALCULATION (3 lines) on top, and CUSTOMER ACCOUNT SUMMARY directly below it
         tax_rows = [
             [Paragraph("<b>NET AMOUNT CALCULATION</b>", section_title), Paragraph("", cell_norm)],
             [Paragraph("Gross Amount (Taxable) :", cell_norm), Paragraph(f"Rs. {total_taxable_sum:,.2f}", cell_right_bold)],
             [Paragraph("Total Tax Amount :", cell_norm), Paragraph(f"Rs. {total_gst_sum:,.2f}", cell_right_bold)],
             [Paragraph("<b>Net Amount :</b>", ParagraphStyle('NetLbl', parent=cell_bold, fontSize=10, textColor=PRIMARY_COLOR)),
              Paragraph(f"<b>Rs. {current_bill_amount:,.2f}</b>", ParagraphStyle('NetVal', parent=cell_right_bold, fontSize=11, textColor=PRIMARY_COLOR))],
-            [Paragraph("<b>Narration :</b>", cell_bold), Paragraph(f"<i>{narration_text}</i>", cell_norm)],
         ]
 
-        tax_summary_table = Table(tax_rows, colWidths=[120, 145])
-        tax_summary_table.setStyle(TableStyle([
+        net_calc_table = Table(tax_rows, colWidths=[160, 145])
+        net_calc_table.setStyle(TableStyle([
             ('LINEBELOW', (0, 0), (-1, 0), 1, PRIMARY_COLOR),
             ('LINEABOVE', (0, 3), (-1, 3), 1, BORDER_COLOR),
-            ('LINEBELOW', (0, 3), (-1, 3), 1, BORDER_COLOR),
+            ('LINEBELOW', (0, 3), (-1, 3), 1, PRIMARY_COLOR),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-            ('LEFTPADDING', (0, 0), (-1, -1), 4),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 2.5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
         ]))
+        right_content = [net_calc_table, Spacer(1, 4), cust_summary_table]
 
     combined_summary_table = Table([
-        [cust_summary_table, tax_summary_table]
-    ], colWidths=[270, 275])
+        [left_card, right_content]
+    ], colWidths=[225, 320])
     combined_summary_table.setStyle(TableStyle([
         ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
         ('INNERGRID', (0, 0), (-1, -1), 0.5, BORDER_COLOR),
         ('BACKGROUND', (0, 0), (0, 0), LIGHT_BG),
         ('BACKGROUND', (1, 0), (1, 0), CARD_BG),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('VALIGN', (0, 0), (0, 0), 'MIDDLE'),
+        ('VALIGN', (1, 0), (1, 0), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
     ]))
     story.append(combined_summary_table)
     story.append(Spacer(1, 5))
@@ -1172,115 +1270,33 @@ def generate_tax_invoice_pdf(sale):
     story.append(terms_box)
 
     # -------------------------------------------------------------
-    # 6. SIGNATURE FOOTER & PAYMENT GROUP QR CODE (FIXED FOOTER)
+    # 6. SIGNATURE FOOTER (FIXED FOOTER)
     # -------------------------------------------------------------
-    pg_obj = None
-    rvd = getattr(sale, 'RouteVehicleDriver', None)
-    d_name = getattr(sale, 'DriverName', None)
-    if rvd and getattr(rvd, 'PaymentGroup', None):
-        pg_obj = rvd.PaymentGroup
-    elif d_name:
-        from core.models import RouteVehicleDriver
-        rvd_cand = RouteVehicleDriver.objects.filter(Driver__DriverName=d_name, IsActive=True).first()
-        if rvd_cand and rvd_cand.PaymentGroup:
-            pg_obj = rvd_cand.PaymentGroup
-
-    if not pg_obj:
-        from core.models import PaymentGroup
-        pg_obj = PaymentGroup.objects.filter(IsActive=True).exclude(QRCodeLocation__isnull=True).exclude(QRCodeLocation='').first()
-
-    qr_img_flowable = None
-    if pg_obj and pg_obj.QRCodeLocation:
-        from reportlab.platypus import Image as RLImage
-        from django.conf import settings
-        loc = str(pg_obj.QRCodeLocation).replace('\\', '/').lstrip('/')
-        candidates = [
-            os.path.join(settings.MEDIA_ROOT, loc),
-            os.path.join(settings.BASE_DIR, 'media', loc),
-            os.path.join(settings.BASE_DIR, loc),
+    footer_data = [
+        [
+            Paragraph(
+                f"<b>Customer / Receiver's Signature:</b><br/><br/>"
+                f"________________________________<br/>"
+                f"<font size=6.5 color='#64748B'>I accept goods &amp; cylinder return count</font>",
+                ParagraphStyle('SigL', parent=cell_norm, fontSize=7.5, leading=10)
+            ),
+            Paragraph(
+                f"For <b>{company_name}</b><br/><br/>"
+                f"<b>Authorized Signatory</b><br/>"
+                f"<font size=6.5 color='#64748B'>Computer generated official tax invoice</font>",
+                ParagraphStyle('SigR', parent=cell_norm, fontSize=7.5, leading=10, alignment=2)
+            )
         ]
-        if os.path.isabs(str(pg_obj.QRCodeLocation)):
-            candidates.insert(0, str(pg_obj.QRCodeLocation))
-        for cand in candidates:
-            if os.path.exists(cand) and os.path.isfile(cand):
-                try:
-                    qr_img_flowable = RLImage(cand, width=64, height=64)
-                    break
-                except Exception:
-                    qr_img_flowable = None
-
-    if qr_img_flowable:
-        bank_name_str = pg_obj.BankLedger.LedgerName if (pg_obj.BankLedger and pg_obj.BankLedger.LedgerName) else ""
-        qr_box = [
-            [Paragraph("<b>SCAN &amp; PAY UPI</b>", ParagraphStyle('QrH', fontName=FONT_BOLD, fontSize=7, leading=8.5, alignment=1, textColor=PRIMARY_COLOR))],
-            [qr_img_flowable],
-            [Paragraph(f"<font size=6 color='#334155'><b>{pg_obj.PaymentGroupName}</b>{(' • ' + bank_name_str) if bank_name_str else ''}</font>", ParagraphStyle('QrF', fontName=FONT_NAME, fontSize=6, leading=7.5, alignment=1))],
-        ]
-        qr_table = Table(qr_box, colWidths=[96])
-        qr_table.setStyle(TableStyle([
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOX', (0, 0), (-1, -1), 0.75, BORDER_COLOR),
-            ('BACKGROUND', (0, 0), (-1, -1), LIGHT_BG),
-            ('TOPPADDING', (0, 0), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-            ('LEFTPADDING', (0, 0), (-1, -1), 2),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-        ]))
-
-        footer_data = [
-            [
-                Paragraph(
-                    f"<b>Customer / Receiver's Signature:</b><br/><br/>"
-                    f"________________________________<br/>"
-                    f"<font size=6.5 color='#64748B'>I accept goods &amp; cylinder return count</font>",
-                    ParagraphStyle('SigL', parent=cell_norm, fontSize=7.5, leading=10)
-                ),
-                qr_table,
-                Paragraph(
-                    f"For <b>{company_name}</b><br/><br/>"
-                    f"<b>Authorized Signatory</b><br/>"
-                    f"<font size=6.5 color='#64748B'>Computer generated official tax invoice</font>",
-                    ParagraphStyle('SigR', parent=cell_norm, fontSize=7.5, leading=10, alignment=2)
-                )
-            ]
-        ]
-        footer_table = Table(footer_data, colWidths=[224, 97, 224])
-        footer_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
-            ('ALIGN', (1, 0), (1, 0), 'CENTER'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ]))
-        ftr_height = 84
-    else:
-        footer_data = [
-            [
-                Paragraph(
-                    f"<b>Customer / Receiver's Signature:</b><br/><br/>"
-                    f"________________________________<br/>"
-                    f"<font size=6.5 color='#64748B'>I accept goods &amp; cylinder return count</font>",
-                    ParagraphStyle('SigL', parent=cell_norm, fontSize=7.5, leading=10)
-                ),
-                Paragraph(
-                    f"For <b>{company_name}</b><br/><br/>"
-                    f"<b>Authorized Signatory</b><br/>"
-                    f"<font size=6.5 color='#64748B'>Computer generated official tax invoice</font>",
-                    ParagraphStyle('SigR', parent=cell_norm, fontSize=7.5, leading=10, alignment=2)
-                )
-            ]
-        ]
-        footer_table = Table(footer_data, colWidths=[275, 270])
-        footer_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ]))
-        ftr_height = 55
+    ]
+    footer_table = Table(footer_data, colWidths=[270, 275])
+    footer_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    ftr_height = 46
 
     # InvoiceNumberedCanvas fixes the signatory & scanner to the bottom footer cleanly above page decorations
     def make_invoice_canvas(ftr_table, ftr_h):
@@ -1297,10 +1313,10 @@ def generate_tax_invoice_pdf(sale):
                 self.setLineWidth(0.5)
                 self.line(25, 20, 595.28 - 25, 20)
 
-                # Draw the footer table (signatures & QR scanner) cleanly above the line
+                # Draw the footer table (signatures) cleanly above the line
                 if self._pageNumber == page_count and ftr_table:
                     ftr_table.wrapOn(self, 545, ftr_h)
-                    ftr_table.drawOn(self, 25, 26)
+                    ftr_table.drawOn(self, 25, 24)
                 self.restoreState()
         return InvoiceNumberedCanvas
 
