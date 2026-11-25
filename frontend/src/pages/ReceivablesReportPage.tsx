@@ -206,6 +206,7 @@ export const ReceivablesReportPage: React.FC = () => {
     const receiptAllocByCustomer = new Map<number, number>();
 
     payments.forEach((p: any) => {
+      if (String(p.Status || '').trim().toUpperCase() !== 'APPROVED') return;
       const pId = Number(p.PartyLedgerId);
       if (p.voucher_type === 'RECEIPT' && pId) {
         receiptsMap.set(pId, (receiptsMap.get(pId) || 0) + Number(p.Amount || 0));

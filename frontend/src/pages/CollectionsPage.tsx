@@ -262,7 +262,8 @@ export const CollectionsPage: React.FC = () => {
     });
 
     payments.forEach((p: any) => {
-      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      const pStatus = String(p.Status || '').trim().toUpperCase();
+      const isApproved = pStatus === 'APPROVED';
       if (!isApproved) return;
 
       const pType = String(p.voucher_type || '').toUpperCase();

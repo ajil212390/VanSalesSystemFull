@@ -158,7 +158,10 @@ def ensure_payment_columns():
                 ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "ReferenceNumber" varchar(100);
                 ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "Status" varchar(50) DEFAULT 'APPROVED';
                 ALTER TABLE "Payment" ADD COLUMN IF NOT EXISTS "DeliveryNoteId" bigint;
-                UPDATE "Payment" SET "Status" = 'APPROVED' WHERE "Status" IS NULL;
+                UPDATE "Payment" SET "Status" = 'PENDING'
+                WHERE ("Status" IS NULL OR TRIM("Status") = '') AND "ReferenceNumber" LIKE 'TREC-%';
+                UPDATE "Payment" SET "Status" = 'APPROVED'
+                WHERE "Status" IS NULL OR TRIM("Status") = '';
             """)
 
         # Clean up: Supplier Payments (Sundry Creditors like Super Gas) must NEVER have REC- numbers!
@@ -172,6 +175,8 @@ def ensure_payment_columns():
             # Fix any supplier payments that mistakenly got REC- numbers
             corrupted_supplier_pmts = Payment.objects.filter(
                 PartyLedger_id__in=supplier_ledger_ids
+            ).exclude(
+                Status__in=['CANCELLED', 'REJECTED', 'VOID']
             ).filter(
                 Q(PaymentNo__startswith='REC-') | Q(PaymentNo__isnull=True) | Q(PaymentNo='')
             )
@@ -186,7 +191,7 @@ def ensure_payment_columns():
                         vch.VoucherNo = f"PAY-VCH-{sp.PaymentId}"
                     vch.save(update_fields=['VoucherType', 'VoucherNo'])
 
-        # Auto-assign sequential PaymentNo (REC-001, REC-002...) ONLY to customer receipts that lack a PaymentNo
+        # Auto-assign sequential PaymentNo (REC-001, REC-002...) ONLY to approved customer receipts that lack a PaymentNo
         existing_pmts = Payment.objects.filter(
             route_expenses__isnull=True
         ).exclude(
@@ -195,13 +200,18 @@ def ensure_payment_columns():
             PartyLedger__LedgerName__icontains='travelling'
         ).exclude(
             PartyLedger_id__in=supplier_ledger_ids
+        ).exclude(
+            Status__in=['PENDING', 'CANCELLED', 'REJECTED', 'VOID']
         ).order_by('PaymentId')
 
         for p in existing_pmts:
-            if not p.PaymentNo and p.Status != 'PENDING':
+            p_stat = str(p.Status or '').strip().upper()
+            p_ref = str(p.ReferenceNumber or '').strip().upper()
+            if p_stat != 'APPROVED' or p_ref.startswith('TREC-'):
+                continue
+            if not p.PaymentNo:
                 p.PaymentNo = get_next_receipt_number()
-                p.Status = 'APPROVED'
-                p.save(update_fields=['PaymentNo', 'Status'])
+                p.save(update_fields=['PaymentNo'])
 
         # Fix any historical split payments that ended up with only 1 line
         split_sales = Sales.objects.filter(
@@ -210,7 +220,7 @@ def ensure_payment_columns():
         for s in split_sales:
             p_rec = Payment.objects.filter(
                 Q(Narration__icontains=s.SalesNo) | (Q(Narration__icontains=s.InvoiceNo) if s.InvoiceNo else Q())
-            ).first()
+            ).exclude(Status='CANCELLED').first()
             if p_rec and p_rec.lines.count() <= 1:
                 c_m = re.search(r'Cash[:\s\-\=]+[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
                 u_m = re.search(r'(?:UPI|Bank|Online)[:\s\-\=]+[₹Rs\.]*\s*([\d,]+\.?\d*)', s.Notes or '', re.IGNORECASE)
@@ -2505,7 +2515,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
         try:
             all_receipt_pmts = list(
                 Payment.objects
-                .filter(route_expenses__isnull=True)
+                .filter(route_expenses__isnull=True, Status='APPROVED')
                 .exclude(PartyLedger_id=31)
                 .exclude(PartyLedger__LedgerName__icontains='travelling')
                 .order_by('PaymentId')
@@ -3037,14 +3047,14 @@ class LedgerViewSet(viewsets.ModelViewSet):
                             'credit': float(s.PaidAmount),
                         })
             try:
-                payments = Payment.objects.filter(PartyLedger=ledger).order_by('CreatedAt', 'PaymentId')
+                payments = Payment.objects.filter(PartyLedger=ledger, Status='APPROVED').order_by('CreatedAt', 'PaymentId')
                 for pm in payments:
-                    vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
+                    vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId, IsCancelled=False).first()
                     is_rcpt = (vch and vch.VoucherType == 'RECEIPT') or pm.lines.filter(PaymentMode__icontains='receipt').exists()
-                    clean_no = payment_vch_map.get(pm.PaymentId) or f"REC-{pm.PaymentId:03d}"
+                    clean_no = payment_vch_map.get(pm.PaymentId) or pm.PaymentNo or f"REC-{pm.PaymentId:03d}"
                     entries.append({
                         'date': pm.CreatedAt.strftime('%Y-%m-%d') if pm.CreatedAt else '',
-                        'ref': vch.VoucherNo if vch else f"REC-{pm.PaymentId}",
+                        'ref': vch.VoucherNo if vch else (pm.PaymentNo or f"REC-{pm.PaymentId}"),
                         'vch_no': clean_no,
                         'voucher_type': 'Receipt' if is_rcpt else 'Payment',
                         'particulars': pm.Narration or ('By Cash' if is_rcpt else 'Payment'),
@@ -3516,7 +3526,7 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         Sales.objects.filter(CustomerLedger=d, IsApproved=True).exclude(Status='CANCELLED').aggregate(t=Sum('GrandTotal'))['t'] or 0
                     )
                     collections = float(
-                        Payment.objects.filter(PartyLedger=d).aggregate(t=Sum('Amount'))['t'] or 0
+                        Payment.objects.filter(PartyLedger=d, Status='APPROVED').aggregate(t=Sum('Amount'))['t'] or 0
                     )
                     sales_paid = float(
                         Sales.objects.filter(CustomerLedger=d, IsApproved=True).exclude(Status='CANCELLED').aggregate(t=Sum('PaidAmount'))['t'] or 0
@@ -3528,6 +3538,8 @@ class LedgerViewSet(viewsets.ModelViewSet):
                         BillwiseAllocation.objects.filter(
                             PaymentLine__Payment__PartyLedger=d,
                             ReferenceTable='Sales'
+                        ).exclude(
+                            PaymentLine__Payment__Status__in=['PENDING', 'CANCELLED']
                         ).aggregate(t=Sum('AllocatedAmount'))['t'] or 0
                     )
                     cash_sales_paid = max(0.0, sales_paid - adv_adj - alloc_receipts)
@@ -4406,6 +4418,8 @@ def allocate_receipt_to_pending_bills_or_advance(payment, company_id=1):
     try:
         if not payment or not payment.PartyLedger:
             return
+        if str(getattr(payment, 'Status', '') or '').strip().upper() != 'APPROVED':
+            return
 
         customer = payment.PartyLedger
         total_pmt_amt = Decimal(str(payment.Amount or 0))
@@ -4518,6 +4532,133 @@ def allocate_receipt_to_pending_bills_or_advance(payment, company_id=1):
         logger.exception("Error allocating receipt to pending bills or advance for payment %s: %s", getattr(payment, 'PaymentId', None), e)
 
 
+def cleanup_payment_records(pmt, company_id=1, delete_record=True):
+    """
+    Reverses allocations, customer advances, and vouchers tied to a Payment/Receipt,
+    and deletes (for provisional/cancelled receipts) or cancels the Payment record.
+    Returns the set of LedgerIds whose balances should be re-synced.
+    """
+    affected_ledgers = set()
+    if not pmt:
+        return affected_ledgers
+
+    company_id = company_id or (pmt.PartyLedger.CompanyId if pmt.PartyLedger else 1) or 1
+    if pmt.PartyLedger_id:
+        affected_ledgers.add(pmt.PartyLedger_id)
+    for lid in pmt.lines.values_list('Ledger_id', flat=True):
+        if lid:
+            affected_ledgers.add(lid)
+
+    # Reverse any CustomerAdvance created from this Payment
+    advances = CustomerAdvance.objects.filter(Payment=pmt)
+    for adv in advances:
+        for adj in adv.adjustments.select_related('Sales').all():
+            adj_sale = adj.Sales
+            if adj_sale:
+                adj_sale.PaidAmount = max(Decimal('0.00'), (adj_sale.PaidAmount or Decimal('0.00')) - (adj.AdjustmentAmount or Decimal('0.00')))
+                adj_sale.save(update_fields=['PaidAmount'])
+                if adj_sale.CustomerLedger_id:
+                    affected_ledgers.add(adj_sale.CustomerLedger_id)
+            adj.delete()
+    advances.delete()
+
+    # Reverse any BillwiseAllocation entries linked to this Payment (via ReferenceId or PaymentLine)
+    alloc_qs = BillwiseAllocation.objects.filter(
+        Q(PaymentLine__Payment=pmt) |
+        Q(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=pmt.PaymentId)
+    ).distinct()
+    for alloc in alloc_qs:
+        b_ref = str(alloc.BillReference or '').strip()
+        if (alloc.BillType == 'SALES' or b_ref) and b_ref.upper() not in ['ADVANCE', 'CUSTOMER ADVANCE', 'OPENING', '']:
+            matched_sale = Sales.objects.filter(CompanyId=company_id).filter(
+                Q(SalesNo=b_ref) | Q(InvoiceNo=b_ref)
+            ).first()
+            if matched_sale:
+                matched_sale.PaidAmount = max(
+                    Decimal('0.00'),
+                    (matched_sale.PaidAmount or Decimal('0.00')) - (alloc.AllocatedAmount or Decimal('0.00'))
+                )
+                matched_sale.save(update_fields=['PaidAmount'])
+                if matched_sale.CustomerLedger_id:
+                    affected_ledgers.add(matched_sale.CustomerLedger_id)
+    alloc_qs.delete()
+
+    # Clean up associated accounting Vouchers & lines
+    vouchers = Voucher.objects.filter(
+        Q(ReferenceTable__in=['Payment', 'Receipt'], ReferenceId=pmt.PaymentId) |
+        Q(VoucherNo__in=[f"REC-VCH-{pmt.PaymentId}", f"PAY-VCH-{pmt.PaymentId}"])
+    )
+    for v in vouchers:
+        for lid in v.lines.values_list('Ledger_id', flat=True):
+            if lid:
+                affected_ledgers.add(lid)
+        v.lines.all().delete()
+    vouchers.delete()
+
+    pmt.lines.all().delete()
+    if delete_record:
+        pmt.delete()
+    elif str(pmt.Status or '').upper() != 'CANCELLED':
+        pmt.Status = 'CANCELLED'
+        pmt.save(update_fields=['Status'])
+    return affected_ledgers
+
+
+def find_and_remove_payments_for_sale(sale, company_id=1, delete_record=True):
+    """
+    Finds all Payment receipts linked to a cancelled/deleted Sales record
+    (via BillwiseAllocation or Narration) and removes/reverses them cleanly.
+    """
+    affected_ledgers = set()
+    if not sale:
+        return affected_ledgers
+
+    company_id = company_id or sale.CompanyId or 1
+    sale_refs = []
+    for ref_val in [getattr(sale, 'SalesNo', None), getattr(sale, 'InvoiceNo', None)]:
+        if ref_val and str(ref_val).strip():
+            sale_refs.append(str(ref_val).strip())
+
+    linked_pmt_ids = set()
+    if sale_refs:
+        bwa_qs = BillwiseAllocation.objects.filter(
+            ReferenceTable__in=['Receipt', 'Payment'],
+            BillReference__in=sale_refs
+        )
+        for rid, pl_pid in bwa_qs.values_list('ReferenceId', 'PaymentLine__Payment_id'):
+            if rid:
+                linked_pmt_ids.add(rid)
+            if pl_pid:
+                linked_pmt_ids.add(pl_pid)
+
+        narr_q = Q()
+        for r in sale_refs:
+            narr_q |= Q(Narration__icontains=r)
+        if sale.CustomerLedger_id:
+            narr_matches = Payment.objects.filter(
+                narr_q & (
+                    Q(PartyLedger_id=sale.CustomerLedger_id) |
+                    Q(Narration__istartswith='Sales Receipt for') |
+                    Q(Narration__istartswith='Van Collection Receipt')
+                )
+            )
+        else:
+            narr_matches = Payment.objects.filter(
+                narr_q & (
+                    Q(Narration__istartswith='Sales Receipt for') |
+                    Q(Narration__istartswith='Van Collection Receipt')
+                )
+            )
+        linked_pmt_ids.update(narr_matches.values_list('PaymentId', flat=True))
+
+    if linked_pmt_ids:
+        for lpmt in Payment.objects.filter(PaymentId__in=linked_pmt_ids).prefetch_related('lines'):
+            affected_ledgers.update(
+                cleanup_payment_records(lpmt, company_id=company_id, delete_record=delete_record)
+            )
+    return affected_ledgers
+
+
 def sync_sales_billwise_allocation(sale, voucher_line=None):
     """
     Synchronizes BillwiseAllocation records for a sales transaction.
@@ -4627,6 +4768,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             .select_related('PartyLedger')
             .prefetch_related('lines__Ledger', 'lines__allocations')
             .filter(route_expenses__isnull=True)
+            .exclude(Status__iexact='CANCELLED')
             .exclude(PartyLedger_id=31)
             .exclude(PartyLedger__LedgerName__icontains='travelling')
             .all()
@@ -4727,9 +4869,9 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     'BillType': 'PURCHASE',
                 })
 
-        # 4. Regular Sales (for debtors)
+        # 4. Regular Sales (for debtors) - only approved sales impact accounts
         if is_debtor:
-            sales = Sales.objects.filter(CustomerLedger_id=party_id).exclude(Status='CANCELLED')
+            sales = Sales.objects.filter(CustomerLedger_id=party_id, IsApproved=True).exclude(Status='CANCELLED')
             if company_id:
                 sales = sales.filter(CompanyId=company_id)
             for s in sales.order_by('SalesDate', 'SalesId'):
@@ -4744,14 +4886,16 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     'BillType': 'SALES',
                 })
 
-        # Collect all payments / allocations from BillwiseAllocation and VoucherLines
+        # Collect all approved payments / allocations from BillwiseAllocation and VoucherLines
         explicit_allocs = {}
-        alloc_qs = BillwiseAllocation.objects.filter(CompanyId=company_id)
+        alloc_qs = BillwiseAllocation.objects.filter(CompanyId=company_id).exclude(
+            PaymentLine__Payment__Status__in=['PENDING', 'CANCELLED']
+        )
         if is_debtor:
             alloc_qs = alloc_qs.filter(
                 Q(PaymentLine__Payment__PartyLedger_id=party_id) |
                 Q(ReceiptLineId__isnull=False, ReceiptLineId__in=VoucherLine.objects.filter(Ledger_id=party_id).values_list('VoucherLineId', flat=True)) |
-                Q(ReferenceTable='Sales', ReferenceId__in=Sales.objects.filter(CustomerLedger_id=party_id).values_list('SalesId', flat=True))
+                Q(ReferenceTable='Sales', ReferenceId__in=Sales.objects.filter(CustomerLedger_id=party_id, IsApproved=True).exclude(Status='CANCELLED').values_list('SalesId', flat=True))
             )
         else:
             alloc_qs = alloc_qs.filter(PaymentLine__Payment__PartyLedger_id=party_id)
@@ -5380,16 +5524,52 @@ class PaymentViewSet(viewsets.ModelViewSet):
             old_party_id = instance.PartyLedger_id
             old_payment_ledger_ids = list(instance.lines.values_list('Ledger_id', flat=True))
 
+            explicit_voucher_type = (
+                data.get('voucher_type')
+                or data.get('VoucherType')
+                or data.get('type')
+            )
+            if explicit_voucher_type:
+                is_customer_receipt = str(explicit_voucher_type).strip().upper() == 'RECEIPT'
+            else:
+                g_name = (party.Group.GroupName or '').lower() if party.Group else ''
+                is_customer_receipt = (
+                    party.Group_id == 21
+                    or 'debtor' in g_name
+                    or 'customer' in g_name
+                    or any(a.get('BillType') == 'SALES' for a in allocations_data)
+                )
+
+            is_temporary = is_customer_receipt and (
+                data.get('is_temporary') is True
+                or data.get('IsTemporary') is True
+                or str(data.get('status') or data.get('Status') or '').strip().upper() == 'PENDING'
+                or (
+                    'is_temporary' not in data and 'IsTemporary' not in data
+                    and 'status' not in data and 'Status' not in data
+                    and str(instance.Status or '').strip().upper() == 'PENDING'
+                )
+            )
+
             # Update Payment Header
             instance.PartyLedger_id = party_id
             instance.Amount = amount
             if 'Narration' in data:
                 instance.Narration = data.get('Narration') or ''
+            if is_temporary:
+                instance.Status = 'PENDING'
+                instance.PaymentNo = None
+                if not instance.ReferenceNumber or not str(instance.ReferenceNumber).upper().startswith('TREC-'):
+                    instance.ReferenceNumber = get_next_temp_receipt_number()
+            else:
+                instance.Status = 'APPROVED'
+                if is_customer_receipt and (not instance.PaymentNo or not str(instance.PaymentNo).upper().startswith('REC-')):
+                    instance.PaymentNo = get_next_receipt_number()
             custom_payment_date = safe_parse_date(data.get('payment_date') or data.get('PaymentDate') or data.get('Date') or data.get('date'))
             if custom_payment_date:
                 dt = timezone.make_aware(datetime.combine(custom_payment_date, datetime.min.time())) if timezone.is_naive(datetime.combine(custom_payment_date, datetime.min.time())) else datetime.combine(custom_payment_date, datetime.min.time())
                 instance.CreatedAt = dt
-                instance.save(update_fields=['PartyLedger_id', 'Amount', 'Narration'])
+                instance.save(update_fields=['PartyLedger_id', 'Amount', 'Narration', 'Status', 'PaymentNo', 'ReferenceNumber'])
                 Payment.objects.filter(pk=instance.pk).update(CreatedAt=dt)
             else:
                 instance.save()
@@ -5463,205 +5643,193 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 )
                 created_lines.append(p_line)
 
-            # Recreate Billwise Allocations
-            primary_line = created_lines[0]
-            # Detect Customer Collection (RECEIPT) vs Vendor / Expense (PAYMENT)
-            explicit_voucher_type = (
-                data.get('voucher_type')
-                or data.get('VoucherType')
-                or data.get('type')
-            )
-            if explicit_voucher_type:
-                is_customer_receipt = str(explicit_voucher_type).strip().upper() == 'RECEIPT'
-            else:
-                g_name = (party.Group.GroupName or '').lower() if party.Group else ''
-                is_customer_receipt = (
-                    party.Group_id == 21
-                    or 'debtor' in g_name
-                    or 'customer' in g_name
-                    or any(a.get('BillType') == 'SALES' for a in allocations_data)
-                )
+            # Clean old CustomerAdvance if reverting to temporary receipt
+            if is_temporary:
+                old_advs = CustomerAdvance.objects.filter(Payment=instance)
+                for adv in old_advs:
+                    for adj in adv.adjustments.select_related('Sales').all():
+                        if adj.Sales:
+                            adj.Sales.PaidAmount = max(Decimal('0.00'), (adj.Sales.PaidAmount or Decimal('0.00')) - (adj.AdjustmentAmount or Decimal('0.00')))
+                            adj.Sales.save(update_fields=['PaidAmount'])
+                        adj.delete()
+                old_advs.delete()
 
+            # Recreate Billwise Allocations & Accounting Voucher only when approved (not temporary)
+            primary_line = created_lines[0]
             alloc_instances = []
             bill_alloc_sum = Decimal('0.00')
             explicit_adv_sum = Decimal('0.00')
 
-            for alloc in allocations_data:
-                alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
-                if alloc_amt > 0:
-                    b_ref = alloc.get('BillReference')
-                    b_type = alloc.get('BillType')
-                    if b_ref == 'CUSTOMER ADVANCE' or b_type == 'ADVANCE':
-                        explicit_adv_sum += alloc_amt
-                        b_type = 'ADVANCE'
-                        b_ref = 'CUSTOMER ADVANCE'
+            if not is_temporary:
+                for alloc in allocations_data:
+                    alloc_amt = Decimal(str(alloc.get('AllocatedAmount') or 0))
+                    if alloc_amt > 0:
+                        b_ref = alloc.get('BillReference')
+                        b_type = alloc.get('BillType')
+                        if b_ref == 'CUSTOMER ADVANCE' or b_type == 'ADVANCE':
+                            explicit_adv_sum += alloc_amt
+                            b_type = 'ADVANCE'
+                            b_ref = 'CUSTOMER ADVANCE'
+                        else:
+                            bill_alloc_sum += alloc_amt
+                            if not b_type:
+                                if b_ref == 'OPENING' or alloc.get('PurchaseId') == 0 or LedgerLine.objects.filter(Ledger_id=party_id, BillNo=b_ref).exists():
+                                    b_type = 'OPENING'
+                                elif is_customer_receipt or Sales.objects.filter(CustomerLedger_id=party_id, SalesNo=b_ref).exists():
+                                    b_type = 'SALES'
+                                else:
+                                    b_type = 'PURCHASE'
+
+                        ba = BillwiseAllocation.objects.create(
+                            PaymentLine=primary_line,
+                            ReceiptLineId=None,
+                            ReferenceTable='Receipt' if is_customer_receipt else 'Payment',
+                            ReferenceId=instance.PaymentId,
+                            BillType=b_type,
+                            BillReference=b_ref,
+                            BillDate=alloc.get('BillDate') or None,
+                            DueDate=alloc.get('DueDate') or None,
+                            AllocationType=alloc.get('AllocationType', 'Advance' if b_type == 'ADVANCE' else 'Against Reference'),
+                            AllocatedAmount=alloc_amt,
+                            CompanyId=company_id,
+                        )
+                        alloc_instances.append((ba, b_type, b_ref, alloc_amt))
+
+                # Auto-calculate Customer Advance for any unallocated receipt balance in update
+                advance_amt = Decimal('0.00')
+                if is_customer_receipt:
+                    if explicit_adv_sum > Decimal('0.00'):
+                        advance_amt = explicit_adv_sum
+                    elif amount > bill_alloc_sum:
+                        advance_amt = amount - bill_alloc_sum
+
+                    if advance_amt > Decimal('0.00') and explicit_adv_sum <= Decimal('0.00'):
+                        ba = BillwiseAllocation.objects.create(
+                            PaymentLine=primary_line,
+                            ReceiptLineId=None,
+                            ReferenceTable='Receipt',
+                            ReferenceId=instance.PaymentId,
+                            BillType='ADVANCE',
+                            BillReference='CUSTOMER ADVANCE',
+                            BillDate=custom_payment_date or instance.CreatedAt.date(),
+                            DueDate=None,
+                            AllocationType='Advance',
+                            AllocatedAmount=advance_amt,
+                            CompanyId=company_id,
+                        )
+                        alloc_instances.append((ba, 'ADVANCE', 'CUSTOMER ADVANCE', advance_amt))
+
+                    existing_adv = CustomerAdvance.objects.filter(Payment=instance).first()
+                    if existing_adv:
+                        utilized = existing_adv.TotalAmount - existing_adv.RemainingAmount
+                        if advance_amt < utilized:
+                            raise ValueError(f"Cannot reduce receipt: ₹{utilized:,.2f} of advance already adjusted against sales.")
+                        existing_adv.TotalAmount = advance_amt
+                        existing_adv.RemainingAmount = advance_amt - utilized
+                        existing_adv.Status = 'ACTIVE' if existing_adv.RemainingAmount > Decimal('0.00') else 'UTILIZED'
+                        existing_adv.CustomerLedger = party
+                        if custom_payment_date:
+                            existing_adv.AdvanceDate = custom_payment_date
+                        existing_adv.save()
+                    elif advance_amt > Decimal('0.00'):
+                        CustomerAdvance.objects.create(
+                            CompanyId=company_id,
+                            CustomerLedger=party,
+                            Payment=instance,
+                            AdvanceNo=f"ADV-{instance.PaymentId:04d}",
+                            AdvanceDate=custom_payment_date or instance.CreatedAt.date(),
+                            TotalAmount=advance_amt,
+                            RemainingAmount=advance_amt,
+                            Status='ACTIVE',
+                            Narration=f"Advance from {party.LedgerName} via Receipt #{instance.PaymentId}",
+                        )
+
+                # Build narrative string detailing allocated bills
+                alloc_narr_parts = []
+                for _, b_type, b_ref, b_amt in alloc_instances:
+                    if b_type == 'ADVANCE' or b_ref == 'CUSTOMER ADVANCE':
+                        alloc_narr_parts.append(f"Customer Advance (₹{b_amt:,.2f})")
                     else:
-                        bill_alloc_sum += alloc_amt
-                        if not b_type:
-                            if b_ref == 'OPENING' or alloc.get('PurchaseId') == 0 or LedgerLine.objects.filter(Ledger_id=party_id, BillNo=b_ref).exists():
-                                b_type = 'OPENING'
-                            elif is_customer_receipt or Sales.objects.filter(CustomerLedger_id=party_id, SalesNo=b_ref).exists():
-                                b_type = 'SALES'
-                            else:
-                                b_type = 'PURCHASE'
+                        alloc_narr_parts.append(f"Agst Ref: {b_ref} (₹{b_amt:,.2f})")
+                alloc_summary = f" [{', '.join(alloc_narr_parts)}]" if alloc_narr_parts else ""
 
-                    ba = BillwiseAllocation.objects.create(
-                        PaymentLine=primary_line,
-                        ReceiptLineId=None,
-                        ReferenceTable='Receipt' if is_customer_receipt else 'Payment',
-                        ReferenceId=instance.PaymentId,
-                        BillType=b_type,
-                        BillReference=b_ref,
-                        BillDate=alloc.get('BillDate') or None,
-                        DueDate=alloc.get('DueDate') or None,
-                        AllocationType=alloc.get('AllocationType', 'Advance' if b_type == 'ADVANCE' else 'Against Reference'),
-                        AllocatedAmount=alloc_amt,
-                        CompanyId=company_id,
-                    )
-                    alloc_instances.append((ba, b_type, b_ref, alloc_amt))
+                # Recreate Accounting Voucher
+                vch_type = 'RECEIPT' if is_customer_receipt else 'PAYMENT'
+                vch_prefix = 'REC' if is_customer_receipt else 'PAY'
+                action_desc = f"Receipt #{instance.PaymentId} from {instance.PartyLedger.LedgerName}{alloc_summary}" if is_customer_receipt else f"Payment #{instance.PaymentId} to {instance.PartyLedger.LedgerName}{alloc_summary}"
 
-            # Auto-calculate Customer Advance for any unallocated receipt balance in update
-            advance_amt = Decimal('0.00')
-            if is_customer_receipt:
-                if explicit_adv_sum > Decimal('0.00'):
-                    advance_amt = explicit_adv_sum
-                elif amount > bill_alloc_sum:
-                    advance_amt = amount - bill_alloc_sum
+                vch_no = f"{vch_prefix}-VCH-{instance.PaymentId}"
+                v_seq = 1
+                while Voucher.objects.filter(CompanyId=company_id, VoucherType=vch_type, VoucherNo=vch_no).exclude(ReferenceTable='Payment', ReferenceId=instance.PaymentId).exists():
+                    vch_no = f"{vch_prefix}-VCH-{instance.PaymentId}-{v_seq}"
+                    v_seq += 1
 
-                if advance_amt > Decimal('0.00') and explicit_adv_sum <= Decimal('0.00'):
-                    ba = BillwiseAllocation.objects.create(
-                        PaymentLine=primary_line,
-                        ReceiptLineId=None,
-                        ReferenceTable='Receipt',
-                        ReferenceId=instance.PaymentId,
-                        BillType='ADVANCE',
-                        BillReference='CUSTOMER ADVANCE',
-                        BillDate=custom_payment_date or instance.CreatedAt.date(),
-                        DueDate=None,
-                        AllocationType='Advance',
-                        AllocatedAmount=advance_amt,
-                        CompanyId=company_id,
-                    )
-                    alloc_instances.append((ba, 'ADVANCE', 'CUSTOMER ADVANCE', advance_amt))
+                voucher_narration = data.get('Narration') or action_desc
+                if alloc_summary and alloc_summary not in voucher_narration:
+                    voucher_narration = f"{voucher_narration}{alloc_summary}"
 
-                existing_adv = CustomerAdvance.objects.filter(Payment=instance).first()
-                if existing_adv:
-                    utilized = existing_adv.TotalAmount - existing_adv.RemainingAmount
-                    if advance_amt < utilized:
-                        raise ValueError(f"Cannot reduce receipt: ₹{utilized:,.2f} of advance already adjusted against sales.")
-                    existing_adv.TotalAmount = advance_amt
-                    existing_adv.RemainingAmount = advance_amt - utilized
-                    existing_adv.Status = 'ACTIVE' if existing_adv.RemainingAmount > Decimal('0.00') else 'UTILIZED'
-                    existing_adv.CustomerLedger = party
-                    if custom_payment_date:
-                        existing_adv.AdvanceDate = custom_payment_date
-                    existing_adv.save()
-                elif advance_amt > Decimal('0.00'):
-                    CustomerAdvance.objects.create(
-                        CompanyId=company_id,
-                        CustomerLedger=party,
-                        Payment=instance,
-                        AdvanceNo=f"ADV-{instance.PaymentId:04d}",
-                        AdvanceDate=custom_payment_date or instance.CreatedAt.date(),
-                        TotalAmount=advance_amt,
-                        RemainingAmount=advance_amt,
-                        Status='ACTIVE',
-                        Narration=f"Advance from {party.LedgerName} via Receipt #{instance.PaymentId}",
-                    )
-
-            # Build narrative string detailing allocated bills
-            alloc_narr_parts = []
-            for _, b_type, b_ref, b_amt in alloc_instances:
-                if b_type == 'ADVANCE' or b_ref == 'CUSTOMER ADVANCE':
-                    alloc_narr_parts.append(f"Customer Advance (₹{b_amt:,.2f})")
-                else:
-                    alloc_narr_parts.append(f"Agst Ref: {b_ref} (₹{b_amt:,.2f})")
-            alloc_summary = f" [{', '.join(alloc_narr_parts)}]" if alloc_narr_parts else ""
-
-            # Recreate Accounting Voucher
-            vch_type = 'RECEIPT' if is_customer_receipt else 'PAYMENT'
-            vch_prefix = 'REC' if is_customer_receipt else 'PAY'
-            action_desc = f"Receipt #{instance.PaymentId} from {instance.PartyLedger.LedgerName}{alloc_summary}" if is_customer_receipt else f"Payment #{instance.PaymentId} to {instance.PartyLedger.LedgerName}{alloc_summary}"
-
-            vch_no = f"{vch_prefix}-VCH-{instance.PaymentId}"
-            v_seq = 1
-            while Voucher.objects.filter(CompanyId=company_id, VoucherType=vch_type, VoucherNo=vch_no).exclude(ReferenceTable='Payment', ReferenceId=instance.PaymentId).exists():
-                vch_no = f"{vch_prefix}-VCH-{instance.PaymentId}-{v_seq}"
-                v_seq += 1
-
-            voucher_narration = data.get('Narration') or action_desc
-            if alloc_summary and alloc_summary not in voucher_narration:
-                voucher_narration = f"{voucher_narration}{alloc_summary}"
-
-            voucher = Voucher.objects.create(
-                VoucherNo=vch_no,
-                VoucherDate=custom_payment_date or instance.CreatedAt.date(),
-                VoucherType=vch_type,
-                ReferenceTable='Payment',
-                ReferenceId=instance.PaymentId,
-                CompanyId=company_id,
-                Narration=voucher_narration,
-                IsCancelled=False,
-            )
-
-            if is_customer_receipt:
-                # Customer Collection:
-                # Debit Cash / Bank (Asset increases)
-                for idx, p_line in enumerate(created_lines):
-                    VoucherLine.objects.create(
-                        Voucher=voucher,
-                        LineNo=idx + 1,
-                        Ledger_id=p_line.Ledger_id,
-                        DebitAmount=p_line.Amount,
-                        CreditAmount=Decimal('0.00'),
-                        Narration=f"{p_line.PaymentMode} receipt from {instance.PartyLedger.LedgerName}",
-                    )
-                # Credit Customer Ledger (Debtor asset decreases / cleared)
-                cust_vl = VoucherLine.objects.create(
-                    Voucher=voucher,
-                    LineNo=len(created_lines) + 1,
-                    Ledger_id=party_id,
-                    DebitAmount=Decimal('0.00'),
-                    CreditAmount=amount,
-                    Narration=f"Collection from {instance.PartyLedger.LedgerName}{alloc_summary}",
+                voucher = Voucher.objects.create(
+                    VoucherNo=vch_no,
+                    VoucherDate=custom_payment_date or instance.CreatedAt.date(),
+                    VoucherType=vch_type,
+                    ReferenceTable='Payment',
+                    ReferenceId=instance.PaymentId,
+                    CompanyId=company_id,
+                    Narration=voucher_narration,
+                    IsCancelled=False,
                 )
 
-                # Wire customer VoucherLine to BillwiseAllocation and sync Sales.PaidAmount
-                for ba, b_type, b_ref, alloc_amt in alloc_instances:
-                    ba.ReceiptLineId = cust_vl.VoucherLineId
-                    ba.save(update_fields=['ReceiptLineId'])
-
-                    if (b_type == 'SALES' or b_ref) and b_ref not in ['CUSTOMER ADVANCE', 'ADVANCE']:
-                        matched_sale = Sales.objects.filter(
-                            CompanyId=company_id, CustomerLedger_id=party_id
-                        ).filter(
-                            Q(SalesNo=b_ref) | Q(InvoiceNo=b_ref)
-                        ).first()
-                        if matched_sale:
-                            curr_paid = matched_sale.PaidAmount or Decimal('0.00')
-                            matched_sale.PaidAmount = min(matched_sale.GrandTotal, curr_paid + alloc_amt)
-                            matched_sale.save(update_fields=['PaidAmount'])
-            else:
-                # Vendor / Expense Payment:
-                # Debit Supplier
-                VoucherLine.objects.create(
-                    Voucher=voucher,
-                    LineNo=1,
-                    Ledger_id=party_id,
-                    DebitAmount=amount,
-                    CreditAmount=Decimal('0.00'),
-                    Narration=f"Payment to {instance.PartyLedger.LedgerName}{alloc_summary}",
-                )
-                # Credit Cash/Bank
-                for idx, p_line in enumerate(created_lines):
-                    VoucherLine.objects.create(
+                if is_customer_receipt:
+                    for idx, p_line in enumerate(created_lines):
+                        VoucherLine.objects.create(
+                            Voucher=voucher,
+                            LineNo=idx + 1,
+                            Ledger_id=p_line.Ledger_id,
+                            DebitAmount=p_line.Amount,
+                            CreditAmount=Decimal('0.00'),
+                            Narration=f"{p_line.PaymentMode} receipt from {instance.PartyLedger.LedgerName}",
+                        )
+                    cust_vl = VoucherLine.objects.create(
                         Voucher=voucher,
-                        LineNo=idx + 2,
-                        Ledger_id=p_line.Ledger_id,
+                        LineNo=len(created_lines) + 1,
+                        Ledger_id=party_id,
                         DebitAmount=Decimal('0.00'),
-                        CreditAmount=p_line.Amount,
-                        Narration=f"{p_line.PaymentMode} payment",
+                        CreditAmount=amount,
+                        Narration=f"Collection from {instance.PartyLedger.LedgerName}{alloc_summary}",
                     )
+
+                    for ba, b_type, b_ref, alloc_amt in alloc_instances:
+                        ba.ReceiptLineId = cust_vl.VoucherLineId
+                        ba.save(update_fields=['ReceiptLineId'])
+
+                        if (b_type == 'SALES' or b_ref) and b_ref not in ['CUSTOMER ADVANCE', 'ADVANCE']:
+                            matched_sale = Sales.objects.filter(
+                                CompanyId=company_id, CustomerLedger_id=party_id
+                            ).filter(
+                                Q(SalesNo=b_ref) | Q(InvoiceNo=b_ref)
+                            ).first()
+                            if matched_sale:
+                                curr_paid = matched_sale.PaidAmount or Decimal('0.00')
+                                matched_sale.PaidAmount = min(matched_sale.GrandTotal, curr_paid + alloc_amt)
+                                matched_sale.save(update_fields=['PaidAmount'])
+                else:
+                    VoucherLine.objects.create(
+                        Voucher=voucher,
+                        LineNo=1,
+                        Ledger_id=party_id,
+                        DebitAmount=amount,
+                        CreditAmount=Decimal('0.00'),
+                        Narration=f"Payment to {instance.PartyLedger.LedgerName}{alloc_summary}",
+                    )
+                    for idx, p_line in enumerate(created_lines):
+                        VoucherLine.objects.create(
+                            Voucher=voucher,
+                            LineNo=idx + 2,
+                            Ledger_id=p_line.Ledger_id,
+                            DebitAmount=Decimal('0.00'),
+                            CreditAmount=p_line.Amount,
+                            Narration=f"{p_line.PaymentMode} payment",
+                        )
 
             # Sync Ledger Balances (both old and new ledgers)
             all_ledgers = set([old_party_id, party_id] + old_payment_ledger_ids + [p.Ledger_id for p in created_lines])
@@ -7595,7 +7763,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     receipt_title = "Van Collection Receipt" if is_rcpt_only else f"Sales Receipt for {bill_ref}"
                     driver_n = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
                     route_n = alloc.Route.RouteName if (alloc and alloc.Route) else ''
-                    pay_narr = f"{receipt_title} | Driver: {driver_n} | Route: {route_n}"
+                    pay_narr = f"{receipt_title} | Ref: {bill_ref} | Driver: {driver_n} | Route: {route_n} [RVD:{allocation_id}]"
 
                     cash_led = (
                         Ledger.objects.filter(LedgerId=24).first() or
@@ -8145,9 +8313,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
         company_id = getattr(request.user, 'CompanyId', 1) or 1
         with transaction.atomic():
             sale = None
-            if sales_id:
+            is_trec_ticket = bool(ticket_id and str(ticket_id).strip().upper().startswith('TREC-'))
+            if sales_id and not is_trec_ticket:
                 sale = Sales.objects.filter(CompanyId=company_id, SalesId=sales_id).first()
-            if not sale and ticket_id:
+            if not sale and ticket_id and not is_trec_ticket:
                 clean_tid = str(ticket_id).strip()
                 candidates = [clean_tid]
                 if clean_tid.upper().startswith('INV-'):
@@ -8160,13 +8329,16 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 sale = Sales.objects.filter(
                     Q(SalesNo__in=candidates) | Q(InvoiceNo__in=candidates) | Q(SalesNo__iexact=clean_tid) | Q(InvoiceNo__iexact=clean_tid),
                     CompanyId=company_id,
-                    Status__in=['LIVE', 'PENDING']
+                    Status__in=['LIVE', 'PENDING', 'PENDING_APPROVAL']
                 ).order_by('-SalesId').first()
                 if not sale:
                     sale = Sales.objects.filter(
                         Q(SalesNo__in=candidates) | Q(InvoiceNo__in=candidates) | Q(SalesNo__iexact=clean_tid) | Q(InvoiceNo__iexact=clean_tid),
                         CompanyId=company_id
                     ).order_by('-SalesId').first()
+
+            if sale and (sale.IsApproved or sale.Status in ['COMPLETED', 'SETTLED']):
+                return Response({'success': False, 'message': 'Cannot cancel an already settled/approved sale.'}, status=status.HTTP_400_BAD_REQUEST)
 
             t_nos = []
             if sale:
@@ -8183,49 +8355,33 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 TransactionNo__in=t_nos
             ).delete()
 
-            # 2. Cancel Sale record (or standalone Payment receipt)
+            # 2. Cancel Sale record (or remove standalone temporary Payment receipt)
             if sale:
                 sale.Status = 'CANCELLED'
                 sale.save(update_fields=['Status'])
+                rollback_sale_advance_adjustments(sale)
 
-                # 3. Cancel Voucher
+                affected = {24, 56}
+                if sale.CustomerLedger_id:
+                    affected.add(sale.CustomerLedger_id)
+
+                # 3. Clean up Vouchers for Sale
                 vouchers = Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales', ReferenceId=sale.SalesId)
                 for v in vouchers:
-                    v.IsCancelled = True
-                    v.save(update_fields=['IsCancelled'])
-                    v_ledgers = v.lines.values_list('Ledger_id', flat=True)
-                    sync_ledger_balances(*v_ledgers)
+                    affected.update(v.lines.values_list('Ledger_id', flat=True))
+                    v.lines.all().delete()
+                vouchers.delete()
 
-                # 4. Also cancel linked Payments, Vouchers & BillwiseAllocations so deleted sales never return as ghost receipts
-                sale_refs = [r for r in [sale.SalesNo, sale.InvoiceNo] if r]
-                if sale_refs:
-                    bwa_pmt_ids = list(BillwiseAllocation.objects.filter(
-                        ReferenceTable__in=['Receipt', 'Payment'],
-                        BillReference__in=sale_refs
-                    ).values_list('ReferenceId', flat=True))
-                    narr_q = Q()
-                    for r in sale_refs:
-                        narr_q |= Q(Narration__icontains=r)
-                    linked_pmts = Payment.objects.filter(
-                        Q(PaymentId__in=bwa_pmt_ids) | (narr_q & Q(Narration__istartswith='Sales Receipt for'))
-                    )
-                    for lpmt in linked_pmts:
-                        if str(lpmt.Status).upper() not in ['CANCELLED']:
-                            lpmt.Status = 'CANCELLED'
-                            lpmt.save(update_fields=['Status'])
-                        BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=lpmt.PaymentId).delete()
-                        pvchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=lpmt.PaymentId)
-                        for pv in pvchs:
-                            pv.IsCancelled = True
-                            pv.save(update_fields=['IsCancelled'])
-                    BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
-                    if sale.CustomerLedger_id:
-                        sync_ledger_balances(sale.CustomerLedger_id, 24, 56)
+                # 4. Completely remove linked temporary Payments, Allocations & Vouchers so deleted sales never remain in Receipts/Collections
+                affected.update(find_and_remove_payments_for_sale(sale, company_id=company_id, delete_record=True))
+                BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+                sync_ledger_balances(*[lid for lid in affected if lid])
             elif ticket_id:
                 clean_tid = str(ticket_id).strip()
                 pmt = (
                     Payment.objects.filter(ReferenceNumber__iexact=clean_tid).first()
                     or Payment.objects.filter(PaymentNo__iexact=clean_tid).first()
+                    or Payment.objects.filter(Narration__icontains=clean_tid).first()
                 )
                 if not pmt and clean_tid.upper().startswith('TREC-'):
                     try:
@@ -8236,15 +8392,9 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 if pmt:
                     if str(pmt.Status).upper() in ['SETTLED', 'APPROVED']:
                         return Response({'success': False, 'message': 'Cannot cancel an already settled/approved receipt.'}, status=status.HTTP_400_BAD_REQUEST)
-                    pmt.Status = 'CANCELLED'
-                    pmt.save(update_fields=['Status'])
-                    BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=pmt.PaymentId).delete()
-                    vouchers = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pmt.PaymentId)
-                    for v in vouchers:
-                        v.IsCancelled = True
-                        v.save(update_fields=['IsCancelled'])
-                    if pmt.PartyLedger_id:
-                        sync_ledger_balances(pmt.PartyLedger_id, 24, 56)
+                    affected = cleanup_payment_records(pmt, company_id=company_id, delete_record=True)
+                    affected.update({24, 56})
+                    sync_ledger_balances(*[lid for lid in affected if lid])
 
         target_display = (sale.InvoiceNo or sale.SalesNo) if sale else ticket_id
         return Response({
@@ -11273,11 +11423,18 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                     if any(ref in pm_narr for ref in shift_sale_nos if ref):
                         shift_pending_pmts.append(pm)
                         continue
+                    rvd_tag = f"[RVD:{dn.RouteVehicleDriver_id}]".upper()
+                    in_shift_window = (
+                        (not dn.CreatedAt or (pm.CreatedAt and pm.CreatedAt >= dn.CreatedAt))
+                        and (not next_dn or not next_dn.CreatedAt or (pm.CreatedAt and pm.CreatedAt < next_dn.CreatedAt))
+                    )
+                    if rvd_tag in pm_narr and in_shift_window:
+                        shift_pending_pmts.append(pm)
+                        continue
                     driver_n = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
-                    if driver_n and driver_n.upper() in pm_narr:
-                        if dn.DeliveryDate and getattr(pm, 'CreatedAt', None) and pm.CreatedAt.date() == dn.DeliveryDate:
-                            shift_pending_pmts.append(pm)
-                            continue
+                    if driver_n and driver_n.upper() in pm_narr and in_shift_window:
+                        shift_pending_pmts.append(pm)
+                        continue
 
             safe_sync_sequence('Payment', 'PaymentId')
             safe_sync_sequence('PaymentLine', 'PaymentLineId')
@@ -11485,18 +11642,10 @@ def post_sale_voucher(sale, company_id=1, sync_balances=True):
             old_vch.delete()
 
         # Clean up associated Payment, Payment voucher, and BillwiseAllocation
-        stale_pays = Payment.objects.filter(
-            Q(Narration__icontains=sale.SalesNo) | (Q(Narration__icontains=sale.InvoiceNo) if sale.InvoiceNo else Q())
+        affected_ledgers.update(
+            find_and_remove_payments_for_sale(sale, company_id=company_id, delete_record=True)
         )
-        for stale_pay in stale_pays:
-            stale_vchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=stale_pay.PaymentId)
-            for sv in stale_vchs:
-                affected_ledgers.update(sv.lines.values_list('Ledger_id', flat=True))
-                sv.lines.all().delete()
-            stale_vchs.delete()
-            BillwiseAllocation.objects.filter(ReferenceTable='Receipt', ReferenceId=stale_pay.PaymentId).delete()
-            stale_pay.lines.all().delete()
-            stale_pay.delete()
+        BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
 
         if sync_balances and affected_ledgers:
             sync_ledger_balances(*affected_ledgers)
@@ -12850,7 +12999,7 @@ class SalesViewSet(viewsets.ModelViewSet):
         to_date = request.query_params.get('to_date') or None
 
         sales_qs = Sales.objects.filter(CustomerLedger=customer, IsApproved=True).exclude(Status='CANCELLED').order_by('SalesDate', 'SalesId')
-        receipts_qs = Payment.objects.filter(PartyLedger=customer).order_by('CreatedAt', 'PaymentId')
+        receipts_qs = Payment.objects.filter(PartyLedger=customer, Status='APPROVED').order_by('CreatedAt', 'PaymentId')
 
         try:
             from core.invoice_generator import generate_customer_statement_pdf
@@ -12892,7 +13041,7 @@ class SalesViewSet(viewsets.ModelViewSet):
 
                 records = []
                 if source_type in ('ALL', 'SALE'):
-                    s_qs = Sales.objects.exclude(Status='CANCELLED').filter(PaidAmount__gt=0)
+                    s_qs = Sales.objects.filter(IsApproved=True).exclude(Status='CANCELLED').filter(PaidAmount__gt=0)
                     if from_date:
                         s_qs = s_qs.filter(SalesDate__gte=from_date)
                     if to_date:
@@ -12909,7 +13058,12 @@ class SalesViewSet(viewsets.ModelViewSet):
                         })
 
                 if source_type in ('ALL', 'RECEIPT'):
-                    p_qs = Payment.objects.filter(PartyLedger__isnull=False)
+                    p_qs = (
+                        Payment.objects
+                        .filter(PartyLedger__isnull=False, Status='APPROVED', route_expenses__isnull=True)
+                        .exclude(PartyLedger_id=31)
+                        .exclude(PartyLedger__LedgerName__icontains='travelling')
+                    )
                     if from_date:
                         p_qs = p_qs.filter(CreatedAt__date__gte=from_date)
                     if to_date:

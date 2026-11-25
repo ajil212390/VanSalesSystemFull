@@ -447,7 +447,7 @@ export const DashboardPage: React.FC = () => {
       if (supplierLedgerIds.has(pid)) return false;
       if (p.voucher_type === 'PAYMENT') return false;
       // In Future Gas, only approved customer receipts count towards official accounts & dashboard
-      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      const isApproved = String(p.Status || '').trim().toUpperCase() === 'APPROVED';
       if (!isApproved) return false;
       return customerLedgerIds.has(pid);
     });
@@ -620,7 +620,7 @@ export const DashboardPage: React.FC = () => {
   const standaloneCustomerReceipts = useMemo(() => {
     return filteredCustomerReceipts.filter((p: any) => {
       // Must be approved receipt
-      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      const isApproved = String(p.Status || '').trim().toUpperCase() === 'APPROVED';
       if (!isApproved) return false;
 
       // If narration indicates it's an auto-generated receipt for a specific sales invoice already in sales

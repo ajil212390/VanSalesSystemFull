@@ -111,6 +111,10 @@ export const ReceiptListPage: React.FC = () => {
     );
 
     return allPayments.filter((p) => {
+      // Never display cancelled/voided receipts
+      const pStatus = String(p.Status || '').trim().toUpperCase();
+      if (pStatus === 'CANCELLED' || pStatus === 'REJECTED' || pStatus === 'VOID') return false;
+
       // 1. Explicit Customer Receipt identifier (REC- or TREC-)
       const pNo = String(p.PaymentNo || '').toUpperCase();
       const rNo = String(p.ReferenceNumber || '').toUpperCase();
@@ -133,14 +137,14 @@ export const ReceiptListPage: React.FC = () => {
   const receiptNumMap = useMemo(() => {
     const map = new Map<number, string>();
     const sortedApproved = [...receipts]
-      .filter((p) => String(p.Status || '').toUpperCase() !== 'PENDING')
+      .filter((p) => String(p.Status || '').trim().toUpperCase() === 'APPROVED')
       .sort((a, b) => a.PaymentId - b.PaymentId);
     sortedApproved.forEach((p, idx) => {
       map.set(p.PaymentId, p.PaymentNo || `REC-${String(idx + 1).padStart(3, '0')}`);
     });
 
     const sortedPending = [...receipts]
-      .filter((p) => String(p.Status || '').toUpperCase() === 'PENDING')
+      .filter((p) => String(p.Status || '').trim().toUpperCase() === 'PENDING')
       .sort((a, b) => a.PaymentId - b.PaymentId);
     sortedPending.forEach((p, idx) => {
       map.set(p.PaymentId, p.ReferenceNumber || `TREC-${String(idx + 1).padStart(3, '0')}`);
@@ -470,8 +474,10 @@ export const ReceiptListPage: React.FC = () => {
                     ? new Date(item.CreatedAt).toISOString().split('T')[0]
                     : '—');
                   const againstBills = getAgainstBills(item);
-                  const isPending = String(item.Status).toUpperCase() === 'PENDING';
-                  const displayNo = receiptNumMap.get(item.PaymentId) || item.PaymentNo || item.ReferenceNumber || `REC-${String(item.PaymentId).padStart(3, '0')}`;
+                  const isPending = String(item.Status || '').trim().toUpperCase() === 'PENDING';
+                  const displayNo = receiptNumMap.get(item.PaymentId) || (isPending
+                    ? (item.ReferenceNumber || `TREC-${String(item.PaymentId).padStart(3, '0')}`)
+                    : (item.PaymentNo || item.ReferenceNumber || `REC-${String(item.PaymentId).padStart(3, '0')}`));
 
                   return (
                     <Table.Tr key={item.PaymentId}>

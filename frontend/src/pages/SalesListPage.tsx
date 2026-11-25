@@ -678,7 +678,7 @@ export const SalesListPage: React.FC = () => {
     let count = 0;
 
     payments.forEach((p: any) => {
-      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      const isApproved = String(p.Status || '').trim().toUpperCase() === 'APPROVED';
       if (!isApproved) return;
       if (String(p.voucher_type || '').toUpperCase() === 'PAYMENT') return;
 

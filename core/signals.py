@@ -107,6 +107,18 @@ def handle_sales_deleted(sender, instance, **kwargs):
             v.lines.all().delete()
         vouchers.delete()
 
+        # 3. Clean up linked Payments, BillwiseAllocations, CustomerAdvances & Payment Vouchers
+        try:
+            from core.views import find_and_remove_payments_for_sale, rollback_sale_advance_adjustments, sync_ledger_balances
+            rollback_sale_advance_adjustments(instance)
+            affected_ledgers.update(
+                find_and_remove_payments_for_sale(instance, company_id=company_id, delete_record=True)
+            )
+            from core.models import BillwiseAllocation
+            BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=s_id).delete()
+        except Exception as e:
+            logger.warning(f"Could not clean linked payments for deleted Sale #{t_no}: {e}")
+
         if affected_ledgers:
             try:
                 from core.views import sync_ledger_balances
