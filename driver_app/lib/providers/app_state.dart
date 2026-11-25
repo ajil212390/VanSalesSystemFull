@@ -137,6 +137,7 @@ class DeliveryOrder {
   final double? cashAmount;
   final double? upiAmount;
   final String time;
+  final DateTime? createdAt;
   final String status;
   final int stopNumber;
 
@@ -153,6 +154,7 @@ class DeliveryOrder {
     this.cashAmount,
     this.upiAmount,
     required this.time,
+    this.createdAt,
     this.status = 'Delivered',
     this.stopNumber = 1,
   });
@@ -756,6 +758,7 @@ class AppState extends ChangeNotifier {
                   cashAmount: s['cashAmount'] != null ? safeDouble(s['cashAmount']) : null,
                   upiAmount: s['upiAmount'] != null ? safeDouble(s['upiAmount']) : null,
                   time: s['time'] ?? '10:00 AM',
+                  createdAt: s['createdAt'] != null ? DateTime.tryParse(s['createdAt'].toString()) : null,
                   status: s['status'] ?? 'Delivered',
                 ));
               }
@@ -1095,6 +1098,7 @@ class AppState extends ChangeNotifier {
       cashAmount: effCash,
       upiAmount: effUpi,
       time: timeStr,
+      createdAt: DateTime.now(),
       stopNumber: _stopCounter,
     );
     orders.insert(0, newOrder);

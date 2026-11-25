@@ -16,6 +16,7 @@ class OrdersScreen extends StatefulWidget {
 class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver {
   late int _activeFilterIndex;
   String _searchQuery = '';
+  String _selectedSort = 'newest'; // 'newest' (default), 'oldest', 'price_high_low', 'price_low_high'
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   final Set<String> _expandedOrders = {}; // Track which order cards have items expanded
@@ -99,6 +100,28 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
         return nameMatches || ticketMatches || shopMatches || phoneMatches;
       }).toList();
     }
+
+    // Apply sorting (Default: Newest First)
+    displayOrders = List<DeliveryOrder>.from(displayOrders);
+    displayOrders.sort((a, b) {
+      switch (_selectedSort) {
+        case 'oldest':
+          return _compareOrdersByTime(a, b);
+        case 'price_high_low':
+          final pa = a.totalBillValue;
+          final pb = b.totalBillValue;
+          final cmp = pb.compareTo(pa);
+          return cmp != 0 ? cmp : _compareOrdersByTime(b, a);
+        case 'price_low_high':
+          final pa = a.totalBillValue;
+          final pb = b.totalBillValue;
+          final cmp = pa.compareTo(pb);
+          return cmp != 0 ? cmp : _compareOrdersByTime(b, a);
+        case 'newest':
+        default:
+          return _compareOrdersByTime(b, a);
+      }
+    });
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -206,7 +229,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
   );
 }
 
-  // ================= 1. SEARCH BAR =================
+  // ================= 1. SEARCH BAR WITH SORTING DROPDOWN =================
   Widget _buildSearchBar() {
     final isFocused = _searchFocusNode.hasFocus;
 
@@ -221,48 +244,240 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
           width: isFocused ? 1.4 : 1.0,
         ),
       ),
-      child: Center(
-        child: TextField(
-          controller: _searchController,
-          focusNode: _searchFocusNode,
-          cursorColor: const Color(0xFF800020),
-          cursorWidth: 2.0,
-          cursorRadius: const Radius.circular(2),
-          onChanged: (val) => setState(() => _searchQuery = val),
-          style: GoogleFonts.inter(
-            fontSize: 13.5,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF0F172A),
-          ),
-          decoration: InputDecoration(
-            hintText: 'Search customer name, phone, ticket #...',
-            hintStyle: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-              color: const Color(0xFF94A3B8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              cursorColor: const Color(0xFF800020),
+              cursorWidth: 2.0,
+              cursorRadius: const Radius.circular(2),
+              onChanged: (val) => setState(() => _searchQuery = val),
+              style: GoogleFonts.inter(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF0F172A),
+              ),
+              decoration: InputDecoration(
+                hintText: 'Search customer name, phone, ticket #...',
+                hintStyle: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF94A3B8),
+                ),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  color: isFocused ? const Color(0xFF800020) : const Color(0xFF64748B),
+                  size: 20,
+                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        splashRadius: 18,
+                        icon: const Icon(Icons.cancel_rounded, size: 18, color: Color(0xFF64748B)),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                        },
+                      )
+                    : null,
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              ),
             ),
-            prefixIcon: Icon(
-              Icons.search_rounded,
-              color: isFocused ? const Color(0xFF800020) : const Color(0xFF64748B),
-              size: 20,
-            ),
-            suffixIcon: _searchQuery.isNotEmpty
-                ? IconButton(
-                    splashRadius: 18,
-                    icon: const Icon(Icons.cancel_rounded, size: 18, color: Color(0xFF64748B)),
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() => _searchQuery = '');
-                    },
-                  )
-                : null,
-            border: InputBorder.none,
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           ),
-        ),
+          // Subtle Divider
+          Container(
+            width: 1,
+            height: 22,
+            color: const Color(0xFFCBD5E1),
+          ),
+          // Sort Options Dropdown Menu Button at right end
+          _buildSortMenu(),
+        ],
       ),
     );
+  }
+
+  // ================= 1.1 SORT DROPDOWN MENU =================
+  Widget _buildSortMenu() {
+    final isCustomSort = _selectedSort != 'newest';
+
+    return PopupMenuButton<String>(
+      tooltip: 'Sort sales',
+      initialValue: _selectedSort,
+      onSelected: (String value) {
+        setState(() {
+          _selectedSort = value;
+        });
+      },
+      position: PopupMenuPosition.under,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      color: Colors.white,
+      elevation: 6,
+      splashRadius: 20,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.tune_rounded,
+              size: 19,
+              color: isCustomSort ? const Color(0xFF800020) : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 2),
+            Icon(
+              Icons.arrow_drop_down_rounded,
+              size: 18,
+              color: isCustomSort ? const Color(0xFF800020) : const Color(0xFF64748B),
+            ),
+          ],
+        ),
+      ),
+      itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+        PopupMenuItem<String>(
+          value: 'newest',
+          child: Row(
+            children: [
+              Icon(
+                Icons.access_time_rounded,
+                size: 18,
+                color: _selectedSort == 'newest' ? const Color(0xFF800020) : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Newest First (Default)',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: _selectedSort == 'newest' ? FontWeight.w700 : FontWeight.w500,
+                    color: _selectedSort == 'newest' ? const Color(0xFF800020) : const Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              if (_selectedSort == 'newest')
+                const Icon(Icons.check_rounded, size: 18, color: Color(0xFF800020)),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'oldest',
+          child: Row(
+            children: [
+              Icon(
+                Icons.history_rounded,
+                size: 18,
+                color: _selectedSort == 'oldest' ? const Color(0xFF800020) : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Oldest First',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: _selectedSort == 'oldest' ? FontWeight.w700 : FontWeight.w500,
+                    color: _selectedSort == 'oldest' ? const Color(0xFF800020) : const Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              if (_selectedSort == 'oldest')
+                const Icon(Icons.check_rounded, size: 18, color: Color(0xFF800020)),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(height: 1),
+        PopupMenuItem<String>(
+          value: 'price_high_low',
+          child: Row(
+            children: [
+              Icon(
+                Icons.arrow_downward_rounded,
+                size: 18,
+                color: _selectedSort == 'price_high_low' ? const Color(0xFF800020) : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Price: High to Low',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: _selectedSort == 'price_high_low' ? FontWeight.w700 : FontWeight.w500,
+                    color: _selectedSort == 'price_high_low' ? const Color(0xFF800020) : const Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              if (_selectedSort == 'price_high_low')
+                const Icon(Icons.check_rounded, size: 18, color: Color(0xFF800020)),
+            ],
+          ),
+        ),
+        PopupMenuItem<String>(
+          value: 'price_low_high',
+          child: Row(
+            children: [
+              Icon(
+                Icons.arrow_upward_rounded,
+                size: 18,
+                color: _selectedSort == 'price_low_high' ? const Color(0xFF800020) : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Price: Low to High',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: _selectedSort == 'price_low_high' ? FontWeight.w700 : FontWeight.w500,
+                    color: _selectedSort == 'price_low_high' ? const Color(0xFF800020) : const Color(0xFF0F172A),
+                  ),
+                ),
+              ),
+              if (_selectedSort == 'price_low_high')
+                const Icon(Icons.check_rounded, size: 18, color: Color(0xFF800020)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  int _timeStringToMinutes(String timeStr) {
+    try {
+      final raw = timeStr.trim().toUpperCase();
+      final isPm = raw.endsWith('PM');
+      final isAm = raw.endsWith('AM');
+      final clean = raw.replaceAll(RegExp(r'[^\d:]'), '');
+      final parts = clean.split(':');
+      if (parts.length >= 2) {
+        int h = int.parse(parts[0]);
+        final m = int.parse(parts[1]);
+        if (isPm && h < 12) h += 12;
+        if (isAm && h == 12) h = 0;
+        return h * 60 + m;
+      }
+    } catch (_) {}
+    return 0;
+  }
+
+  int _compareOrdersByTime(DeliveryOrder a, DeliveryOrder b) {
+    if (a.createdAt != null && b.createdAt != null) {
+      final cmp = a.createdAt!.compareTo(b.createdAt!);
+      if (cmp != 0) return cmp;
+    }
+    if (a.salesId != null && b.salesId != null) {
+      final cmp = a.salesId!.compareTo(b.salesId!);
+      if (cmp != 0) return cmp;
+    }
+    final ma = _timeStringToMinutes(a.time);
+    final mb = _timeStringToMinutes(b.time);
+    final cmp = ma.compareTo(mb);
+    if (cmp != 0) return cmp;
+    return a.ticketId.compareTo(b.ticketId);
   }
 
   // ================= 2. SMOOTH ANIMATED SEGMENTED TOGGLE (ZERO GLOW, SLIDING PILL) =================

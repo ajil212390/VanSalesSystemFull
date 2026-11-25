@@ -7959,6 +7959,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     'cashAmount': cash_val,
                     'upiAmount': upi_val,
                     'time': time_str,
+                    'createdAt': sale.CreatedAt.isoformat() if sale.CreatedAt else None,
                     'status': sale.Status
                 })
 
