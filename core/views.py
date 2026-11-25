@@ -7802,7 +7802,14 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 pmt_q |= (narr_q & Q(CreatedAt__date=date.today()))
 
         if pmt_q:
-            shift_payments = Payment.objects.filter(pmt_q).exclude(Status='CANCELLED').select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
+            shift_payments = Payment.objects.filter(pmt_q).exclude(
+                Q(Status='CANCELLED') |
+                Q(Narration__startswith='Sales Receipt for ') |
+                Q(PartyLedger__LedgerName__icontains='travel') |
+                Q(PartyLedger_id=31) |
+                Q(PartyLedger__LedgerName__icontains='trip') |
+                Q(PartyLedger__LedgerName__icontains='fuel')
+            ).select_related('PartyLedger').prefetch_related('lines').order_by('-PaymentId')
 
             for pmt in shift_payments:
                 p_narr = (pmt.Narration or '').upper()
