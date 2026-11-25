@@ -8113,14 +8113,22 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 sale = Sales.objects.filter(CompanyId=company_id, SalesId=sales_id).first()
             if not sale and ticket_id:
                 clean_tid = str(ticket_id).strip()
+                candidates = [clean_tid]
+                if clean_tid.upper().startswith('INV-'):
+                    candidates.extend([f"DT-{clean_tid[4:]}", f"BT-{clean_tid[4:]}"])
+                elif clean_tid.upper().startswith('DT-'):
+                    candidates.extend([f"INV-{clean_tid[3:]}", f"BT-{clean_tid[3:]}"])
+                elif clean_tid.upper().startswith('BT-'):
+                    candidates.extend([f"INV-{clean_tid[3:]}", f"DT-{clean_tid[3:]}"])
+
                 sale = Sales.objects.filter(
-                    Q(SalesNo__iexact=clean_tid) | Q(InvoiceNo__iexact=clean_tid),
+                    Q(SalesNo__in=candidates) | Q(InvoiceNo__in=candidates) | Q(SalesNo__iexact=clean_tid) | Q(InvoiceNo__iexact=clean_tid),
                     CompanyId=company_id,
                     Status__in=['LIVE', 'PENDING']
                 ).order_by('-SalesId').first()
                 if not sale:
                     sale = Sales.objects.filter(
-                        Q(SalesNo__iexact=clean_tid) | Q(InvoiceNo__iexact=clean_tid),
+                        Q(SalesNo__in=candidates) | Q(InvoiceNo__in=candidates) | Q(SalesNo__iexact=clean_tid) | Q(InvoiceNo__iexact=clean_tid),
                         CompanyId=company_id
                     ).order_by('-SalesId').first()
 
@@ -8151,6 +8159,32 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     v.save(update_fields=['IsCancelled'])
                     v_ledgers = v.lines.values_list('Ledger_id', flat=True)
                     sync_ledger_balances(*v_ledgers)
+
+                # 4. Also cancel linked Payments, Vouchers & BillwiseAllocations so deleted sales never return as ghost receipts
+                sale_refs = [r for r in [sale.SalesNo, sale.InvoiceNo] if r]
+                if sale_refs:
+                    bwa_pmt_ids = list(BillwiseAllocation.objects.filter(
+                        ReferenceTable__in=['Receipt', 'Payment'],
+                        BillReference__in=sale_refs
+                    ).values_list('ReferenceId', flat=True))
+                    narr_q = Q()
+                    for r in sale_refs:
+                        narr_q |= Q(Narration__icontains=r)
+                    linked_pmts = Payment.objects.filter(
+                        Q(PaymentId__in=bwa_pmt_ids) | (narr_q & Q(Narration__istartswith='Sales Receipt for'))
+                    )
+                    for lpmt in linked_pmts:
+                        if str(lpmt.Status).upper() not in ['CANCELLED']:
+                            lpmt.Status = 'CANCELLED'
+                            lpmt.save(update_fields=['Status'])
+                        BillwiseAllocation.objects.filter(ReferenceTable__in=['Receipt', 'Payment'], ReferenceId=lpmt.PaymentId).delete()
+                        pvchs = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=lpmt.PaymentId)
+                        for pv in pvchs:
+                            pv.IsCancelled = True
+                            pv.save(update_fields=['IsCancelled'])
+                    BillwiseAllocation.objects.filter(ReferenceTable='Sales', ReferenceId=sale.SalesId).delete()
+                    if sale.CustomerLedger_id:
+                        sync_ledger_balances(sale.CustomerLedger_id, 24, 56)
             elif ticket_id:
                 clean_tid = str(ticket_id).strip()
                 pmt = (
