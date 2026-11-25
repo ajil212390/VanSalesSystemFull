@@ -4408,7 +4408,7 @@ class PurchaseViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'detail': f'Error generating supplier statement PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-def allocate_receipt_to_pending_bills_or_advance(payment, company_id=1):
+def allocate_receipt_to_pending_bills_or_advance(payment, company_id=1, update_sales_paid=True):
     """
     Allocates a customer receipt (Payment) against the customer's unpaid sales invoices (FIFO).
     If no pending sales invoices exist, or if the receipt amount exceeds pending invoices,
@@ -4500,8 +4500,9 @@ def allocate_receipt_to_pending_bills_or_advance(payment, company_id=1):
                     AllocatedAmount=alloc_here,
                     CompanyId=company_id
                 )
-                s.PaidAmount = min(grand, (s.PaidAmount or Decimal('0.00')) + alloc_here)
-                s.save(update_fields=['PaidAmount'])
+                if update_sales_paid:
+                    s.PaidAmount = min(grand, (s.PaidAmount or Decimal('0.00')) + alloc_here)
+                    s.save(update_fields=['PaidAmount'])
                 unallocated -= alloc_here
                 if unallocated <= Decimal('0.00'):
                     break
@@ -7703,9 +7704,10 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     safe_sync_sequence('Payment', 'PaymentId')
                     safe_sync_sequence('PaymentLine', 'PaymentLineId')
                     trec_no = get_next_temp_receipt_number()
+                    bill_ref = sale.InvoiceNo or sale.SalesNo
                     driver_n = alloc.Driver.DriverName if (alloc and alloc.Driver) else ''
                     route_n = alloc.Route.RouteName if (alloc and alloc.Route) else ''
-                    pay_narr = f"Van Collection Receipt | Driver: {driver_n} | Route: {route_n} [RVD:{allocation_id}]"
+                    pay_narr = f"Van Collection Receipt | Ref: {bill_ref} | Driver: {driver_n} | Route: {route_n} [RVD:{allocation_id}]"
 
                     cash_led = (
                         Ledger.objects.filter(LedgerId=24).first() or
@@ -11458,11 +11460,15 @@ class EndRouteDriverViewSet(viewsets.ModelViewSet):
                         update_fields.append('DeliveryNoteId')
                     pm.save(update_fields=update_fields)
 
+                    existing_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
+
                     # Allocate receipt against pending sales bills or as customer advance
-                    allocate_receipt_to_pending_bills_or_advance(pm, company_id)
+                    # Skip updating Sales.PaidAmount here when _post_voucher_for_payment will run right below
+                    allocate_receipt_to_pending_bills_or_advance(
+                        pm, company_id, update_sales_paid=bool(existing_vch)
+                    )
 
                     # Ensure associated voucher reflects the permanent receipt number (REC-xxx)
-                    existing_vch = Voucher.objects.filter(ReferenceTable='Payment', ReferenceId=pm.PaymentId).first()
                     if existing_vch:
                         existing_vch.VoucherNo = rec_no
                         existing_vch.save(update_fields=['VoucherNo'])
