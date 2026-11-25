@@ -56,7 +56,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
   Widget build(BuildContext context) {
     final state = AppStateProvider.of(context);
 
-    // Filter by payment method (Cash, Bank, Credit)
+    // Filter by payment method (Cash, Bank, Split, Credit)
     final cashOrders = state.orders.where((o) {
       final m = o.paymentMethod.toLowerCase();
       return m == 'cash' || (m == 'split' && (o.cashAmount ?? 0) > 0);
@@ -65,11 +65,14 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
       final m = o.paymentMethod.toLowerCase();
       return m.contains('upi') || m.contains('bank') || m.contains('online') || (m == 'split' && (o.upiAmount ?? 0) > 0);
     }).toList();
+    final splitOrders = state.orders.where((o) {
+      return o.paymentMethod.toLowerCase() == 'split';
+    }).toList();
     final creditOrders = state.orders.where((o) {
       final m = o.paymentMethod.toLowerCase();
       final isEmptyOnly = o.totalCylinders == 0 && o.totalEmpties > 0 && o.amount <= 0;
       if (isEmptyOnly) return false;
-      return m == 'credit' || (o.amount <= 0 && m != 'cash' && !m.contains('upi') && !m.contains('bank'));
+      return m == 'credit' || (o.amount <= 0 && m != 'cash' && m != 'split' && !m.contains('upi') && !m.contains('bank'));
     }).toList();
 
     List<DeliveryOrder> displayOrders;
@@ -78,6 +81,8 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
     } else if (_activeFilterIndex == 2) {
       displayOrders = bankOrders;
     } else if (_activeFilterIndex == 3) {
+      displayOrders = splitOrders;
+    } else if (_activeFilterIndex == 4) {
       displayOrders = creditOrders;
     } else {
       displayOrders = state.orders;
@@ -262,7 +267,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
 
   // ================= 2. SMOOTH ANIMATED SEGMENTED TOGGLE (ZERO GLOW, SLIDING PILL) =================
   Widget _buildAnimatedSegmentedToggle() {
-    final tabs = ['All', 'Cash', 'Bank', 'Credit'];
+    final tabs = ['All', 'Cash', 'Bank', 'Split', 'Credit'];
 
     return Container(
       height: 42,
@@ -510,6 +515,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
 
   Widget _buildOrderCard(BuildContext context, AppState state, DeliveryOrder order) {
     final isCash = order.paymentMethod.toLowerCase() == 'cash';
+    final isSplit = order.paymentMethod.toLowerCase() == 'split';
     final isCredit = order.paymentMethod.toLowerCase() == 'credit';
     final isEmptyOnly = order.totalCylinders == 0 && order.totalEmpties > 0;
 
@@ -632,22 +638,30 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                               ? const Color(0xFFF1F5F9)
                               : (isCredit
                                   ? const Color(0xFFFEF3C7)
-                                  : (isCash ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9))),
+                                  : (isSplit
+                                      ? const Color(0xFFEEF2FF)
+                                      : (isCash ? const Color(0xFFFDF2F4) : const Color(0xFFF1F5F9)))),
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
                             color: isEmptyOnly
                                 ? const Color(0xFFE2E8F0)
                                 : (isCredit
                                     ? const Color(0xFFFDE68A)
-                                    : (isCash ? const Color(0xFFFCE7EC) : const Color(0xFFE2E8F0))),
+                                    : (isSplit
+                                        ? const Color(0xFFC7D2FE)
+                                        : (isCash ? const Color(0xFFFCE7EC) : const Color(0xFFE2E8F0)))),
                           ),
                         ),
                         child: Text(
                           order.totalCylinders == 0 && order.totalEmpties == 0
-                              ? (isCash ? 'CASH RECEIPT' : (isCredit ? 'CREDIT' : 'UPI RECEIPT'))
+                              ? (isCash
+                                  ? 'CASH RECEIPT'
+                                  : (isCredit ? 'CREDIT' : (isSplit ? 'SPLIT RECEIPT' : 'UPI RECEIPT')))
                               : (isEmptyOnly
                                   ? 'EMPTY RETURN'
-                                  : (isCredit ? 'CREDIT' : (isCash ? 'CASH' : 'UPI / BANK'))),
+                                  : (isCredit
+                                      ? 'CREDIT'
+                                      : (isCash ? 'CASH' : (isSplit ? 'SPLIT' : 'UPI / BANK')))),
                           style: GoogleFonts.inter(
                             fontSize: 9,
                             fontWeight: FontWeight.w800,
@@ -655,7 +669,9 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                                 ? const Color(0xFF475569)
                                 : (isCredit
                                     ? const Color(0xFF92400E)
-                                    : (isCash ? const Color(0xFF800020) : const Color(0xFF334155))),
+                                    : (isSplit
+                                        ? const Color(0xFF4338CA)
+                                        : (isCash ? const Color(0xFF800020) : const Color(0xFF334155)))),
                           ),
                         ),
                       ),
@@ -905,6 +921,33 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                         ],
                       ),
                     )),
+                  ],
+
+                  if (isSplit && ((order.cashAmount ?? 0) > 0 || (order.upiAmount ?? 0) > 0)) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFC7D2FE)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.call_split_rounded, size: 13, color: Color(0xFF4338CA)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Split: Cash ₹${(order.cashAmount ?? 0).toStringAsFixed(0)}  •  UPI/Bank ₹${(order.upiAmount ?? 0).toStringAsFixed(0)}',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF4338CA),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
 
                   const SizedBox(height: 10),
