@@ -661,9 +661,12 @@ class RouteViewSet(viewsets.ModelViewSet):
             )
             bank_collection = float(
                 shift_sales_qs.filter(
-                    Q(PaymentMethod__in=['Bank', 'UPI', 'Online', 'Card', 'Digital', 'CHEQUE', 'Cheque'])
-                    | Q(PaymentMethod__iexact='bank')
-                    | Q(PaymentMethod__iexact='upi')
+                    Q(PaymentMethod__icontains='Bank')
+                    | Q(PaymentMethod__icontains='UPI')
+                    | Q(PaymentMethod__icontains='Online')
+                    | Q(PaymentMethod__icontains='Card')
+                    | Q(PaymentMethod__icontains='Digital')
+                    | Q(PaymentMethod__icontains='Cheque')
                 )
                 .aggregate(s=Sum('PaidAmount'))['s'] or 0
             )
@@ -683,19 +686,25 @@ class RouteViewSet(viewsets.ModelViewSet):
                 cash_collection += c_val
                 bank_collection += u_val
 
-            total_collection = float(
-                shift_sales_qs.aggregate(s=Sum('PaidAmount'))['s'] or (cash_collection + bank_collection)
-            )
+            total_collection = cash_collection + bank_collection
 
             # Standalone customer payment receipts collected by driver during this shift
             sale_refs = set(shift_sales_qs.values_list('SalesNo', flat=True)) | set(shift_sales_qs.values_list('InvoiceNo', flat=True))
             sale_pmt_ids = set(BillwiseAllocation.objects.filter(BillReference__in=sale_refs).values_list('PaymentLine__Payment_id', flat=True))
 
+            rec_narr_q = Q(Narration__icontains=f'[RVD:{allocation_id}]')
+            if route.RouteName:
+                rec_narr_q |= Q(Narration__icontains=route.RouteName)
+            if driver_name:
+                rec_narr_q |= Q(Narration__icontains=driver_name)
+            if vehicle_number and vehicle_number != 'Not Assigned':
+                rec_narr_q |= Q(Narration__icontains=str(vehicle_number).strip())
+
             shift_receipt_qs = Payment.objects.filter(
                 Q(DeliveryNoteId=latest_dn.DeliveryNoteId) |
-                (Q(Narration__icontains=route.RouteName) & Q(CreatedAt__gte=latest_dn.CreatedAt))
+                (rec_narr_q & Q(CreatedAt__gte=latest_dn.CreatedAt))
             ).exclude(
-                Q(PaymentId__in=sale_pmt_ids) |
+                (Q(PaymentId__in=sale_pmt_ids) & ~Q(Narration__startswith='Van Collection Receipt')) |
                 Q(Narration__startswith='Sales Receipt for ') |
                 Q(Status='CANCELLED') |
                 Q(PartyLedger__LedgerName__icontains='travel') |
@@ -1009,9 +1018,12 @@ class RouteViewSet(viewsets.ModelViewSet):
         )
         bank_collection = float(
             shift_sales_qs.filter(
-                Q(PaymentMethod__in=['Bank', 'UPI', 'Online', 'Card', 'Digital', 'CHEQUE', 'Cheque'])
-                | Q(PaymentMethod__iexact='bank')
-                | Q(PaymentMethod__iexact='upi')
+                Q(PaymentMethod__icontains='Bank')
+                | Q(PaymentMethod__icontains='UPI')
+                | Q(PaymentMethod__icontains='Online')
+                | Q(PaymentMethod__icontains='Card')
+                | Q(PaymentMethod__icontains='Digital')
+                | Q(PaymentMethod__icontains='Cheque')
             ).aggregate(s=Sum('PaidAmount'))['s'] or 0
         )
 
@@ -1030,19 +1042,25 @@ class RouteViewSet(viewsets.ModelViewSet):
             cash_collection += c_val
             bank_collection += u_val
 
-        total_collection = float(
-            shift_sales_qs.aggregate(s=Sum('PaidAmount'))['s'] or (cash_collection + bank_collection)
-        )
+        total_collection = cash_collection + bank_collection
 
         # Standalone customer payment receipts collected by driver during this shift
         sale_refs = set(shift_sales_qs.values_list('SalesNo', flat=True)) | set(shift_sales_qs.values_list('InvoiceNo', flat=True))
         sale_pmt_ids = set(BillwiseAllocation.objects.filter(BillReference__in=sale_refs).values_list('PaymentLine__Payment_id', flat=True))
 
+        rec_narr_q = Q(Narration__icontains=f'[RVD:{allocation_id}]')
+        if route.RouteName:
+            rec_narr_q |= Q(Narration__icontains=route.RouteName)
+        if driver_name:
+            rec_narr_q |= Q(Narration__icontains=driver_name)
+        if vehicle_number and vehicle_number != 'Not Assigned':
+            rec_narr_q |= Q(Narration__icontains=str(vehicle_number).strip())
+
         shift_receipt_qs = Payment.objects.filter(
             Q(DeliveryNoteId=latest_dn.DeliveryNoteId) |
-            (Q(Narration__icontains=route.RouteName) & Q(CreatedAt__gte=latest_dn.CreatedAt))
+            (rec_narr_q & Q(CreatedAt__gte=latest_dn.CreatedAt))
         ).exclude(
-            Q(PaymentId__in=sale_pmt_ids) |
+            (Q(PaymentId__in=sale_pmt_ids) & ~Q(Narration__startswith='Van Collection Receipt')) |
             Q(Narration__startswith='Sales Receipt for ') |
             Q(Status='CANCELLED') |
             Q(PartyLedger__LedgerName__icontains='travel') |
@@ -1159,9 +1177,9 @@ class RouteViewSet(viewsets.ModelViewSet):
         net_cash = cash_collection - cash_expense
         net_bank = bank_collection - bank_expense
 
-        # Recent live sales feed (last 20 deliveries on this active shift)
+        # Recent live sales feed (all deliveries on this active shift)
         recent_sales = []
-        for s in shift_sales_qs.select_related('CustomerLedger').prefetch_related('lines__Product', 'edit_history').order_by('-SalesId')[:20]:
+        for s in shift_sales_qs.select_related('CustomerLedger').prefetch_related('lines__Product', 'edit_history').order_by('-SalesId')[:100]:
             line_items = []
             for ln in s.lines.all():
                 line_items.append({
@@ -1195,6 +1213,8 @@ class RouteViewSet(viewsets.ModelViewSet):
             bill_no = s.InvoiceNo or s.SalesNo or f"#{s.SalesId}"
             cust_name = s.CustomerLedger.LedgerName if s.CustomerLedger else 'Walk-in Customer'
             time_str = s.CreatedAt.strftime('%I:%M %p') if s.CreatedAt else ''
+            is_credit_sale = (s.PaymentMethod or '').strip().upper() == 'CREDIT'
+            paid_amt_val = 0.0 if is_credit_sale else float(s.PaidAmount if s.PaidAmount is not None else 0)
             recent_sales.append({
                 'sales_id': s.SalesId,
                 'sale_id': s.SalesId,
@@ -1206,8 +1226,8 @@ class RouteViewSet(viewsets.ModelViewSet):
                 'payment_method': s.PaymentMethod or 'Cash',
                 'payment_mode': s.PaymentMethod or 'Cash',
                 'grand_total': float(s.GrandTotal or 0),
-                'paid_amount': float(s.PaidAmount if s.PaidAmount is not None else (s.GrandTotal or 0)),
-                'amount': float(s.PaidAmount if s.PaidAmount is not None else (s.GrandTotal or 0)),
+                'paid_amount': paid_amt_val,
+                'amount': paid_amt_val,
                 'delivered_qty': float(s.TotalDeliveredQty or 0),
                 'empty_qty': float(s.TotalEmptyQty or 0),
                 'empty_returned': float(s.TotalEmptyQty or 0),
@@ -1267,7 +1287,7 @@ class RouteViewSet(viewsets.ModelViewSet):
             })
 
         recent_sales.sort(key=lambda x: x.get('created_at') or '', reverse=True)
-        recent_sales = recent_sales[:30]
+        recent_sales = recent_sales[:100]
 
         # Product breakdown for this shift
         product_breakdown = []
@@ -8306,6 +8326,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             old_amount = sale.GrandTotal
+            old_paid = sale.PaidAmount or Decimal('0.00')
             old_pm = sale.PaymentMethod
 
             # Determine who edited
@@ -8475,7 +8496,7 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
             sale.IsEdited = True
             sale.EditedBy = editor_name
             sale.EditedAt = timezone.now()
-            default_reason = f"Amount modified: Paid ₹{sale.PaidAmount}{split_breakdown}, Bill Total ₹{sale.GrandTotal}"
+            default_reason = f"Amount modified: Paid ₹{sale.PaidAmount}{split_breakdown} (was ₹{old_paid}), Bill Total ₹{sale.GrandTotal}"
             sale.EditReason = data.get('reason') or data.get('edit_reason') or default_reason
             sale.save()
 

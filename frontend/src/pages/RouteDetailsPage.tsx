@@ -985,17 +985,21 @@ export const RouteDetailsPage: React.FC = () => {
                   );
 
                   const customerName = sale.customer || sale.customer_name || 'Walk-in Customer';
-                  const amountVal = (sale.paid_amount !== undefined && sale.paid_amount !== null)
+                  const paymentModeVal = sale.payment_mode || sale.payment_method || 'Cash';
+                  const pmLower = paymentModeVal.toLowerCase();
+                  const isCash = pmLower === 'cash';
+                  const isCredit = pmLower === 'credit';
+                  const isSplit = pmLower === 'split';
+                  const rawAmountVal = (sale.paid_amount !== undefined && sale.paid_amount !== null)
                     ? Number(sale.paid_amount)
-                    : Number(sale.amount ?? sale.grand_total ?? 0);
+                    : Number(sale.amount ?? 0);
+                  const amountVal = isCredit ? 0 : rawAmountVal;
                   const grandTotalVal = Number(sale.grand_total ?? 0);
                   const deliveredQty = sale.delivered_qty ?? 0;
                   const emptyReturned = sale.empty_returned ?? sale.empty_qty ?? 0;
-                  const paymentModeVal = sale.payment_mode || sale.payment_method || 'Cash';
-                  const isCash = paymentModeVal.toLowerCase() === 'cash';
 
                   return (
-                    <Table.Tr key={sale.sale_id || sale.sales_id || idx}>
+                    <Table.Tr key={`${isReceipt ? 'REC' : 'SALE'}-${sale.sale_id || sale.sales_id || billNo}-${idx}`}>
                       <Table.Td>
                         <Text size="xs" c="dimmed" ff="monospace">
                           {fmtTime(sale.time || sale.created_at)}
@@ -1107,9 +1111,29 @@ export const RouteDetailsPage: React.FC = () => {
                           style={{
                             fontWeight: 700,
                             textTransform: 'capitalize',
-                            backgroundColor: isCash ? '#fdf2f4' : '#f8fafc',
-                            color: isCash ? '#800020' : '#334155',
-                            border: `1px solid ${isCash ? '#fce7ec' : '#e2e8f0'}`,
+                            backgroundColor: isCash
+                              ? '#fdf2f4'
+                              : isCredit
+                                ? '#fef3c7'
+                                : isSplit
+                                  ? '#eef2ff'
+                                  : '#f8fafc',
+                            color: isCash
+                              ? '#800020'
+                              : isCredit
+                                ? '#92400e'
+                                : isSplit
+                                  ? '#4338ca'
+                                  : '#334155',
+                            border: `1px solid ${
+                              isCash
+                                ? '#fce7ec'
+                                : isCredit
+                                  ? '#fde68a'
+                                  : isSplit
+                                    ? '#c7d2fe'
+                                    : '#e2e8f0'
+                            }`,
                           }}
                         >
                           {paymentModeVal}
@@ -1249,19 +1273,21 @@ export const RouteDetailsPage: React.FC = () => {
                 )}
               </Box>
             ) : (
-              <Table.ScrollContainer minWidth={600} style={{ width: '100%' }}>
+              <Table.ScrollContainer minWidth={680} style={{ width: '100%' }}>
                 <Table verticalSpacing="sm" horizontalSpacing="md" highlightOnHover withTableBorder style={{ borderRadius: 8, overflow: 'hidden', width: '100%' }}>
                   <Table.Thead style={{ backgroundColor: '#fdf2f4' }}>
                     <Table.Tr>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 160, whiteSpace: 'nowrap' }}>TIMESTAMP</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 180, whiteSpace: 'nowrap' }}>MODIFIED BY</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 210, whiteSpace: 'nowrap' }}>AMOUNT CHANGE</Table.Th>
-                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 150, whiteSpace: 'nowrap' }}>PAYMENT MODE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 52, whiteSpace: 'nowrap' }}>EDIT #</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 155, whiteSpace: 'nowrap' }}>TIMESTAMP</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 165, whiteSpace: 'nowrap' }}>MODIFIED BY</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 220, whiteSpace: 'nowrap' }}>AMOUNT CHANGE</Table.Th>
+                      <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px', width: 145, whiteSpace: 'nowrap' }}>PAYMENT MODE</Table.Th>
                       <Table.Th style={{ fontSize: 11, color: '#800020', fontWeight: 800, letterSpacing: '0.4px' }}>REASON / NOTES</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
                     {activeAuditSale.edit_history.map((eh: any, idx: number) => {
+                      const revNum = (activeAuditSale.edit_history?.length ?? 0) - idx;
                       const editDate = eh.edited_at || eh.EditedAt;
                       const editor = eh.edited_by || eh.EditedBy || 'Driver / Admin';
                       const oldTotal = eh.old_grand_total ?? eh.OldGrandTotal ?? 0;
@@ -1269,9 +1295,18 @@ export const RouteDetailsPage: React.FC = () => {
                       const oldMode = eh.old_payment_method || eh.OldPaymentMethod || '';
                       const newMode = eh.new_payment_method || eh.NewPaymentMethod || '';
                       const noteText = eh.notes || eh.Notes || 'Invoice details updated';
+                      const paidMatch = String(noteText).match(/(?:Paid|Collected)\s*[:\s]*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+                      const wasMatch = String(noteText).match(/was\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i);
+                      const paidAfter = paidMatch ? parseFloat(paidMatch[1].replace(/,/g, '')) : null;
+                      const paidBefore = wasMatch ? parseFloat(wasMatch[1].replace(/,/g, '')) : null;
 
                       return (
-                        <Table.Tr key={eh.edit_id || eh.EditId || idx}>
+                        <Table.Tr key={`rev-${eh.edit_id || eh.EditId || idx}-${idx}`}>
+                          <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                            <Badge size="xs" variant="light" color="burgundy" radius="sm" style={{ fontWeight: 800 }}>
+                              #{revNum}
+                            </Badge>
+                          </Table.Td>
                           <Table.Td style={{ fontSize: 12, color: '#475569', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
                             {editDate ? new Date(editDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}
                           </Table.Td>
@@ -1279,15 +1314,38 @@ export const RouteDetailsPage: React.FC = () => {
                             {editor}
                           </Table.Td>
                           <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
-                            <Group gap={6} wrap="nowrap">
-                              <Text size="xs" td="line-through" c="dimmed">
-                                ₹{Number(oldTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </Text>
-                              <IconArrowRight size={13} color="#800020" />
-                              <Text size="sm" fw={800} style={{ color: '#800020' }}>
-                                ₹{Number(newTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                              </Text>
-                            </Group>
+                            {paidAfter !== null ? (
+                              <div>
+                                <Group gap={6} wrap="nowrap">
+                                  {paidBefore !== null && (
+                                    <>
+                                      <Text size="xs" td="line-through" c="dimmed">
+                                        ₹{paidBefore.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                      </Text>
+                                      <IconArrowRight size={13} color="#800020" />
+                                    </>
+                                  )}
+                                  <Text size="sm" fw={800} style={{ color: '#800020' }}>
+                                    Paid ₹{paidAfter.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  </Text>
+                                </Group>
+                                {Number(oldTotal) !== Number(newTotal) && (
+                                  <Text size="10px" c="dimmed">
+                                    Bill: ₹{Number(oldTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })} → ₹{Number(newTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  </Text>
+                                )}
+                              </div>
+                            ) : (
+                              <Group gap={6} wrap="nowrap">
+                                <Text size="xs" td="line-through" c="dimmed">
+                                  ₹{Number(oldTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </Text>
+                                <IconArrowRight size={13} color="#800020" />
+                                <Text size="sm" fw={800} style={{ color: '#800020' }}>
+                                  ₹{Number(newTotal).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </Text>
+                              </Group>
+                            )}
                           </Table.Td>
                           <Table.Td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>
                             {oldMode && oldMode !== newMode ? (
