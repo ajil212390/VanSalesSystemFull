@@ -565,9 +565,14 @@ def generate_tax_invoice_pdf(sale):
 
             # Fetch the actual sales amount added in the products (falling back to customer special rate, then product rate)
             gross_total = Decimal(str(line.Total or 0))
-            if gross_total <= Decimal('0.00') and qty > 0:
-                cust_sp = cust_special_price_map.get(line.Product_id)
-                gross_unit_rate = Decimal(str(line.SalesPrice or cust_sp or (prod.SalesPrice if prod else 0) or 0))
+            cust_sp = cust_special_price_map.get(line.Product_id)
+            default_prod_total = (qty * Decimal(str(prod.SalesPrice or 0))).quantize(Decimal('0.01')) if prod else Decimal('0.00')
+
+            if cust_sp is not None and (gross_total <= Decimal('0.00') or (default_prod_total > 0 and gross_total == default_prod_total)):
+                gross_unit_rate = cust_sp
+                gross_total = (qty * gross_unit_rate).quantize(Decimal('0.01'))
+            elif gross_total <= Decimal('0.00') and qty > 0:
+                gross_unit_rate = Decimal(str(line.SalesPrice or (prod.SalesPrice if prod else 0) or 0))
                 gross_total = (qty * gross_unit_rate).quantize(Decimal('0.01'))
 
             # Resolve GST rate: explicitly respect line.TaxPercent (even if 0.00) or product GSTPercentage

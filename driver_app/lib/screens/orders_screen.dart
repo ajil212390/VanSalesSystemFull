@@ -827,9 +827,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                     ),
                     const SizedBox(height: 4),
                     ...deliveredItems.map((it) {
-                      final unitPrice = it.cylinder.price > 0
-                          ? it.cylinder.price
-                          : state.getCylinderPrice(it.cylinder, order.customer);
+                      final unitPrice = state.getCylinderPrice(it.cylinder, order.customer);
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Row(
@@ -857,7 +855,9 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                             const SizedBox(width: 5),
                             Expanded(
                               child: Text(
-                                '${_shortName(it.cylinder.weight)} @ ₹${unitPrice.toStringAsFixed(0)}',
+                                it.deliveryQty > 1
+                                    ? '${_shortName(it.cylinder.weight)} @ ₹${unitPrice.toStringAsFixed(0)}'
+                                    : _shortName(it.cylinder.weight),
                                 style: GoogleFonts.inter(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,

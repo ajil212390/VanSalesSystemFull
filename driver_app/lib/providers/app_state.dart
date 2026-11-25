@@ -557,6 +557,9 @@ class AppState extends ChangeNotifier {
         currentAllocationId = safeIntNullable(alloc['RouteVehicleDriverId'] ?? alloc['id']);
         currentRouteId = safeIntNullable(alloc['RouteId'] ?? alloc['Route'] ?? alloc['route_id']);
 
+        // Pre-fetch all customers & special prices for this route early so subsequent order matching has special prices
+        await fetchCustomers(currentRouteId);
+
         final vNum = alloc['VehicleNumber'] ?? alloc['vehicle_number'] ?? alloc['Vehicle_number'];
         if (vNum != null && vNum.toString().trim().isNotEmpty) {
           vehicleNumber = vNum.toString().trim();
@@ -902,19 +905,59 @@ class AppState extends ChangeNotifier {
   }
 
   /// Resolves customer-specific price (falling back to catalog/item fallbackPrice).
-  double getCustomerPrice(int? productId, double fallbackPrice, [Customer? customer]) {
-    final target = customer ?? selectedCustomer;
-    if (target != null && productId != null) {
-      final special = target.specialPrices[productId];
-      if (special != null && special > 0) {
-        return special;
+  double getCustomerPrice(int? productId, double fallbackPrice, [Customer? customer, CylinderType? cyl]) {
+    Customer? target = customer ?? selectedCustomer;
+    if (target != null && target.specialPrices.isEmpty && customers.isNotEmpty) {
+      try {
+        final found = customers.firstWhere(
+          (c) => (target!.ledgerId != null && c.ledgerId == target.ledgerId) ||
+                 (c.name.trim().toLowerCase() == target.name.trim().toLowerCase()),
+        );
+        target = found;
+      } catch (_) {}
+    }
+
+    if (target != null) {
+      // 1. Direct match by productId
+      if (productId != null && target.specialPrices.containsKey(productId) && target.specialPrices[productId]! > 0) {
+        return target.specialPrices[productId]!;
+      }
+      // 2. Resolve productId from known cylinders if missing
+      int? resolvedPid = productId;
+      if ((resolvedPid == null || resolvedPid == 0) && cyl != null) {
+        final cMatch = cylinders.firstWhere(
+          (c) => (c.productId != null && c.productId! > 0) &&
+                 (c.weight.replaceAll(' ', '').toUpperCase() == cyl.weight.replaceAll(' ', '').toUpperCase() ||
+                  c.weight.trim().toLowerCase() == cyl.weight.trim().toLowerCase()),
+          orElse: () => cyl,
+        );
+        resolvedPid = cMatch.productId;
+      }
+      if (resolvedPid != null && target.specialPrices.containsKey(resolvedPid) && target.specialPrices[resolvedPid]! > 0) {
+        return target.specialPrices[resolvedPid]!;
+      }
+      // 3. Fallback weight match (e.g. 17KG)
+      if (cyl != null && target.specialPrices.isNotEmpty) {
+        final wNorm = cyl.weight.replaceAll(' ', '').toUpperCase();
+        for (final entry in target.specialPrices.entries) {
+          final catCyl = cylinders.firstWhere(
+            (c) => c.productId == entry.key,
+            orElse: () => CylinderType(weight: '', filledStock: 0, price: 0),
+          );
+          if (catCyl.weight.isNotEmpty) {
+            final catWNorm = catCyl.weight.replaceAll(' ', '').toUpperCase();
+            if (catWNorm == wNorm || (wNorm.contains('17') && catWNorm.contains('17'))) {
+              if (entry.value > 0) return entry.value;
+            }
+          }
+        }
       }
     }
     return fallbackPrice;
   }
 
   double getCylinderPrice(CylinderType cyl, [Customer? customer]) {
-    return getCustomerPrice(cyl.productId, cyl.price, customer);
+    return getCustomerPrice(cyl.productId, cyl.price, customer, cyl);
   }
 
   double getOtherProductPrice(OtherProductItem prod, [Customer? customer]) {

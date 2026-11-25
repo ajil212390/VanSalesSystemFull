@@ -880,7 +880,6 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
               final filledQty = item.deliveryQty;
               final emptyQty = item.emptyReturnQty;
               final hasStock = cyl.filledStock > 0;
-              final unitPrice = state.getCylinderPrice(cyl);
 
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
@@ -921,9 +920,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           Padding(
                             padding: const EdgeInsets.only(left: 2),
                             child: Text(
-                              unitPrice > 0
-                                  ? '${hasStock ? cyl.filledStock : 0} left • ₹${unitPrice.toStringAsFixed(0)}'
-                                  : (hasStock ? '${cyl.filledStock} left' : '0 left'),
+                              hasStock ? '${cyl.filledStock} left' : '0 left',
                               style: GoogleFonts.inter(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
@@ -1175,7 +1172,6 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             ...otherList.map((prod) {
               final qty = state.getOtherDeliveryQty(prod.name);
               final hasStock = prod.balanceStock > 0;
-              final unitPrice = state.getOtherProductPrice(prod);
 
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -1216,9 +1212,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           Padding(
                             padding: const EdgeInsets.only(left: 2),
                             child: Text(
-                              unitPrice > 0
-                                  ? '${prod.balanceStock} left • ₹${unitPrice.toStringAsFixed(0)}'
-                                  : '${prod.balanceStock} left',
+                              '${prod.balanceStock} left',
                               style: GoogleFonts.inter(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w600,

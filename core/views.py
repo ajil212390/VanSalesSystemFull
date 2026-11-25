@@ -12302,9 +12302,15 @@ class SalesViewSet(viewsets.ModelViewSet):
                 empty_qty = Decimal(str(item.get('EmptyQuantity') or item.get('empty_qty') or 0))
                 raw_rate = item.get('SalesPrice') if item.get('SalesPrice') is not None else item.get('rate')
                 rate = Decimal(str(raw_rate or 0))
-                if rate <= Decimal('0.00'):
-                    cpp = CustomerProductPrice.objects.filter(CustomerLedger=customer, Product=prod).first() if customer else None
-                    rate = Decimal(str(cpp.SpecialPrice)) if (cpp and cpp.SpecialPrice and cpp.SpecialPrice > Decimal('0.00')) else Decimal(str(prod.SalesPrice or 0))
+
+                cpp = CustomerProductPrice.objects.filter(CustomerLedger=customer, Product=prod).first() if customer else None
+                cust_special_rate = Decimal(str(cpp.SpecialPrice)) if (cpp and cpp.SpecialPrice and cpp.SpecialPrice > Decimal('0.00')) else None
+                default_prod_rate = Decimal(str(prod.SalesPrice or 0))
+
+                if cust_special_rate is not None and (rate <= Decimal('0.00') or rate == default_prod_rate):
+                    rate = cust_special_rate
+                elif rate <= Decimal('0.00'):
+                    rate = default_prod_rate
 
                 line_gross = qty * rate
                 gst_p = Decimal(str(item.get('TaxPercent') or prod.GSTPercentage or 0))
@@ -12684,9 +12690,15 @@ class SalesViewSet(viewsets.ModelViewSet):
                 empty_qty = Decimal(str(item.get('EmptyQuantity') or item.get('empty_qty') or 0))
                 raw_rate = item.get('SalesPrice') if item.get('SalesPrice') is not None else item.get('rate')
                 rate = Decimal(str(raw_rate or 0))
-                if rate <= Decimal('0.00'):
-                    cpp = CustomerProductPrice.objects.filter(CustomerLedger=customer, Product=prod).first() if customer else None
-                    rate = Decimal(str(cpp.SpecialPrice)) if (cpp and cpp.SpecialPrice and cpp.SpecialPrice > Decimal('0.00')) else Decimal(str(prod.SalesPrice or 0))
+
+                cpp = CustomerProductPrice.objects.filter(CustomerLedger=customer, Product=prod).first() if customer else None
+                cust_special_rate = Decimal(str(cpp.SpecialPrice)) if (cpp and cpp.SpecialPrice and cpp.SpecialPrice > Decimal('0.00')) else None
+                default_prod_rate = Decimal(str(prod.SalesPrice or 0))
+
+                if cust_special_rate is not None and (rate <= Decimal('0.00') or rate == default_prod_rate):
+                    rate = cust_special_rate
+                elif rate <= Decimal('0.00'):
+                    rate = default_prod_rate
 
                 line_gross = qty * rate
                 gst_p = Decimal(str(item.get('TaxPercent') or prod.GSTPercentage or 0))
