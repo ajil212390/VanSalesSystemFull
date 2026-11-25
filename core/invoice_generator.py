@@ -521,12 +521,14 @@ def generate_tax_invoice_pdf(sale):
             sgst_val = Decimal('0.00')
             igst_val = tot_tax
 
+        synth_qty = Decimal(str(sale.TotalDeliveredQty or 1))
+        unit_taxable_synth = (taxable_val / synth_qty).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) if synth_qty > 0 else taxable_val
         table_rows.append([
             Paragraph("1", cell_norm),
             Paragraph("Commercial / Domestic Gas Cylinder", cell_bold),
             Paragraph("271109", cell_muted),
-            Paragraph(f"{int(sale.TotalDeliveredQty or 1)} NOS", cell_norm),
-            Paragraph(f"{taxable_val:.2f}", cell_right),
+            Paragraph(f"{int(synth_qty)} NOS", cell_norm),
+            Paragraph(f"{unit_taxable_synth:.2f}", cell_right),
             Paragraph(f"{taxable_val:.2f}", cell_right_bold),
         ])
         total_taxable_sum += taxable_val
@@ -542,20 +544,30 @@ def generate_tax_invoice_pdf(sale):
             'cgst_amount': cgst_val,
             'sgst_amount': sgst_val,
             'igst_amount': igst_val,
-            'qty': Decimal(str(sale.TotalDeliveredQty or 1)),
+            'qty': synth_qty,
         })
     else:
-        for idx, line in enumerate(lines, 1):
+        from core.models import CustomerProductPrice
+        cust_special_price_map = {}
+        if customer:
+            for cp in CustomerProductPrice.objects.filter(CustomerLedger=customer).values('Product_id', 'SpecialPrice'):
+                if cp['SpecialPrice'] and cp['SpecialPrice'] > Decimal('0.00'):
+                    cust_special_price_map[cp['Product_id']] = Decimal(str(cp['SpecialPrice']))
+
+        row_no = 0
+        for line in lines:
             prod = line.Product
             hsn = prod.HSNCode if prod and prod.HSNCode else "271109"
             qty = Decimal(str(line.Quantity or 0))
             if qty == 0 and line.EmptyQuantity > 0:
                 continue
+            row_no += 1
 
-            # Fetch the actual sales amount added in the products
+            # Fetch the actual sales amount added in the products (falling back to customer special rate, then product rate)
             gross_total = Decimal(str(line.Total or 0))
             if gross_total <= Decimal('0.00') and qty > 0:
-                gross_unit_rate = Decimal(str(line.SalesPrice or (prod.SalesPrice if prod else 0) or 0))
+                cust_sp = cust_special_price_map.get(line.Product_id)
+                gross_unit_rate = Decimal(str(line.SalesPrice or cust_sp or (prod.SalesPrice if prod else 0) or 0))
                 gross_total = (qty * gross_unit_rate).quantize(Decimal('0.01'))
 
             # Resolve GST rate: explicitly respect line.TaxPercent (even if 0.00) or product GSTPercentage
@@ -605,7 +617,7 @@ def generate_tax_invoice_pdf(sale):
                 })
 
             table_rows.append([
-                Paragraph(str(idx), ParagraphStyle('C1', parent=cell_norm, alignment=1)),
+                Paragraph(str(row_no), ParagraphStyle('C1', parent=cell_norm, alignment=1)),
                 Paragraph(f"<b>{line.ProductName}</b>", cell_bold),
                 Paragraph(hsn, ParagraphStyle('C2', parent=cell_muted, alignment=1)),
                 Paragraph(f"{int(qty)} NOS", ParagraphStyle('C3', parent=cell_norm, alignment=1)),

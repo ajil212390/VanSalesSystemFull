@@ -785,18 +785,40 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
           children: [
             // Section Header
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Icon(Icons.propane_tank_rounded, size: 18, color: Color(0xFF800020)),
-                const SizedBox(width: 6),
-                Text(
-                  'CYLINDERS TO DELIVER',
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF800020),
-                    letterSpacing: 0.5,
-                  ),
+                Row(
+                  children: [
+                    const Icon(Icons.propane_tank_rounded, size: 18, color: Color(0xFF800020)),
+                    const SizedBox(width: 6),
+                    Text(
+                      'CYLINDERS TO DELIVER',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF800020),
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
+                if (state.calculatedBillAmount > 0)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFDF2F4),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFF5C2CB)),
+                    ),
+                    child: Text(
+                      'Bill: \u20B9${state.calculatedBillAmount.toStringAsFixed(0)}',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF800020),
+                      ),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -858,6 +880,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
               final filledQty = item.deliveryQty;
               final emptyQty = item.emptyReturnQty;
               final hasStock = cyl.filledStock > 0;
+              final unitPrice = state.getCylinderPrice(cyl);
 
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
@@ -898,7 +921,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           Padding(
                             padding: const EdgeInsets.only(left: 2),
                             child: Text(
-                              hasStock ? '${cyl.filledStock} left' : '0 left',
+                              unitPrice > 0
+                                  ? '${hasStock ? cyl.filledStock : 0} left • ₹${unitPrice.toStringAsFixed(0)}'
+                                  : (hasStock ? '${cyl.filledStock} left' : '0 left'),
                               style: GoogleFonts.inter(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
@@ -1150,6 +1175,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
             ...otherList.map((prod) {
               final qty = state.getOtherDeliveryQty(prod.name);
               final hasStock = prod.balanceStock > 0;
+              final unitPrice = state.getOtherProductPrice(prod);
 
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -1190,7 +1216,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                           Padding(
                             padding: const EdgeInsets.only(left: 2),
                             child: Text(
-                              '${prod.balanceStock} left',
+                              unitPrice > 0
+                                  ? '${prod.balanceStock} left • ₹${unitPrice.toStringAsFixed(0)}'
+                                  : '${prod.balanceStock} left',
                               style: GoogleFonts.inter(
                                 fontSize: 10.5,
                                 fontWeight: FontWeight.w600,
@@ -1422,7 +1450,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Credit Sale (₹0 Collected): Bill amount of ₹${state.totalBillAmount.toStringAsFixed(2)} will be debited to customer account without collection.',
+                        'Credit Sale (₹0 Collected): Bill amount of ₹${(state.calculatedBillAmount > 0 ? state.calculatedBillAmount : state.totalBillAmount).toStringAsFixed(2)} will be debited to customer account without collection.',
                         style: GoogleFonts.inter(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -1459,9 +1487,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                             letterSpacing: 0.5,
                           ),
                         ),
-                        if (state.totalBillAmount > 0)
+                        if ((state.calculatedBillAmount > 0 ? state.calculatedBillAmount : state.totalBillAmount) > 0)
                           Text(
-                            'Bill Total: \u20B9${state.totalBillAmount.toStringAsFixed(0)}',
+                            'Bill Total: \u20B9${(state.calculatedBillAmount > 0 ? state.calculatedBillAmount : state.totalBillAmount).toStringAsFixed(0)}',
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -1497,8 +1525,9 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
                                 ),
                                 onChanged: (val) {
                                   final c = double.tryParse(val.replaceAll(',', '').trim()) ?? 0;
-                                  if (state.totalBillAmount > 0 && c <= state.totalBillAmount) {
-                                    final rem = (state.totalBillAmount - c).clamp(0.0, state.totalBillAmount);
+                                  final refBill = state.calculatedBillAmount > 0 ? state.calculatedBillAmount : state.totalBillAmount;
+                                  if (refBill > 0 && c <= refBill) {
+                                    final rem = (refBill - c).clamp(0.0, refBill);
                                     _splitUpiController.text = rem > 0 ? rem.toStringAsFixed(0) : '0';
                                   }
                                   final u = double.tryParse(_splitUpiController.text.replaceAll(',', '').trim()) ?? 0;
@@ -1996,7 +2025,7 @@ class _AddDeliveryScreenState extends State<AddDeliveryScreen> {
     final customer = state.selectedCustomer;
     final customerName = customer?.name ?? 'Customer';
     final customerPhone = customer?.phone.trim() ?? '';
-    final totalBill = state.totalBillAmount;
+    final totalBill = state.calculatedBillAmount > 0 ? state.calculatedBillAmount : state.totalBillAmount;
     final isEmptiesOnly = state.totalCylinders == 0 && state.totalOtherDeliveryCount == 0 && state.totalEmpties > 0;
 
     showDialog(

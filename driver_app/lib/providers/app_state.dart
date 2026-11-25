@@ -93,6 +93,7 @@ class Customer {
   double outstanding;
   final int? routeId;
   final String? routeName;
+  final Map<int, double> specialPrices;
 
   Customer({
     this.ledgerId,
@@ -107,6 +108,7 @@ class Customer {
     this.outstanding = 0,
     this.routeId,
     this.routeName,
+    this.specialPrices = const {},
   });
 }
 
@@ -449,6 +451,17 @@ class AppState extends ChangeNotifier {
           final addr = (c['AddressLine1'] ?? c['Address'] ?? '').toString().trim();
           final rId = safeIntNullable(c['RouteId'] ?? c['Route'] ?? c['route_id']);
           final rNm = (c['RouteName'] ?? c['route_name'] ?? '').toString().trim();
+          final rawSp = c['special_prices'];
+          final Map<int, double> spMap = {};
+          if (rawSp is Map) {
+            rawSp.forEach((k, v) {
+              final pid = int.tryParse(k.toString());
+              final pVal = safeDouble(v);
+              if (pid != null && pVal > 0) {
+                spMap[pid] = pVal;
+              }
+            });
+          }
           customers.add(Customer(
             ledgerId: safeIntNullable(c['LedgerId']),
             name: (c['LedgerName'] ?? '').toString().trim(),
@@ -460,7 +473,17 @@ class AppState extends ChangeNotifier {
             emptyStockLimit: safeDouble(c['EmptyStockLimit']),
             routeId: rId,
             routeName: rNm.isNotEmpty ? rNm : null,
+            specialPrices: spMap,
           ));
+        }
+        if (selectedCustomer != null) {
+          try {
+            selectedCustomer = customers.firstWhere(
+              (c) =>
+                  (selectedCustomer!.ledgerId != null && c.ledgerId == selectedCustomer!.ledgerId) ||
+                  c.name.trim().toLowerCase() == selectedCustomer!.name.trim().toLowerCase(),
+            );
+          } catch (_) {}
         }
         notifyListeners();
       }
@@ -635,38 +658,15 @@ class AppState extends ChangeNotifier {
                   .toList();
             }
 
+            // Fetch fresh customer list (including special prices) before loading sales so customer rates resolve cleanly
+            await fetchCustomers();
+
             // Fetch Driver's Sales for Today from Backend
             try {
               final backendSales = await ApiService.getDriverSales(currentAllocationId!);
               final newOrders = <DeliveryOrder>[];
               for (final s in backendSales) {
                 final cData = s['customer'] as Map<String, dynamic>? ?? {};
-                final itemsList = (s['items'] as List? ?? []).map((it) {
-                  var w = it['weight']?.toString().trim() ?? '';
-                  final kgMatch = RegExp(r'(\d+(?:\.\d+)?\s*KG)', caseSensitive: false).firstMatch(w);
-                  if (kgMatch != null) {
-                    w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
-                  }
-                  final itPid = safeIntNullable(it['productId']);
-                  final wNorm = w.replaceAll(' ', '').toUpperCase();
-                  final matchedCyl = cylinders.firstWhere(
-                    (c) => (itPid != null && c.productId == itPid) ||
-                           c.weight.replaceAll(' ', '').toUpperCase() == wNorm ||
-                           (wNorm.isNotEmpty && c.weight.replaceAll(' ', '').toUpperCase().contains(wNorm)),
-                    orElse: () => CylinderType(
-                      productId: itPid,
-                      weight: w,
-                      price: safeDouble(it['rate']),
-                      filledStock: 0,
-                    ),
-                  );
-                  return DeliveryItem(
-                    cylinder: matchedCyl,
-                    deliveryQty: safeInt(it['deliveryQty']),
-                    emptyReturnQty: safeInt(it['emptyReturnQty']),
-                  );
-                }).toList();
-
                 final cLedgerId = safeIntNullable(cData['ledgerId']);
                 final cName = cData['name'] ?? 'Customer';
                 final cPhoneRaw = (cData['phone'] ?? '').toString().trim();
@@ -686,6 +686,47 @@ class AppState extends ChangeNotifier {
                 }
                 final resolvedPhone = cPhoneRaw.isNotEmpty ? cPhoneRaw : matchedCust.phone;
 
+                final itemsList = (s['items'] as List? ?? []).map((it) {
+                  var w = it['weight']?.toString().trim() ?? '';
+                  final kgMatch = RegExp(r'(\d+(?:\.\d+)?\s*KG)', caseSensitive: false).firstMatch(w);
+                  if (kgMatch != null) {
+                    w = kgMatch.group(1)!.replaceAll(' ', '').toUpperCase();
+                  }
+                  final itPid = safeIntNullable(it['productId']);
+                  final wNorm = w.replaceAll(' ', '').toUpperCase();
+                  final matchedCyl = cylinders.firstWhere(
+                    (c) => (itPid != null && c.productId == itPid) ||
+                           c.weight.replaceAll(' ', '').toUpperCase() == wNorm ||
+                           (wNorm.isNotEmpty && c.weight.replaceAll(' ', '').toUpperCase().contains(wNorm)),
+                    orElse: () => CylinderType(
+                      productId: itPid,
+                      weight: w,
+                      price: safeDouble(it['rate']),
+                      filledStock: 0,
+                    ),
+                  );
+                  final lineRate = safeDouble(it['rate']);
+                  final resolvedPid = matchedCyl.productId ?? itPid;
+                  final effectiveRate = lineRate > 0
+                      ? lineRate
+                      : getCustomerPrice(resolvedPid, matchedCyl.price, matchedCust);
+
+                  return DeliveryItem(
+                    cylinder: CylinderType(
+                      productId: resolvedPid,
+                      weight: matchedCyl.weight.isNotEmpty ? matchedCyl.weight : w,
+                      price: effectiveRate,
+                      gstPercentage: matchedCyl.gstPercentage,
+                      hsnCode: matchedCyl.hsnCode,
+                      initialFilledStock: matchedCyl.initialFilledStock,
+                      filledStock: matchedCyl.filledStock,
+                      emptyStock: matchedCyl.emptyStock,
+                    ),
+                    deliveryQty: safeInt(it['deliveryQty']),
+                    emptyReturnQty: safeInt(it['emptyReturnQty']),
+                  );
+                }).toList();
+
                 final paidAmt = safeDouble(s['paidAmount']);
                 final billAmt = safeDouble(s['grandTotal'] != null && safeDouble(s['grandTotal']) > 0 ? s['grandTotal'] : s['amount']);
                 final isCreditSale = (s['paymentMethod'] ?? '').toString().toUpperCase() == 'CREDIT';
@@ -701,6 +742,7 @@ class AppState extends ChangeNotifier {
                     phone: resolvedPhone,
                     address: matchedCust.address,
                     type: matchedCust.type,
+                    specialPrices: matchedCust.specialPrices,
                   ),
                   items: itemsList,
                   totalCylinders: safeInt(s['totalCylinders']),
@@ -859,6 +901,45 @@ class AppState extends ChangeNotifier {
     return collectedAmount;
   }
 
+  /// Resolves customer-specific price (falling back to catalog/item fallbackPrice).
+  double getCustomerPrice(int? productId, double fallbackPrice, [Customer? customer]) {
+    final target = customer ?? selectedCustomer;
+    if (target != null && productId != null) {
+      final special = target.specialPrices[productId];
+      if (special != null && special > 0) {
+        return special;
+      }
+    }
+    return fallbackPrice;
+  }
+
+  double getCylinderPrice(CylinderType cyl, [Customer? customer]) {
+    return getCustomerPrice(cyl.productId, cyl.price, customer);
+  }
+
+  double getOtherProductPrice(OtherProductItem prod, [Customer? customer]) {
+    return getCustomerPrice(prod.productId, prod.price, customer);
+  }
+
+  double get calculatedBillAmount {
+    double total = 0.0;
+    for (final it in deliveryItems) {
+      if (it.deliveryQty > 0) {
+        total += it.deliveryQty * getCylinderPrice(it.cylinder);
+      }
+    }
+    for (final entry in otherDeliveryQty.entries) {
+      if (entry.value > 0) {
+        final prod = otherProducts.firstWhere(
+          (p) => p.name == entry.key,
+          orElse: () => OtherProductItem(name: entry.key, price: 0, initialStock: 0),
+        );
+        total += entry.value * getOtherProductPrice(prod);
+      }
+    }
+    return total;
+  }
+
   int get truckStock {
     return cylinders.fold(0, (sum, c) => sum + c.filledStock);
   }
@@ -928,7 +1009,7 @@ class AppState extends ChangeNotifier {
 
     double calculatedBill = 0.0;
     for (final it in activeItems) {
-      calculatedBill += it.deliveryQty * it.cylinder.price;
+      calculatedBill += it.deliveryQty * getCylinderPrice(it.cylinder);
     }
     for (final entry in otherDeliveryQty.entries) {
       if (entry.value > 0) {
@@ -936,7 +1017,7 @@ class AppState extends ChangeNotifier {
           (p) => p.name == entry.key,
           orElse: () => OtherProductItem(name: entry.key, price: 0, initialStock: 0),
         );
-        calculatedBill += entry.value * prod.price;
+        calculatedBill += entry.value * getOtherProductPrice(prod);
       }
     }
     final orderBillTotal = calculatedBill > 0 ? calculatedBill : collectedAmount;
@@ -945,11 +1026,23 @@ class AppState extends ChangeNotifier {
       ticketId: ticketId,
       customer: selectedCustomer!,
       items: activeItems
-          .map((i) => DeliveryItem(
-                cylinder: i.cylinder,
-                deliveryQty: i.deliveryQty,
-                emptyReturnQty: i.emptyReturnQty,
-              ))
+          .map((i) {
+            final unitPrice = getCylinderPrice(i.cylinder);
+            return DeliveryItem(
+              cylinder: CylinderType(
+                productId: i.cylinder.productId,
+                weight: i.cylinder.weight,
+                price: unitPrice,
+                gstPercentage: i.cylinder.gstPercentage,
+                hsnCode: i.cylinder.hsnCode,
+                initialFilledStock: i.cylinder.initialFilledStock,
+                filledStock: i.cylinder.filledStock,
+                emptyStock: i.cylinder.emptyStock,
+              ),
+              deliveryQty: i.deliveryQty,
+              emptyReturnQty: i.emptyReturnQty,
+            );
+          })
           .toList(),
       totalCylinders: totalCylinders,
       totalEmpties: totalEmpties,
@@ -1016,7 +1109,7 @@ class AppState extends ChangeNotifier {
         'weight': it.cylinder.weight,
         'qty': it.deliveryQty,
         'empty_qty': it.emptyReturnQty,
-        'rate': it.cylinder.price,
+        'rate': getCylinderPrice(it.cylinder),
         'gst_pct': it.cylinder.gstPercentage,
       }).toList();
 
@@ -1032,7 +1125,7 @@ class AppState extends ChangeNotifier {
               'weight': prod.name,
               'qty': e.value,
               'empty_qty': 0,
-              'rate': prod.price,
+              'rate': getOtherProductPrice(prod),
               'gst_pct': prod.gstPercentage,
             };
           })
@@ -1359,6 +1452,7 @@ class AppState extends ChangeNotifier {
         'weight': it.cylinder.weight,
         'qty': it.deliveryQty,
         'empty_qty': it.emptyReturnQty,
+        'rate': it.cylinder.price,
         'price': it.cylinder.price,
       }).toList();
 

@@ -826,51 +826,59 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
                       ),
                     ),
                     const SizedBox(height: 4),
-                    ...deliveredItems.map((it) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 22,
-                            height: 22,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFDF2F4),
-                              borderRadius: BorderRadius.circular(5),
+                    ...deliveredItems.map((it) {
+                      final unitPrice = it.cylinder.price > 0
+                          ? it.cylinder.price
+                          : state.getCylinderPrice(it.cylinder, order.customer);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFDF2F4),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Center(
+                                child: Icon(Icons.propane_tank_rounded, size: 12, color: Color(0xFF800020)),
+                              ),
                             ),
-                            child: const Center(
-                              child: Icon(Icons.propane_tank_rounded, size: 12, color: Color(0xFF800020)),
+                            const SizedBox(width: 7),
+                            Text(
+                              '${it.deliveryQty}×',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF800020),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            '${it.deliveryQty}×',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF800020),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Text(
+                                '${_shortName(it.cylinder.weight)} @ ₹${unitPrice.toStringAsFixed(0)}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF0F172A),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            _shortName(it.cylinder.weight),
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF0F172A),
+                            const SizedBox(width: 8),
+                            Text(
+                              '₹${(it.deliveryQty * unitPrice).toStringAsFixed(0)}',
+                              style: GoogleFonts.inter(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF64748B),
+                              ),
                             ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            '₹${(it.deliveryQty * it.cylinder.price).toStringAsFixed(0)}',
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )),
+                          ],
+                        ),
+                      );
+                    }),
                   ],
 
                   if (returnItems.isNotEmpty) ...[
@@ -1131,7 +1139,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
     // Clone items or match with active state cylinders
     final Map<int, DeliveryItem> editedItemsMap = {};
 
-    // 1. Populate from order.items (always prefer authoritative catalog CylinderType from state.cylinders)
+    // 1. Populate from order.items (preserving recorded rate or customer-specific special rate)
     for (final it in order.items) {
       final itPid = it.cylinder.productId;
       final itWNorm = it.cylinder.weight.replaceAll(' ', '').toUpperCase();
@@ -1141,19 +1149,43 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
         orElse: () => it.cylinder,
       );
       final keyId = catalogCyl.productId ?? itPid ?? catalogCyl.weight.hashCode;
+      final custDefaultPrice = state.getCylinderPrice(catalogCyl, order.customer);
+      final effectivePrice = (it.deliveryQty > 0 && it.cylinder.price > 0 && it.cylinder.price != catalogCyl.price)
+          ? it.cylinder.price
+          : custDefaultPrice;
+      final pricedCyl = CylinderType(
+        productId: catalogCyl.productId ?? itPid,
+        weight: catalogCyl.weight,
+        price: effectivePrice,
+        gstPercentage: catalogCyl.gstPercentage,
+        hsnCode: catalogCyl.hsnCode,
+        initialFilledStock: catalogCyl.initialFilledStock,
+        filledStock: catalogCyl.filledStock,
+        emptyStock: catalogCyl.emptyStock,
+      );
       editedItemsMap[keyId] = DeliveryItem(
-        cylinder: catalogCyl,
+        cylinder: pricedCyl,
         deliveryQty: it.deliveryQty,
         emptyReturnQty: it.emptyReturnQty,
       );
     }
 
-    // 2. Also ensure all cylinders currently loaded in van are accessible for editing
+    // 2. Also ensure all cylinders currently loaded in van are accessible for editing with customer's rate
     for (final cyl in state.cylinders) {
       final keyId = cyl.productId ?? cyl.weight.hashCode;
       if (!editedItemsMap.containsKey(keyId)) {
+        final pricedCyl = CylinderType(
+          productId: cyl.productId,
+          weight: cyl.weight,
+          price: state.getCylinderPrice(cyl, order.customer),
+          gstPercentage: cyl.gstPercentage,
+          hsnCode: cyl.hsnCode,
+          initialFilledStock: cyl.initialFilledStock,
+          filledStock: cyl.filledStock,
+          emptyStock: cyl.emptyStock,
+        );
         editedItemsMap[keyId] = DeliveryItem(
-          cylinder: cyl,
+          cylinder: pricedCyl,
           deliveryQty: 0,
           emptyReturnQty: 0,
         );

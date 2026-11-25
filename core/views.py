@@ -2378,6 +2378,15 @@ class LedgerViewSet(viewsets.ModelViewSet):
             if row['PartyLedger']:
                 pending_pmt_map[row['PartyLedger']] = float(row['tot_pmt'] or 0)
 
+        # Pre-fetch all customer-specific product prices in one query (avoid N+1)
+        special_prices_map = {}
+        for cp in CustomerProductPrice.objects.filter(CustomerLedger__in=debtor_ledgers).values('CustomerLedger_id', 'Product_id', 'SpecialPrice'):
+            cid = cp['CustomerLedger_id']
+            pid = cp['Product_id']
+            sp_val = float(cp['SpecialPrice'] or 0)
+            if cid and pid and sp_val > 0:
+                special_prices_map.setdefault(cid, {})[str(pid)] = sp_val
+
         data = []
         for l in debtor_ledgers:
             adv_rem = adv_map.get(l.LedgerId, 0.0)
@@ -2401,7 +2410,8 @@ class LedgerViewSet(viewsets.ModelViewSet):
                 'AddressLine1': getattr(l, 'AddressLine1', '') or '',
                 'CurrentBalance': effective_balance,
                 'AdvanceBalance': adv_rem,
-                'BalanceType': 'DR' if effective_balance > 0 else ('CR' if effective_balance < 0 else '')
+                'BalanceType': 'DR' if effective_balance > 0 else ('CR' if effective_balance < 0 else ''),
+                'special_prices': special_prices_map.get(l.LedgerId, {})
             })
         return Response(data)
 
@@ -7344,7 +7354,17 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                 is_cylinder = ('cylinder' in cat_n) or ('cylinder' in p_n) or ('kg' in p_n) or ('lpg' in p_n)
                 is_service = ('service' in cat_n) or ('fitting' in p_n) or ('installation' in p_n) or ('labor' in p_n) or ('labour' in p_n)
 
-                gross_unit_rate = rate or prod.SalesPrice or Decimal('0.00')
+                cust_special_rate = None
+                if customer:
+                    cpp = CustomerProductPrice.objects.filter(CustomerLedger=customer, Product=prod).first()
+                    if cpp and cpp.SpecialPrice and cpp.SpecialPrice > Decimal('0.00'):
+                        cust_special_rate = Decimal(str(cpp.SpecialPrice))
+
+                default_prod_rate = Decimal(str(prod.SalesPrice or '0.00'))
+                if cust_special_rate is not None and (rate <= Decimal('0.00') or rate == default_prod_rate):
+                    gross_unit_rate = cust_special_rate
+                else:
+                    gross_unit_rate = rate if rate > Decimal('0.00') else default_prod_rate
                 line_gross_total = qty * gross_unit_rate
 
                 raw_item_gst = item.get('tax_percent') or item.get('TaxPercent') or item.get('gst_pct') or item.get('gstPercentage')
@@ -7704,6 +7724,13 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
 
         results = []
         if sales_qs.exists():
+            sale_cust_ids = {s.CustomerLedger_id for s in sales_qs if s.CustomerLedger_id}
+            driver_cust_price_map = {}
+            if sale_cust_ids:
+                for cp in CustomerProductPrice.objects.filter(CustomerLedger_id__in=sale_cust_ids).values('CustomerLedger_id', 'Product_id', 'SpecialPrice'):
+                    if cp['SpecialPrice'] and cp['SpecialPrice'] > Decimal('0.00'):
+                        driver_cust_price_map[(cp['CustomerLedger_id'], cp['Product_id'])] = float(cp['SpecialPrice'])
+
             for sale in sales_qs:
                 items_data = []
                 for line in sale.lines.all():
@@ -7721,7 +7748,9 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                         p_weight = p_name
                     qty_val = float(line.Quantity or 0)
                     tot_val = float(line.Total or 0)
-                    gross_rate = round(tot_val / qty_val, 2) if (qty_val > 0 and tot_val > 0) else (float(p.SalesPrice or 0) if p else float(line.SalesPrice or 0))
+                    cust_rate = driver_cust_price_map.get((sale.CustomerLedger_id, line.Product_id))
+                    fallback_rate = cust_rate if cust_rate is not None else (float(p.SalesPrice or 0) if p else float(line.SalesPrice or 0))
+                    gross_rate = round(tot_val / qty_val, 2) if (qty_val > 0 and tot_val > 0) else fallback_rate
                     items_data.append({
                         'productId': line.Product_id,
                         'productName': p_name,
@@ -8409,7 +8438,17 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     tot_deliv += qty
                     tot_empty += empty_qty
 
-                    gross_unit = (rate or prod.SalesPrice or Decimal('0.00'))
+                    cust = sale.CustomerLedger
+                    cust_special_rate = None
+                    if cust:
+                        cpp = CustomerProductPrice.objects.filter(CustomerLedger=cust, Product=prod).first()
+                        if cpp and cpp.SpecialPrice and cpp.SpecialPrice > Decimal('0.00'):
+                            cust_special_rate = Decimal(str(cpp.SpecialPrice))
+                    default_prod_rate = Decimal(str(prod.SalesPrice or '0.00'))
+                    if cust_special_rate is not None and (rate <= Decimal('0.00') or rate == default_prod_rate):
+                        gross_unit = cust_special_rate
+                    else:
+                        gross_unit = rate if rate > Decimal('0.00') else default_prod_rate
                     line_gross = qty * gross_unit
                     raw_item_gst = item.get('tax_percent') or item.get('TaxPercent') or item.get('gst_pct') or item.get('gstPercentage')
                     if raw_item_gst is not None and str(raw_item_gst).strip() != '':
@@ -8417,7 +8456,6 @@ class DeliveryNoteViewSet(viewsets.ModelViewSet):
                     else:
                         gst_p = Decimal(str(prod.GSTPercentage or '0.00'))
 
-                    cust = sale.CustomerLedger
                     is_intra = (not cust or not cust.StateId or cust.StateId in [12, 32])
                     if gst_p > 0 and line_gross > 0:
                         tfactor = Decimal('1.00') + (gst_p / Decimal('100.00'))
@@ -12107,7 +12145,11 @@ class SalesViewSet(viewsets.ModelViewSet):
 
                 qty = Decimal(str(item.get('Quantity') or item.get('qty') or 1))
                 empty_qty = Decimal(str(item.get('EmptyQuantity') or item.get('empty_qty') or 0))
-                rate = Decimal(str(item.get('SalesPrice') or item.get('rate') or prod.SalesPrice or 0))
+                raw_rate = item.get('SalesPrice') if item.get('SalesPrice') is not None else item.get('rate')
+                rate = Decimal(str(raw_rate or 0))
+                if rate <= Decimal('0.00'):
+                    cpp = CustomerProductPrice.objects.filter(CustomerLedger=customer, Product=prod).first() if customer else None
+                    rate = Decimal(str(cpp.SpecialPrice)) if (cpp and cpp.SpecialPrice and cpp.SpecialPrice > Decimal('0.00')) else Decimal(str(prod.SalesPrice or 0))
 
                 line_gross = qty * rate
                 gst_p = Decimal(str(item.get('TaxPercent') or prod.GSTPercentage or 0))
@@ -12485,7 +12527,11 @@ class SalesViewSet(viewsets.ModelViewSet):
                     continue
                 qty = Decimal(str(item.get('Quantity') or item.get('qty') or 1))
                 empty_qty = Decimal(str(item.get('EmptyQuantity') or item.get('empty_qty') or 0))
-                rate = Decimal(str(item.get('SalesPrice') or item.get('rate') or prod.SalesPrice or 0))
+                raw_rate = item.get('SalesPrice') if item.get('SalesPrice') is not None else item.get('rate')
+                rate = Decimal(str(raw_rate or 0))
+                if rate <= Decimal('0.00'):
+                    cpp = CustomerProductPrice.objects.filter(CustomerLedger=customer, Product=prod).first() if customer else None
+                    rate = Decimal(str(cpp.SpecialPrice)) if (cpp and cpp.SpecialPrice and cpp.SpecialPrice > Decimal('0.00')) else Decimal(str(prod.SalesPrice or 0))
 
                 line_gross = qty * rate
                 gst_p = Decimal(str(item.get('TaxPercent') or prod.GSTPercentage or 0))
