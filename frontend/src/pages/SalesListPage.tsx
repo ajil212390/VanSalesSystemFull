@@ -325,6 +325,23 @@ export const SalesListPage: React.FC = () => {
     }
   });
 
+  // 1c. Fetch Payments & Ledgers for Standalone Customer Receipts summary
+  const { data: payments = [] } = useQuery<any[]>({
+    queryKey: ['payments'],
+    queryFn: async () => {
+      const res = await apiClient.get('/payments/');
+      return Array.isArray(res.data) ? res.data : res.data.results || [];
+    }
+  });
+
+  const { data: ledgers = [] } = useQuery<any[]>({
+    queryKey: ['ledgers'],
+    queryFn: async () => {
+      const res = await apiClient.get('/ledgers/');
+      return Array.isArray(res.data) ? res.data : res.data.results || [];
+    }
+  });
+
   const paymentGroupOptions = useMemo(() => {
     const list = paymentGroups.map((pg: any) => ({
       value: String(pg.PaymentGroupId),
@@ -636,6 +653,94 @@ export const SalesListPage: React.FC = () => {
     return filteredSales.filter((s: any) => !s.IsApproved && s.Status !== 'CANCELLED').length;
   }, [filteredSales]);
 
+  // Standalone Approved Customer Receipts summary (same logic as Collections -> Receipts tab, matching active dateFilter)
+  const receiptsSummary = useMemo(() => {
+    const ledgerMap = new Map<number, any>();
+    const customerLedgerIds = new Set<number>();
+    ledgers.forEach((l: any) => {
+      if (l.LedgerId) ledgerMap.set(Number(l.LedgerId), l);
+      const gName = String(l.group_name || l.GroupName || l.Group?.GroupName || '').toLowerCase();
+      const gid = Number(l.GroupId ?? l.Group?.GroupId ?? l.Group ?? 0);
+      if ((gid === 21 || gName.includes('debtor') || gName.includes('customer')) && l.LedgerId) {
+        customerLedgerIds.add(Number(l.LedgerId));
+      }
+    });
+
+    const salesRefUpperSet = new Set<string>();
+    sales.forEach((s: any) => {
+      if (s.InvoiceNo) salesRefUpperSet.add(String(s.InvoiceNo).trim().toUpperCase());
+      if (s.SalesNo) salesRefUpperSet.add(String(s.SalesNo).trim().toUpperCase());
+    });
+
+    let total = 0;
+    let cash = 0;
+    let bank = 0;
+    let count = 0;
+
+    payments.forEach((p: any) => {
+      const isApproved = p.Status ? String(p.Status).toUpperCase() === 'APPROVED' : true;
+      if (!isApproved) return;
+      if (String(p.voucher_type || '').toUpperCase() === 'PAYMENT') return;
+
+      const pid = Number(p.PartyLedgerId ?? p.PartyLedger?.LedgerId ?? p.PartyLedger);
+      const custObj = pid && !isNaN(pid) ? ledgerMap.get(pid) : null;
+      const grpName = String(custObj?.group_name || custObj?.GroupName || custObj?.Group?.GroupName || p.party_group_name || '').toLowerCase();
+      const partyNameLower = String(custObj?.LedgerName || p.party_name || p.PartyLedger?.LedgerName || '').toLowerCase();
+
+      if (
+        grpName.includes('capital') ||
+        grpName.includes('loan') ||
+        grpName.includes('equity') ||
+        grpName.includes('reserve') ||
+        grpName.includes('drawing') ||
+        grpName.includes('investment') ||
+        partyNameLower.includes('capital') ||
+        partyNameLower.includes('drawing') ||
+        partyNameLower.includes('equity')
+      ) {
+        return;
+      }
+
+      const isCustomer = (pid && customerLedgerIds.has(pid)) || grpName.includes('debtor') || grpName.includes('customer');
+      if (!isCustomer) return;
+
+      const narr = String(p.Narration || '').toLowerCase();
+      if (narr.includes('sales receipt for') || narr.includes('receipt for sales')) {
+        for (const ref of salesRefUpperSet) {
+          if (ref && narr.includes(ref.toLowerCase())) return;
+        }
+      }
+
+      const againstBills = Array.isArray(p.against_bills) ? p.against_bills : [];
+      if (againstBills.some((b: string) => salesRefUpperSet.has(String(b).trim().toUpperCase()))) return;
+
+      const hasSaleAllocation = (p.lines || []).some((l: any) =>
+        (l.allocations || []).some((a: any) => {
+          if (!a.BillReference) return false;
+          return salesRefUpperSet.has(String(a.BillReference).trim().toUpperCase());
+        })
+      );
+      if (hasSaleAllocation) return;
+
+      const recDate = p.payment_date
+        ? String(p.payment_date).slice(0, 10)
+        : (p.CreatedAt ? String(p.CreatedAt).split('T')[0] : (p.VoucherDate ? String(p.VoucherDate).slice(0, 10) : ''));
+      if (!isDateInFilter(recDate)) return;
+
+      const amt = Number(p.Amount || 0);
+      if (amt <= 0) return;
+
+      total += amt;
+      count += 1;
+
+      const pMode = String(p.primary_mode || p.PaymentMode || 'CASH').toUpperCase();
+      if (pMode.includes('CASH')) cash += amt;
+      else bank += amt;
+    });
+
+    return { total, cash, bank, count };
+  }, [payments, ledgers, sales, dateFilter, customStartDate, customEndDate]);
+
   // Mutation: Single Approve
   const approveMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -827,8 +932,8 @@ export const SalesListPage: React.FC = () => {
         </Group>
       </Box>
 
-      {/* ── Summary KPI Cards (3 Cards: Total Sales, Cash Collections, Pending Approvals) ── */}
-      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
+      {/* ── Summary KPI Cards (4 Cards: Total Billed, Sales Collected, Receipts Collected, Pending Approvals) ── */}
+      <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
@@ -836,7 +941,7 @@ export const SalesListPage: React.FC = () => {
             </Text>
             <IconFileInvoice size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#0f172a', fontSize: 24, fontVariantNumeric: 'tabular-nums' }}>
+          <Text fw={700} style={{ color: '#0f172a', fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>
             ₹{totalSalesAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </Text>
           <Text size="xs" c="dimmed" mt={4}>
@@ -847,14 +952,14 @@ export const SalesListPage: React.FC = () => {
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
-              Total Collected Amount
+              Sales Collected Amount
             </Text>
             <IconCash size={20} color="#800020" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#800020', fontSize: 24, fontVariantNumeric: 'tabular-nums' }}>
+          <Text fw={700} style={{ color: '#800020', fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>
             ₹{collectionsSummary.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </Text>
-          <Group gap="xs" mt={6} align="center" wrap="nowrap">
+          <Group gap={6} mt={6} align="center" wrap="wrap">
             <Text size="xs" fw={700} c="#0f172a">
               Cash: ₹{collectionsSummary.cash.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Text>
@@ -865,6 +970,27 @@ export const SalesListPage: React.FC = () => {
           </Group>
         </Paper>
 
+        <Paper
+          p="md"
+          radius="md"
+          withBorder
+          onClick={() => navigate('/collections')}
+          style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', cursor: 'pointer' }}
+        >
+          <Group justify="space-between" align="center" mb="xs">
+            <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
+              Receipts Collected
+            </Text>
+            <IconReceipt size={20} color="#800020" stroke={1.75} />
+          </Group>
+          <Text fw={700} style={{ color: '#0f172a', fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>
+            ₹{receiptsSummary.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </Text>
+          <Text size="xs" c="dimmed" mt={4}>
+            {receiptsSummary.count} receipt{receiptsSummary.count !== 1 ? 's' : ''} &bull; Total Cash+Rec: ₹{(collectionsSummary.total + receiptsSummary.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </Text>
+        </Paper>
+
         <Paper p="md" radius="md" withBorder style={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0' }}>
           <Group justify="space-between" align="center" mb="xs">
             <Text size="xs" fw={700} c="#64748b" tt="uppercase" style={{ letterSpacing: '0.5px' }}>
@@ -872,7 +998,7 @@ export const SalesListPage: React.FC = () => {
             </Text>
             <IconClock size={20} color="#b45309" stroke={1.75} />
           </Group>
-          <Text fw={700} style={{ color: '#b45309', fontSize: 24, fontVariantNumeric: 'tabular-nums' }}>
+          <Text fw={700} style={{ color: '#b45309', fontSize: 22, fontVariantNumeric: 'tabular-nums' }}>
             {pendingApprovalsCount}
           </Text>
           <Text size="xs" c="dimmed" mt={4}>
