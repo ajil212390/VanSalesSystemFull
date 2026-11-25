@@ -593,7 +593,6 @@ export const SalesListPage: React.FC = () => {
       }
 
       const pm = (s.PaymentMethod || 'CASH').toUpperCase();
-      if (pm === 'CREDIT' || pm.includes('CREDIT')) return;
 
       const rawPaid = Number(s.PaidAmount ?? 0);
       const advAdj = Number(s.advance_adjusted ?? s.AdvanceAdjusted ?? 0);
@@ -604,20 +603,24 @@ export const SalesListPage: React.FC = () => {
         const cVal = Number(s.cash_amount ?? 0);
         const uVal = Number(s.upi_amount ?? s.bank_amount ?? 0);
         if (cVal > 0 || uVal > 0) {
-          totalCash += cVal;
-          totalBank += uVal;
+          const splitTot = cVal + uVal;
+          const scale = splitTot > 0 ? paid / splitTot : 1;
+          totalCash += cVal * scale;
+          totalBank += uVal * scale;
         } else {
           const notes = s.Notes || '';
           const cM = /Cash:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
-          const uM = /UPI:\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
+          const uM = /(?:UPI|Bank|Online):\s*[₹Rs\.]*\s*([\d,]+\.?\d*)/i.exec(notes);
           const cashSplit = cM ? Number(cM[1].replace(/,/g, '')) : paid / 2;
           const upiSplit = uM ? Number(uM[1].replace(/,/g, '')) : paid - cashSplit;
-          totalCash += cashSplit;
-          totalBank += upiSplit;
+          const splitTot = cashSplit + upiSplit;
+          const scale = splitTot > 0 ? paid / splitTot : 1;
+          totalCash += cashSplit * scale;
+          totalBank += upiSplit * scale;
         }
       } else if (pm.includes('CASH')) {
         totalCash += paid;
-      } else if (pm.includes('BANK') || pm.includes('UPI') || pm.includes('ONLINE')) {
+      } else {
         totalBank += paid;
       }
     });
