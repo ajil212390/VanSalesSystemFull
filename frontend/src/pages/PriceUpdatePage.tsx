@@ -538,7 +538,7 @@ export const PriceUpdatePage: React.FC = () => {
             {mode === 'customer'
               ? 'Customer-Specific Pricing'
               : mode === 'history'
-              ? 'Price Update & Hike History'
+              ? 'Price Update History'
               : 'Product Price Master'}
           </Title>
           <Text size="xs" c="dimmed">
@@ -603,7 +603,7 @@ export const PriceUpdatePage: React.FC = () => {
                 }}
                 onClick={() => setMode('history')}
               >
-                Hike History
+                Update History
               </Button>
             </Group>
           </Box>
@@ -621,7 +621,7 @@ export const PriceUpdatePage: React.FC = () => {
               boxShadow: '0 1px 2px rgba(128, 0, 32, 0.2)',
             }}
           >
-            Bulk Price Hike (+₹)
+            Bulk Price Update
           </Button>
 
           {/* Bulk Import Button */}
@@ -1194,7 +1194,7 @@ export const PriceUpdatePage: React.FC = () => {
           <Group gap="xs">
             <IconTrendingUp size={20} color="#800020" />
             <Text fw={800} size="md" style={{ color: '#800020' }}>
-              Bulk Cylinder Price Hike (+₹ Increment)
+              Bulk Cylinder Price Update (+₹ Increment)
             </Text>
           </Group>
         }
@@ -1218,7 +1218,7 @@ export const PriceUpdatePage: React.FC = () => {
             <Box style={{ flex: 1, minWidth: 200 }}>
               <NumberInput
                 label="Common Hike Amount (+₹)"
-                description="Enter the increase amount (e.g. 40 or 50)"
+                description="Enter the increase or decrease amount"
                 placeholder="40"
                 min={0}
                 decimalScale={2}
