@@ -1217,7 +1217,7 @@ export const PriceUpdatePage: React.FC = () => {
           <Group justify="space-between" align="center" wrap="wrap" gap="xs">
             <Box style={{ flex: 1, minWidth: 200 }}>
               <NumberInput
-                label="Common Hike Amount (+₹)"
+                label="Common Update Amount (+₹ or -₹)"
                 description="Enter the increase or decrease amount"
                 placeholder="40"
                 min={0}
