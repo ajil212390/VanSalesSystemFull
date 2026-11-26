@@ -1977,7 +1977,7 @@ class CustomerProductPriceViewSet(viewsets.ModelViewSet):
                     continue
 
                 old_base = prod.SalesPrice or Decimal('0.00')
-                new_base = old_base + hike_amt
+                new_base = max(Decimal('0.00'), old_base + hike_amt)
                 prod.SalesPrice = new_base
                 prod.save(update_fields=['SalesPrice'])
 
@@ -1996,7 +1996,7 @@ class CustomerProductPriceViewSet(viewsets.ModelViewSet):
                 cust_prices = CustomerProductPrice.objects.filter(Product=prod)
                 affected_count = 0
                 for cp in cust_prices:
-                    cp.SpecialPrice = (cp.SpecialPrice or Decimal('0.00')) + hike_amt
+                    cp.SpecialPrice = max(Decimal('0.00'), (cp.SpecialPrice or Decimal('0.00')) + hike_amt)
                     cp.save(update_fields=['SpecialPrice', 'UpdatedTimestamp'])
                     affected_count += 1
 

@@ -92,11 +92,12 @@ export const PriceUpdatePage: React.FC = () => {
   // Customer-specific special prices draft: Record<ProductId, specialPrice | ''>
   const [custPricesDraft, setCustPricesDraft] = useState<Record<number, number | string>>({});
 
-  // Bulk Hike Modal State
+  // Bulk Hike / Update Modal State
   const [bulkHikeModalOpened, setBulkHikeModalOpened] = useState(false);
   const [selectedHikeProductIds, setSelectedHikeProductIds] = useState<number[]>([]);
   const [globalHikeAmount, setGlobalHikeAmount] = useState<number | ''>(40);
   const [productHikesDraft, setProductHikesDraft] = useState<Record<number, number | ''>>({});
+  const [bulkProductFilter, setBulkProductFilter] = useState<'cylinders' | 'all'>('cylinders');
 
   // Bulk Import Modal State
   const [bulkImportModalOpened, setBulkImportModalOpened] = useState(false);
@@ -200,22 +201,40 @@ export const PriceUpdatePage: React.FC = () => {
     }
   }, [mode, selectedCustomerId, customerSpecialPrices]);
 
-  // Pre-populate bulk hike products whenever modal opens
+  // Helper to distinguish cylinders from accessories (adapters, regulators, etc.)
+  const isCylinderProduct = (p: ProductItem) => {
+    const name = (p.ProductName || '').toUpperCase();
+    const cat = (p.category_name || '').toUpperCase();
+    return cat.includes('CYLINDER') || name.includes('CYLINDER') || name.includes('KG');
+  };
+
+  // Pre-populate bulk update products whenever modal opens
   useEffect(() => {
     if (bulkHikeModalOpened && products.length > 0) {
-      // Preselect active cylinder products
-      const activeIds = products
-        .filter((p) => p.IsActive)
+      setBulkProductFilter('cylinders');
+      // Preselect active cylinder products by default
+      const cylinderIds = products
+        .filter((p) => p.IsActive && isCylinderProduct(p))
         .map((p) => p.ProductId);
-      setSelectedHikeProductIds(activeIds);
+      setSelectedHikeProductIds(
+        cylinderIds.length > 0 ? cylinderIds : products.filter((p) => p.IsActive).map((p) => p.ProductId)
+      );
 
       const defaultHikes: Record<number, number | ''> = {};
-      activeIds.forEach((pid) => {
-        defaultHikes[pid] = globalHikeAmount;
+      products.forEach((p) => {
+        defaultHikes[p.ProductId] = globalHikeAmount;
       });
       setProductHikesDraft(defaultHikes);
     }
-  }, [bulkHikeModalOpened, products, globalHikeAmount]);
+  }, [bulkHikeModalOpened, products]);
+
+  // Modal filtered products list: Cylinders Only (default) or All Products (with cylinders sorted first)
+  const displayedModalProducts = useMemo(() => {
+    if (bulkProductFilter === 'cylinders') {
+      return products.filter(isCylinderProduct);
+    }
+    return [...products].sort((a, b) => (isCylinderProduct(b) ? 1 : 0) - (isCylinderProduct(a) ? 1 : 0));
+  }, [products, bulkProductFilter]);
 
   // Dropdown Category Options
   const categoryOptions = useMemo(() => {
@@ -341,7 +360,7 @@ export const PriceUpdatePage: React.FC = () => {
     },
   });
 
-  // Bulk Hike Mutation
+  // Bulk Price Update Mutation
   const bulkHikeMutation = useMutation({
     mutationFn: async () => {
       const hikes = selectedHikeProductIds
@@ -349,10 +368,10 @@ export const PriceUpdatePage: React.FC = () => {
           product_id: pid,
           hike_amount: Number(productHikesDraft[pid] ?? globalHikeAmount ?? 0),
         }))
-        .filter((h) => h.hike_amount > 0);
+        .filter((h) => h.hike_amount !== 0 && !isNaN(h.hike_amount));
 
       if (hikes.length === 0) {
-        throw new Error('Please specify a positive price increment for at least one cylinder.');
+        throw new Error('Please specify an update amount (+₹ or -₹) for at least one product.');
       }
 
       const res = await apiClient.post('/customer-prices/bulk_hike/', { hikes });
@@ -364,15 +383,15 @@ export const PriceUpdatePage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['price-update-history'] });
       setBulkHikeModalOpened(false);
       notifications.show({
-        title: 'Bulk Price Hike Applied',
-        message: data?.message || 'Price hike updated across standard prices and customer special rates.',
-        color: 'burgundy',
+        title: 'Bulk Price Update Applied',
+        message: data?.message || 'Price update applied across standard prices and customer special rates.',
+        color: 'green',
       });
     },
     onError: (err: any) => {
-      const msg = err.response?.data?.error || err.response?.data?.detail || 'Failed to apply price hike.';
+      const msg = err.response?.data?.error || err.response?.data?.detail || err.message || 'Failed to apply price update.';
       notifications.show({
-        title: 'Bulk Hike Failed',
+        title: 'Bulk Update Failed',
         message: String(msg),
         color: 'red',
       });
@@ -1107,7 +1126,7 @@ export const PriceUpdatePage: React.FC = () => {
                   <Table.Tr>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 12 }}>DATE & TIME</Table.Th>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 12 }}>PRODUCT / CYLINDER</Table.Th>
-                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 12, textAlign: 'right' }}>HIKE AMOUNT</Table.Th>
+                    <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 12, textAlign: 'right' }}>UPDATE AMOUNT</Table.Th>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 12, textAlign: 'right' }}>OLD BASE PRICE</Table.Th>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 12, textAlign: 'right' }}>NEW BASE PRICE</Table.Th>
                     <Table.Th style={{ color: '#800020', fontWeight: 700, fontSize: 12, textAlign: 'center' }}>CUSTOMERS AFFECTED</Table.Th>
@@ -1143,8 +1162,18 @@ export const PriceUpdatePage: React.FC = () => {
                           </Group>
                         </Table.Td>
                         <Table.Td style={{ textAlign: 'right' }}>
-                          <Text size="sm" fw={800} style={{ color: '#800020' }}>
-                            +₹{Number(item.HikeAmount).toFixed(2)}
+                          <Text
+                            size="sm"
+                            fw={800}
+                            style={{
+                              color: Number(item.HikeAmount) < 0 ? '#b91c1c' : Number(item.HikeAmount) > 0 ? '#15803d' : '#800020',
+                            }}
+                          >
+                            {Number(item.HikeAmount) > 0
+                              ? `+₹${Number(item.HikeAmount).toFixed(2)}`
+                              : Number(item.HikeAmount) < 0
+                              ? `-₹${Math.abs(Number(item.HikeAmount)).toFixed(2)}`
+                              : `₹0.00`}
                           </Text>
                         </Table.Td>
                         <Table.Td style={{ textAlign: 'right' }}>
@@ -1186,7 +1215,7 @@ export const PriceUpdatePage: React.FC = () => {
         </Paper>
       )}
 
-      {/* ── Modal 1: Bulk Price Hike Modal ── */}
+      {/* ── Modal 1: Bulk Price Update Modal ── */}
       <Modal
         opened={bulkHikeModalOpened}
         onClose={() => setBulkHikeModalOpened(false)}
@@ -1194,7 +1223,7 @@ export const PriceUpdatePage: React.FC = () => {
           <Group gap="xs">
             <IconTrendingUp size={20} color="#800020" />
             <Text fw={800} size="md" style={{ color: '#800020' }}>
-              Bulk Cylinder Price Update (+₹ Increment)
+              Bulk Cylinder Price Update (+/- ₹)
             </Text>
           </Group>
         }
@@ -1209,81 +1238,116 @@ export const PriceUpdatePage: React.FC = () => {
         <Stack gap="md">
           <Paper p="sm" radius="md" style={{ backgroundColor: '#fffcfc', border: '1px solid #f5c2cb' }}>
             <Text size="xs" c="#800020" fw={600} lh={1.4}>
-              This will automatically add the specified hike amount (+₹) to the standard catalogue price AND to all existing customer-specific prices for every selected cylinder.
+              Enter a positive value (e.g. <b>+40</b>) for a price increase, or a negative value (e.g. <b>-40</b>) for a price decrease. This will automatically update the standard catalogue price AND all customer-specific rates for every selected product.
             </Text>
           </Paper>
 
-          {/* Global Increment Input */}
+          {/* Common Update Amount */}
+          <NumberInput
+            label="Common Update Amount (+₹ or -₹)"
+            description="Enter positive amount (+₹) to hike or negative amount (-₹) to decrease"
+            placeholder="e.g. 40 or -40"
+            decimalScale={2}
+            hideControls
+            prefix="₹ "
+            value={globalHikeAmount}
+            onChange={(val) => {
+              const num = val === '' ? '' : Number(val);
+              setGlobalHikeAmount(num);
+              if (num !== '') {
+                setProductHikesDraft((prev) => {
+                  const updated = { ...prev };
+                  selectedHikeProductIds.forEach((pid) => {
+                    updated[pid] = num;
+                  });
+                  return updated;
+                });
+              }
+            }}
+            styles={{
+              input: { fontWeight: 700, fontSize: 16, borderColor: '#800020', color: '#800020' },
+            }}
+          />
+
+          <Divider my="xs" color="#f1f5f9" />
+
+          {/* Filter Toggle & Selection Header */}
           <Group justify="space-between" align="center" wrap="wrap" gap="xs">
-            <Box style={{ flex: 1, minWidth: 200 }}>
-              <NumberInput
-                label="Common Update Amount (+₹ or -₹)"
-                description="Enter the increase or decrease amount"
-                placeholder="40"
-                min={0}
-                decimalScale={2}
-                hideControls
-                prefix="₹ "
-                value={globalHikeAmount}
-                onChange={(val) => {
-                  const num = val === '' ? '' : Number(val);
-                  setGlobalHikeAmount(num);
-                  if (num !== '') {
-                    setProductHikesDraft((prev) => {
-                      const updated = { ...prev };
-                      selectedHikeProductIds.forEach((pid) => {
-                        updated[pid] = num;
-                      });
-                      return updated;
-                    });
-                  }
+            <Group gap={6}>
+              <Button
+                size="xs"
+                radius="xl"
+                variant={bulkProductFilter === 'cylinders' ? 'filled' : 'subtle'}
+                leftSection={<IconCylinder size={14} />}
+                onClick={() => {
+                  setBulkProductFilter('cylinders');
+                  const cylIds = products.filter((p) => p.IsActive && isCylinderProduct(p)).map((p) => p.ProductId);
+                  setSelectedHikeProductIds(cylIds);
                 }}
-                styles={{
-                  input: { fontWeight: 700, fontSize: 16, borderColor: '#800020', color: '#800020' },
+                style={{
+                  backgroundColor: bulkProductFilter === 'cylinders' ? '#800020' : '#f1f5f9',
+                  color: bulkProductFilter === 'cylinders' ? '#ffffff' : '#475569',
+                  fontWeight: 700,
                 }}
-              />
-            </Box>
+              >
+                Cylinders Only
+              </Button>
+              <Button
+                size="xs"
+                radius="xl"
+                variant={bulkProductFilter === 'all' ? 'filled' : 'subtle'}
+                onClick={() => {
+                  setBulkProductFilter('all');
+                }}
+                style={{
+                  backgroundColor: bulkProductFilter === 'all' ? '#800020' : '#f1f5f9',
+                  color: bulkProductFilter === 'all' ? '#ffffff' : '#475569',
+                  fontWeight: 700,
+                }}
+              >
+                All Products
+              </Button>
+            </Group>
 
             <Button
               variant="outline"
               size="xs"
-              style={{ borderColor: '#800020', color: '#800020', marginTop: 18 }}
+              radius="md"
+              style={{ borderColor: '#800020', color: '#800020' }}
               onClick={() => {
-                if (selectedHikeProductIds.length === products.length) {
-                  setSelectedHikeProductIds([]);
+                const visibleIds = displayedModalProducts.map((p) => p.ProductId);
+                const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedHikeProductIds.includes(id));
+                if (allVisibleSelected) {
+                  setSelectedHikeProductIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
                 } else {
-                  setSelectedHikeProductIds(products.map((p) => p.ProductId));
+                  setSelectedHikeProductIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
                 }
               }}
             >
-              {selectedHikeProductIds.length === products.length ? 'Deselect All' : 'Select All Cylinders'}
+              {displayedModalProducts.length > 0 && displayedModalProducts.every((p) => selectedHikeProductIds.includes(p.ProductId))
+                ? 'Deselect All'
+                : 'Select All'}
             </Button>
           </Group>
 
-          <Divider my="xs" color="#f1f5f9" />
-
           {/* Product Selection List with Live New Price Preview */}
-          <Text size="xs" fw={700} c="#475569">
-            SELECT CYLINDERS TO APPLY HIKE ({selectedHikeProductIds.length} SELECTED)
-          </Text>
-
           <ScrollArea.Autosize mah={320}>
             <Table verticalSpacing="xs" horizontalSpacing="sm">
               <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
                 <Table.Tr>
                   <Table.Th style={{ width: 40 }}></Table.Th>
-                  <Table.Th style={{ fontSize: 11 }}>CYLINDER</Table.Th>
+                  <Table.Th style={{ fontSize: 11 }}>PRODUCT / CYLINDER</Table.Th>
                   <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>CURRENT BASE</Table.Th>
-                  <Table.Th style={{ fontSize: 11, width: 120 }}>HIKE (+₹)</Table.Th>
+                  <Table.Th style={{ fontSize: 11, width: 125 }}>UPDATE (+/- ₹)</Table.Th>
                   <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>NEW BASE</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {products.map((p) => {
+                {displayedModalProducts.map((p) => {
                   const isChecked = selectedHikeProductIds.includes(p.ProductId);
                   const currentBase = Number(p.SalesPrice || 0);
                   const hike = Number(productHikesDraft[p.ProductId] ?? globalHikeAmount ?? 0);
-                  const newBase = currentBase + hike;
+                  const newBase = Math.max(0, currentBase + hike);
 
                   return (
                     <Table.Tr key={p.ProductId} style={{ backgroundColor: isChecked ? '#fffcfc' : undefined }}>
@@ -1302,9 +1366,12 @@ export const PriceUpdatePage: React.FC = () => {
                         />
                       </Table.Td>
                       <Table.Td>
-                        <Text size="xs" fw={600} c="#1e293b">
-                          {p.ProductName}
-                        </Text>
+                        <Group gap={6}>
+                          {isCylinderProduct(p) && <IconCylinder size={14} color="#800020" />}
+                          <Text size="xs" fw={600} c="#1e293b">
+                            {p.ProductName}
+                          </Text>
+                        </Group>
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
                         <Text size="xs" c="#64748b">
@@ -1314,7 +1381,6 @@ export const PriceUpdatePage: React.FC = () => {
                       <Table.Td>
                         <NumberInput
                           size="xs"
-                          min={0}
                           decimalScale={2}
                           hideControls
                           prefix="₹ "
@@ -1327,12 +1393,16 @@ export const PriceUpdatePage: React.FC = () => {
                             }));
                           }}
                           styles={{
-                            input: { fontWeight: 700, borderColor: isChecked ? '#800020' : '#cbd5e1' },
+                            input: {
+                              fontWeight: 700,
+                              borderColor: isChecked ? '#800020' : '#cbd5e1',
+                              color: hike < 0 ? '#b91c1c' : hike > 0 ? '#15803d' : '#1e293b',
+                            },
                           }}
                         />
                       </Table.Td>
                       <Table.Td style={{ textAlign: 'right' }}>
-                        <Text size="xs" fw={700} style={{ color: '#800020' }}>
+                        <Text size="xs" fw={700} style={{ color: hike < 0 ? '#b91c1c' : '#800020' }}>
                           ₹{newBase.toFixed(2)}
                         </Text>
                       </Table.Td>
@@ -1354,7 +1424,7 @@ export const PriceUpdatePage: React.FC = () => {
               onClick={() => bulkHikeMutation.mutate()}
               style={{ backgroundColor: '#800020', color: '#ffffff', fontWeight: 700 }}
             >
-              Apply Hike ({selectedHikeProductIds.length} Cylinders)
+              Apply Update ({selectedHikeProductIds.length} Selected)
             </Button>
           </Group>
         </Stack>
