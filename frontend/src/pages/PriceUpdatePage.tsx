@@ -1227,7 +1227,7 @@ export const PriceUpdatePage: React.FC = () => {
             </Text>
           </Group>
         }
-        size="lg"
+        size="xl"
         radius="md"
         centered
         styles={{
@@ -1331,15 +1331,15 @@ export const PriceUpdatePage: React.FC = () => {
           </Group>
 
           {/* Product Selection List with Live New Price Preview */}
-          <ScrollArea.Autosize mah={320}>
+          <ScrollArea.Autosize mah={360}>
             <Table verticalSpacing="xs" horizontalSpacing="sm">
               <Table.Thead style={{ backgroundColor: '#f8fafc' }}>
                 <Table.Tr>
-                  <Table.Th style={{ width: 40 }}></Table.Th>
+                  <Table.Th style={{ width: 44 }}></Table.Th>
                   <Table.Th style={{ fontSize: 11 }}>PRODUCT / CYLINDER</Table.Th>
-                  <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>CURRENT BASE</Table.Th>
-                  <Table.Th style={{ fontSize: 11, width: 125 }}>UPDATE (+/- ₹)</Table.Th>
-                  <Table.Th style={{ fontSize: 11, textAlign: 'right' }}>NEW BASE</Table.Th>
+                  <Table.Th style={{ fontSize: 11, textAlign: 'right', width: 140 }}>CURRENT BASE</Table.Th>
+                  <Table.Th style={{ fontSize: 11, textAlign: 'center', width: 140 }}>UPDATE (+/- ₹)</Table.Th>
+                  <Table.Th style={{ fontSize: 11, textAlign: 'right', width: 140 }}>NEW BASE</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -1446,7 +1446,7 @@ export const PriceUpdatePage: React.FC = () => {
             </Text>
           </Group>
         }
-        size="lg"
+        size="xl"
         radius="md"
         centered
         styles={{
