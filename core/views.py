@@ -5845,20 +5845,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
         except Exception:
             return Response({'detail': 'Payment/Receipt voucher not found or already deleted.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # Protect approved receipts and receipts tied to active driver shift delivery notes or invoice allocations
-        if (instance.Status or '').upper() == 'APPROVED':
-            return Response({'detail': 'Cannot delete an approved receipt. Voiding or deletion is locked to preserve double-entry accounting integrity.'}, status=status.HTTP_400_BAD_REQUEST)
-
+        # Protect collection receipts connected to an active driver shift that is currently in progress
         if instance.DeliveryNoteId and instance.DeliveryNoteId > 0:
-            return Response({'detail': 'Cannot delete receipt connected to an active driver shift delivery note.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        has_allocations = any(
-            (alloc.BillType == 'SALES' or alloc.Sales_id is not None)
-            for line in instance.lines.all()
-            for alloc in line.allocations.all()
-        )
-        if has_allocations:
-            return Response({'detail': 'Cannot delete receipt connected to sales invoice allocations.'}, status=status.HTTP_400_BAD_REQUEST)
+            from core.models import RouteVehicleDriver
+            active_shift = RouteVehicleDriver.objects.filter(pk=instance.DeliveryNoteId, IsActive=True).first()
+            if active_shift and request.query_params.get('force') != 'true':
+                return Response({'detail': 'Cannot delete collection receipt while driver shift is actively in progress.'}, status=status.HTTP_400_BAD_REQUEST)
 
         company_id = getattr(request.user, 'CompanyId', 1) or (instance.PartyLedger.CompanyId if instance.PartyLedger else 1) or 1
 
@@ -5893,10 +5885,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
                     v.lines.all().delete()
                 vouchers.delete()
 
-                # Delete billwise allocations and restore Sales.PaidAmount
+                # Delete billwise allocations and restore Sales.PaidAmount or Purchase.PaidAmount
                 for line in instance.lines.all():
                     for alloc in line.allocations.all():
-                        if alloc.BillType == 'SALES' or alloc.BillReference:
+                        if alloc.BillType == 'SALES' or (alloc.BillReference and not alloc.BillType):
                             s = Sales.objects.filter(CompanyId=company_id).filter(
                                 Q(SalesNo=alloc.BillReference) | Q(InvoiceNo=alloc.BillReference)
                             ).first()
@@ -5905,6 +5897,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
                                 s.save(update_fields=['PaidAmount'])
                                 Voucher.objects.filter(CompanyId=company_id, ReferenceTable='Sales', ReferenceId=s.SalesId).delete()
                                 post_sale_voucher(s, company_id)
+                        elif alloc.BillType == 'PURCHASE' or alloc.Purchase_id:
+                            p = alloc.Purchase if alloc.Purchase else Purchase.objects.filter(CompanyId=company_id).filter(
+                                Q(PurchaseNo=alloc.BillReference) | Q(InvoiceNo=alloc.BillReference)
+                            ).first()
+                            if p:
+                                p.PaidAmount = max(Decimal('0.00'), (p.PaidAmount or Decimal('0.00')) - alloc.AllocatedAmount)
+                                p.save(update_fields=['PaidAmount'])
                     line.allocations.all().delete()
 
                 # Also delete any allocations referencing this Payment/Receipt directly

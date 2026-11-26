@@ -211,8 +211,9 @@ export const PaymentListPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
       notifications.show({ title: 'Success', message: 'Payment voucher deleted successfully.', color: 'green' });
     },
-    onError: () => {
-      notifications.show({ title: 'Error', message: 'Failed to delete payment voucher.', color: 'red' });
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || 'Failed to delete payment voucher.';
+      notifications.show({ title: 'Error', message: msg, color: 'red' });
     } });
 
   return (
