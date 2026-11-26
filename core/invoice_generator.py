@@ -700,7 +700,7 @@ def generate_tax_invoice_pdf(sale):
     if not is_empty_return and not is_money_receipt:
         gst_th_style = ParagraphStyle(
             'GstTh', parent=styles['Normal'],
-            fontName=FONT_BOLD, fontSize=7, leading=9, alignment=1, textColor=colors.white
+            fontName=FONT_BOLD, fontSize=7, leading=9, alignment=1, textColor=DARK_COLOR
         )
         gst_cell_norm = ParagraphStyle(
             'GstCellNorm', parent=styles['Normal'],
@@ -796,7 +796,7 @@ def generate_tax_invoice_pdf(sale):
         ])
 
         gst_style = [
-            ('BACKGROUND', (0, 0), (-1, 1), PRIMARY_COLOR),
+            ('BACKGROUND', (0, 0), (-1, 1), colors.HexColor('#F1F5F9')),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('BOX', (0, 0), (-1, -1), 1, BORDER_COLOR),
@@ -812,7 +812,7 @@ def generate_tax_invoice_pdf(sale):
             ('SPAN', (6, 0), (7, 0)),
             ('SPAN', (8, 0), (8, 1)),
             ('BACKGROUND', (0, -1), (-1, -1), LIGHT_BG),
-            ('LINEABOVE', (0, -1), (-1, -1), 1, PRIMARY_COLOR),
+            ('LINEABOVE', (0, -1), (-1, -1), 1, BORDER_COLOR),
         ]
         for r_idx in range(2, len(gst_table_rows) - 1):
             bg = LIGHT_BG if r_idx % 2 == 1 else colors.white
