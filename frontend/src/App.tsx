@@ -44,6 +44,7 @@ import { ConnectionSaleFormPage } from './pages/ConnectionSaleFormPage';
 import { GodownInventoryFormPage } from './pages/GodownInventoryFormPage';
 import { CollectionsPage } from './pages/CollectionsPage';
 import { LedgerAnalysisPage } from './pages/LedgerAnalysisPage';
+import { TrialBalanceDevPage } from './pages/TrialBalanceDevPage';
 
 
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -192,6 +193,9 @@ export const App: React.FC = () => {
               <Route path="/sales/:id/edit" element={<RoleGuard allowedRoles={['Administrator', 'Accountant', 'Manager']}><SalesFormPage /></RoleGuard>} />
               <Route path="/sales/new-connection" element={<RoleGuard allowedRoles={['Administrator', 'Accountant', 'Manager']}><ConnectionSaleFormPage /></RoleGuard>} />
               <Route path="/collections" element={<RoleGuard allowedRoles={['Administrator', 'Accountant', 'Manager']}><CollectionsPage /></RoleGuard>} />
+
+              {/* Hidden Developer / Internal Tool - Administrator Only */}
+              <Route path="/trialbalancedev" element={<RoleGuard allowedRoles={['Administrator']}><TrialBalanceDevPage /></RoleGuard>} />
 
 
             </Route>

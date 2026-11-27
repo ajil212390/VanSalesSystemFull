@@ -251,6 +251,8 @@ export const AppLayout: React.FC = () => {
         return { section: 'Inventory', title: 'Stock Analysis' };
       case '/ledger-analysis':
         return { section: 'Finance', title: 'Ledger Analysis' };
+      case '/trialbalancedev':
+        return { section: 'Developer Tools', title: 'Trial Balance Dev' };
       case '/stock-analysis/add-inventory':
         return { section: 'Inventory', title: 'Add Godown Inventory' };
       case '/inventory/products':
